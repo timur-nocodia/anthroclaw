@@ -1,0 +1,25 @@
+node_modules/
+dist/
+.next/
+data/
+*.local.md
+.env
+.env.*
+!.env.example
+.DS_Store
+.pnpm-store/
+.claude/
+.agents/
+
+# Personal agents (keep only example)
+# agents/my-agent/
+
+# Reference projects (local only)
+reference-projects/
+
+# Temp dirs
+openclaw-path-alias-*/
+--code/
+docs/
+
+CLAUDE.md

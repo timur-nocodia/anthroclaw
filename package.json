@@ -1,0 +1,57 @@
+{
+  "name": "openclaw-agent-sdk-edition",
+  "version": "0.1.0",
+  "description": "Lightweight OpenClaw replica on claude-agent-sdk",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "whatsapp:pair": "tsx src/cli/whatsapp-pair.ts",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "reset-password": "tsx src/cli/reset-password.ts",
+    "ui": "cd ui && pnpm dev",
+    "ui:build": "cd ui && pnpm build"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.116",
+    "@grammyjs/runner": "^2.0.3",
+    "@grammyjs/transformer-throttler": "^1.2.1",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@whiskeysockets/baileys": "7.0.0-rc.9",
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.9.0",
+    "chokidar": "^5.0.0",
+    "cron": "^4.4.0",
+    "dotenv": "^17.4.2",
+    "grammy": "^1.42.0",
+    "gray-matter": "^4.0.3",
+    "openai": "^6.34.0",
+    "pino": "^10.3.1",
+    "qrcode-terminal": "^0.12.0",
+    "yaml": "^2.8.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "bcrypt",
+      "better-sqlite3",
+      "cpu-features",
+      "esbuild",
+      "ssh2"
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+telegram:
+  accounts:
+    default:
+      token: ${TELEGRAM_BOT_TOKEN}
+
+# whatsapp:
+#   accounts:
+#     default:
+#       auth_dir: ./data/wa-auth/default
+
+defaults:
+  model: claude-sonnet-4-6
+  embedding_provider: openai
+  embedding_model: text-embedding-3-small
+  debounce_ms: 1500
+
+# rate_limit:
+#   maxAttempts: 10
+#   windowMs: 60000
+#   lockoutMs: 300000
+
+# assemblyai:
+#   api_key: ${ASSEMBLYAI_API_KEY}
+
+# brave:
+#   api_key: ${BRAVE_API_KEY}
+
+# exa:
+#   api_key: ${EXA_API_KEY}

@@ -1,0 +1,2518 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  Brain,
+  ChevronLeft,
+  Clock,
+  Copy,
+  DollarSign,
+  FileText,
+  GitBranch,
+  Globe,
+  HelpCircle,
+  Key,
+  List,
+  MessageSquare,
+  Monitor,
+  Plus,
+  RefreshCw,
+  Save,
+  Settings2,
+  Shield,
+  Sparkles,
+  Terminal,
+  Trash2,
+  Upload,
+  Zap,
+} from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
+interface AgentConfig {
+  id: string;
+  model?: string;
+  thinking?: { type: string; budgetTokens?: number };
+  effort?: string;
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  description?: string;
+  timezone?: string;
+  queue_mode?: string;
+  session_policy?: string;
+  auto_compress?: number;
+  iteration_budget?: { tool_call_limit?: number; timeout_ms?: number };
+  pairing?: { mode?: string; code?: string };
+  routes?: Array<{
+    channel: string;
+    account: string;
+    scope: string;
+    peers?: string[] | null;
+    topics?: string[] | null;
+    mentionOnly?: boolean;
+  }>;
+  raw?: string;
+  mcp_tools?: string[];
+  allowlist?: Record<string, string[]>;
+  quick_commands?: Record<string, { command: string; timeout: number }>;
+  group_sessions?: string;
+  display?: {
+    toolProgress?: string;
+    streaming?: boolean;
+    toolPreviewLength?: number;
+    showReasoning?: boolean;
+  };
+  hooks?: Array<{
+    event: string;
+    action: string;
+    url?: string;
+    command?: string;
+    timeout_ms?: number;
+  }>;
+  cron?: Array<{
+    id: string;
+    schedule: string;
+    prompt: string;
+    deliver_to?: { channel: string; peer_id: string; account_id?: string };
+    enabled: boolean;
+  }>;
+  maxSessions?: number;
+  subagents?: { allow: string[] };
+  sdk?: {
+    allowedTools?: string[];
+    disallowedTools?: string[];
+    permissions?: {
+      mode?: string;
+      default_behavior?: string;
+      allow_mcp?: boolean;
+      allow_bash?: boolean;
+      allow_web?: boolean;
+      allowed_mcp_tools?: string[];
+      denied_bash_patterns?: string[];
+    };
+    sandbox?: {
+      enabled?: boolean;
+      failIfUnavailable?: boolean;
+      autoAllowBashIfSandboxed?: boolean;
+      allowUnsandboxedCommands?: boolean;
+      network?: {
+        allowedDomains?: string[];
+        deniedDomains?: string[];
+        allowManagedDomainsOnly?: boolean;
+        allowLocalBinding?: boolean;
+      };
+      filesystem?: {
+        allowWrite?: string[];
+        denyWrite?: string[];
+        allowRead?: string[];
+        denyRead?: string[];
+        allowManagedReadPathsOnly?: boolean;
+      };
+    };
+    promptSuggestions?: boolean;
+    agentProgressSummaries?: boolean;
+    includePartialMessages?: boolean;
+    includeHookEvents?: boolean;
+    enableFileCheckpointing?: boolean;
+    fallbackModel?: string;
+  };
+}
+
+const HOOK_EVENTS = [
+  "on_message_received",
+  "on_before_query",
+  "on_after_query",
+  "on_session_reset",
+  "on_cron_fire",
+  "on_tool_use",
+  "on_tool_result",
+  "on_tool_error",
+  "on_permission_request",
+  "on_sdk_notification",
+  "on_subagent_start",
+  "on_subagent_stop",
+] as const;
+
+interface AgentFile {
+  name: string;
+  size: number;
+  updatedAt: string;
+  special?: string;
+}
+
+interface SkillInfo {
+  name: string;
+  description: string;
+  platforms: string[];
+  tags: string[];
+  attached?: boolean;
+  catalog?: boolean;
+}
+
+const MODELS = [
+  "claude-sonnet-4-6",
+  "claude-opus-4-6",
+  "claude-haiku-4-5",
+  "claude-sonnet-4-5",
+  "claude-opus-4-7",
+];
+
+const EFFORT_LEVELS = [
+  { value: "low", label: "low — minimal thinking, fastest" },
+  { value: "medium", label: "medium — moderate thinking" },
+  { value: "high", label: "high — deep reasoning (default)" },
+  { value: "xhigh", label: "xhigh — deeper (Opus 4.7 only)" },
+  { value: "max", label: "max — maximum effort (select models)" },
+];
+
+const THINKING_MODES = [
+  { value: "adaptive", label: "adaptive — model decides when to think" },
+  { value: "enabled", label: "enabled — fixed budget" },
+  { value: "disabled", label: "disabled — no extended thinking" },
+];
+
+const SDK_PERMISSION_MODES = [
+  { value: "default", label: "default" },
+  { value: "acceptEdits", label: "acceptEdits" },
+  { value: "dontAsk", label: "dontAsk" },
+];
+
+function csvToArray(value: string): string[] {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function arrayToCsv(value?: string[]): string {
+  return value?.join(", ") ?? "";
+}
+
+const TIMEZONES = [
+  "UTC",
+  "Europe/Moscow",
+  "America/New_York",
+  "America/Los_Angeles",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+];
+
+const SCHEDULE_PRESETS = [
+  { cron: "* * * * *", label: "Every minute" },
+  { cron: "*/5 * * * *", label: "Every 5 minutes" },
+  { cron: "*/15 * * * *", label: "Every 15 minutes" },
+  { cron: "*/30 * * * *", label: "Every 30 minutes" },
+  { cron: "0 * * * *", label: "Every hour" },
+  { cron: "0 */2 * * *", label: "Every 2 hours" },
+  { cron: "0 */6 * * *", label: "Every 6 hours" },
+  { cron: "0 9 * * *", label: "Daily at 9:00" },
+  { cron: "0 9 * * 1-5", label: "Weekdays at 9:00" },
+  { cron: "0 21 * * *", label: "Daily at 21:00" },
+  { cron: "0 0 * * *", label: "Daily at midnight" },
+  { cron: "0 9 * * 1", label: "Every Monday at 9:00" },
+  { cron: "0 9 1 * *", label: "1st of each month at 9:00" },
+];
+
+function describeCron(expr: string): string {
+  const preset = SCHEDULE_PRESETS.find((p) => p.cron === expr);
+  if (preset) return preset.label;
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return expr;
+  const [min, hour, dom, mon, dow] = parts;
+  const pieces: string[] = [];
+  if (min === "*" && hour === "*") pieces.push("every minute");
+  else if (min.startsWith("*/")) pieces.push(`every ${min.slice(2)} min`);
+  else if (hour === "*") pieces.push(`at :${min.padStart(2, "0")} every hour`);
+  else if (hour.startsWith("*/")) pieces.push(`every ${hour.slice(2)}h at :${min.padStart(2, "0")}`);
+  else pieces.push(`at ${hour.padStart(2, "0")}:${min.padStart(2, "0")}`);
+  if (dow === "1-5") pieces.push("weekdays");
+  else if (dow !== "*") pieces.push(`dow ${dow}`);
+  if (dom !== "*") pieces.push(`day ${dom}`);
+  if (mon !== "*") pieces.push(`month ${mon}`);
+  return pieces.join(", ");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Agent Editor                                                       */
+/* ------------------------------------------------------------------ */
+
+export default function AgentEditorPage() {
+  const params = useParams();
+  const router = useRouter();
+  const serverId = params.serverId as string;
+  const agentId = params.agentId as string;
+
+  const [agent, setAgent] = useState<AgentConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("config");
+
+  const fetchAgent = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/agents/${agentId}`);
+      if (res.ok) {
+        const d = await res.json();
+        const config = d.parsed ?? d;
+        setAgent({ id: agentId, raw: d.raw, ...config });
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+    }
+  }, [serverId, agentId]);
+
+  useEffect(() => {
+    fetchAgent();
+  }, [fetchAgent]);
+
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Header */}
+      <div
+        className="flex items-center justify-between gap-3 border-b px-5 py-3"
+        style={{ borderColor: "var(--oc-border)" }}
+      >
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex items-center gap-2 text-[11.5px]">
+            <Link
+              href={`/fleet/${serverId}/agents`}
+              className="flex items-center gap-1"
+              style={{ color: "var(--oc-text-muted)" }}
+            >
+              <ChevronLeft className="h-3 w-3" />
+              Agents
+            </Link>
+            <span style={{ color: "var(--oc-text-muted)" }}>/</span>
+            <span style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
+              {agentId}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-[15px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+              {agentId}
+            </h1>
+            {agent && (
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="inline-flex rounded px-1.5 py-px text-[10px] font-medium"
+                  style={{
+                    background: "var(--oc-accent-soft)",
+                    border: "1px solid var(--oc-accent-ring)",
+                    color: "var(--oc-accent)",
+                  }}
+                >
+                  {agent.model ?? "---"}
+                </span>
+                <span
+                  className="inline-flex rounded px-1.5 py-px text-[10px] font-medium"
+                  style={{
+                    background: "rgba(74,222,128,0.15)",
+                    border: "1px solid rgba(74,222,128,0.35)",
+                    color: "var(--oc-green)",
+                  }}
+                >
+                  &#9679; loaded
+                </span>
+              </div>
+            )}
+          </div>
+          {agent?.description && (
+            <p className="text-[11.5px]" style={{ color: "var(--oc-text-muted)" }}>
+              {agent.description}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push(`/fleet/${serverId}/chat/${agentId}`)}
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Test in chat
+          </Button>
+          <Button variant="outline" size="sm" onClick={fetchAgent}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Reload
+          </Button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <Tabs value={tab} onValueChange={setTab} className="flex flex-1 flex-col overflow-hidden">
+        <TabsList
+          className="h-auto w-full justify-start rounded-none border-b px-5"
+          style={{
+            background: "var(--oc-bg0)",
+            borderColor: "var(--oc-border)",
+          }}
+        >
+          <TabsTrigger
+            value="config"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <Settings2 className="mr-1.5 h-3.5 w-3.5" />
+            Config
+          </TabsTrigger>
+          <TabsTrigger
+            value="files"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <FileText className="mr-1.5 h-3.5 w-3.5" />
+            Files
+          </TabsTrigger>
+          <TabsTrigger
+            value="skills"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+            Skills
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="config" className="mt-0 flex-1 overflow-auto">
+          {agent && <ConfigTab serverId={serverId} agentId={agentId} agent={agent} />}
+        </TabsContent>
+        <TabsContent value="files" className="mt-0 flex-1 overflow-hidden">
+          <FilesTab serverId={serverId} agentId={agentId} />
+        </TabsContent>
+        <TabsContent value="skills" className="mt-0 flex-1 overflow-auto">
+          <SkillsTab serverId={serverId} agentId={agentId} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Config Tab                                                         */
+/* ------------------------------------------------------------------ */
+
+function ConfigTab({
+  serverId,
+  agentId,
+  agent,
+}: {
+  serverId: string;
+  agentId: string;
+  agent: AgentConfig;
+}) {
+  const [mode, setMode] = useState<"form" | "raw">("form");
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [cfg, setCfg] = useState({
+    model: agent.model ?? "claude-sonnet-4-6",
+    thinking: agent.thinking ?? { type: "adaptive" as string, budgetTokens: undefined as number | undefined },
+    effort: agent.effort ?? "high",
+    maxTurns: agent.maxTurns ?? 0,
+    maxBudgetUsd: agent.maxBudgetUsd ?? 0,
+    timezone: agent.timezone ?? "UTC",
+    queue_mode: agent.queue_mode ?? "collect",
+    session_policy: agent.session_policy ?? "daily",
+    auto_compress: agent.auto_compress ?? 0,
+    iteration_budget: {
+      tool_call_limit: agent.iteration_budget?.tool_call_limit ?? 20,
+      timeout_ms: agent.iteration_budget?.timeout_ms ?? 120000,
+    },
+    pairing: {
+      mode: agent.pairing?.mode ?? "open",
+      code: agent.pairing?.code ?? "",
+    },
+    routes: agent.routes ?? [],
+    mcp_tools: agent.mcp_tools ?? [],
+    allowlist: agent.allowlist ?? {},
+    quick_commands: agent.quick_commands ?? {},
+    group_sessions: agent.group_sessions ?? 'shared',
+    display: agent.display ?? {},
+    hooks: agent.hooks ?? [],
+    cron: agent.cron ?? [],
+    maxSessions: agent.maxSessions ?? 100,
+    subagents: agent.subagents ?? { allow: [] },
+    sdk: {
+      allowedTools: agent.sdk?.allowedTools ?? [],
+      disallowedTools: agent.sdk?.disallowedTools ?? [],
+      fallbackModel: agent.sdk?.fallbackModel ?? "",
+      promptSuggestions: agent.sdk?.promptSuggestions ?? false,
+      agentProgressSummaries: agent.sdk?.agentProgressSummaries ?? false,
+      includePartialMessages: agent.sdk?.includePartialMessages ?? false,
+      includeHookEvents: agent.sdk?.includeHookEvents ?? false,
+      enableFileCheckpointing: agent.sdk?.enableFileCheckpointing ?? false,
+      permissions: {
+        mode: agent.sdk?.permissions?.mode ?? "default",
+        default_behavior: agent.sdk?.permissions?.default_behavior ?? "deny",
+        allow_mcp: agent.sdk?.permissions?.allow_mcp ?? true,
+        allow_bash: agent.sdk?.permissions?.allow_bash ?? true,
+        allow_web: agent.sdk?.permissions?.allow_web ?? true,
+        allowed_mcp_tools: agent.sdk?.permissions?.allowed_mcp_tools ?? [],
+        denied_bash_patterns: agent.sdk?.permissions?.denied_bash_patterns ?? [],
+      },
+      sandbox: {
+        enabled: agent.sdk?.sandbox?.enabled ?? false,
+        failIfUnavailable: agent.sdk?.sandbox?.failIfUnavailable ?? false,
+        autoAllowBashIfSandboxed: agent.sdk?.sandbox?.autoAllowBashIfSandboxed ?? false,
+        allowUnsandboxedCommands: agent.sdk?.sandbox?.allowUnsandboxedCommands ?? false,
+        network: {
+          allowedDomains: agent.sdk?.sandbox?.network?.allowedDomains ?? [],
+          deniedDomains: agent.sdk?.sandbox?.network?.deniedDomains ?? [],
+          allowManagedDomainsOnly: agent.sdk?.sandbox?.network?.allowManagedDomainsOnly ?? false,
+          allowLocalBinding: agent.sdk?.sandbox?.network?.allowLocalBinding ?? false,
+        },
+        filesystem: {
+          allowWrite: agent.sdk?.sandbox?.filesystem?.allowWrite ?? [],
+          denyWrite: agent.sdk?.sandbox?.filesystem?.denyWrite ?? [],
+          allowRead: agent.sdk?.sandbox?.filesystem?.allowRead ?? [],
+          denyRead: agent.sdk?.sandbox?.filesystem?.denyRead ?? [],
+          allowManagedReadPathsOnly: agent.sdk?.sandbox?.filesystem?.allowManagedReadPathsOnly ?? false,
+        },
+      },
+    },
+  });
+  const [rawYaml, setRawYaml] = useState(agent.raw ?? "");
+
+  const update = (patch: Partial<typeof cfg>) => {
+    setCfg((c) => ({ ...c, ...patch }));
+    setDirty(true);
+  };
+
+  const updateSdk = (patch: Partial<typeof cfg.sdk>) => {
+    update({ sdk: { ...cfg.sdk, ...patch } });
+  };
+
+  const updateSdkPermissions = (patch: Partial<typeof cfg.sdk.permissions>) => {
+    updateSdk({ permissions: { ...cfg.sdk.permissions, ...patch } });
+  };
+
+  const updateSdkSandbox = (patch: Partial<typeof cfg.sdk.sandbox>) => {
+    updateSdk({ sandbox: { ...cfg.sdk.sandbox, ...patch } });
+  };
+
+  const updateSdkSandboxNetwork = (patch: Partial<typeof cfg.sdk.sandbox.network>) => {
+    updateSdkSandbox({ network: { ...cfg.sdk.sandbox.network, ...patch } });
+  };
+
+  const updateSdkSandboxFilesystem = (patch: Partial<typeof cfg.sdk.sandbox.filesystem>) => {
+    updateSdkSandbox({ filesystem: { ...cfg.sdk.sandbox.filesystem, ...patch } });
+  };
+
+  const buildSdkPayload = () => {
+    const sdk: Record<string, unknown> = {};
+    if (cfg.sdk.allowedTools.length > 0) sdk.allowedTools = cfg.sdk.allowedTools;
+    if (cfg.sdk.disallowedTools.length > 0) sdk.disallowedTools = cfg.sdk.disallowedTools;
+    if (cfg.sdk.fallbackModel.trim()) sdk.fallbackModel = cfg.sdk.fallbackModel.trim();
+    if (cfg.sdk.promptSuggestions) sdk.promptSuggestions = true;
+    if (cfg.sdk.agentProgressSummaries) sdk.agentProgressSummaries = true;
+    if (cfg.sdk.includePartialMessages) sdk.includePartialMessages = true;
+    if (cfg.sdk.includeHookEvents) sdk.includeHookEvents = true;
+    if (cfg.sdk.enableFileCheckpointing) sdk.enableFileCheckpointing = true;
+
+    const permissions: Record<string, unknown> = {};
+    if (cfg.sdk.permissions.mode !== "default") permissions.mode = cfg.sdk.permissions.mode;
+    if (cfg.sdk.permissions.default_behavior !== "deny") permissions.default_behavior = cfg.sdk.permissions.default_behavior;
+    if (!cfg.sdk.permissions.allow_mcp) permissions.allow_mcp = false;
+    if (!cfg.sdk.permissions.allow_bash) permissions.allow_bash = false;
+    if (!cfg.sdk.permissions.allow_web) permissions.allow_web = false;
+    if (cfg.sdk.permissions.allowed_mcp_tools.length > 0) permissions.allowed_mcp_tools = cfg.sdk.permissions.allowed_mcp_tools;
+    if (cfg.sdk.permissions.denied_bash_patterns.length > 0) permissions.denied_bash_patterns = cfg.sdk.permissions.denied_bash_patterns;
+    if (Object.keys(permissions).length > 0) sdk.permissions = permissions;
+
+    const sandbox: Record<string, unknown> = {};
+    if (cfg.sdk.sandbox.enabled) sandbox.enabled = true;
+    if (cfg.sdk.sandbox.failIfUnavailable) sandbox.failIfUnavailable = true;
+    if (cfg.sdk.sandbox.autoAllowBashIfSandboxed) sandbox.autoAllowBashIfSandboxed = true;
+    if (cfg.sdk.sandbox.allowUnsandboxedCommands) sandbox.allowUnsandboxedCommands = true;
+
+    const network: Record<string, unknown> = {};
+    if (cfg.sdk.sandbox.network.allowedDomains.length > 0) network.allowedDomains = cfg.sdk.sandbox.network.allowedDomains;
+    if (cfg.sdk.sandbox.network.deniedDomains.length > 0) network.deniedDomains = cfg.sdk.sandbox.network.deniedDomains;
+    if (cfg.sdk.sandbox.network.allowManagedDomainsOnly) network.allowManagedDomainsOnly = true;
+    if (cfg.sdk.sandbox.network.allowLocalBinding) network.allowLocalBinding = true;
+    if (Object.keys(network).length > 0) sandbox.network = network;
+
+    const filesystem: Record<string, unknown> = {};
+    if (cfg.sdk.sandbox.filesystem.allowWrite.length > 0) filesystem.allowWrite = cfg.sdk.sandbox.filesystem.allowWrite;
+    if (cfg.sdk.sandbox.filesystem.denyWrite.length > 0) filesystem.denyWrite = cfg.sdk.sandbox.filesystem.denyWrite;
+    if (cfg.sdk.sandbox.filesystem.allowRead.length > 0) filesystem.allowRead = cfg.sdk.sandbox.filesystem.allowRead;
+    if (cfg.sdk.sandbox.filesystem.denyRead.length > 0) filesystem.denyRead = cfg.sdk.sandbox.filesystem.denyRead;
+    if (cfg.sdk.sandbox.filesystem.allowManagedReadPathsOnly) filesystem.allowManagedReadPathsOnly = true;
+    if (Object.keys(filesystem).length > 0) sandbox.filesystem = filesystem;
+
+    if (Object.keys(sandbox).length > 0) sdk.sandbox = sandbox;
+    return Object.keys(sdk).length > 0 ? sdk : undefined;
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      let payload: unknown;
+      if (mode === "raw") {
+        payload = { yaml: rawYaml };
+      } else {
+        const { thinking, effort, maxTurns, maxBudgetUsd, sdk: _sdk, ...rest } = cfg;
+        const clean: Record<string, unknown> = { ...rest };
+        if (thinking.type !== "disabled") clean.thinking = thinking;
+        if (effort && effort !== "high") clean.effort = effort;
+        if (maxTurns > 0) clean.maxTurns = maxTurns;
+        if (maxBudgetUsd > 0) clean.maxBudgetUsd = maxBudgetUsd;
+        const sdkPayload = buildSdkPayload();
+        if (sdkPayload) clean.sdk = sdkPayload;
+        payload = clean;
+      }
+      await fetch(`/api/fleet/${serverId}/agents/${agentId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      setDirty(false);
+    } catch {
+      // silently fail
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex max-w-[1100px] flex-col gap-3.5 p-5">
+      {/* Mode toggle + save */}
+      <div className="flex items-center justify-between gap-3">
+        <div
+          className="inline-flex gap-px rounded-[5px] border p-0.5"
+          style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)" }}
+        >
+          {(["form", "raw"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className="h-6 rounded px-2.5 text-[11px] font-medium"
+              style={{
+                background: mode === m ? "var(--oc-bg3)" : "transparent",
+                color: mode === m ? "var(--color-foreground)" : "var(--oc-text-dim)",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              {m === "form" ? "Form" : "Raw YAML"}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2.5">
+          {dirty && (
+            <span
+              className="flex items-center gap-1.5 text-[11.5px]"
+              style={{ color: "var(--oc-yellow)" }}
+            >
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full"
+                style={{ background: "var(--oc-yellow)" }}
+              />
+              Unsaved changes
+            </span>
+          )}
+          <Button variant="outline" size="sm" onClick={() => setDirty(false)}>
+            Discard
+          </Button>
+          <Button size="sm" disabled={!dirty || saving} onClick={handleSave}>
+            <Save className="h-3.5 w-3.5" />
+            {saving ? "Saving..." : "Save config"}
+          </Button>
+        </div>
+      </div>
+
+      {mode === "form" ? (
+        <>
+          {/* General */}
+          <Section title="General" tooltip="Core agent settings: model, timezone, message queue behavior, and memory rotation." icon={<Settings2 className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
+            <FormGrid>
+              <Field label="Model" tooltip="Which Claude model to use. Opus is the smartest, Haiku is the fastest and cheapest, Sonnet is a balanced option.">
+                <select
+                  value={cfg.model}
+                  onChange={(e) => update({ model: e.target.value })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                >
+                  {MODELS.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Timezone" tooltip="Agent's timezone. Affects cron job schedules and timestamps in logs.">
+                <select
+                  value={cfg.timezone}
+                  onChange={(e) => update({ timezone: e.target.value })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                >
+                  {TIMEZONES.map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Queue mode" tooltip="What happens to new messages while the agent is still responding. Collect — queues and batches them. Steer — appends to the current response. Interrupt — cancels and restarts.">
+                <select
+                  value={cfg.queue_mode}
+                  onChange={(e) => update({ queue_mode: e.target.value })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                >
+                  <option value="collect">collect -- buffer and batch</option>
+                  <option value="steer">steer -- append context mid-turn</option>
+                  <option value="interrupt">interrupt -- cancel and restart</option>
+                </select>
+              </Field>
+              <Field label="Session policy" tooltip="How often to reset conversation memory. Daily — fresh context each day. Never — the agent remembers everything. Weekly/Hourly — in between.">
+                <select
+                  value={cfg.session_policy}
+                  onChange={(e) => update({ session_policy: e.target.value })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                >
+                  {["never", "hourly", "daily", "weekly"].map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Auto-compress (tokens)" tooltip="When conversation context exceeds this token count, older messages are automatically compressed into a summary. 0 to disable.">
+                <input
+                  type="number"
+                  value={cfg.auto_compress}
+                  onChange={(e) => update({ auto_compress: +e.target.value || 0 })}
+                  className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                    fontFamily: "var(--oc-mono)",
+                  }}
+                />
+              </Field>
+            </FormGrid>
+          </Section>
+
+          {/* Reasoning & limits */}
+          <Section title="Reasoning & limits" tooltip="Thinking depth settings and resource limits: reasoning mode, turn limits, and per-query budget." icon={<Brain className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
+            <FormGrid>
+              <Field label="Thinking mode" tooltip="Extended thinking — the agent reasons before answering. Adaptive — the model decides when to think. Enabled — always thinks within a fixed budget. Disabled — responds immediately.">
+                <select
+                  value={cfg.thinking.type}
+                  onChange={(e) => {
+                    const type = e.target.value;
+                    update({
+                      thinking: type === "enabled"
+                        ? { type, budgetTokens: cfg.thinking.budgetTokens ?? 10000 }
+                        : { type, budgetTokens: undefined },
+                    });
+                  }}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                >
+                  {THINKING_MODES.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </Field>
+              {cfg.thinking.type === "enabled" && (
+                <Field label="Thinking budget (tokens)" tooltip="How many tokens the agent can spend on reasoning before answering. Higher = deeper thinking, but slower and more expensive.">
+                  <input
+                    type="number"
+                    value={cfg.thinking.budgetTokens ?? 10000}
+                    onChange={(e) =>
+                      update({
+                        thinking: { type: "enabled", budgetTokens: +e.target.value || 10000 },
+                      })
+                    }
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{
+                      background: "var(--oc-bg3)",
+                      borderColor: "var(--oc-border)",
+                      color: "var(--color-foreground)",
+                      fontFamily: "var(--oc-mono)",
+                    }}
+                  />
+                </Field>
+              )}
+              <Field label="Effort level" tooltip="How thoroughly the model processes the request. Low — quick, surface-level. High — deep analysis. Max — best quality, slowest.">
+                <select
+                  value={cfg.effort}
+                  onChange={(e) => update({ effort: e.target.value })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                >
+                  {EFFORT_LEVELS.map((l) => (
+                    <option key={l.value} value={l.value}>{l.label}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Max turns" tooltip="Maximum number of steps (tool calls) the agent can take per query. 0 means unlimited.">
+                <input
+                  type="number"
+                  value={cfg.maxTurns}
+                  onChange={(e) => update({ maxTurns: +e.target.value || 0 })}
+                  className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                    fontFamily: "var(--oc-mono)",
+                  }}
+                />
+              </Field>
+              <Field label="Max budget (USD)" tooltip="Spending cap per query in USD. Protects against accidentally expensive requests. 0 means no limit.">
+                <div className="relative">
+                  <DollarSign
+                    className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2"
+                    style={{ color: "var(--oc-text-muted)" }}
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={cfg.maxBudgetUsd}
+                    onChange={(e) => update({ maxBudgetUsd: +e.target.value || 0 })}
+                    className="h-8 w-full rounded-[5px] border pl-6 pr-2 text-xs outline-none"
+                    style={{
+                      background: "var(--oc-bg3)",
+                      borderColor: "var(--oc-border)",
+                      color: "var(--color-foreground)",
+                      fontFamily: "var(--oc-mono)",
+                    }}
+                  />
+                </div>
+              </Field>
+            </FormGrid>
+          </Section>
+
+          {/* Iteration budget */}
+          <Section title="Iteration budget" tooltip="Limits for a single agent iteration: how many tools it can call and how long it can run.">
+            <FormGrid>
+              <Field label="Tool call limit" tooltip="Max tool calls per iteration. Prevents the agent from getting stuck in infinite loops.">
+                <input
+                  type="number"
+                  value={cfg.iteration_budget.tool_call_limit}
+                  onChange={(e) =>
+                    update({
+                      iteration_budget: {
+                        ...cfg.iteration_budget,
+                        tool_call_limit: +e.target.value,
+                      },
+                    })
+                  }
+                  className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                    fontFamily: "var(--oc-mono)",
+                  }}
+                />
+              </Field>
+              <Field label="Timeout (ms)" tooltip="Max execution time for one iteration in milliseconds. The agent is interrupted when this expires.">
+                <input
+                  type="number"
+                  value={cfg.iteration_budget.timeout_ms}
+                  onChange={(e) =>
+                    update({
+                      iteration_budget: {
+                        ...cfg.iteration_budget,
+                        timeout_ms: +e.target.value,
+                      },
+                    })
+                  }
+                  className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                    fontFamily: "var(--oc-mono)",
+                  }}
+                />
+              </Field>
+            </FormGrid>
+          </Section>
+
+          {/* Access control */}
+          <Section title="Access control" tooltip="Controls who can send direct messages to this agent." subtitle="Who can DM this agent.">
+            <FormGrid>
+              <Field label="Mode" tooltip="Who can DM the agent. Open — anyone. Code — user must enter a code first. Approve — admin approves each user. Off — DMs disabled.">
+                <select
+                  value={cfg.pairing.mode}
+                  onChange={(e) =>
+                    update({
+                      pairing: { ...cfg.pairing, mode: e.target.value },
+                    })
+                  }
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                >
+                  <option value="off">off -- no DMs accepted</option>
+                  <option value="open">open -- anyone can DM</option>
+                  <option value="code">code -- requires pairing code</option>
+                  <option value="approve">approve -- admin approves each user</option>
+                </select>
+              </Field>
+              {cfg.pairing.mode === "code" && (
+                <Field label="Pairing code" tooltip="A secret code the user sends to the bot on first contact to gain access.">
+                  <input
+                    value={cfg.pairing.code}
+                    onChange={(e) =>
+                      update({
+                        pairing: { ...cfg.pairing, code: e.target.value },
+                      })
+                    }
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{
+                      background: "var(--oc-bg3)",
+                      borderColor: "var(--oc-border)",
+                      color: "var(--color-foreground)",
+                      fontFamily: "var(--oc-mono)",
+                    }}
+                  />
+                </Field>
+              )}
+            </FormGrid>
+          </Section>
+
+          {/* Routes & allowlist */}
+          <Section
+            title="Routes"
+            subtitle={`${cfg.routes.length} active`}
+            tooltip="Which channels and chat types this agent listens to. Each route connects the agent to a Telegram or WhatsApp account with specific scope (DM, groups, or both)."
+            icon={<Globe className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  update({
+                    routes: [
+                      ...cfg.routes,
+                      {
+                        channel: "telegram",
+                        account: "",
+                        scope: "dm",
+                        peers: null,
+                        topics: null,
+                        mentionOnly: false,
+                      },
+                    ],
+                  })
+                }
+              >
+                <Plus className="h-3 w-3" />
+                Add route
+              </Button>
+            }
+          >
+            <RoutesTable
+              routes={cfg.routes}
+              allowlist={cfg.allowlist}
+              onChange={(rs) => update({ routes: rs })}
+              onAllowlistChange={(al) => update({ allowlist: al })}
+            />
+          </Section>
+
+          {/* Quick commands */}
+          <Section
+            title="Quick commands"
+            subtitle={`${Object.keys(cfg.quick_commands).length} commands`}
+            tooltip="Slash commands that run shell scripts instantly without calling the LLM. Users type /name in chat and get the output."
+            icon={<Zap className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+            action={
+              <Button variant="outline" size="sm" onClick={() => {
+                const name = prompt("Command name (e.g. status):");
+                if (name) update({ quick_commands: { ...cfg.quick_commands, [name]: { command: "", timeout: 30 } } });
+              }}>
+                <Plus className="h-3 w-3" />
+                Add
+              </Button>
+            }
+          >
+            {Object.keys(cfg.quick_commands).length === 0 ? (
+              <div className="p-5 text-center text-xs" style={{ color: "var(--oc-text-muted)" }}>
+                No quick commands. Users type /<em>name</em> and the shell command runs instantly (no LLM).
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {Object.entries(cfg.quick_commands).map(([name, cmd]) => (
+                  <div key={name} className="flex items-center gap-2 rounded-[5px] border p-2" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}>
+                    <span className="w-[80px] shrink-0 text-[11px] font-medium" style={{ color: "var(--oc-accent)", fontFamily: "var(--oc-mono)" }}>/{name}</span>
+                    <input
+                      value={cmd.command}
+                      onChange={(e) => update({ quick_commands: { ...cfg.quick_commands, [name]: { ...cmd, command: e.target.value } } })}
+                      placeholder="shell command"
+                      className="h-6 flex-1 rounded border px-1.5 text-[11px] outline-none"
+                      style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                    />
+                    <input
+                      type="number"
+                      value={cmd.timeout}
+                      onChange={(e) => update({ quick_commands: { ...cfg.quick_commands, [name]: { ...cmd, timeout: +e.target.value || 30 } } })}
+                      className="h-6 w-[50px] rounded border px-1 text-center text-[11px] outline-none"
+                      style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                      title="Timeout (seconds)"
+                    />
+                    <button onClick={() => { const { [name]: _, ...rest } = cfg.quick_commands; update({ quick_commands: rest }); }}
+                      className="inline-flex h-[22px] w-[22px] items-center justify-center rounded hover:bg-[var(--oc-bg3)]" style={{ color: "var(--oc-text-dim)" }}>
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* Cron jobs */}
+          <Section
+            title="Scheduled tasks"
+            subtitle={cfg.cron.length > 0 ? `${cfg.cron.filter(j => j.enabled).length} active · ${cfg.cron.filter(j => !j.enabled).length} paused` : undefined}
+            tooltip="Recurring prompts that run on a cron schedule. The agent executes the prompt automatically and can deliver the result to a chat."
+            icon={<Clock className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+            action={
+              <Button variant="outline" size="sm" onClick={() => update({
+                cron: [...cfg.cron, { id: `task-${cfg.cron.length + 1}`, schedule: "0 9 * * *", prompt: "", enabled: true }],
+              })}>
+                <Plus className="h-3 w-3" />
+                New task
+              </Button>
+            }
+          >
+            {cfg.cron.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-8">
+                <Clock className="h-6 w-6" style={{ color: "var(--oc-text-muted)" }} />
+                <div className="text-center text-xs" style={{ color: "var(--oc-text-muted)" }}>
+                  No scheduled tasks yet.<br />
+                  Set up recurring prompts — the agent runs them automatically.
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {cfg.cron.map((job, i) => {
+                  const cronEdit = (patch: Partial<typeof job>) =>
+                    update({ cron: cfg.cron.map((j, k) => k === i ? { ...j, ...patch } : j) });
+                  return (
+                    <div
+                      key={job.id}
+                      className="rounded-md"
+                      style={{
+                        background: "var(--oc-bg2)",
+                        border: `1px solid ${job.enabled ? "var(--oc-border)" : "var(--oc-border)"}`,
+                        opacity: job.enabled ? 1 : 0.55,
+                      }}
+                    >
+                      {/* Header row */}
+                      <div
+                        className="flex items-center gap-2.5 px-3 py-2"
+                        style={{ borderBottom: "1px solid var(--oc-border)" }}
+                      >
+                        <button
+                          onClick={() => cronEdit({ enabled: !job.enabled })}
+                          className="flex h-5 w-[34px] shrink-0 items-center rounded-full p-0.5"
+                          style={{
+                            background: job.enabled ? "var(--oc-accent)" : "var(--oc-bg3)",
+                            justifyContent: job.enabled ? "flex-end" : "flex-start",
+                          }}
+                        >
+                          <div
+                            className="h-3.5 w-3.5 rounded-full"
+                            style={{ background: job.enabled ? "#0b0d12" : "var(--oc-text-muted)" }}
+                          />
+                        </button>
+                        <input
+                          value={job.id}
+                          onChange={(e) => cronEdit({ id: e.target.value })}
+                          className="h-6 w-[140px] rounded border px-1.5 text-[12px] font-medium outline-none"
+                          style={{
+                            background: "transparent",
+                            borderColor: "transparent",
+                            color: "var(--color-foreground)",
+                          }}
+                          placeholder="Task name"
+                        />
+                        <span
+                          className="ml-auto text-[10.5px]"
+                          style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}
+                        >
+                          {describeCron(job.schedule)}
+                        </span>
+                        <button
+                          onClick={() => update({ cron: cfg.cron.filter((_, k) => k !== i) })}
+                          className="inline-flex h-[22px] w-[22px] items-center justify-center rounded hover:bg-[var(--oc-bg3)]"
+                          style={{ color: "var(--oc-text-dim)" }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+
+                      {/* Body */}
+                      <div className="flex flex-col gap-3 p-3">
+                        {/* Schedule */}
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-medium uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+                            Schedule
+                          </label>
+                          <div className="flex gap-2">
+                            <select
+                              value={SCHEDULE_PRESETS.find(p => p.cron === job.schedule) ? job.schedule : "__custom"}
+                              onChange={(e) => {
+                                if (e.target.value !== "__custom") cronEdit({ schedule: e.target.value });
+                              }}
+                              className="h-7 cursor-pointer rounded-[5px] border px-2 text-[11px]"
+                              style={{
+                                background: "var(--oc-bg3)",
+                                borderColor: "var(--oc-border)",
+                                color: "var(--color-foreground)",
+                              }}
+                            >
+                              {SCHEDULE_PRESETS.map((p) => (
+                                <option key={p.cron} value={p.cron}>{p.label}</option>
+                              ))}
+                              {!SCHEDULE_PRESETS.find(p => p.cron === job.schedule) && (
+                                <option value="__custom">Custom: {job.schedule}</option>
+                              )}
+                            </select>
+                            <input
+                              value={job.schedule}
+                              onChange={(e) => cronEdit({ schedule: e.target.value })}
+                              className="h-7 w-[140px] rounded-[5px] border px-2 text-[11px] outline-none"
+                              style={{
+                                background: "var(--oc-bg3)",
+                                borderColor: "var(--oc-border)",
+                                color: "var(--oc-text-dim)",
+                                fontFamily: "var(--oc-mono)",
+                              }}
+                              placeholder="* * * * *"
+                              title="Cron expression: minute hour day month weekday"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Prompt */}
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-medium uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+                            Prompt
+                          </label>
+                          <textarea
+                            value={job.prompt}
+                            onChange={(e) => cronEdit({ prompt: e.target.value })}
+                            rows={2}
+                            className="w-full resize-none rounded-[5px] border px-2 py-1.5 text-[11.5px] leading-relaxed outline-none"
+                            style={{
+                              background: "var(--oc-bg3)",
+                              borderColor: "var(--oc-border)",
+                              color: "var(--color-foreground)",
+                            }}
+                            placeholder="What should the agent do when this task runs?"
+                          />
+                        </div>
+
+                        {/* Deliver to */}
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-medium uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+                            Send response to
+                          </label>
+                          <div className="flex gap-2">
+                            <select
+                              value={job.deliver_to?.channel ?? ""}
+                              onChange={(e) =>
+                                cronEdit({
+                                  deliver_to: e.target.value
+                                    ? {
+                                        channel: e.target.value,
+                                        peer_id: job.deliver_to?.peer_id ?? "",
+                                        account_id: job.deliver_to?.account_id,
+                                      }
+                                    : undefined,
+                                })
+                              }
+                              className="h-7 cursor-pointer rounded-[5px] border px-2 text-[11px]"
+                              style={{
+                                background: "var(--oc-bg3)",
+                                borderColor: "var(--oc-border)",
+                                color: "var(--color-foreground)",
+                              }}
+                            >
+                              <option value="">Log only (no delivery)</option>
+                              <option value="telegram">Telegram</option>
+                              <option value="whatsapp">WhatsApp</option>
+                            </select>
+                            {job.deliver_to?.channel && (
+                              <input
+                                value={job.deliver_to?.peer_id ?? ""}
+                                onChange={(e) =>
+                                  cronEdit({
+                                    deliver_to: {
+                                      channel: job.deliver_to?.channel ?? "telegram",
+                                      peer_id: e.target.value,
+                                      account_id: job.deliver_to?.account_id,
+                                    },
+                                  })
+                                }
+                                className="h-7 flex-1 rounded-[5px] border px-2 text-[11px] outline-none"
+                                style={{
+                                  background: "var(--oc-bg3)",
+                                  borderColor: "var(--oc-border)",
+                                  color: "var(--color-foreground)",
+                                  fontFamily: "var(--oc-mono)",
+                                }}
+                                placeholder="Chat ID or phone number"
+                              />
+                            )}
+                          </div>
+                          {!job.deliver_to?.channel && (
+                            <p className="text-[10.5px]" style={{ color: "var(--oc-text-muted)" }}>
+                              Response will be logged but not sent to any chat.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Section>
+
+          {/* MCP tools */}
+          <Section title="MCP tools" subtitle={`${cfg.mcp_tools.length} enabled`}
+            tooltip="External tools the agent can use via the Model Context Protocol. These extend what the agent can do beyond just text responses."
+            icon={<List className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
+            <Field label="Tools" tooltip="External tools (MCP) available to this agent: search, memory, messaging, etc. Comma-separated list of tool names.">
+              <input value={cfg.mcp_tools.join(", ")}
+                onChange={(e) => update({ mcp_tools: e.target.value ? e.target.value.split(",").map(s => s.trim()).filter(Boolean) : [] })}
+                placeholder="memory_search, memory_write, send_message, ..."
+                className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} />
+            </Field>
+          </Section>
+
+          {/* Display & sessions */}
+          <Section title="Display & sessions"
+            tooltip="How the agent's responses appear in chat and how sessions are managed in group conversations."
+            icon={<Monitor className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
+            <FormGrid>
+              <Field label="Group sessions" tooltip="How sessions work in group chats. Shared — one context for the whole group. Per_user — each member gets their own conversation history.">
+                <select value={cfg.group_sessions}
+                  onChange={(e) => update({ group_sessions: e.target.value })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+                  <option value="shared">shared</option>
+                  <option value="per_user">per_user</option>
+                </select>
+              </Field>
+              <Field label="Max sessions" tooltip="Maximum number of active sessions. Oldest sessions are automatically evicted when this limit is exceeded.">
+                <input type="number" value={cfg.maxSessions}
+                  onChange={(e) => update({ maxSessions: +e.target.value || 100 })}
+                  className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                  style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} />
+              </Field>
+              <Field label="Tool progress" tooltip="Whether to show tool call activity to users. All — every call. New — only new ones. Off — hidden.">
+                <select value={cfg.display?.toolProgress ?? "all"}
+                  onChange={(e) => update({ display: { ...cfg.display, toolProgress: e.target.value } })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+                  <option value="all">all — show every tool call</option>
+                  <option value="new">new — only new tool calls</option>
+                  <option value="off">off — hide tool calls</option>
+                </select>
+              </Field>
+              <Field label="Streaming" tooltip="Stream output — text appears as it's generated, not all at once. Works in Telegram via message editing.">
+                <select value={cfg.display?.streaming === true ? "true" : cfg.display?.streaming === false ? "false" : "auto"}
+                  onChange={(e) => update({ display: { ...cfg.display, streaming: e.target.value === "auto" ? undefined : e.target.value === "true" } })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+                  <option value="auto">auto (platform default)</option>
+                  <option value="true">enabled</option>
+                  <option value="false">disabled</option>
+                </select>
+              </Field>
+            </FormGrid>
+          </Section>
+
+
+          {/* Claude Agent SDK */}
+          <Section title="Claude Agent SDK"
+            tooltip="Native Claude Agent SDK controls passed through buildSdkOptions. These do not create a separate LLM runtime."
+            icon={<Key className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
+            <div className="flex flex-col gap-4">
+              <div
+                className="rounded-md border px-3 py-2.5"
+                style={{
+                  background: "var(--oc-bg2)",
+                  borderColor: "var(--oc-accent-ring)",
+                  color: "var(--oc-text-dim)",
+                }}
+              >
+                <div className="mb-1 flex items-center gap-2">
+                  <Key className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />
+                  <span className="text-[12px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+                    Strict native runtime
+                  </span>
+                </div>
+                <p className="text-[11.5px] leading-relaxed">
+                  These settings are passed to Claude Agent SDK/Claude Code. OpenClaw does not run an outer LLM failover loop or a custom tool execution path.
+                </p>
+              </div>
+              <FormGrid>
+                <Field label="Fallback model" tooltip="Native SDK fallbackModel. Used only inside the Claude Agent SDK query lifecycle, not as OpenClaw-side provider routing.">
+                  <select
+                    value={cfg.sdk.fallbackModel || ""}
+                    onChange={(e) => updateSdk({ fallbackModel: e.target.value })}
+                    className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                  >
+                    <option value="">none</option>
+                    {MODELS.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Allowed built-in tools" tooltip="SDK built-in tools, comma-separated. Example: Read, Edit, Bash. Leave empty to use runtime defaults.">
+                  <input
+                    value={arrayToCsv(cfg.sdk.allowedTools)}
+                    onChange={(e) => updateSdk({ allowedTools: csvToArray(e.target.value) })}
+                    placeholder="Read, Edit, Bash"
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+                <Field label="Disallowed built-in tools" tooltip="SDK built-in tools to deny, comma-separated. Useful for explicit restrictions.">
+                  <input
+                    value={arrayToCsv(cfg.sdk.disallowedTools)}
+                    onChange={(e) => updateSdk({ disallowedTools: csvToArray(e.target.value) })}
+                    placeholder="WebSearch, Bash"
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+                <Field label="Permission mode" tooltip="Native SDK permission mode. default keeps approvals/policy normal; dontAsk is stricter headless policy behavior.">
+                  <select
+                    value={cfg.sdk.permissions.mode}
+                    onChange={(e) => updateSdkPermissions({ mode: e.target.value })}
+                    className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                  >
+                    {SDK_PERMISSION_MODES.map((mode) => (
+                      <option key={mode.value} value={mode.value}>{mode.label}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="MCP allowlist" tooltip="MCP tools that can pass canUseTool when MCP is allowed. Comma-separated.">
+                  <input
+                    value={arrayToCsv(cfg.sdk.permissions.allowed_mcp_tools)}
+                    onChange={(e) => updateSdkPermissions({ allowed_mcp_tools: csvToArray(e.target.value) })}
+                    placeholder="memory_search, session_search"
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+                <Field label="Denied Bash patterns" tooltip="Shell command substrings blocked by the SDK permission hook. Comma-separated.">
+                  <input
+                    value={arrayToCsv(cfg.sdk.permissions.denied_bash_patterns)}
+                    onChange={(e) => updateSdkPermissions({ denied_bash_patterns: csvToArray(e.target.value) })}
+                    placeholder="npm publish, rm -rf"
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+              </FormGrid>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                <ToggleField label="Prompt suggestions" tooltip="Show SDK prompt_suggestion events as the next suggested message." checked={cfg.sdk.promptSuggestions} onChange={(checked) => updateSdk({ promptSuggestions: checked })} />
+                <ToggleField label="Progress summaries" tooltip="Surface SDK task_progress events in chat while work is running." checked={cfg.sdk.agentProgressSummaries} onChange={(checked) => updateSdk({ agentProgressSummaries: checked })} />
+                <ToggleField label="Partial messages" tooltip="Stream native partial message deltas when the SDK emits them." checked={cfg.sdk.includePartialMessages} onChange={(checked) => updateSdk({ includePartialMessages: checked })} />
+                <ToggleField label="Hook events" tooltip="Surface SDK hook lifecycle events in the chat debug rail." checked={cfg.sdk.includeHookEvents} onChange={(checked) => updateSdk({ includeHookEvents: checked })} />
+                <ToggleField label="File checkpoints" tooltip="Enable native SDK file checkpoint handles for rewind." checked={cfg.sdk.enableFileCheckpointing} onChange={(checked) => updateSdk({ enableFileCheckpointing: checked })} />
+                <ToggleField label="Sandbox" tooltip="Enable SDK sandbox options when available in the environment." checked={cfg.sdk.sandbox.enabled} onChange={(checked) => updateSdkSandbox({ enabled: checked })} />
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                <ToggleField label="Allow MCP" checked={cfg.sdk.permissions.allow_mcp} onChange={(checked) => updateSdkPermissions({ allow_mcp: checked })} />
+                <ToggleField label="Allow Bash" checked={cfg.sdk.permissions.allow_bash} onChange={(checked) => updateSdkPermissions({ allow_bash: checked })} />
+                <ToggleField label="Allow Web" checked={cfg.sdk.permissions.allow_web} onChange={(checked) => updateSdkPermissions({ allow_web: checked })} />
+                <ToggleField label="Sandbox required" checked={cfg.sdk.sandbox.failIfUnavailable} onChange={(checked) => updateSdkSandbox({ failIfUnavailable: checked })} />
+                <ToggleField label="Sandbox allows Bash" checked={cfg.sdk.sandbox.autoAllowBashIfSandboxed} onChange={(checked) => updateSdkSandbox({ autoAllowBashIfSandboxed: checked })} />
+                <ToggleField label="Unsandboxed commands" checked={cfg.sdk.sandbox.allowUnsandboxedCommands} onChange={(checked) => updateSdkSandbox({ allowUnsandboxedCommands: checked })} />
+              </div>
+
+              <FormGrid>
+                <Field label="Network allow domains" tooltip="Sandbox network domains to allow. Comma-separated.">
+                  <input
+                    value={arrayToCsv(cfg.sdk.sandbox.network.allowedDomains)}
+                    onChange={(e) => updateSdkSandboxNetwork({ allowedDomains: csvToArray(e.target.value) })}
+                    placeholder="api.example.com, docs.example.com"
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+                <Field label="Network deny domains" tooltip="Sandbox network domains to deny. Comma-separated.">
+                  <input
+                    value={arrayToCsv(cfg.sdk.sandbox.network.deniedDomains)}
+                    onChange={(e) => updateSdkSandboxNetwork({ deniedDomains: csvToArray(e.target.value) })}
+                    placeholder="metadata.google.internal"
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+                <Field label="Filesystem allow write" tooltip="Sandbox write paths to allow. Comma-separated.">
+                  <input
+                    value={arrayToCsv(cfg.sdk.sandbox.filesystem.allowWrite)}
+                    onChange={(e) => updateSdkSandboxFilesystem({ allowWrite: csvToArray(e.target.value) })}
+                    placeholder="agents/example, /tmp/openclaw"
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+                <Field label="Filesystem deny write" tooltip="Sandbox write paths to deny. Comma-separated.">
+                  <input
+                    value={arrayToCsv(cfg.sdk.sandbox.filesystem.denyWrite)}
+                    onChange={(e) => updateSdkSandboxFilesystem({ denyWrite: csvToArray(e.target.value) })}
+                    placeholder=".env, config.yml"
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+              </FormGrid>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                <ToggleField label="Managed domains only" checked={cfg.sdk.sandbox.network.allowManagedDomainsOnly} onChange={(checked) => updateSdkSandboxNetwork({ allowManagedDomainsOnly: checked })} />
+                <ToggleField label="Allow local binding" checked={cfg.sdk.sandbox.network.allowLocalBinding} onChange={(checked) => updateSdkSandboxNetwork({ allowLocalBinding: checked })} />
+                <ToggleField label="Managed read paths only" checked={cfg.sdk.sandbox.filesystem.allowManagedReadPathsOnly} onChange={(checked) => updateSdkSandboxFilesystem({ allowManagedReadPathsOnly: checked })} />
+              </div>
+            </div>
+          </Section>
+
+
+          {/* Hooks */}
+          <Section title="Hooks" subtitle={`${cfg.hooks.length} hooks`}
+            tooltip="Trigger webhooks or shell scripts when agent events happen — e.g. after a query completes, when a session resets, or when a cron job fires."
+            icon={<Globe className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+            action={
+              <Button variant="outline" size="sm" onClick={() => update({
+                hooks: [...cfg.hooks, { event: "on_after_query", action: "webhook", url: "", timeout_ms: 5000 }],
+              })}>
+                <Plus className="h-3 w-3" />
+                Add hook
+              </Button>
+            }>
+            {cfg.hooks.length === 0 ? (
+              <div className="p-5 text-center text-xs" style={{ color: "var(--oc-text-muted)" }}>
+                No hooks. Trigger webhooks or scripts on agent events.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {cfg.hooks.map((hook, i) => (
+                  <div key={i} className="flex items-center gap-2 rounded-[5px] border p-2" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}>
+                    <select value={hook.event}
+                      onChange={(e) => update({ hooks: cfg.hooks.map((h, k) => k === i ? { ...h, event: e.target.value } : h) })}
+                      className="h-6 cursor-pointer rounded border px-1 text-[11px]"
+                      style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+                      {HOOK_EVENTS.map((e) => <option key={e} value={e}>{e}</option>)}
+                    </select>
+                    <select value={hook.action}
+                      onChange={(e) => update({ hooks: cfg.hooks.map((h, k) => k === i ? { ...h, action: e.target.value } : h) })}
+                      className="h-6 w-[80px] cursor-pointer rounded border px-1 text-[11px]"
+                      style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+                      <option value="webhook">webhook</option>
+                      <option value="script">script</option>
+                    </select>
+                    <input value={hook.action === "webhook" ? hook.url ?? "" : hook.command ?? ""}
+                      onChange={(e) => update({ hooks: cfg.hooks.map((h, k) => k === i ? { ...h, [h.action === "webhook" ? "url" : "command"]: e.target.value } : h) })}
+                      placeholder={hook.action === "webhook" ? "https://..." : "script.sh"}
+                      className="h-6 flex-1 rounded border px-1.5 text-[11px] outline-none"
+                      style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} />
+                    <button onClick={() => update({ hooks: cfg.hooks.filter((_, k) => k !== i) })}
+                      className="inline-flex h-[22px] w-[22px] items-center justify-center rounded hover:bg-[var(--oc-bg3)]" style={{ color: "var(--oc-text-dim)" }}>
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* Advanced */}
+          <Section title="Advanced"
+            tooltip="Power-user settings: sub-agent delegation and SDK-native orchestration boundaries."
+            icon={<Terminal className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
+            <div className="flex flex-col gap-3.5">
+              <Field label="Subagents" tooltip="Other agents this one can delegate subtasks to. For example, one agent talks to the user while another does research.">
+                <input value={cfg.subagents.allow.join(", ")}
+                  onChange={(e) => update({ subagents: { allow: e.target.value ? e.target.value.split(",").map(s => s.trim()).filter(Boolean) : [] } })}
+                  placeholder="research-agent, code-agent"
+                  className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                  style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} />
+              </Field>
+            </div>
+          </Section>
+        </>
+      ) : (
+        /* Raw YAML editor */
+        <div
+          className="overflow-hidden rounded-md"
+          style={{
+            background: "var(--oc-bg1)",
+            border: "1px solid var(--oc-border)",
+          }}
+        >
+          <div
+            className="flex items-center justify-between px-3 py-2"
+            style={{
+              borderBottom: "1px solid var(--oc-border)",
+              background: "var(--oc-bg2)",
+            }}
+          >
+            <span className="text-[11.5px]" style={{ color: "var(--oc-text-dim)", fontFamily: "var(--oc-mono)" }}>
+              agents/{agentId}/agent.yml
+            </span>
+            <span
+              className="text-[10.5px]"
+              style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}
+            >
+              YAML &middot; {rawYaml.split("\n").length} lines
+            </span>
+          </div>
+          <textarea
+            value={rawYaml}
+            onChange={(e) => {
+              setRawYaml(e.target.value);
+              setDirty(true);
+            }}
+            spellCheck={false}
+            className="h-[440px] w-full resize-none border-none p-3.5 outline-none"
+            style={{
+              background: "#07090d",
+              color: "var(--color-foreground)",
+              fontFamily: "var(--oc-mono)",
+              fontSize: "12.5px",
+              lineHeight: "20px",
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Config sub-components                                              */
+/* ------------------------------------------------------------------ */
+
+function Section({
+  title,
+  subtitle,
+  icon,
+  tooltip,
+  action,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  icon?: React.ReactNode;
+  tooltip?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="rounded-md"
+      style={{ background: "var(--oc-bg1)", border: "1px solid var(--oc-border)" }}
+    >
+      <div
+        className="flex items-center justify-between gap-2.5 px-3.5 py-2.5"
+        style={{ borderBottom: "1px solid var(--oc-border)" }}
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          {icon}
+          <span className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+            {title}
+          </span>
+          {tooltip && <Tip text={tooltip} />}
+          {subtitle && (
+            <span className="text-[11.5px]" style={{ color: "var(--oc-text-muted)" }}>
+              &middot; {subtitle}
+            </span>
+          )}
+        </div>
+        {action}
+      </div>
+      <div className="p-3.5">{children}</div>
+    </div>
+  );
+}
+
+function FormGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-2 gap-3.5">{children}</div>
+  );
+}
+
+function Tip({ text }: { text: string }) {
+  return (
+    <span className="group relative ml-1 inline-flex cursor-help">
+      <HelpCircle className="h-3 w-3" style={{ color: "var(--oc-text-muted)", opacity: 0.6 }} />
+      <span
+        className="pointer-events-none absolute bottom-full left-1/2 mb-1.5 hidden w-max max-w-[260px] -translate-x-1/2 rounded-md px-2.5 py-1.5 text-[11px] font-normal normal-case tracking-normal leading-[1.45] group-hover:block"
+        style={{
+          zIndex: 9999,
+          background: "var(--oc-bg3)",
+          border: "1px solid var(--oc-border)",
+          color: "var(--color-foreground)",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+        }}
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  tooltip,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  tooltip?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <label
+        className="flex items-center text-[11px] font-medium uppercase tracking-[0.4px]"
+        style={{ color: "var(--oc-text-muted)" }}
+      >
+        {label}
+        {tooltip && <Tip text={tooltip} />}
+      </label>
+      {children}
+      {hint && (
+        <p className="text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
+          {hint}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ToggleField({
+  label,
+  checked,
+  onChange,
+  tooltip,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  tooltip?: string;
+}) {
+  return (
+    <label
+      className="flex min-h-8 cursor-pointer items-center justify-between gap-3 rounded-[5px] border px-2.5 py-1.5 text-xs"
+      style={{
+        background: "var(--oc-bg2)",
+        borderColor: "var(--oc-border)",
+        color: "var(--color-foreground)",
+      }}
+    >
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span className="truncate">{label}</span>
+        {tooltip && <Tip text={tooltip} />}
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ accentColor: "var(--oc-accent)" }}
+      />
+    </label>
+  );
+}
+
+function RoutesTable({
+  routes,
+  allowlist,
+  onChange,
+  onAllowlistChange,
+}: {
+  routes: AgentConfig["routes"];
+  allowlist: Record<string, string[]>;
+  onChange: (rs: NonNullable<AgentConfig["routes"]>) => void;
+  onAllowlistChange: (al: Record<string, string[]>) => void;
+}) {
+  if (!routes) return null;
+  const del = (i: number) => onChange(routes.filter((_, j) => j !== i));
+  const edit = (i: number, patch: Partial<(typeof routes)[0]>) =>
+    onChange(routes.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  return (
+    <div className="flex flex-col gap-0">
+      {routes.map((r, i) => {
+        const isLast = i === routes.length - 1;
+        const channelIds = (allowlist[r.channel] ?? []).join(", ");
+        return (
+          <div
+            key={i}
+            className="flex flex-col gap-2.5 px-3 py-3"
+            style={{
+              borderBottom: isLast ? "none" : "1px solid var(--oc-border)",
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <select
+                value={r.channel}
+                onChange={(e) => edit(i, { channel: e.target.value })}
+                className="h-7 cursor-pointer rounded-[5px] border px-1.5 text-[11.5px] font-medium"
+                style={{
+                  background: "var(--oc-bg3)",
+                  borderColor: "var(--oc-border)",
+                  color: "var(--color-foreground)",
+                }}
+              >
+                <option value="telegram">Telegram</option>
+                <option value="whatsapp">WhatsApp</option>
+              </select>
+              <select
+                value={r.scope}
+                onChange={(e) => edit(i, { scope: e.target.value })}
+                className="h-7 cursor-pointer rounded-[5px] border px-1.5 text-[11.5px]"
+                style={{
+                  background: "var(--oc-bg3)",
+                  borderColor: "var(--oc-border)",
+                  color: "var(--color-foreground)",
+                }}
+              >
+                <option value="dm">DM only</option>
+                <option value="group">Groups only</option>
+                <option value="any">DM + Groups</option>
+              </select>
+              {r.scope !== "dm" && (
+                <label className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--color-foreground)" }}>
+                  <input
+                    type="checkbox"
+                    checked={r.mentionOnly ?? false}
+                    onChange={(e) => edit(i, { mentionOnly: e.target.checked })}
+                    style={{ accentColor: "var(--oc-accent)" }}
+                  />
+                  @mention only
+                </label>
+              )}
+              <button
+                onClick={() => del(i)}
+                className="ml-auto inline-flex h-[22px] w-[22px] items-center justify-center rounded hover:bg-[var(--oc-bg3)]"
+                style={{ color: "var(--oc-text-dim)" }}
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <Shield className="h-3 w-3" style={{ color: "var(--oc-text-muted)" }} />
+                <span className="text-[10px] font-medium uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+                  Allowed IDs
+                </span>
+              </div>
+              <input
+                value={channelIds}
+                onChange={(e) =>
+                  onAllowlistChange({
+                    ...allowlist,
+                    [r.channel]: e.target.value
+                      ? e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
+                      : [],
+                  })
+                }
+                placeholder="* for everyone, or comma-separated user IDs"
+                className="h-6 flex-1 rounded-[5px] border px-1.5 text-[11px] outline-none"
+                style={{
+                  background: "var(--oc-bg3)",
+                  borderColor: "var(--oc-border)",
+                  color: "var(--color-foreground)",
+                  fontFamily: "var(--oc-mono)",
+                }}
+              />
+            </div>
+          </div>
+        );
+      })}
+      {routes.length === 0 && (
+        <div className="p-5 text-center text-xs" style={{ color: "var(--oc-text-muted)" }}>
+          No routes. This agent won&apos;t receive any messages.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Files Tab                                                          */
+/* ------------------------------------------------------------------ */
+
+function FilesTab({ serverId, agentId }: { serverId: string; agentId: string }) {
+  const [files, setFiles] = useState<AgentFile[]>([]);
+  const [selected, setSelected] = useState<string>("");
+  const [content, setContent] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [newFileOpen, setNewFileOpen] = useState(false);
+  const [newFileName, setNewFileName] = useState("");
+
+  const fetchFiles = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/agents/${agentId}/files`);
+      if (res.ok) {
+        const d = await res.json();
+        const list: AgentFile[] = Array.isArray(d) ? d : d.files ?? [];
+        setFiles(list);
+        if (list.length > 0 && !selected) {
+          setSelected(list[0].name);
+        }
+      }
+    } catch {
+      // silently fail
+    }
+  }, [serverId, agentId, selected]);
+
+  const fetchContent = useCallback(async () => {
+    if (!selected) return;
+    try {
+      const res = await fetch(
+        `/api/fleet/${serverId}/agents/${agentId}/files/${encodeURIComponent(selected)}`,
+      );
+      if (res.ok) {
+        const d = await res.json();
+        setContent(d.content ?? "");
+        setDirty(false);
+      }
+    } catch {
+      // silently fail
+    }
+  }, [serverId, agentId, selected]);
+
+  useEffect(() => {
+    fetchFiles();
+  }, [fetchFiles]);
+
+  useEffect(() => {
+    fetchContent();
+  }, [fetchContent]);
+
+  // Cmd/Ctrl+S to save
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  });
+
+  const handleSave = async () => {
+    if (!selected || !dirty) return;
+    setSaving(true);
+    try {
+      await fetch(
+        `/api/fleet/${serverId}/agents/${agentId}/files/${encodeURIComponent(selected)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        },
+      );
+      setDirty(false);
+    } catch {
+      // silently fail
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleNewFile = async () => {
+    if (!newFileName) return;
+    try {
+      await fetch(
+        `/api/fleet/${serverId}/agents/${agentId}/files/${encodeURIComponent(newFileName)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: "" }),
+        },
+      );
+      setNewFileOpen(false);
+      setNewFileName("");
+      setSelected(newFileName);
+      await fetchFiles();
+    } catch {
+      // silently fail
+    }
+  };
+
+  const handleDeleteFile = async () => {
+    if (!selected || selected === "CLAUDE.md") return;
+    try {
+      await fetch(
+        `/api/fleet/${serverId}/agents/${agentId}/files/${encodeURIComponent(selected)}`,
+        { method: "DELETE" },
+      );
+      setSelected("");
+      await fetchFiles();
+    } catch {
+      // silently fail
+    }
+  };
+
+  const file = files.find((f) => f.name === selected);
+
+  return (
+    <div className="flex h-full" style={{ minHeight: 520 }}>
+      {/* File list */}
+      <div
+        className="flex w-[260px] flex-col"
+        style={{
+          borderRight: "1px solid var(--oc-border)",
+          background: "var(--oc-bg1)",
+        }}
+      >
+        <div
+          className="flex items-center justify-between px-3 py-2.5"
+          style={{ borderBottom: "1px solid var(--oc-border)" }}
+        >
+          <span
+            className="text-[11px] uppercase tracking-[0.5px]"
+            style={{ color: "var(--oc-text-muted)" }}
+          >
+            Files ({files.length})
+          </span>
+          <button
+            onClick={() => setNewFileOpen(true)}
+            className="inline-flex h-[22px] w-[22px] items-center justify-center rounded hover:bg-[var(--oc-bg3)]"
+            style={{ color: "var(--oc-text-dim)" }}
+            title="New file"
+          >
+            <Plus className="h-3 w-3" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto p-1">
+          {files.map((f) => {
+            const active = f.name === selected;
+            return (
+              <button
+                key={f.name}
+                onClick={() => setSelected(f.name)}
+                className="mb-px flex w-full flex-col gap-0.5 rounded-[5px] p-2 text-left"
+                style={{
+                  background: active ? "var(--oc-accent-soft)" : "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                <div className="flex items-center gap-1.5">
+                  <FileText
+                    className="h-3 w-3"
+                    style={{ color: active ? "var(--oc-accent)" : "var(--oc-text-muted)" }}
+                  />
+                  <span
+                    className="flex-1 truncate text-xs"
+                    style={{
+                      color: active ? "var(--oc-accent)" : "var(--color-foreground)",
+                      fontFamily: "var(--oc-mono)",
+                    }}
+                  >
+                    {f.name}
+                  </span>
+                  {f.special === "system" && (
+                    <span
+                      className="rounded px-1 py-px text-[10px] font-medium"
+                      style={{
+                        background: "var(--oc-accent-soft)",
+                        color: "var(--oc-accent)",
+                        border: "1px solid var(--oc-accent-ring)",
+                      }}
+                    >
+                      PROMPT
+                    </span>
+                  )}
+                </div>
+                <div
+                  className="flex gap-2 text-[10.5px]"
+                  style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}
+                >
+                  <span>{(f.size / 1024).toFixed(1)}k</span>
+                  <span>&middot;</span>
+                  <span>
+                    {new Date(f.updatedAt).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Editor */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div
+          className="flex items-center justify-between gap-2.5 px-3.5 py-2.5"
+          style={{
+            borderBottom: "1px solid var(--oc-border)",
+            background: "var(--oc-bg1)",
+          }}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <FileText className="h-3.5 w-3.5" style={{ color: "var(--oc-text-muted)" }} />
+            <span
+              className="text-[13px]"
+              style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+            >
+              {selected || "---"}
+            </span>
+            {dirty && (
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full"
+                style={{ background: "var(--oc-yellow)" }}
+              />
+            )}
+            <span
+              className="text-[11px]"
+              style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}
+            >
+              &middot; {content.split("\n").length} lines &middot; {content.length} chars
+            </span>
+          </div>
+          <div className="flex gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigator.clipboard.writeText(content)}
+            >
+              <Copy className="h-3 w-3" />
+              Copy
+            </Button>
+            {file?.special !== "system" && selected && (
+              <Button variant="ghost" size="sm" onClick={handleDeleteFile}>
+                <Trash2 className="h-3 w-3" />
+                Delete
+              </Button>
+            )}
+            <Button size="sm" disabled={!dirty || saving} onClick={handleSave}>
+              <Save className="h-3 w-3" />
+              Save (Cmd+S)
+            </Button>
+          </div>
+        </div>
+        <div className="relative flex-1 overflow-hidden" style={{ background: "#07090d" }}>
+          <textarea
+            value={content}
+            onChange={(e) => {
+              setContent(e.target.value);
+              setDirty(true);
+            }}
+            spellCheck={false}
+            className="h-full w-full resize-none border-none p-3.5 outline-none"
+            style={{
+              background: "transparent",
+              color: "var(--color-foreground)",
+              fontFamily: "var(--oc-mono)",
+              fontSize: "13px",
+              lineHeight: "22px",
+            }}
+          />
+        </div>
+        <div
+          className="flex items-center justify-between px-3.5 py-1.5 text-[10.5px]"
+          style={{
+            borderTop: "1px solid var(--oc-border)",
+            background: "var(--oc-bg2)",
+            color: "var(--oc-text-muted)",
+            fontFamily: "var(--oc-mono)",
+          }}
+        >
+          <span>UTF-8 &middot; Markdown &middot; LF</span>
+          <span>
+            agents/{agentId}/{selected}
+          </span>
+        </div>
+      </div>
+
+      {/* New file dialog */}
+      <Dialog open={newFileOpen} onOpenChange={setNewFileOpen}>
+        <DialogContent
+          className="sm:max-w-[400px]"
+          style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border-mid)" }}
+        >
+          <DialogHeader>
+            <DialogTitle>New file</DialogTitle>
+            <DialogDescription>Enter a filename for the new file.</DialogDescription>
+          </DialogHeader>
+          <input
+            value={newFileName}
+            onChange={(e) => setNewFileName(e.target.value)}
+            placeholder="e.g. instructions.md"
+            className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+            style={{
+              background: "var(--oc-bg3)",
+              borderColor: "var(--oc-border)",
+              color: "var(--color-foreground)",
+              fontFamily: "var(--oc-mono)",
+            }}
+            onKeyDown={(e) => e.key === "Enter" && handleNewFile()}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewFileOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={!newFileName} onClick={handleNewFile}>
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Skills Tab                                                         */
+/* ------------------------------------------------------------------ */
+
+function SkillsTab({ serverId, agentId }: { serverId: string; agentId: string }) {
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [gitOpen, setGitOpen] = useState(false);
+  const [gitUrl, setGitUrl] = useState("");
+  const [gitBranch, setGitBranch] = useState("main");
+  const [gitName, setGitName] = useState("");
+  const [viewing, setViewing] = useState<SkillInfo | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchSkills = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/agents/${agentId}/skills`);
+      if (res.ok) {
+        const d = await res.json();
+        setSkills(Array.isArray(d) ? d : d.skills ?? []);
+      }
+    } catch {
+      // silently fail
+    }
+  }, [serverId, agentId]);
+
+  useEffect(() => {
+    fetchSkills();
+  }, [fetchSkills]);
+
+  const handleUpload = async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      await fetch(`/api/fleet/${serverId}/agents/${agentId}/skills/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      setUploadOpen(false);
+      await fetchSkills();
+    } catch {
+      // silently fail
+    }
+  };
+
+  const handleGitClone = async () => {
+    if (!gitUrl) return;
+    try {
+      await fetch(`/api/fleet/${serverId}/agents/${agentId}/skills/git`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: gitUrl,
+          branch: gitBranch,
+          name: gitName || undefined,
+        }),
+      });
+      setGitOpen(false);
+      setGitUrl("");
+      await fetchSkills();
+    } catch {
+      // silently fail
+    }
+  };
+
+  const handleSkillAttachment = async (name: string, attached: boolean) => {
+    try {
+      await fetch(`/api/fleet/${serverId}/agents/${agentId}/skills`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: attached ? "detach" : "attach",
+          skillName: name,
+        }),
+      });
+      await fetchSkills();
+    } catch {
+      // silently fail
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3.5 p-5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs" style={{ color: "var(--oc-text-muted)" }}>
+          {skills.filter((skill) => skill.attached).length} of {skills.length} catalog skills attached to{" "}
+          <span style={{ fontFamily: "var(--oc-mono)", color: "var(--oc-text-dim)" }}>
+            agents/{agentId}/.claude/skills/
+          </span>
+        </span>
+        <div className="flex gap-1.5">
+          <Button variant="outline" size="sm" onClick={() => setGitOpen(true)}>
+            <GitBranch className="h-3 w-3" />
+            Clone from git
+          </Button>
+          <Button size="sm" onClick={() => setUploadOpen(true)}>
+            <Upload className="h-3 w-3" />
+            Upload skill
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
+        {skills.map((s) => (
+          <div
+            key={s.name}
+            className="flex flex-col gap-2.5 rounded-md p-3.5 transition-colors"
+            style={{
+              background: "var(--oc-bg1)",
+              border: "1px solid var(--oc-border)",
+            }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2 overflow-hidden">
+                <div
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[5px]"
+                  style={{ background: "var(--oc-accent-soft)", color: "var(--oc-accent)" }}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                </div>
+                <span
+                  className="truncate text-[13px] font-semibold"
+                  style={{
+                    color: "var(--color-foreground)",
+                    fontFamily: "var(--oc-mono)",
+                  }}
+                >
+                  {s.name}
+                </span>
+              </div>
+            </div>
+            <p
+              className="text-[11.5px] leading-relaxed"
+              style={{ color: "var(--oc-text-dim)", minHeight: 44 }}
+            >
+              {s.description}
+            </p>
+            <div className="flex flex-wrap gap-1">
+              <span
+                className="inline-flex rounded px-1.5 py-px text-[10px] font-medium"
+                style={{
+                  background: s.attached ? "var(--oc-accent-soft)" : "rgba(255,255,255,0.03)",
+                  border: `1px solid ${s.attached ? "var(--oc-accent-ring)" : "var(--oc-border)"}`,
+                  color: s.attached ? "var(--oc-accent)" : "var(--oc-text-muted)",
+                }}
+              >
+                {s.attached ? "attached" : "available"}
+              </span>
+              {!s.catalog && (
+                <span
+                  className="inline-flex rounded px-1.5 py-px text-[10px] font-medium"
+                  style={{
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid var(--oc-border)",
+                    color: "var(--oc-text-muted)",
+                  }}
+                >
+                  local only
+                </span>
+              )}
+              {(s.platforms ?? []).map((p) => (
+                <span
+                  key={p}
+                  className="inline-flex rounded px-1.5 py-px text-[10px] font-medium"
+                  style={{
+                    background:
+                      p === "all"
+                        ? "var(--oc-accent-soft)"
+                        : "rgba(255,255,255,0.04)",
+                    border: `1px solid ${p === "all" ? "var(--oc-accent-ring)" : "var(--oc-border)"}`,
+                    color:
+                      p === "all" ? "var(--oc-accent)" : "var(--oc-text-dim)",
+                  }}
+                >
+                  {p}
+                </span>
+              ))}
+              {(s.tags ?? []).map((t) => (
+                <span
+                  key={t}
+                  className="inline-flex rounded px-1.5 py-px text-[10px] font-medium"
+                  style={{
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid var(--oc-border)",
+                    color: "var(--oc-text-muted)",
+                  }}
+                >
+                  #{t}
+                </span>
+              ))}
+            </div>
+            <div
+              className="mt-0.5 flex gap-1.5 border-t pt-2"
+              style={{ borderColor: "var(--oc-border)" }}
+            >
+              <Button variant="ghost" size="sm" onClick={() => setViewing(s)}>
+                View
+              </Button>
+              <Button
+                variant={s.attached ? "ghost" : "outline"}
+                size="sm"
+                className="ml-auto"
+                disabled={!s.catalog && !s.attached}
+                onClick={() => handleSkillAttachment(s.name, Boolean(s.attached))}
+              >
+                {s.attached ? (
+                  <>
+                    <Trash2 className="h-3 w-3" />
+                    Detach
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-3 w-3" />
+                    Attach
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {skills.length === 0 && (
+        <div className="p-10 text-center text-xs" style={{ color: "var(--oc-text-muted)" }}>
+          No skills installed.
+        </div>
+      )}
+
+      {/* Upload dialog */}
+      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+        <DialogContent
+          className="sm:max-w-[480px]"
+          style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border-mid)" }}
+        >
+          <DialogHeader>
+            <DialogTitle>Upload skill</DialogTitle>
+            <DialogDescription>
+              Drop a .zip, .tar.gz, or .skill archive. Must contain SKILL.md.
+            </DialogDescription>
+          </DialogHeader>
+          <label
+            className="flex cursor-pointer flex-col items-center gap-2.5 rounded-md border-2 border-dashed p-8"
+            style={{
+              borderColor: "var(--oc-border-mid)",
+              background: "var(--oc-bg2)",
+            }}
+          >
+            <Upload className="h-6 w-6" style={{ color: "var(--oc-accent)" }} />
+            <span className="text-[13px]" style={{ color: "var(--color-foreground)" }}>
+              Drop a skill archive here, or{" "}
+              <span style={{ color: "var(--oc-accent)" }}>browse</span>
+            </span>
+            <span className="text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+              .zip &middot; .tar.gz &middot; .tgz &middot; .skill &middot; max 10 MB
+            </span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              accept=".zip,.tar.gz,.tgz,.skill"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleUpload(file);
+              }}
+            />
+          </label>
+        </DialogContent>
+      </Dialog>
+
+      {/* Git clone dialog */}
+      <Dialog open={gitOpen} onOpenChange={setGitOpen}>
+        <DialogContent
+          className="sm:max-w-[480px]"
+          style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border-mid)" }}
+        >
+          <DialogHeader>
+            <DialogTitle>Clone skill from git</DialogTitle>
+            <DialogDescription>
+              Repo must contain a SKILL.md at root or one level deep.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <Field label="Git URL">
+              <input
+                value={gitUrl}
+                onChange={(e) => setGitUrl(e.target.value)}
+                placeholder="https://github.com/example/skill-incident-report.git"
+                className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                style={{
+                  background: "var(--oc-bg3)",
+                  borderColor: "var(--oc-border)",
+                  color: "var(--color-foreground)",
+                  fontFamily: "var(--oc-mono)",
+                }}
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Ref (branch / tag)">
+                <input
+                  value={gitBranch}
+                  onChange={(e) => setGitBranch(e.target.value)}
+                  className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                    fontFamily: "var(--oc-mono)",
+                  }}
+                />
+              </Field>
+              <Field label="Name override">
+                <input
+                  value={gitName}
+                  onChange={(e) => setGitName(e.target.value)}
+                  placeholder="(from repo name)"
+                  className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                    fontFamily: "var(--oc-mono)",
+                  }}
+                />
+              </Field>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGitOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={!gitUrl} onClick={handleGitClone}>
+              <GitBranch className="h-3 w-3" />
+              Clone
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Skill viewer dialog */}
+      <Dialog open={!!viewing} onOpenChange={(open) => !open && setViewing(null)}>
+        <DialogContent
+          className="sm:max-w-[640px]"
+          style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border-mid)" }}
+        >
+          <DialogHeader>
+            <DialogTitle>{viewing?.name}</DialogTitle>
+            <DialogDescription>{viewing?.description}</DialogDescription>
+          </DialogHeader>
+          <div
+            className="max-h-[480px] overflow-auto whitespace-pre-wrap p-4 text-[12.5px] leading-relaxed"
+            style={{
+              fontFamily: "var(--oc-mono)",
+              color: "var(--color-foreground)",
+            }}
+          >
+            {viewing && (
+              <>
+                <div style={{ color: "var(--oc-text-muted)" }}>
+                  ---{"\n"}
+                  name: {viewing.name}
+                  {"\n"}
+                  description: {viewing.description}
+                  {"\n"}
+                  platforms: [{viewing.platforms.join(", ")}]
+                  {"\n"}
+                  tags: [{viewing.tags.join(", ")}]
+                  {"\n"}
+                  ---
+                </div>
+                {"\n\n"}# {viewing.name}
+                {"\n\n"}
+                {viewing.description}
+                {"\n\n"}## Triggers{"\n\n"}
+                Invoked automatically when the user mentions keywords from tags,
+                or explicitly via &quot;use skill {viewing.name}&quot;.{"\n\n"}
+                ## Behavior{"\n\n"}
+                1. Collect context from the last N messages.{"\n"}
+                2. Apply the skill-specific transform.{"\n"}
+                3. Return a structured response.
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

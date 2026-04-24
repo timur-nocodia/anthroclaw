@@ -1,0 +1,152 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+  --color-sidebar-background: hsl(var(--sidebar-background));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+}
+
+/*
+ * AnthroClaw dark theme — mapped from prototype design tokens (theme.jsx).
+ *
+ * bg0  #0b0d12  →  background         222.9  24.1%  5.7%
+ * bg1  #0f121a  →  card / popover      223.6  26.8%  8.0%
+ * bg2  #131722  →  secondary / muted   224.0  28.3% 10.4%
+ * bg3  #1a1f2e  →  input               225.0  27.8% 14.1%
+ * border #1e2330                        223.3  23.1% 15.3%
+ * text #e7ebf3  →  foreground          220.0  33.3% 92.9%
+ * textDim #9aa3b8                       222.0  17.4% 66.3%
+ * textMuted #6b7389                     224.0  12.3% 47.8%
+ * accent #7c9cff                        225.3 100.0% 74.3%
+ * red #f87171  →  destructive            0.0  90.6% 70.8%
+ * green #4ade80                         141.9  69.2% 58.0%
+ * yellow #fbbf24                         43.3  96.4% 56.3%
+ */
+
+:root {
+  /* bg0 — app background */
+  --background: 222.9 24.1% 5.7%;
+  /* text — primary foreground */
+  --foreground: 220 33.3% 92.9%;
+
+  /* bg1 — card / panel */
+  --card: 223.6 26.8% 8%;
+  --card-foreground: 220 33.3% 92.9%;
+
+  /* bg1 — popover */
+  --popover: 223.6 26.8% 8%;
+  --popover-foreground: 220 33.3% 92.9%;
+
+  /* accent #7c9cff — primary action color */
+  --primary: 225.3 100% 74.3%;
+  /* bg0 — dark text on accent buttons */
+  --primary-foreground: 222.9 24.1% 5.7%;
+
+  /* bg2 — secondary surfaces */
+  --secondary: 224 28.3% 10.4%;
+  --secondary-foreground: 220 33.3% 92.9%;
+
+  /* bg2 — muted surfaces */
+  --muted: 224 28.3% 10.4%;
+  /* textMuted #6b7389 */
+  --muted-foreground: 224 12.3% 47.8%;
+
+  /* bg3 — accent hover / raised */
+  --accent: 225 27.8% 14.1%;
+  --accent-foreground: 220 33.3% 92.9%;
+
+  /* red #f87171 */
+  --destructive: 0 90.6% 70.8%;
+  --destructive-foreground: 220 33.3% 92.9%;
+
+  /* border #1e2330 */
+  --border: 223.3 23.1% 15.3%;
+  /* bg3 — input backgrounds */
+  --input: 225 27.8% 14.1%;
+  /* accent ring */
+  --ring: 225.3 100% 74.3%;
+
+  /* Chart palette */
+  --chart-1: 225.3 100% 74.3%;
+  --chart-2: 141.9 69.2% 58%;
+  --chart-3: 43.3 96.4% 56.3%;
+  --chart-4: 270 95.2% 75.3%;
+  --chart-5: 0 90.6% 70.8%;
+
+  --radius: 0.5rem;
+
+  /* Sidebar */
+  --sidebar-background: 222.9 24.1% 5.7%;
+  --sidebar-foreground: 220 33.3% 92.9%;
+  --sidebar-primary: 225.3 100% 74.3%;
+  --sidebar-primary-foreground: 222.9 24.1% 5.7%;
+  --sidebar-accent: 225 27.8% 14.1%;
+  --sidebar-accent-foreground: 220 33.3% 92.9%;
+  --sidebar-border: 223.3 23.1% 15.3%;
+  --sidebar-ring: 225.3 100% 74.3%;
+
+  /* Semantic color utilities (raw hex for arbitrary usage) */
+  --oc-accent: #7c9cff;
+  --oc-accent-dim: #4256a6;
+  --oc-accent-soft: rgba(124, 156, 255, 0.12);
+  --oc-accent-ring: rgba(124, 156, 255, 0.35);
+  --oc-green: #4ade80;
+  --oc-yellow: #fbbf24;
+  --oc-red: #f87171;
+  --oc-purple: #c084fc;
+  --oc-text-dim: #9aa3b8;
+  --oc-text-muted: #6b7389;
+  --oc-bg0: #0b0d12;
+  --oc-bg1: #0f121a;
+  --oc-bg2: #131722;
+  --oc-bg3: #1a1f2e;
+  --oc-border: #1e2330;
+  --oc-border-mid: #252b3b;
+  --oc-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+}

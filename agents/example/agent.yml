@@ -1,0 +1,64 @@
+model: claude-sonnet-4-6
+timezone: Asia/Almaty
+
+routes:
+  - channel: telegram
+    scope: dm
+
+pairing:
+  mode: off
+
+allowlist:
+  telegram: ["48705953"]
+
+mcp_tools:
+  - memory_search
+  - memory_write
+  - send_message
+  - list_skills
+  - manage_skills
+  - manage_cron
+
+queue_mode: steer
+
+iteration_budget:
+  max_tool_calls: 30
+  timeout_ms: 120000
+  grace_message: true
+
+auto_compress:
+  enabled: true
+  threshold_messages: 15
+
+# hooks:
+#   - event: on_after_query
+#     action: webhook
+#     url: "https://example.com/hook"
+#     timeout_ms: 5000
+
+# subagents:
+#   allow: ["other-agent"]
+
+# maxSessions: 100
+
+# ─── Quick Commands (zero-LLM, instant execution) ───
+quick_commands:
+  status:
+    command: "echo '✅ Bot is running'; echo \"PID: $$\"; echo \"Node: $(node -v)\"; echo \"PWD: $(pwd)\"; echo \"Started: $(ps -p $PPID -o lstart= 2>/dev/null || echo unknown)\""
+    timeout: 10
+  disk:
+    command: "df -h / | tail -1"
+    timeout: 10
+  memory:
+    command: "out=$(find agents/example/memory -name '*.md' -type f 2>/dev/null | head -20); [ -n \"$out\" ] && echo \"$out\" || echo 'No memory files yet'"
+    timeout: 10
+
+# ─── Cron with silent suppression test ───
+cron:
+  - id: silent-test
+    schedule: "*/2 * * * *"
+    prompt: "Check if everything is OK. If all is fine, respond with exactly [SILENT]. If something is wrong, describe the problem."
+    deliver_to:
+      channel: telegram
+      peer_id: "48705953"
+    enabled: false
