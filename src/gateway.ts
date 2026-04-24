@@ -16,7 +16,9 @@ import { CronScheduler } from './cron/scheduler.js';
 import { DynamicCronStore } from './cron/dynamic-store.js';
 import { ConfigWatcher } from './config/watcher.js';
 import { runDreaming } from './memory/dreaming.js';
+import { runMemoryDoctor, type MemoryDoctorOptions, type MemoryDoctorReport } from './memory/doctor.js';
 import { PrefetchCache } from './memory/prefetch.js';
+import type { MemoryEntryRecord, MemoryReviewStatus } from './memory/store.js';
 import { transcribeAudioWithProvider, type SttTranscriptionConfig } from './media/transcribe.js';
 import { extractPdfText } from './media/pdf.js';
 import { metrics } from './metrics/collector.js';
@@ -989,6 +991,46 @@ export class Gateway {
     offset?: number;
   } = {}): StoredAgentRunRecord[] {
     return metrics.listAgentRuns(params);
+  }
+
+  listAgentMemoryEntries(
+    agentId: string,
+    params: {
+      path?: string;
+      source?: string;
+      reviewStatus?: MemoryReviewStatus;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): MemoryEntryRecord[] {
+    const agent = this.agents.get(agentId);
+    if (!agent) throw new Error(`Agent "${agentId}" not found`);
+    return agent.memoryStore.listMemoryEntries(params);
+  }
+
+  updateAgentMemoryEntryReview(
+    agentId: string,
+    entryId: string,
+    reviewStatus: MemoryReviewStatus,
+    reviewNote?: string,
+  ): { entryId: string; updated: boolean; entry: MemoryEntryRecord | null } {
+    const agent = this.agents.get(agentId);
+    if (!agent) throw new Error(`Agent "${agentId}" not found`);
+    const updated = agent.memoryStore.updateMemoryEntryReview(entryId, reviewStatus, reviewNote);
+    return {
+      entryId,
+      updated,
+      entry: agent.memoryStore.getMemoryEntry(entryId),
+    };
+  }
+
+  runAgentMemoryDoctor(
+    agentId: string,
+    options: MemoryDoctorOptions = {},
+  ): MemoryDoctorReport {
+    const agent = this.agents.get(agentId);
+    if (!agent) throw new Error(`Agent "${agentId}" not found`);
+    return runMemoryDoctor(agent.memoryStore, options);
   }
 
   listAgentFileOwnership(
