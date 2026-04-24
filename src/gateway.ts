@@ -53,6 +53,11 @@ import {
   buildIntegrationCapabilityMatrix,
   type IntegrationCapabilityMatrix,
 } from './integrations/capabilities.js';
+import {
+  preflightAgentMcpServer,
+  preflightAgentMcpServerSpec,
+  type McpServerPreflight,
+} from './integrations/mcp-preflight.js';
 import { buildSdkOptions } from './sdk/options.js';
 import { buildAllowedTools } from './sdk/permissions.js';
 import { SdkControlRegistry } from './sdk/control-registry.js';
@@ -713,6 +718,35 @@ export class Gateway {
   listIntegrationCapabilities(): IntegrationCapabilityMatrix {
     if (!this.globalConfig) throw new Error('Gateway is not started');
     return buildIntegrationCapabilityMatrix(this.globalConfig, Array.from(this.agents.values()));
+  }
+
+  listMcpServerPreflight(): McpServerPreflight[] {
+    const preflight: McpServerPreflight[] = [];
+    for (const agent of this.agents.values()) {
+      preflight.push(preflightAgentMcpServer({
+        serverName: agent.mcpServer.name,
+        ownerAgentId: agent.id,
+        toolNames: agent.tools.map((tool) => tool.name),
+      }));
+
+      const subagents = this.buildSubagents(agent);
+      for (const subagent of Object.values(subagents ?? {})) {
+        for (const spec of subagent.mcpServers ?? []) {
+          const toolNamesByServer = Object.keys(spec).reduce<Record<string, string[]>>((acc, serverName) => {
+            acc[serverName] = subagent.tools
+              ?.filter((toolName) => toolName.startsWith(`mcp__${serverName}__`))
+              .map((toolName) => toolName.split('__').at(-1) ?? toolName) ?? [];
+            return acc;
+          }, {});
+          preflight.push(...preflightAgentMcpServerSpec(spec, {
+            ownerAgentId: agent.id,
+            source: 'subagent_portable',
+            toolNamesByServer,
+          }));
+        }
+      }
+    }
+    return preflight.sort((a, b) => a.serverName.localeCompare(b.serverName));
   }
 
   async deliverDirectWebhook(
