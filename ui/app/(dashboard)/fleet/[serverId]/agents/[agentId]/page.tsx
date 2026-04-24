@@ -21,6 +21,7 @@ import {
   MessageSquare,
   Monitor,
   Plus,
+  Plug,
   RefreshCw,
   Save,
   Settings2,
@@ -82,6 +83,7 @@ interface AgentConfig {
   raw?: string;
   channel_context?: ChannelContextConfig;
   mcp_tools?: string[];
+  external_mcp_servers?: Record<string, ExternalMcpServerConfig>;
   allowlist?: Record<string, string[]>;
   quick_commands?: Record<string, { command: string; timeout: number }>;
   group_sessions?: string;
@@ -166,6 +168,16 @@ interface ChannelContextConfig {
     direct?: Record<string, ChannelBehaviorRule>;
     groups?: Record<string, ChannelBehaviorRule>;
   };
+}
+
+interface ExternalMcpServerConfig {
+  type?: "stdio" | "sse" | "http";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  allowed_tools?: string[];
 }
 
 const HOOK_EVENTS = [
@@ -359,6 +371,25 @@ function csvToArray(value: string): string[] {
 
 function arrayToCsv(value?: string[]): string {
   return value?.join(", ") ?? "";
+}
+
+function mapToEnvText(value?: Record<string, string>): string {
+  return Object.entries(value ?? {}).map(([key, entry]) => `${key}=${entry}`).join("\n");
+}
+
+function envTextToMap(value: string): Record<string, string> | undefined {
+  const entries = value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const index = line.indexOf("=");
+      return index === -1
+        ? [line, ""] as const
+        : [line.slice(0, index).trim(), line.slice(index + 1).trim()] as const;
+    })
+    .filter(([key]) => key.length > 0);
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 const TIMEZONES = [
@@ -614,6 +645,7 @@ function ConfigTab({
     routes: agent.routes ?? [],
     channel_context: agent.channel_context ?? { reply_to_mode: "always" as ReplyToMode },
     mcp_tools: agent.mcp_tools ?? [],
+    external_mcp_servers: agent.external_mcp_servers ?? {},
     allowlist: agent.allowlist ?? {},
     quick_commands: agent.quick_commands ?? {},
     group_sessions: agent.group_sessions ?? 'shared',
@@ -757,6 +789,64 @@ function ConfigTab({
     return Object.keys(clean).length > 0 ? clean : undefined;
   };
 
+  const updateExternalMcpServer = (serverName: string, patch: Partial<ExternalMcpServerConfig>) => {
+    update({
+      external_mcp_servers: {
+        ...cfg.external_mcp_servers,
+        [serverName]: {
+          ...cfg.external_mcp_servers[serverName],
+          ...patch,
+        },
+      },
+    });
+  };
+
+  const addExternalMcpServer = () => {
+    const serverName = window.prompt("MCP server name");
+    const name = serverName?.trim();
+    if (!name) return;
+    update({
+      external_mcp_servers: {
+        ...cfg.external_mcp_servers,
+        [name]: {
+          type: "stdio",
+          command: "npx",
+          args: [],
+          allowed_tools: [],
+        },
+      },
+    });
+  };
+
+  const removeExternalMcpServer = (serverName: string) => {
+    const { [serverName]: _removed, ...rest } = cfg.external_mcp_servers;
+    update({ external_mcp_servers: rest });
+  };
+
+  const buildExternalMcpPayload = (): Record<string, ExternalMcpServerConfig> | undefined => {
+    const entries = Object.entries(cfg.external_mcp_servers).flatMap(([serverName, server]) => {
+      const name = serverName.trim();
+      if (!name) return [];
+      const type = server.type ?? "stdio";
+      const clean: ExternalMcpServerConfig = { type };
+      if (type === "stdio") {
+        const command = server.command?.trim();
+        if (!command) return [];
+        clean.command = command;
+        if (server.args?.length) clean.args = server.args;
+        if (server.env && Object.keys(server.env).length > 0) clean.env = server.env;
+      } else {
+        const url = server.url?.trim();
+        if (!url) return [];
+        clean.url = url;
+        if (server.headers && Object.keys(server.headers).length > 0) clean.headers = server.headers;
+      }
+      if (server.allowed_tools?.length) clean.allowed_tools = server.allowed_tools;
+      return [[name, clean]] as Array<[string, ExternalMcpServerConfig]>;
+    });
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  };
+
   const buildSdkPayload = () => {
     const sdk: Record<string, unknown> = {};
     if (cfg.sdk.allowedTools.length > 0) sdk.allowedTools = cfg.sdk.allowedTools;
@@ -810,7 +900,16 @@ function ConfigTab({
       if (mode === "raw") {
         payload = { yaml: rawYaml };
       } else {
-        const { thinking, effort, maxTurns, maxBudgetUsd, sdk: _sdk, channel_context: _channelContext, ...rest } = cfg;
+        const {
+          thinking,
+          effort,
+          maxTurns,
+          maxBudgetUsd,
+          sdk: _sdk,
+          channel_context: _channelContext,
+          external_mcp_servers: _externalMcpServers,
+          ...rest
+        } = cfg;
         const clean: Record<string, unknown> = { ...rest };
         if (thinking.type !== "disabled") clean.thinking = thinking;
         if (effort && effort !== "high") clean.effort = effort;
@@ -818,6 +917,8 @@ function ConfigTab({
         if (maxBudgetUsd > 0) clean.maxBudgetUsd = maxBudgetUsd;
         const channelContextPayload = buildChannelContextPayload();
         if (channelContextPayload) clean.channel_context = channelContextPayload;
+        const externalMcpPayload = buildExternalMcpPayload();
+        if (externalMcpPayload) clean.external_mcp_servers = externalMcpPayload;
         const sdkPayload = buildSdkPayload();
         if (sdkPayload) clean.sdk = sdkPayload;
         payload = clean;
@@ -1533,6 +1634,137 @@ function ConfigTab({
                 className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
                 style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} />
             </Field>
+          </Section>
+
+          <Section
+            title="External MCP servers"
+            subtitle={`${Object.keys(cfg.external_mcp_servers).length} configured`}
+            tooltip="SDK-native external MCP servers for pilot integrations. These are passed into Claude Agent SDK mcpServers, not executed through a custom harness runtime."
+            icon={<Plug className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+            action={
+              <Button variant="outline" size="sm" onClick={addExternalMcpServer}>
+                <Plus className="h-3 w-3" />
+                Add server
+              </Button>
+            }
+          >
+            {Object.keys(cfg.external_mcp_servers).length === 0 ? (
+              <div className="p-5 text-center text-xs" style={{ color: "var(--oc-text-muted)" }}>
+                No external MCP servers. Add one for a Google Calendar, Gmail, or other stdio/http MCP pilot.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {Object.entries(cfg.external_mcp_servers).map(([serverName, server]) => {
+                  const type = server.type ?? "stdio";
+                  return (
+                    <div
+                      key={serverName}
+                      className="rounded-[5px] border p-3"
+                      style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}
+                    >
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+                            {serverName}
+                          </div>
+                          <div className="mt-0.5 text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+                            {type} / {(server.allowed_tools ?? []).length} allowed tools
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => removeExternalMcpServer(serverName)}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-[var(--oc-bg3)]"
+                          style={{ color: "var(--oc-text-dim)" }}
+                          title="Remove external MCP server"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-[120px_minmax(0,1fr)]">
+                        <Field label="Transport" tooltip="SDK MCP transport for this external server. stdio is the common local MCP shape; sse/http are remote transports.">
+                          <select
+                            value={type}
+                            onChange={(e) => updateExternalMcpServer(serverName, { type: e.target.value as ExternalMcpServerConfig["type"] })}
+                            className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                            style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                          >
+                            <option value="stdio">stdio</option>
+                            <option value="sse">sse</option>
+                            <option value="http">http</option>
+                          </select>
+                        </Field>
+                        {type === "stdio" ? (
+                          <Field label="Command" tooltip="Executable command passed to the SDK MCP server config.">
+                            <input
+                              value={server.command ?? ""}
+                              onChange={(e) => updateExternalMcpServer(serverName, { command: e.target.value })}
+                              placeholder="npx"
+                              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                            />
+                          </Field>
+                        ) : (
+                          <Field label="URL" tooltip="Remote MCP endpoint URL.">
+                            <input
+                              value={server.url ?? ""}
+                              onChange={(e) => updateExternalMcpServer(serverName, { url: e.target.value })}
+                              placeholder="https://mcp.example.com"
+                              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                            />
+                          </Field>
+                        )}
+                      </div>
+                      <FormGrid>
+                        {type === "stdio" ? (
+                          <>
+                            <Field label="Args" tooltip="Arguments passed to the MCP process. Comma-separated.">
+                              <input
+                                value={arrayToCsv(server.args)}
+                                onChange={(e) => updateExternalMcpServer(serverName, { args: csvToArray(e.target.value) })}
+                                placeholder="google-calendar-mcp"
+                                className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                                style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                              />
+                            </Field>
+                            <Field label="Env" tooltip="Environment passed to the MCP process. One KEY=value per line. Values are redacted in preflight responses.">
+                              <textarea
+                                value={mapToEnvText(server.env)}
+                                onChange={(e) => updateExternalMcpServer(serverName, { env: envTextToMap(e.target.value) })}
+                                rows={3}
+                                placeholder="GOOGLE_CLIENT_ID=..."
+                                className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                                style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                              />
+                            </Field>
+                          </>
+                        ) : (
+                          <Field label="Headers" tooltip="Optional request headers for remote MCP. One KEY=value per line.">
+                            <textarea
+                              value={mapToEnvText(server.headers)}
+                              onChange={(e) => updateExternalMcpServer(serverName, { headers: envTextToMap(e.target.value) })}
+                              rows={3}
+                              placeholder="Authorization=Bearer ..."
+                              className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                            />
+                          </Field>
+                        )}
+                        <Field label="Allowed tools" tooltip="Explicit tool names allowed from this server. These become mcp__server__tool entries in SDK allowedTools.">
+                          <input
+                            value={arrayToCsv(server.allowed_tools)}
+                            onChange={(e) => updateExternalMcpServer(serverName, { allowed_tools: csvToArray(e.target.value) })}
+                            placeholder="calendar_daily_brief, calendar_lookup"
+                            className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                            style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                          />
+                        </Field>
+                      </FormGrid>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </Section>
 
           {/* Display & sessions */}
