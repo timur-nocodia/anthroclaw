@@ -41,6 +41,11 @@ describe('integration capability matrix', () => {
       status: 'available',
       requiredConfig: ['brave.api_key'],
       enabledForAgents: ['researcher'],
+      permissionDefaults: {
+        defaultBehavior: 'deny',
+        allowMcp: true,
+        allowedMcpTools: ['web_search_brave'],
+      },
     });
   });
 
@@ -90,6 +95,10 @@ describe('integration capability matrix', () => {
     expect(matrix.capabilities.find((capability) => capability.id === 'stt.openai')).toMatchObject({
       status: 'available',
       requiredConfig: ['OPENAI_API_KEY'],
+      permissionDefaults: {
+        defaultBehavior: 'deny',
+        notes: ['STT runs before SDK query execution; it is not exposed as an SDK MCP tool.'],
+      },
     });
     expect(matrix.capabilities.find((capability) => capability.id === 'stt.elevenlabs')).toMatchObject({
       status: 'missing_config',
@@ -97,5 +106,34 @@ describe('integration capability matrix', () => {
     });
     expect(JSON.stringify(matrix)).not.toContain('assembly-key');
     expect(JSON.stringify(matrix)).not.toContain('openai-key');
+  });
+
+  it('does not recommend high-risk mutation tools by default', () => {
+    const matrix = buildIntegrationCapabilityMatrix(
+      baseConfig(),
+      [{
+        id: 'ops',
+        config: {
+          routes: [{ channel: 'telegram', scope: 'dm' }],
+          timezone: 'UTC',
+          mcp_tools: ['manage_skills', 'manage_cron'],
+        },
+      }],
+      {},
+    );
+
+    expect(matrix.capabilities.find((capability) => capability.id === 'skills.local')).toMatchObject({
+      permissionDefaults: {
+        defaultBehavior: 'deny',
+        allowedMcpTools: ['list_skills'],
+      },
+    });
+    expect(matrix.capabilities.find((capability) => capability.id === 'cron.manage')).toMatchObject({
+      status: 'available',
+      permissionDefaults: {
+        defaultBehavior: 'deny',
+        allowedMcpTools: [],
+      },
+    });
   });
 });

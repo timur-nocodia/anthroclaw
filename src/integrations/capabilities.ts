@@ -14,8 +14,18 @@ export interface IntegrationCapability {
   risk: IntegrationCapabilityRisk;
   costModel?: string;
   requiredConfig?: string[];
+  permissionDefaults?: IntegrationPermissionDefaults;
   enabledForAgents: string[];
   reason?: string;
+}
+
+export interface IntegrationPermissionDefaults {
+  defaultBehavior: 'allow' | 'deny';
+  allowMcp?: boolean;
+  allowWeb?: boolean;
+  allowBash?: boolean;
+  allowedMcpTools?: string[];
+  notes: string[];
 }
 
 export interface IntegrationCapabilityMatrix {
@@ -31,6 +41,7 @@ interface CapabilityDefinition {
   risk: IntegrationCapabilityRisk;
   costModel?: string;
   requiredConfig?: string[];
+  permissionDefaults?: IntegrationPermissionDefaults;
   isConfigured?: (config: GlobalConfig, env: NodeJS.ProcessEnv) => boolean;
   isRequested?: (agent: AgentConfigCarrier) => boolean;
 }
@@ -44,6 +55,12 @@ const TOOL_DEFINITIONS: CapabilityDefinition[] = [
     provider: 'anthroclaw-memory',
     toolNames: ['memory_search', 'memory_write', 'memory_wiki'],
     risk: 'medium',
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      allowMcp: true,
+      allowedMcpTools: ['memory_search', 'memory_write', 'memory_wiki'],
+      notes: ['Prefer exact MCP allowlists; memory_write and memory_wiki persist durable agent state.'],
+    },
   },
   {
     id: 'sessions.search',
@@ -51,6 +68,12 @@ const TOOL_DEFINITIONS: CapabilityDefinition[] = [
     provider: 'anthroclaw-sessions',
     toolNames: ['session_search'],
     risk: 'low',
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      allowMcp: true,
+      allowedMcpTools: ['session_search'],
+      notes: ['Read-only recall tool; keep transcript content access scoped per agent.'],
+    },
   },
   {
     id: 'channels.messaging',
@@ -59,6 +82,12 @@ const TOOL_DEFINITIONS: CapabilityDefinition[] = [
     toolNames: ['send_message', 'send_media'],
     risk: 'high',
     requiredConfig: ['telegram.accounts or whatsapp.accounts'],
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      allowMcp: true,
+      allowedMcpTools: ['send_message', 'send_media'],
+      notes: ['Outbound channel tools can message real users; enable only for agents that must send proactive replies.'],
+    },
     isConfigured: (config) => Boolean(config.telegram?.accounts || config.whatsapp?.accounts),
   },
   {
@@ -69,6 +98,12 @@ const TOOL_DEFINITIONS: CapabilityDefinition[] = [
     risk: 'medium',
     costModel: 'external_api',
     requiredConfig: ['brave.api_key'],
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      allowMcp: true,
+      allowedMcpTools: ['web_search_brave'],
+      notes: ['External search provider; expect network egress and provider-side query logging.'],
+    },
     isConfigured: (config) => Boolean(config.brave?.api_key),
   },
   {
@@ -79,6 +114,12 @@ const TOOL_DEFINITIONS: CapabilityDefinition[] = [
     risk: 'medium',
     costModel: 'external_api',
     requiredConfig: ['exa.api_key'],
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      allowMcp: true,
+      allowedMcpTools: ['web_search_exa'],
+      notes: ['External search provider; expect network egress and provider-side query logging.'],
+    },
     isConfigured: (config) => Boolean(config.exa?.api_key),
   },
   {
@@ -87,6 +128,12 @@ const TOOL_DEFINITIONS: CapabilityDefinition[] = [
     provider: 'anthroclaw-routing',
     toolNames: ['access_control'],
     risk: 'high',
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      allowMcp: true,
+      allowedMcpTools: ['access_control'],
+      notes: ['Can change routing authorization state; keep operator-visible audit enabled.'],
+    },
   },
   {
     id: 'skills.local',
@@ -94,6 +141,12 @@ const TOOL_DEFINITIONS: CapabilityDefinition[] = [
     provider: 'anthroclaw-skills',
     toolNames: ['list_skills', 'manage_skills'],
     risk: 'high',
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      allowMcp: true,
+      allowedMcpTools: ['list_skills'],
+      notes: ['Do not enable manage_skills by default; it can modify local agent behavior.'],
+    },
   },
   {
     id: 'cron.manage',
@@ -101,6 +154,12 @@ const TOOL_DEFINITIONS: CapabilityDefinition[] = [
     provider: 'anthroclaw-cron',
     toolNames: ['manage_cron'],
     risk: 'high',
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      allowMcp: true,
+      allowedMcpTools: [],
+      notes: ['Operator review recommended before enabling scheduled task mutation.'],
+    },
   },
 ];
 
@@ -113,6 +172,10 @@ const STT_DEFINITIONS: CapabilityDefinition[] = [
     risk: 'medium',
     costModel: 'external_api',
     requiredConfig: ['assemblyai.api_key'],
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      notes: ['STT runs before SDK query execution; it is not exposed as an SDK MCP tool.'],
+    },
     isConfigured: (config) => Boolean(config.assemblyai?.api_key),
     isRequested: () => true,
   },
@@ -124,6 +187,10 @@ const STT_DEFINITIONS: CapabilityDefinition[] = [
     risk: 'medium',
     costModel: 'external_api',
     requiredConfig: ['OPENAI_API_KEY'],
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      notes: ['STT runs before SDK query execution; it is not exposed as an SDK MCP tool.'],
+    },
     isConfigured: (_config, env) => Boolean(env.OPENAI_API_KEY),
     isRequested: () => true,
   },
@@ -135,6 +202,10 @@ const STT_DEFINITIONS: CapabilityDefinition[] = [
     risk: 'medium',
     costModel: 'external_api',
     requiredConfig: ['ELEVENLABS_API_KEY'],
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      notes: ['STT runs before SDK query execution; it is not exposed as an SDK MCP tool.'],
+    },
     isConfigured: (_config, env) => Boolean(env.ELEVENLABS_API_KEY),
     isRequested: () => true,
   },
@@ -166,10 +237,22 @@ export function buildIntegrationCapabilityMatrix(
         risk: definition.risk,
         costModel: definition.costModel,
         requiredConfig: definition.requiredConfig ? [...definition.requiredConfig] : undefined,
+        permissionDefaults: clonePermissionDefaults(definition.permissionDefaults),
         enabledForAgents,
         reason: capabilityReason(definition, status, requested),
       };
     }),
+  };
+}
+
+function clonePermissionDefaults(
+  defaults: IntegrationPermissionDefaults | undefined,
+): IntegrationPermissionDefaults | undefined {
+  if (!defaults) return undefined;
+  return {
+    ...defaults,
+    allowedMcpTools: defaults.allowedMcpTools ? [...defaults.allowedMcpTools] : undefined,
+    notes: [...defaults.notes],
   };
 }
 
