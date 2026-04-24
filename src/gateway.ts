@@ -73,6 +73,7 @@ import {
 import { classifyIntegrationToolName } from './integrations/audit.js';
 import { buildSdkOptions } from './sdk/options.js';
 import { buildAllowedTools } from './sdk/permissions.js';
+import { getSdkActiveInputStatus, type SdkActiveInputStatus } from './sdk/active-input.js';
 import { SdkControlRegistry } from './sdk/control-registry.js';
 import { FileSessionStore } from './sdk/session-store.js';
 import { SdkSessionService, type SdkSessionMessageView } from './sdk/sessions.js';
@@ -714,6 +715,7 @@ export class Gateway {
     activeSessions: number;
     nodeVersion: string;
     platform: string;
+    sdkActiveInput: SdkActiveInputStatus;
     channels: {
       telegram: { accountId: string; botUsername: string; status: string }[];
       whatsapp: { accountId: string; phone: string; status: string }[];
@@ -733,6 +735,7 @@ export class Gateway {
       activeSessions,
       nodeVersion: process.version,
       platform: process.platform,
+      sdkActiveInput: getSdkActiveInputStatus(),
       channels: {
         telegram: tg instanceof TelegramChannel ? tg.getAccountInfo() : [],
         whatsapp: wa instanceof WhatsAppChannel ? wa.getAccountInfo() : [],

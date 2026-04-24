@@ -829,7 +829,7 @@ function ConfigTab({
                   ))}
                 </select>
               </Field>
-              <Field label="Queue mode" tooltip="What happens to new messages while the agent is still responding. Collect — queues and batches them. Steer — appends to the current response. Interrupt — cancels and restarts.">
+              <Field label="Queue mode" tooltip="What happens to new messages while the agent is still responding. Collect queues and batches them. Steer is SDK-safe interrupt-and-restart until active input is promoted. Interrupt cancels and drops the new message.">
                 <select
                   value={cfg.queue_mode}
                   onChange={(e) => update({ queue_mode: e.target.value })}
@@ -841,7 +841,7 @@ function ConfigTab({
                   }}
                 >
                   <option value="collect">collect -- buffer and batch</option>
-                  <option value="steer">steer -- append context mid-turn</option>
+                  <option value="steer">steer -- interrupt and restart</option>
                   <option value="interrupt">interrupt -- cancel and restart</option>
                 </select>
               </Field>
