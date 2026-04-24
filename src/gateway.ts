@@ -21,6 +21,7 @@ import { transcribeAudio } from './media/transcribe.js';
 import { extractPdfText } from './media/pdf.js';
 import { metrics } from './metrics/collector.js';
 import { MetricsStore } from './metrics/store.js';
+import { buildDiagnosticsBundle, type DiagnosticsBundle } from './diagnostics/bundle.js';
 import type {
   StoredAgentRunRecord,
   StoredAgentRunStatus,
@@ -531,6 +532,19 @@ export class Gateway {
 
   getDataDir(): string | null {
     return this.dataDir;
+  }
+
+  exportDiagnostics(options: {
+    includeLogs?: boolean;
+    logLimit?: number;
+    runLimit?: number;
+    routeDecisionLimit?: number;
+    diagnosticEventLimit?: number;
+  } = {}): DiagnosticsBundle {
+    return buildDiagnosticsBundle({
+      ...options,
+      status: this.getStatus(),
+    });
   }
 
   private resolveAgentSessionId(
