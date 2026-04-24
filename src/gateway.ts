@@ -54,6 +54,13 @@ import { SdkControlRegistry } from './sdk/control-registry.js';
 import { FileSessionStore } from './sdk/session-store.js';
 import { SdkSessionService, type SdkSessionMessageView } from './sdk/sessions.js';
 import { buildPortableSubagentMcpSpec } from './sdk/subagent-mcp.js';
+import {
+  describeSubagentPolicy,
+  filterSubagentTools,
+  resolveSubagentPolicy,
+  shouldExposeDirectSubagents,
+  shouldExposeNestedSubagents,
+} from './sdk/subagent-policy.js';
 import { WarmQueryPool } from './sdk/warm-pool.js';
 import { SdkCheckpointRegistry, type RewindResponse } from './sdk/checkpoints.js';
 import { SdkSubagentRegistry, type SubagentRunRecord, type SubagentRunStatus } from './sdk/subagent-registry.js';
@@ -2565,6 +2572,7 @@ export class Gateway {
   buildSubagents(agent: Agent): Record<string, AgentDefinition> | undefined {
     const allowList = agent.config.subagents?.allow;
     if (!allowList || allowList.length === 0) return undefined;
+    if (!shouldExposeDirectSubagents(agent.config.subagents)) return undefined;
 
     const agentsMap: Record<string, AgentDefinition> = {};
 
@@ -2589,7 +2597,8 @@ export class Gateway {
         }
       }
 
-      const hasNestedSubagents = Boolean(subAgent.config.subagents?.allow?.length);
+      const hasNestedSubagents = Boolean(subAgent.config.subagents?.allow?.length)
+        && shouldExposeNestedSubagents(agent.config.subagents);
       const allowedTools = buildAllowedTools(subAgent, hasNestedSubagents);
       const portableMcp = this.dataDir
         ? buildPortableSubagentMcpSpec({
@@ -2606,6 +2615,9 @@ export class Gateway {
       if (portableMcp) {
         subagentTools.push(...portableMcp.toolNames);
       }
+
+      const subagentPolicy = resolveSubagentPolicy(agent.config.subagents, subAgentId);
+      const policyTools = filterSubagentTools(subagentTools, subagentPolicy);
 
       if ((portableMcp?.skippedToolNames.length ?? 0) > 0) {
         logger.warn(
@@ -2629,10 +2641,10 @@ export class Gateway {
       }
 
       agentsMap[subAgentId] = {
-        description: `Delegate tasks to the ${subAgentId} agent`,
+        description: `Delegate tasks to the ${subAgentId} agent (${describeSubagentPolicy(subagentPolicy)})`,
         prompt,
         model: subAgent.config.model,
-        tools: subagentTools,
+        tools: policyTools,
         mcpServers: portableMcp ? [portableMcp.spec] : undefined,
       };
     }

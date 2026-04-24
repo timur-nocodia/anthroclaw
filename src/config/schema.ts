@@ -222,6 +222,19 @@ const ChannelContextSchema = z.object({
   }).optional(),
 }).optional();
 
+const SubagentRolePolicySchema = z.object({
+  kind: z.enum(['explorer', 'worker', 'custom']).default('custom').optional(),
+  write_policy: z.enum(['allow', 'deny', 'claim_required']).default('allow').optional(),
+  description: z.string().max(1000).optional(),
+});
+
+const SubagentPolicySchema = z.object({
+  allow: z.array(z.string()).default([]),
+  max_spawn_depth: z.number().int().min(0).default(1).optional(),
+  conflict_mode: z.enum(['soft', 'strict']).default('soft').optional(),
+  roles: z.record(z.string(), SubagentRolePolicySchema).optional(),
+}).optional();
+
 export const AgentYmlSchema = z.object({
   model: z.string().optional(),
   thinking: ThinkingConfigSchema.optional(),
@@ -233,7 +246,7 @@ export const AgentYmlSchema = z.object({
   pairing: PairingSchema.optional(),
   allowlist: z.record(z.string(), z.array(z.string())).optional(),
   mcp_tools: z.array(z.string()).optional(),
-  subagents: z.object({ allow: z.array(z.string()) }).optional(),
+  subagents: SubagentPolicySchema,
   cron: z.array(CronJobSchema).optional(),
   hooks: z.array(HookConfigSchema).optional(),
   maxSessions: z.number().int().min(1).default(100).describe('Maximum number of cached sessions before LRU eviction'),
@@ -274,6 +287,8 @@ export type CronJob = z.infer<typeof CronJobSchema>;
 export type HookConfig = z.infer<typeof HookConfigSchema>;
 export type ReplyToMode = z.infer<typeof ReplyToModeSchema>;
 export type ChannelContextConfig = NonNullable<z.infer<typeof ChannelContextSchema>>;
+export type SubagentRolePolicy = z.infer<typeof SubagentRolePolicySchema>;
+export type SubagentPolicy = NonNullable<z.infer<typeof SubagentPolicySchema>>;
 export type SdkPermissionPolicy = z.infer<typeof SdkPermissionPolicySchema>;
 export type SdkSandboxConfig = z.infer<typeof SdkSandboxSchema>;
 export type SdkAgentConfig = z.infer<typeof SdkAgentConfigSchema>;

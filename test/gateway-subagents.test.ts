@@ -94,7 +94,7 @@ routes:
     const result = gw.buildSubagents(mainAgent);
     expect(result).toBeDefined();
     expect(result).toHaveProperty('helper');
-    expect(result!.helper.description).toBe('Delegate tasks to the helper agent');
+    expect(result!.helper.description).toContain('Delegate tasks to the helper agent');
     expect(result!.helper.model).toBe('claude-haiku-3-5');
     expect(result!.helper.prompt).toContain('helper');
     expect(result!.helper.tools).toBeDefined();
@@ -109,6 +109,99 @@ routes:
         }),
       }),
     ]);
+
+    await gw.stop();
+  });
+
+  it('buildSubagents applies role write policy without custom subagent runtime', async () => {
+    const mainDir = join(agentsDir, 'main-agent');
+    mkdirSync(mainDir);
+    writeAgentYml(mainDir, `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["peer-main"]
+subagents:
+  allow:
+    - helper
+  roles:
+    helper:
+      kind: explorer
+      write_policy: deny
+`);
+
+    const helperDir = join(agentsDir, 'helper');
+    mkdirSync(helperDir);
+    writeAgentYml(helperDir, `
+mcp_tools:
+  - memory_search
+  - memory_write
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["peer-helper"]
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const mainAgent = gw._agents.get('main-agent')!;
+    const result = gw.buildSubagents(mainAgent);
+
+    expect(result!.helper.description).toContain('role=explorer');
+    expect(result!.helper.description).toContain('write_policy=deny');
+    expect(result!.helper.tools).toContain('Read');
+    expect(result!.helper.tools).toContain('mcp__helper-subagent-tools__memory_search');
+    expect(result!.helper.tools).not.toContain('Write');
+    expect(result!.helper.tools).not.toContain('Edit');
+    expect(result!.helper.tools).not.toContain('Bash');
+    expect(result!.helper.tools).not.toContain('mcp__helper-subagent-tools__memory_write');
+
+    await gw.stop();
+  });
+
+  it('buildSubagents treats max_spawn_depth as SDK delegation-surface policy', async () => {
+    const mainDir = join(agentsDir, 'main-agent');
+    mkdirSync(mainDir);
+    writeAgentYml(mainDir, `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["peer-main"]
+subagents:
+  allow:
+    - helper
+  max_spawn_depth: 1
+`);
+
+    const helperDir = join(agentsDir, 'helper');
+    mkdirSync(helperDir);
+    writeAgentYml(helperDir, `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["peer-helper"]
+subagents:
+  allow:
+    - leaf
+`);
+
+    const leafDir = join(agentsDir, 'leaf');
+    mkdirSync(leafDir);
+    writeAgentYml(leafDir, `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["peer-leaf"]
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const mainAgent = gw._agents.get('main-agent')!;
+    const result = gw.buildSubagents(mainAgent);
+
+    expect(result!.helper.tools).not.toContain('Task');
 
     await gw.stop();
   });

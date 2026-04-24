@@ -274,6 +274,31 @@ describe('AgentYmlSchema', () => {
     expect(result.session_policy).toBe('daily');
   });
 
+  it('accepts subagent role policy fields', () => {
+    const result = AgentYmlSchema.parse({
+      routes: [{ channel: 'telegram' }],
+      subagents: {
+        allow: ['researcher', 'coder'],
+        max_spawn_depth: 1,
+        conflict_mode: 'soft',
+        roles: {
+          researcher: {
+            kind: 'explorer',
+            write_policy: 'deny',
+          },
+          coder: {
+            kind: 'worker',
+            write_policy: 'claim_required',
+          },
+        },
+      },
+    });
+
+    expect(result.subagents!.max_spawn_depth).toBe(1);
+    expect(result.subagents!.roles!.researcher.kind).toBe('explorer');
+    expect(result.subagents!.roles!.coder.write_policy).toBe('claim_required');
+  });
+
   it('defaults session_policy to never', () => {
     const result = AgentYmlSchema.parse({
       routes: [{ channel: 'telegram' }],
