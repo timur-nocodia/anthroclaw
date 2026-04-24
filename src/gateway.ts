@@ -27,6 +27,7 @@ import type {
   StoredAgentRunSource,
   StoredAgentRunStatus,
   StoredAgentRunUsage,
+  StoredFileOwnershipEvent,
   StoredRouteDecision,
   StoredRouteDecisionCandidate,
 } from './metrics/store.js';
@@ -61,7 +62,7 @@ import {
   shouldExposeDirectSubagents,
   shouldExposeNestedSubagents,
 } from './sdk/subagent-policy.js';
-import { FileOwnershipRegistry } from './sdk/file-ownership.js';
+import { FileOwnershipRegistry, type FileOwnershipClaim, type FileOwnershipConflict } from './sdk/file-ownership.js';
 import { WarmQueryPool } from './sdk/warm-pool.js';
 import { SdkCheckpointRegistry, type RewindResponse } from './sdk/checkpoints.js';
 import { SdkSubagentRegistry, type SubagentRunRecord, type SubagentRunStatus } from './sdk/subagent-registry.js';
@@ -149,6 +150,29 @@ export interface AgentSessionMailboxRow {
   provenance?: SessionProvenanceView;
   firstMessage?: SessionMessagePreview;
   lastMessage?: SessionMessagePreview;
+}
+
+export interface AgentFileOwnershipView {
+  claims: FileOwnershipClaim[];
+  conflicts: FileOwnershipConflict[];
+  events: StoredFileOwnershipEvent[];
+}
+
+export interface ListAgentFileOwnershipParams {
+  sessionKey?: string;
+  runId?: string;
+  subagentId?: string;
+  path?: string;
+  action?: FileOwnershipConflict['action'];
+  eventType?: StoredFileOwnershipEvent['eventType'];
+  limit?: number;
+  offset?: number;
+}
+
+export interface FileOwnershipMutationResult {
+  claimId: string;
+  action: 'release' | 'override';
+  released: boolean;
 }
 
 function compactError(value: unknown): string {
@@ -895,6 +919,54 @@ export class Gateway {
     offset?: number;
   } = {}): StoredAgentRunRecord[] {
     return metrics.listAgentRuns(params);
+  }
+
+  listAgentFileOwnership(
+    agentId: string,
+    params: ListAgentFileOwnershipParams = {},
+  ): AgentFileOwnershipView {
+    if (!this.agents.has(agentId)) throw new Error(`Agent "${agentId}" not found`);
+    return {
+      claims: this.fileOwnershipRegistry.listClaims(params),
+      conflicts: this.fileOwnershipRegistry.listConflicts(params),
+      events: metrics.listFileOwnershipEvents({
+        agentId,
+        sessionKey: params.sessionKey,
+        runId: params.runId,
+        subagentId: params.subagentId,
+        path: params.path,
+        eventType: params.eventType,
+        action: params.action,
+        limit: params.limit,
+        offset: params.offset,
+      }),
+    };
+  }
+
+  mutateFileOwnershipClaim(
+    agentId: string,
+    claimId: string,
+    action: 'release' | 'override',
+  ): FileOwnershipMutationResult {
+    if (!this.agents.has(agentId)) throw new Error(`Agent "${agentId}" not found`);
+    const claim = this.fileOwnershipRegistry.listClaims().find((entry) => entry.claimId === claimId);
+    const released = action === 'override'
+      ? this.fileOwnershipRegistry.overrideClaim(claimId)
+      : this.fileOwnershipRegistry.releaseClaim(claimId);
+
+    if (released && claim) {
+      metrics.recordFileOwnershipEvent({
+        agentId,
+        sessionKey: claim.sessionKey,
+        runId: claim.runId,
+        subagentId: claim.subagentId,
+        path: claim.path,
+        eventType: action === 'override' ? 'override' : 'released',
+        reason: action === 'override' ? 'operator override' : 'operator release',
+      });
+    }
+
+    return { claimId, action, released };
   }
 
   async forkAgentSession(
@@ -2840,5 +2912,10 @@ export class Gateway {
   /** @internal Expose live query controls for testing */
   get _controlRegistry(): SdkControlRegistry {
     return this.controlRegistry;
+  }
+
+  /** @internal Expose file ownership registry for testing */
+  get _fileOwnershipRegistry(): FileOwnershipRegistry {
+    return this.fileOwnershipRegistry;
   }
 }
