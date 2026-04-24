@@ -19,7 +19,10 @@ function createSdkStream(events: Array<Record<string, unknown>>) {
   };
 }
 
+const seenPrompts: unknown[] = [];
+
 function createQueryForPrompt(prompt: unknown) {
+  seenPrompts.push(prompt);
   const text = typeof prompt === 'string' ? prompt : '';
 
   if (text.includes('Generate a short, descriptive title')) {
@@ -127,6 +130,7 @@ describe('Gateway SDK success path', () => {
     metrics._reset();
     startupMock.mockReset();
     queryMock.mockReset();
+    seenPrompts.length = 0;
 
     startupMock.mockImplementation(async (params?: { options?: unknown }) => {
       if (!params?.options) {
@@ -219,6 +223,62 @@ pairing:
       outcome: 'dispatched',
       candidates: [{ agentId: 'sdk-bot', scope: 'dm' }],
     }]);
+
+    await gw.stop();
+  });
+
+  it('injects per-chat operator context and honors reply_to_mode', async () => {
+    const botDir = join(agentsDir, 'context-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: group
+    topics: ['topic-42']
+pairing:
+  mode: open
+channel_context:
+  reply_to_mode: incoming_reply_only
+  telegram:
+    topics:
+      topic-42:
+        prompt: Keep replies concise for the support topic.
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const sent: Array<{ text: string; replyToId?: string }> = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text, opts) {
+        sent.push({ text, replyToId: opts?.replyToId });
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg({
+      chatType: 'group',
+      peerId: 'group-123',
+      threadId: 'topic-42',
+      replyToId: 'parent-message',
+    }));
+
+    const sdkPrompt = seenPrompts.find((prompt): prompt is string =>
+      typeof prompt === 'string' && prompt.includes('[Test User]: hello sdk'),
+    );
+    expect(sdkPrompt).toContain('<channel-operator-context>');
+    expect(sdkPrompt).toContain('Keep replies concise for the support topic.');
+    expect(sdkPrompt).toContain('additive to CLAUDE.md');
+    expect(sent).toEqual([{ text: 'SDK says hi', replyToId: 'mid-1' }]);
 
     await gw.stop();
   });

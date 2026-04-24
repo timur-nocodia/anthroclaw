@@ -201,6 +201,27 @@ const SdkAgentConfigSchema = z.object({
   fallbackModel: z.string().optional(),
 }).optional();
 
+const ReplyToModeSchema = z.enum(['always', 'incoming_reply_only', 'never']);
+
+const ChannelBehaviorRuleSchema = z.object({
+  prompt: z.string().min(1).max(8000).optional(),
+  reply_to_mode: ReplyToModeSchema.optional(),
+});
+
+const ChannelContextSchema = z.object({
+  reply_to_mode: ReplyToModeSchema.default('always').optional(),
+  telegram: z.object({
+    wildcard: ChannelBehaviorRuleSchema.optional(),
+    peers: z.record(z.string(), ChannelBehaviorRuleSchema).optional(),
+    topics: z.record(z.string(), ChannelBehaviorRuleSchema).optional(),
+  }).optional(),
+  whatsapp: z.object({
+    wildcard: ChannelBehaviorRuleSchema.optional(),
+    direct: z.record(z.string(), ChannelBehaviorRuleSchema).optional(),
+    groups: z.record(z.string(), ChannelBehaviorRuleSchema).optional(),
+  }).optional(),
+}).optional();
+
 export const AgentYmlSchema = z.object({
   model: z.string().optional(),
   thinking: ThinkingConfigSchema.optional(),
@@ -218,6 +239,7 @@ export const AgentYmlSchema = z.object({
   maxSessions: z.number().int().min(1).default(100).describe('Maximum number of cached sessions before LRU eviction'),
   queue_mode: z.enum(['collect', 'steer', 'interrupt']).default('collect'),
   session_policy: z.enum(['never', 'hourly', 'daily', 'weekly']).default('never'),
+  channel_context: ChannelContextSchema,
   auto_compress: z.object({
     enabled: z.boolean().default(true),
     threshold_messages: z.number().int().min(5).default(30),
@@ -250,6 +272,8 @@ export type Route = z.infer<typeof RouteSchema>;
 export type Pairing = z.infer<typeof PairingSchema>;
 export type CronJob = z.infer<typeof CronJobSchema>;
 export type HookConfig = z.infer<typeof HookConfigSchema>;
+export type ReplyToMode = z.infer<typeof ReplyToModeSchema>;
+export type ChannelContextConfig = NonNullable<z.infer<typeof ChannelContextSchema>>;
 export type SdkPermissionPolicy = z.infer<typeof SdkPermissionPolicySchema>;
 export type SdkSandboxConfig = z.infer<typeof SdkSandboxSchema>;
 export type SdkAgentConfig = z.infer<typeof SdkAgentConfigSchema>;
