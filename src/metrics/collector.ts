@@ -9,6 +9,7 @@ import type {
   StoredAgentRunStatus,
   StoredDiagnosticEvent,
   StoredFileOwnershipEvent,
+  StoredIntegrationAuditEvent,
   StoredInterruptRecord,
   StoredRouteDecision,
   StoredSessionEvent,
@@ -172,6 +173,10 @@ class MetricsCollector {
     this.store?.recordFileOwnershipEvent(event);
   }
 
+  recordIntegrationAuditEvent(event: StoredIntegrationAuditEvent): void {
+    this.store?.recordIntegrationAuditEvent(event);
+  }
+
   getAgentRun(runId: string): StoredAgentRunRecord | undefined {
     return this.store?.getAgentRun(runId);
   }
@@ -231,6 +236,19 @@ class MetricsCollector {
     offset?: number;
   } = {}): StoredFileOwnershipEvent[] {
     return this.store?.listFileOwnershipEvents(params) ?? [];
+  }
+
+  listIntegrationAuditEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    provider?: string;
+    capabilityId?: string;
+    toolName?: string;
+    status?: StoredIntegrationAuditEvent['status'];
+    limit?: number;
+    offset?: number;
+  } = {}): StoredIntegrationAuditEvent[] {
+    return this.store?.listIntegrationAuditEvents(params) ?? [];
   }
 
   setStore(store: MetricsStore | null): void {

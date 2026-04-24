@@ -12,6 +12,19 @@ export interface StoredToolEvent {
   durationMs?: number;
 }
 
+export interface StoredIntegrationAuditEvent {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  sessionKey?: string;
+  sdkSessionId?: string;
+  toolName: string;
+  provider: string;
+  capabilityId: string;
+  status: 'started' | 'completed' | 'failed';
+  reason?: string;
+}
+
 export interface StoredSessionEvent {
   timestamp?: number;
   agentId: string;
@@ -332,6 +345,19 @@ export class MetricsStore {
         reason TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS integration_audit_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        agent_id TEXT,
+        session_key TEXT,
+        sdk_session_id TEXT,
+        tool_name TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        capability_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        reason TEXT
+      );
+
       CREATE INDEX IF NOT EXISTS idx_counter_events_name_ts ON counter_events(name, ts);
       CREATE INDEX IF NOT EXISTS idx_query_duration_events_ts ON query_duration_events(ts);
       CREATE INDEX IF NOT EXISTS idx_token_events_ts ON token_events(ts);
@@ -354,6 +380,8 @@ export class MetricsStore {
       CREATE INDEX IF NOT EXISTS idx_file_ownership_events_session_ts ON file_ownership_events(session_key, ts);
       CREATE INDEX IF NOT EXISTS idx_file_ownership_events_path_ts ON file_ownership_events(path, ts);
       CREATE INDEX IF NOT EXISTS idx_file_ownership_events_type_ts ON file_ownership_events(event_type, ts);
+      CREATE INDEX IF NOT EXISTS idx_integration_audit_provider_ts ON integration_audit_events(provider, ts);
+      CREATE INDEX IF NOT EXISTS idx_integration_audit_agent_ts ON integration_audit_events(agent_id, ts);
     `);
     this.ensureColumn('agent_runs', 'route_decision_id', 'TEXT');
     this.ensureColumn('agent_runs', 'trace_id', 'TEXT NOT NULL DEFAULT ""');
@@ -419,6 +447,25 @@ export class MetricsStore {
       event.toolName,
       event.status,
       event.durationMs ?? null,
+    );
+  }
+
+  recordIntegrationAuditEvent(event: StoredIntegrationAuditEvent): void {
+    this.db.prepare(`
+      INSERT INTO integration_audit_events(
+        ts, agent_id, session_key, sdk_session_id, tool_name, provider, capability_id, status, reason
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.timestamp ?? Date.now(),
+      event.agentId ?? null,
+      event.sessionKey ?? null,
+      event.sdkSessionId ?? null,
+      event.toolName,
+      event.provider,
+      event.capabilityId,
+      event.status,
+      event.reason ?? null,
     );
   }
 
@@ -842,6 +889,53 @@ export class MetricsStore {
     return rows.map(parseFileOwnershipEventRow);
   }
 
+  listIntegrationAuditEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    provider?: string;
+    capabilityId?: string;
+    toolName?: string;
+    status?: StoredIntegrationAuditEvent['status'];
+    limit?: number;
+    offset?: number;
+  } = {}): StoredIntegrationAuditEvent[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.agentId) {
+      clauses.push('agent_id = ?');
+      values.push(params.agentId);
+    }
+    if (params.sessionKey) {
+      clauses.push('session_key = ?');
+      values.push(params.sessionKey);
+    }
+    if (params.provider) {
+      clauses.push('provider = ?');
+      values.push(params.provider);
+    }
+    if (params.capabilityId) {
+      clauses.push('capability_id = ?');
+      values.push(params.capabilityId);
+    }
+    if (params.toolName) {
+      clauses.push('tool_name = ?');
+      values.push(params.toolName);
+    }
+    if (params.status) {
+      clauses.push('status = ?');
+      values.push(params.status);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM integration_audit_events
+      ${where}
+      ORDER BY ts DESC, id DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as IntegrationAuditEventRow[];
+    return rows.map(parseIntegrationAuditEventRow);
+  }
+
   counters(): Record<string, number> {
     const rows = this.db.prepare(`
       SELECT name, SUM(value) as value
@@ -1148,6 +1242,19 @@ interface FileOwnershipEventRow {
   reason: string | null;
 }
 
+interface IntegrationAuditEventRow {
+  id: number;
+  ts: number;
+  agent_id: string | null;
+  session_key: string | null;
+  sdk_session_id: string | null;
+  tool_name: string;
+  provider: string;
+  capability_id: string;
+  status: StoredIntegrationAuditEvent['status'];
+  reason: string | null;
+}
+
 function parseDiagnosticEventRow(row: DiagnosticEventRow): StoredDiagnosticEvent {
   return {
     id: row.id,
@@ -1209,6 +1316,21 @@ function parseFileOwnershipEventRow(row: FileOwnershipEventRow): StoredFileOwner
     path: row.path,
     eventType: row.event_type,
     action: row.action ?? undefined,
+    reason: row.reason ?? undefined,
+  };
+}
+
+function parseIntegrationAuditEventRow(row: IntegrationAuditEventRow): StoredIntegrationAuditEvent {
+  return {
+    id: row.id,
+    timestamp: row.ts,
+    agentId: row.agent_id ?? undefined,
+    sessionKey: row.session_key ?? undefined,
+    sdkSessionId: row.sdk_session_id ?? undefined,
+    toolName: row.tool_name,
+    provider: row.provider,
+    capabilityId: row.capability_id,
+    status: row.status,
     reason: row.reason ?? undefined,
   };
 }

@@ -28,6 +28,7 @@ import type {
   StoredAgentRunStatus,
   StoredAgentRunUsage,
   StoredFileOwnershipEvent,
+  StoredIntegrationAuditEvent,
   StoredRouteDecision,
   StoredRouteDecisionCandidate,
 } from './metrics/store.js';
@@ -58,6 +59,7 @@ import {
   preflightAgentMcpServerSpec,
   type McpServerPreflight,
 } from './integrations/mcp-preflight.js';
+import { classifyIntegrationToolName } from './integrations/audit.js';
 import { buildSdkOptions } from './sdk/options.js';
 import { buildAllowedTools } from './sdk/permissions.js';
 import { SdkControlRegistry } from './sdk/control-registry.js';
@@ -747,6 +749,19 @@ export class Gateway {
       }
     }
     return preflight.sort((a, b) => a.serverName.localeCompare(b.serverName));
+  }
+
+  listIntegrationAuditEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    provider?: string;
+    capabilityId?: string;
+    toolName?: string;
+    status?: StoredIntegrationAuditEvent['status'];
+    limit?: number;
+    offset?: number;
+  } = {}): StoredIntegrationAuditEvent[] {
+    return metrics.listIntegrationAuditEvents(params);
   }
 
   async deliverDirectWebhook(
@@ -2883,6 +2898,15 @@ export class Gateway {
             status: run.status,
           });
         }),
+        emitter.subscribe('on_tool_use', (payload) => {
+          this.recordIntegrationAuditPayload(agent.id, 'started', payload);
+        }),
+        emitter.subscribe('on_tool_result', (payload) => {
+          this.recordIntegrationAuditPayload(agent.id, 'completed', payload);
+        }),
+        emitter.subscribe('on_tool_error', (payload) => {
+          this.recordIntegrationAuditPayload(agent.id, 'failed', payload);
+        }),
       ];
 
       this.hookEmitters.set(agent.id, emitter);
@@ -2902,6 +2926,28 @@ export class Gateway {
     }
     this.hookEmitterUnsubscribes.clear();
     this.hookEmitters.clear();
+  }
+
+  private recordIntegrationAuditPayload(
+    agentId: string,
+    status: StoredIntegrationAuditEvent['status'],
+    payload: Record<string, unknown>,
+  ): void {
+    const toolName = typeof payload.toolName === 'string' ? payload.toolName : undefined;
+    if (!toolName) return;
+    const classification = classifyIntegrationToolName(toolName);
+    if (!classification) return;
+
+    metrics.recordIntegrationAuditEvent({
+      agentId,
+      sessionKey: typeof payload.sessionKey === 'string' ? payload.sessionKey : undefined,
+      sdkSessionId: typeof payload.sdkSessionId === 'string' ? payload.sdkSessionId : undefined,
+      toolName,
+      provider: classification.provider,
+      capabilityId: classification.capabilityId,
+      status,
+      reason: typeof payload.error === 'string' ? payload.error : undefined,
+    });
   }
 
   private extractSubagentRegistryEvent(
