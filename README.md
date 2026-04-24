@@ -10,9 +10,9 @@
 
 <p align="center">
   <a href="https://github.com/timur-nocodia/anthroclaw/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-f59e0b.svg"></a>
-  <img alt="Node.js >= 22" src="https://img.shields.io/badge/node-%3E%3D22-3b82f6.svg">
-  <img alt="Claude Agent SDK native" src="https://img.shields.io/badge/Claude%20Agent%20SDK-native-111827.svg">
-  <img alt="Telegram + WhatsApp" src="https://img.shields.io/badge/channels-Telegram%20%2B%20WhatsApp-10b981.svg">
+  <img alt="Node.js 22+" src="https://img.shields.io/badge/node-22%2B-3b82f6.svg">
+  <img alt="Claude Agent SDK native" src="https://img.shields.io/badge/Claude_Agent_SDK-native-111827.svg">
+  <img alt="Telegram and WhatsApp" src="https://img.shields.io/badge/channels-Telegram_%2B_WhatsApp-10b981.svg">
 </p>
 
 AnthroClaw is a local-first gateway for running multiple Claude-powered agents across real chat channels, with a web control surface for sessions, agents, skills, channels, logs, fleet status, metrics, and deploy operations.
