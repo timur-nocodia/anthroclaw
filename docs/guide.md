@@ -76,8 +76,9 @@ AnthroClaw is inspired by OpenClaw and Hermes-style agent infrastructure, but it
 43. [Doctor Command](#doctor-command)
 44. [Usage Insights](#usage-insights)
 45. [Prompt Caching](#prompt-caching)
-46. [Running in Production](#running-in-production)
-47. [FAQ](#faq)
+46. [Releases](#releases)
+47. [Running in Production](#running-in-production)
+48. [FAQ](#faq)
 
 ---
 
@@ -1887,6 +1888,36 @@ This lets the SDK keep the system-prompt prefix stable and cacheable while movin
 - improves cacheability of the default Claude Code system prompt across sessions
 - avoids a custom `cache_control` orchestration layer in our runtime
 - exposes real cache-read usage through runtime metrics instead of assuming hits
+
+---
+
+## Releases
+
+AnthroClaw uses SemVer tags in the form `vMAJOR.MINOR.PATCH`.
+
+The release version is stored in:
+
+- root `package.json`
+- `ui/package.json`
+- `VERSION`
+
+These files must always match. Check them with:
+
+```bash
+npm run release:check
+```
+
+Create a release from a clean worktree:
+
+```bash
+npm run release:dry
+npm run release:patch   # patch bump
+npm run release:minor   # minor bump
+npm run release:major   # major bump
+git push && git push --tags
+```
+
+The release script updates versions, appends `CHANGELOG.md`, creates a release commit, and creates an annotated git tag.
 
 ---
 

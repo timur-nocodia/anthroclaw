@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/timur-nocodia/anthroclaw/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-f59e0b.svg"></a>
+  <img alt="Version" src="https://img.shields.io/github/package-json/v/timur-nocodia/anthroclaw?color=111827">
   <img alt="Node.js 22+" src="https://img.shields.io/badge/node-22%2B-3b82f6.svg">
   <img alt="Claude Agent SDK native" src="https://img.shields.io/badge/Claude_Agent_SDK-native-111827.svg">
   <img alt="Telegram and WhatsApp" src="https://img.shields.io/badge/channels-Telegram_%2B_WhatsApp-10b981.svg">
@@ -372,6 +373,31 @@ cd ui && pnpm test --run
 ```
 
 For runtime or SDK changes, run backend build/tests as well.
+
+## Releases
+
+AnthroClaw uses SemVer tags: `vMAJOR.MINOR.PATCH`.
+
+The canonical version is stored in three places that must stay in sync:
+
+- `package.json`
+- `ui/package.json`
+- `VERSION`
+
+Release notes live in `CHANGELOG.md`.
+
+Use the release scripts from a clean worktree:
+
+```bash
+npm run release:check
+npm run release:dry
+npm run release:patch   # 0.1.0 -> 0.1.1
+npm run release:minor   # 0.1.0 -> 0.2.0
+npm run release:major   # 0.1.0 -> 1.0.0
+git push && git push --tags
+```
+
+`scripts/release.mjs` updates all version files, appends a changelog entry from git commits since the latest `v*` tag, creates `chore(release): vX.Y.Z`, and creates an annotated git tag.
 
 ## Contributing
 
