@@ -23,6 +23,7 @@ import { metrics } from './metrics/collector.js';
 import { MetricsStore } from './metrics/store.js';
 import type {
   StoredAgentRunRecord,
+  StoredAgentRunSource,
   StoredAgentRunStatus,
   StoredAgentRunUsage,
   StoredRouteDecision,
@@ -85,6 +86,37 @@ export interface SessionMessagePreview {
   type: string;
   uuid: string;
   text: string;
+}
+
+export type SessionActiveFilter = 'active' | 'inactive' | 'all';
+
+export interface ListAgentSessionsParams {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  source?: StoredAgentRunSource;
+  channel?: string;
+  status?: StoredAgentRunStatus;
+  active?: SessionActiveFilter;
+  hasRouteDecision?: boolean;
+  hasErrors?: boolean;
+  modifiedAfter?: number;
+  modifiedBefore?: number;
+}
+
+export interface AgentSessionMailboxRow {
+  sessionId: string;
+  summary: string;
+  tag?: string;
+  customTitle?: string;
+  lastModified: number;
+  createdAt?: number;
+  cwd?: string;
+  activeKeys: string[];
+  messageCount: number;
+  provenance?: SessionProvenanceView;
+  firstMessage?: SessionMessagePreview;
+  lastMessage?: SessionMessagePreview;
 }
 
 function compactError(value: unknown): string {
@@ -181,6 +213,60 @@ function previewSessionMessages(messages: SdkSessionMessageView[]): {
     firstMessage: toPreview(visible[0]),
     lastMessage: toPreview(visible.at(-1)),
   };
+}
+
+function hasSessionMailboxFilters(params: ListAgentSessionsParams): boolean {
+  return Boolean(
+    params.search
+      || params.source
+      || params.channel
+      || params.status
+      || (params.active && params.active !== 'all')
+      || params.hasRouteDecision !== undefined
+      || params.hasErrors !== undefined
+      || params.modifiedAfter !== undefined
+      || params.modifiedBefore !== undefined,
+  );
+}
+
+function matchesSessionMailboxFilters(row: AgentSessionMailboxRow, params: ListAgentSessionsParams): boolean {
+  const provenance = row.provenance;
+
+  if (params.source && provenance?.source !== params.source) return false;
+  if (params.channel && provenance?.channel !== params.channel) return false;
+  if (params.status && provenance?.status !== params.status) return false;
+  if (params.active === 'active' && row.activeKeys.length === 0) return false;
+  if (params.active === 'inactive' && row.activeKeys.length > 0) return false;
+  if (params.hasRouteDecision !== undefined && Boolean(provenance?.routeDecisionId) !== params.hasRouteDecision) return false;
+  if (params.hasErrors !== undefined && (provenance?.status === 'failed') !== params.hasErrors) return false;
+  if (params.modifiedAfter !== undefined && row.lastModified < params.modifiedAfter) return false;
+  if (params.modifiedBefore !== undefined && row.lastModified > params.modifiedBefore) return false;
+
+  const query = params.search?.trim().toLowerCase();
+  if (!query) return true;
+
+  const haystack = [
+    row.sessionId,
+    row.summary,
+    row.tag,
+    row.customTitle,
+    row.firstMessage?.text,
+    row.lastMessage?.text,
+    provenance?.source,
+    provenance?.channel,
+    provenance?.accountId,
+    provenance?.peerId,
+    provenance?.threadId,
+    provenance?.messageId,
+    provenance?.routeDecisionId,
+    provenance?.routeOutcome,
+    provenance?.status,
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .toLowerCase();
+
+  return haystack.includes(query);
 }
 
 async function nextWithTimeout<T>(
@@ -546,26 +632,14 @@ export class Gateway {
 
   async listAgentSessions(
     agentId: string,
-    params: { limit?: number; offset?: number } = {},
-  ): Promise<Array<{
-    sessionId: string;
-    summary: string;
-    tag?: string;
-    customTitle?: string;
-    lastModified: number;
-    createdAt?: number;
-    cwd?: string;
-    activeKeys: string[];
-    messageCount: number;
-    provenance?: SessionProvenanceView;
-    firstMessage?: SessionMessagePreview;
-    lastMessage?: SessionMessagePreview;
-  }>> {
+    params: ListAgentSessionsParams = {},
+  ): Promise<AgentSessionMailboxRow[]> {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent "${agentId}" not found`);
     if (!this.sdkSessionService) return [];
 
-    const sdkSessions = await this.sdkSessionService.listAgentSessions(agent, params);
+    const shouldFilter = hasSessionMailboxFilters(params);
+    const sdkSessions = await this.sdkSessionService.listAgentSessions(agent, shouldFilter ? {} : params);
     const mappings = agent.listSessionMappings();
     const activeBySession = new Map<string, typeof mappings>();
     for (const mapping of mappings) {
@@ -636,7 +710,15 @@ export class Gateway {
       });
     }
 
-    return rows.sort((a, b) => b.lastModified - a.lastModified);
+    const filtered = rows
+      .sort((a, b) => b.lastModified - a.lastModified)
+      .filter((row) => matchesSessionMailboxFilters(row, params));
+
+    if (!shouldFilter) return filtered;
+
+    const offset = params.offset ?? 0;
+    const limit = params.limit ?? 25;
+    return filtered.slice(offset, offset + limit);
   }
 
   async getAgentSessionDetails(
