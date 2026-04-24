@@ -331,7 +331,7 @@ Before adding powerful tools to an agent, verify:
 ├── agents/
 │   └── example/                 # Example agent workspace
 ├── config.yml                   # Gateway/channel/runtime defaults
-├── docs/                        # Design notes, guide, UI/API specs
+├── docs/                        # Public guide
 ├── src/                         # Gateway, runtime, tools, channels, memory
 │   ├── agent/
 │   ├── channels/

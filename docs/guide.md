@@ -1,6 +1,8 @@
-# OpenClaw Agent SDK Edition — Full Guide
+# AnthroClaw — Full Guide
 
-A lightweight multi-agent AI assistant framework built on [Anthropic Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk). Deploys AI agents to Telegram and WhatsApp with memory, skills, cron jobs, access control, and more.
+A Claude Agent SDK-native control plane for personal, multi-agent assistants. AnthroClaw deploys AI agents to Telegram and WhatsApp with memory, skills, cron jobs, access control, fleet management, and a Web UI.
+
+AnthroClaw is inspired by OpenClaw and Hermes-style agent infrastructure, but it is a separate implementation. Primary LLM execution goes through `@anthropic-ai/claude-agent-sdk`, so Claude calls use the native Claude Code / Agent SDK path. OpenAI is optional and used only for memory embeddings when configured.
 
 ---
 
@@ -98,8 +100,8 @@ A lightweight multi-agent AI assistant framework built on [Anthropic Agent SDK](
 
 ```bash
 # Clone the repository
-git clone https://github.com/timur-nocodia/opencalw-agent-sdk-edition.git
-cd opencalw-agent-sdk-edition
+git clone https://github.com/timur-nocodia/anthroclaw.git
+cd anthroclaw
 
 # Install dependencies
 pnpm install
@@ -1899,7 +1901,7 @@ npx tsx watch src/index.ts
 ### With process manager (PM2)
 
 ```bash
-pm2 start "npx tsx src/index.ts" --name openclaw-agent
+pm2 start "npx tsx src/index.ts" --name anthroclaw-agent
 pm2 save
 pm2 startup
 ```
@@ -1908,7 +1910,7 @@ pm2 startup
 
 ```ini
 [Unit]
-Description=OpenClaw Agent SDK
+Description=AnthroClaw Agent SDK Gateway
 After=network.target
 
 [Service]
@@ -1930,7 +1932,7 @@ WantedBy=multi-user.target
 npx tsx src/index.ts [config.yml path] [agents dir] [data dir]
 
 # Example:
-npx tsx src/index.ts /etc/openclaw/config.yml /etc/openclaw/agents /var/lib/openclaw/data
+npx tsx src/index.ts /etc/anthroclaw/config.yml /etc/anthroclaw/agents /var/lib/anthroclaw/data
 ```
 
 ---
