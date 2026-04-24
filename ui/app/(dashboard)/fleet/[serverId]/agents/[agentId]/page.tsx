@@ -88,6 +88,11 @@ interface AgentConfig {
   raw?: string;
   channel_context?: ChannelContextConfig;
   mcp_tools?: string[];
+  memory_extraction?: {
+    enabled?: boolean;
+    max_candidates?: number;
+    max_input_chars?: number;
+  };
   external_mcp_servers?: Record<string, ExternalMcpServerConfig>;
   allowlist?: Record<string, string[]>;
   quick_commands?: Record<string, { command: string; timeout: number }>;
@@ -675,6 +680,11 @@ function ConfigTab({
     routes: agent.routes ?? [],
     channel_context: agent.channel_context ?? { reply_to_mode: "always" as ReplyToMode },
     mcp_tools: agent.mcp_tools ?? [],
+    memory_extraction: {
+      enabled: agent.memory_extraction?.enabled ?? false,
+      max_candidates: agent.memory_extraction?.max_candidates ?? 5,
+      max_input_chars: agent.memory_extraction?.max_input_chars ?? 6000,
+    },
     external_mcp_servers: agent.external_mcp_servers ?? {},
     allowlist: agent.allowlist ?? {},
     quick_commands: agent.quick_commands ?? {},
@@ -1764,6 +1774,60 @@ function ConfigTab({
                 className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
                 style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} />
             </Field>
+          </Section>
+
+          <Section
+            title="Memory extraction"
+            tooltip="Post-run memory candidates are proposed for review after successful runs. They are not searchable until an operator approves them."
+            icon={<Brain className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+          >
+            <div className="flex flex-col gap-3.5">
+              <ToggleField
+                label="Propose post-run candidates"
+                tooltip="Run a bounded, tools-disabled extraction pass after selected successful runs. Candidates land in the pending memory review queue."
+                checked={cfg.memory_extraction.enabled}
+                onChange={(enabled) => update({
+                  memory_extraction: {
+                    ...cfg.memory_extraction,
+                    enabled,
+                  },
+                })}
+              />
+              <FormGrid>
+                <Field label="Max candidates" tooltip="Maximum memory candidates to propose from one completed run. Backend accepts 1-10.">
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={cfg.memory_extraction.max_candidates}
+                    onChange={(e) => update({
+                      memory_extraction: {
+                        ...cfg.memory_extraction,
+                        max_candidates: Math.min(10, Math.max(1, +e.target.value || 1)),
+                      },
+                    })}
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+                <Field label="Max input chars" tooltip="Maximum response text passed into the extraction prompt. Backend accepts 500-20000.">
+                  <input
+                    type="number"
+                    min={500}
+                    max={20000}
+                    value={cfg.memory_extraction.max_input_chars}
+                    onChange={(e) => update({
+                      memory_extraction: {
+                        ...cfg.memory_extraction,
+                        max_input_chars: Math.min(20000, Math.max(500, +e.target.value || 500)),
+                      },
+                    })}
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+              </FormGrid>
+            </div>
           </Section>
 
           <Section
