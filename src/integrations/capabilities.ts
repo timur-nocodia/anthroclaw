@@ -171,12 +171,12 @@ const STT_DEFINITIONS: CapabilityDefinition[] = [
     toolNames: [],
     risk: 'medium',
     costModel: 'external_api',
-    requiredConfig: ['assemblyai.api_key'],
+    requiredConfig: ['stt.assemblyai.api_key or assemblyai.api_key'],
     permissionDefaults: {
       defaultBehavior: 'deny',
       notes: ['STT runs before SDK query execution; it is not exposed as an SDK MCP tool.'],
     },
-    isConfigured: (config) => Boolean(config.assemblyai?.api_key),
+    isConfigured: (config) => Boolean(config.stt?.assemblyai?.api_key ?? config.assemblyai?.api_key),
     isRequested: () => true,
   },
   {
@@ -186,12 +186,12 @@ const STT_DEFINITIONS: CapabilityDefinition[] = [
     toolNames: [],
     risk: 'medium',
     costModel: 'external_api',
-    requiredConfig: ['OPENAI_API_KEY'],
+    requiredConfig: ['stt.openai.api_key or OPENAI_API_KEY'],
     permissionDefaults: {
       defaultBehavior: 'deny',
       notes: ['STT runs before SDK query execution; it is not exposed as an SDK MCP tool.'],
     },
-    isConfigured: (_config, env) => Boolean(env.OPENAI_API_KEY),
+    isConfigured: (config, env) => Boolean(config.stt?.openai?.api_key ?? env.OPENAI_API_KEY),
     isRequested: () => true,
   },
   {
@@ -201,12 +201,12 @@ const STT_DEFINITIONS: CapabilityDefinition[] = [
     toolNames: [],
     risk: 'medium',
     costModel: 'external_api',
-    requiredConfig: ['ELEVENLABS_API_KEY'],
+    requiredConfig: ['stt.elevenlabs.api_key or ELEVENLABS_API_KEY'],
     permissionDefaults: {
       defaultBehavior: 'deny',
       notes: ['STT runs before SDK query execution; it is not exposed as an SDK MCP tool.'],
     },
-    isConfigured: (_config, env) => Boolean(env.ELEVENLABS_API_KEY),
+    isConfigured: (config, env) => Boolean(config.stt?.elevenlabs?.api_key ?? env.ELEVENLABS_API_KEY),
     isRequested: () => true,
   },
 ];

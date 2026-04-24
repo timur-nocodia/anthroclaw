@@ -118,6 +118,26 @@ describe('GlobalConfigSchema', () => {
     expect(result.defaults.embedding_provider).toBe('openai');
   });
 
+  it('accepts STT provider configuration', () => {
+    const result = GlobalConfigSchema.parse({
+      stt: {
+        provider: 'openai',
+        openai: {
+          api_key: 'openai-key',
+          model: 'gpt-4o-mini-transcribe',
+        },
+        elevenlabs: {
+          api_key: 'eleven-key',
+          model: 'scribe_v2',
+        },
+      },
+    });
+
+    expect(result.stt!.provider).toBe('openai');
+    expect(result.stt!.openai!.model).toBe('gpt-4o-mini-transcribe');
+    expect(result.stt!.elevenlabs!.model).toBe('scribe_v2');
+  });
+
   it('accepts telegram webhook without secret', () => {
     const input = {
       telegram: {

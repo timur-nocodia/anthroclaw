@@ -94,7 +94,7 @@ describe('integration capability matrix', () => {
     });
     expect(matrix.capabilities.find((capability) => capability.id === 'stt.openai')).toMatchObject({
       status: 'available',
-      requiredConfig: ['OPENAI_API_KEY'],
+      requiredConfig: ['stt.openai.api_key or OPENAI_API_KEY'],
       permissionDefaults: {
         defaultBehavior: 'deny',
         notes: ['STT runs before SDK query execution; it is not exposed as an SDK MCP tool.'],
@@ -102,7 +102,7 @@ describe('integration capability matrix', () => {
     });
     expect(matrix.capabilities.find((capability) => capability.id === 'stt.elevenlabs')).toMatchObject({
       status: 'missing_config',
-      requiredConfig: ['ELEVENLABS_API_KEY'],
+      requiredConfig: ['stt.elevenlabs.api_key or ELEVENLABS_API_KEY'],
     });
     expect(JSON.stringify(matrix)).not.toContain('assembly-key');
     expect(JSON.stringify(matrix)).not.toContain('openai-key');

@@ -17,7 +17,7 @@ import { DynamicCronStore } from './cron/dynamic-store.js';
 import { ConfigWatcher } from './config/watcher.js';
 import { runDreaming } from './memory/dreaming.js';
 import { PrefetchCache } from './memory/prefetch.js';
-import { transcribeAudio } from './media/transcribe.js';
+import { transcribeAudioWithProvider, type SttTranscriptionConfig } from './media/transcribe.js';
 import { extractPdfText } from './media/pdf.js';
 import { metrics } from './metrics/collector.js';
 import { MetricsStore } from './metrics/store.js';
@@ -2710,12 +2710,13 @@ export class Gateway {
   private async enrichMedia(msg: InboundMessage): Promise<void> {
     if (!msg.media) return;
 
-    // Audio/voice transcription via AssemblyAI
-    if ((msg.media.type === 'voice' || msg.media.type === 'audio') && this.globalConfig?.assemblyai?.api_key) {
-      const transcript = await transcribeAudio(msg.media.path, this.globalConfig.assemblyai.api_key);
+    // Audio/voice transcription runs before SDK query execution.
+    const stt = this.resolveSttTranscriptionConfig();
+    if ((msg.media.type === 'voice' || msg.media.type === 'audio') && stt) {
+      const transcript = await transcribeAudioWithProvider(msg.media.path, stt);
       if (transcript) {
         msg.transcript = transcript;
-        logger.info({ mediaType: msg.media.type, chars: transcript.length }, 'Audio transcribed');
+        logger.info({ mediaType: msg.media.type, provider: stt.provider, chars: transcript.length }, 'Audio transcribed');
       }
     }
 
@@ -2727,6 +2728,24 @@ export class Gateway {
         logger.info({ chars: text.length }, 'PDF text extracted');
       }
     }
+  }
+
+  private resolveSttTranscriptionConfig(): SttTranscriptionConfig | null {
+    const stt = this.globalConfig?.stt;
+    const provider = stt?.provider ?? 'assemblyai';
+
+    if (provider === 'assemblyai') {
+      const apiKey = stt?.assemblyai?.api_key ?? this.globalConfig?.assemblyai?.api_key;
+      return apiKey ? { provider, apiKey, model: stt?.assemblyai?.model } : null;
+    }
+
+    if (provider === 'openai') {
+      const apiKey = stt?.openai?.api_key ?? process.env.OPENAI_API_KEY;
+      return apiKey ? { provider, apiKey, model: stt?.openai?.model } : null;
+    }
+
+    const apiKey = stt?.elevenlabs?.api_key ?? process.env.ELEVENLABS_API_KEY;
+    return apiKey ? { provider, apiKey, model: stt?.elevenlabs?.model } : null;
   }
 
   // ─── Internal helpers ──────────────────────────────────────────────

@@ -30,6 +30,20 @@ const DirectWebhookSchema = z.object({
   max_payload_bytes: z.number().int().min(1).max(131_072).default(32_768),
 });
 
+const SttProviderSchema = z.enum(['assemblyai', 'openai', 'elevenlabs']);
+
+const SttProviderCredentialSchema = z.object({
+  api_key: z.string().optional(),
+  model: z.string().optional(),
+});
+
+const SttConfigSchema = z.object({
+  provider: SttProviderSchema.default('assemblyai'),
+  assemblyai: SttProviderCredentialSchema.optional(),
+  openai: SttProviderCredentialSchema.optional(),
+  elevenlabs: SttProviderCredentialSchema.optional(),
+}).optional();
+
 // ─── GlobalConfigSchema ────────────────────────────────────────────
 
 export const GlobalConfigSchema = z.object({
@@ -64,6 +78,7 @@ export const GlobalConfigSchema = z.object({
   assemblyai: z.object({
     api_key: z.string(),
   }).optional(),
+  stt: SttConfigSchema,
   brave: z.object({
     api_key: z.string(),
   }).optional(),
