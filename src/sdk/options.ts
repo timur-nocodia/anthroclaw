@@ -9,6 +9,7 @@ import {
   createCanUseTool,
   type FileOwnershipPermissionHooks,
 } from './permissions.js';
+import { buildExternalMcpServerSpec } from './external-mcp.js';
 import { normalizeSandboxSettings } from './sandbox.js';
 
 export interface BuildSdkOptionsParams {
@@ -52,7 +53,10 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
   };
 
   if (includeMcpServer) {
-    options.mcpServers = { [agent.mcpServer.name]: agent.mcpServer };
+    options.mcpServers = {
+      [agent.mcpServer.name]: agent.mcpServer,
+      ...buildExternalMcpServerSpec(agent.config.external_mcp_servers),
+    };
   }
 
   if (subagents) {

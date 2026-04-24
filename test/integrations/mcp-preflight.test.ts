@@ -116,4 +116,35 @@ describe('MCP preflight', () => {
     });
     expect(JSON.stringify(result)).not.toContain('secret');
   });
+
+  it('includes configured agent external MCP servers in gateway preflight', () => {
+    const gw = new Gateway();
+    (gw as any).agents.set('ops-agent', {
+      id: 'ops-agent',
+      config: {
+        external_mcp_servers: {
+          calendar: {
+            type: 'stdio',
+            command: 'npx',
+            args: ['google-calendar-mcp'],
+            env: { GOOGLE_CLIENT_SECRET: 'secret' },
+            allowed_tools: ['calendar_daily_brief'],
+          },
+        },
+      },
+      mcpServer: { name: 'ops-agent-tools' },
+      tools: [],
+    });
+
+    const result = gw.listMcpServerPreflight();
+    expect(result.find((entry) => entry.serverName === 'calendar')).toMatchObject({
+      ownerAgentId: 'ops-agent',
+      source: 'external',
+      approvalStatus: 'review_required',
+      networkRisk: 'high',
+      envVarNames: ['GOOGLE_CLIENT_SECRET'],
+      toolNames: ['calendar_daily_brief'],
+    });
+    expect(JSON.stringify(result)).not.toContain('secret');
+  });
 });

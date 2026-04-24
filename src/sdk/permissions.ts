@@ -17,6 +17,7 @@ import {
 } from './file-ownership-permissions.js';
 import type { FileOwnershipRegistry } from './file-ownership.js';
 import type { StoredFileOwnershipEvent } from '../metrics/store.js';
+import { buildExternalMcpToolNames } from './external-mcp.js';
 
 const DEFAULT_ALLOWED_TOOLS = [
   'Read',
@@ -153,6 +154,11 @@ export function buildAllowedTools(
 
   if (cfg?.permissions?.allow_mcp !== false) {
     for (const toolName of getAgentMcpToolNames(agent)) {
+      if (isLocalMcpToolApproved(cfg?.permissions?.allowed_mcp_tools, toolName)) {
+        out.add(toolName);
+      }
+    }
+    for (const toolName of buildExternalMcpToolNames(agent.config.external_mcp_servers)) {
       if (isLocalMcpToolApproved(cfg?.permissions?.allowed_mcp_tools, toolName)) {
         out.add(toolName);
       }

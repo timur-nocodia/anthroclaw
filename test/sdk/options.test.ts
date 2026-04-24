@@ -153,6 +153,34 @@ describe('buildSdkOptions', () => {
     });
   });
 
+  it('merges configured external MCP servers into native SDK options', () => {
+    const agent = makeAgent({
+      external_mcp_servers: {
+        calendar: {
+          type: 'stdio',
+          command: 'npx',
+          args: ['google-calendar-mcp'],
+          env: { GOOGLE_CLIENT_ID: 'client-id' },
+          allowed_tools: ['calendar_daily_brief'],
+        },
+      },
+    });
+
+    const options = buildSdkOptions({ agent });
+
+    expect(options.mcpServers).toMatchObject({
+      'test-agent-tools': agent.mcpServer,
+      calendar: {
+        type: 'stdio',
+        command: 'npx',
+        args: ['google-calendar-mcp'],
+        env: { GOOGLE_CLIENT_ID: 'client-id' },
+      },
+    });
+    expect(options.allowedTools).toContain('mcp__calendar__calendar_daily_brief');
+    expect(options.allowedTools).toContain('mcp__test-agent-tools__memory_search');
+  });
+
   it('merges permission hooks with the SDK hook bridge when an emitter is provided', () => {
     const agent = makeAgent();
     const hookEmitter = {

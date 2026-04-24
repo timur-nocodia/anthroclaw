@@ -217,6 +217,28 @@ const SdkAgentConfigSchema = z.object({
   fallbackModel: z.string().optional(),
 }).optional();
 
+const ExternalMcpServerSchema = z.union([
+  z.object({
+    type: z.literal('stdio').default('stdio').optional(),
+    command: z.string().min(1),
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    allowed_tools: z.array(z.string()).optional(),
+  }),
+  z.object({
+    type: z.literal('sse'),
+    url: z.string().url(),
+    headers: z.record(z.string(), z.string()).optional(),
+    allowed_tools: z.array(z.string()).optional(),
+  }),
+  z.object({
+    type: z.literal('http'),
+    url: z.string().url(),
+    headers: z.record(z.string(), z.string()).optional(),
+    allowed_tools: z.array(z.string()).optional(),
+  }),
+]);
+
 const ReplyToModeSchema = z.enum(['always', 'incoming_reply_only', 'never']);
 
 const ChannelBehaviorRuleSchema = z.object({
@@ -268,6 +290,7 @@ export const AgentYmlSchema = z.object({
   pairing: PairingSchema.optional(),
   allowlist: z.record(z.string(), z.array(z.string())).optional(),
   mcp_tools: z.array(z.string()).optional(),
+  external_mcp_servers: z.record(z.string(), ExternalMcpServerSchema).optional(),
   memory_extraction: MemoryExtractionSchema,
   subagents: SubagentPolicySchema,
   cron: z.array(CronJobSchema).optional(),

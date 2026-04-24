@@ -257,6 +257,15 @@ describe('AgentYmlSchema', () => {
         whatsapp: ['number1'],
       },
       mcp_tools: ['web-search', 'calculator'],
+      external_mcp_servers: {
+        calendar: {
+          type: 'stdio' as const,
+          command: 'npx',
+          args: ['google-calendar-mcp'],
+          env: { GOOGLE_CLIENT_ID: 'id' },
+          allowed_tools: ['calendar_daily_brief'],
+        },
+      },
       subagents: { allow: ['researcher', 'coder'] },
     };
     const result = AgentYmlSchema.parse(input);
@@ -266,6 +275,7 @@ describe('AgentYmlSchema', () => {
     expect(result.pairing!.code).toBe('SECRET');
     expect(result.allowlist!.telegram).toEqual(['user1', 'user2']);
     expect(result.mcp_tools).toEqual(['web-search', 'calculator']);
+    expect(result.external_mcp_servers!.calendar.allowed_tools).toEqual(['calendar_daily_brief']);
     expect(result.subagents!.allow).toEqual(['researcher', 'coder']);
   });
 

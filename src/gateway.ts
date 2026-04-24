@@ -74,6 +74,11 @@ import { classifyIntegrationToolName } from './integrations/audit.js';
 import { buildSdkOptions } from './sdk/options.js';
 import { buildAllowedTools } from './sdk/permissions.js';
 import { getSdkActiveInputStatus, type SdkActiveInputStatus } from './sdk/active-input.js';
+import {
+  asAgentMcpServerSpec,
+  buildExternalMcpToolNamesByServer,
+  hasExternalMcpServers,
+} from './sdk/external-mcp.js';
 import { SdkControlRegistry } from './sdk/control-registry.js';
 import { FileSessionStore } from './sdk/session-store.js';
 import { SdkSessionService, type SdkSessionMessageView } from './sdk/sessions.js';
@@ -768,6 +773,17 @@ export class Gateway {
         ownerAgentId: agent.id,
         toolNames: agent.tools.map((tool) => tool.name),
       }));
+
+      if (hasExternalMcpServers(agent.config.external_mcp_servers)) {
+        preflight.push(...preflightAgentMcpServerSpec(
+          asAgentMcpServerSpec(agent.config.external_mcp_servers),
+          {
+            ownerAgentId: agent.id,
+            source: 'external',
+            toolNamesByServer: buildExternalMcpToolNamesByServer(agent.config.external_mcp_servers),
+          },
+        ));
+      }
 
       const subagents = this.buildSubagents(agent);
       for (const subagent of Object.values(subagents ?? {})) {
