@@ -4,6 +4,7 @@ import {
   preflightAgentMcpServerSpec,
   preflightMcpServer,
 } from '../../src/integrations/mcp-preflight.js';
+import { Gateway } from '../../src/gateway.js';
 
 describe('MCP preflight', () => {
   it('approves local in-process AnthroClaw agent MCP servers', () => {
@@ -84,6 +85,35 @@ describe('MCP preflight', () => {
       networkRisk: 'high',
     });
     expect(result.reasons).toContain('MCP server is not recognized as an AnthroClaw-managed server.');
+    expect(JSON.stringify(result)).not.toContain('secret');
+  });
+
+  it('exposes external spec preflight through the gateway helper', () => {
+    const gw = new Gateway();
+    const [result] = gw.preflightMcpServerSpec({
+      calendar: {
+        type: 'stdio',
+        command: 'npx',
+        args: ['google-calendar-mcp'],
+        env: {
+          GOOGLE_CLIENT_SECRET: 'secret',
+        },
+      },
+    } as any, {
+      ownerAgentId: 'ops-agent',
+      toolNamesByServer: {
+        calendar: ['calendar_daily_brief'],
+      },
+    });
+
+    expect(result).toMatchObject({
+      serverName: 'calendar',
+      ownerAgentId: 'ops-agent',
+      source: 'external',
+      approvalStatus: 'review_required',
+      networkRisk: 'high',
+      envVarNames: ['GOOGLE_CLIENT_SECRET'],
+    });
     expect(JSON.stringify(result)).not.toContain('secret');
   });
 });

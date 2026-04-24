@@ -2,7 +2,7 @@ import { readdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { query, startup } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentDefinition, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentDefinition, AgentMcpServerSpec, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent/agent.js';
 import { RouteTable, type RouteEntry } from './routing/table.js';
 import { AccessControl } from './routing/access.js';
@@ -787,6 +787,21 @@ export class Gateway {
       }
     }
     return preflight.sort((a, b) => a.serverName.localeCompare(b.serverName));
+  }
+
+  preflightMcpServerSpec(
+    spec: AgentMcpServerSpec,
+    params: {
+      ownerAgentId?: string;
+      source?: 'agent_local' | 'subagent_portable' | 'external';
+      toolNamesByServer?: Record<string, string[]>;
+    } = {},
+  ): McpServerPreflight[] {
+    return preflightAgentMcpServerSpec(spec, {
+      ownerAgentId: params.ownerAgentId,
+      source: params.source ?? 'external',
+      toolNamesByServer: params.toolNamesByServer,
+    });
   }
 
   listIntegrationAuditEvents(params: {
