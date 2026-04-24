@@ -138,6 +138,24 @@ interface IntegrationAuditResponse {
   events: IntegrationAuditEvent[];
 }
 
+interface DirectWebhookDelivery {
+  id?: number;
+  timestamp?: number;
+  webhook: string;
+  status: "delivered" | "not_found" | "disabled" | "unauthorized" | "bad_payload" | "channel_unavailable" | "delivery_failed";
+  delivered: boolean;
+  channel?: string;
+  accountId?: string;
+  peerId?: string;
+  threadId?: string;
+  messageId?: string;
+  error?: string;
+}
+
+interface DirectWebhookDeliveryResponse {
+  deliveries: DirectWebhookDelivery[];
+}
+
 function formatCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 10_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -665,6 +683,7 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
   const [capabilities, setCapabilities] = useState<CapabilityMatrix | null>(null);
   const [preflight, setPreflight] = useState<McpPreflightResponse | null>(null);
   const [audit, setAudit] = useState<IntegrationAuditResponse | null>(null);
+  const [webhookDeliveries, setWebhookDeliveries] = useState<DirectWebhookDeliveryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -675,23 +694,26 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
       setLoading(true);
       setError("");
       try {
-        const [capabilityRes, preflightRes, auditRes] = await Promise.all([
+        const [capabilityRes, preflightRes, auditRes, webhookRes] = await Promise.all([
           fetch(`/api/fleet/${serverId}/integrations/capabilities`),
           fetch(`/api/fleet/${serverId}/integrations/mcp-preflight`),
           fetch(`/api/fleet/${serverId}/integrations/audit?limit=12`),
+          fetch(`/api/fleet/${serverId}/webhooks?limit=12`),
         ]);
-        if (!capabilityRes.ok || !preflightRes.ok || !auditRes.ok) {
+        if (!capabilityRes.ok || !preflightRes.ok || !auditRes.ok || !webhookRes.ok) {
           throw new Error("integration_status_unavailable");
         }
-        const [capabilityData, preflightData, auditData] = await Promise.all([
+        const [capabilityData, preflightData, auditData, webhookData] = await Promise.all([
           capabilityRes.json(),
           preflightRes.json(),
           auditRes.json(),
+          webhookRes.json(),
         ]);
         if (!cancelled) {
           setCapabilities(capabilityData);
           setPreflight(preflightData);
           setAudit(auditData);
+          setWebhookDeliveries(webhookData);
         }
       } catch {
         if (!cancelled) setError("Integration status is unavailable for this gateway.");
@@ -707,9 +729,11 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
   const caps = capabilities?.capabilities ?? [];
   const servers = preflight?.servers ?? [];
   const auditEvents = audit?.events ?? [];
+  const deliveries = webhookDeliveries?.deliveries ?? [];
   const available = caps.filter((capability) => capability.status === "available").length;
   const missing = caps.filter((capability) => capability.status === "missing_config").length;
   const review = servers.filter((server) => server.approvalStatus !== "approved").length;
+  const deliveryFailures = deliveries.filter((delivery) => !delivery.delivered).length;
 
   return (
     <div className="flex max-w-[1040px] flex-col gap-5">
@@ -743,6 +767,7 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
             <MiniCard label="Missing config" value={formatCompact(missing)} delta="Requires env or config" />
             <MiniCard label="MCP review" value={formatCompact(review)} delta={`${formatCompact(servers.length)} servers inspected`} />
             <MiniCard label="Audit events" value={formatCompact(auditEvents.length)} delta="Recent integration tool calls" />
+            <MiniCard label="Webhook deliveries" value={formatCompact(deliveries.length)} delta={`${formatCompact(deliveryFailures)} failed recent deliveries`} />
           </div>
 
           <Divider />
@@ -793,8 +818,61 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
               )}
             </div>
           </div>
+
+          <div>
+            <SectionHead title="Direct webhook deliveries" desc="Recent zero-LLM delivery attempts routed directly to channels." />
+            <div className="mt-3 overflow-hidden rounded-md border" style={{ borderColor: "var(--oc-border)" }}>
+              {deliveries.length === 0 ? (
+                <EmptyPanel text="No direct webhook deliveries recorded yet." />
+              ) : (
+                <div className="divide-y" style={{ borderColor: "var(--oc-border)" }}>
+                  {deliveries.map((delivery, index) => (
+                    <DirectWebhookDeliveryRow key={`${delivery.id ?? index}:${delivery.webhook}:${delivery.status}`} delivery={delivery} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </>
       )}
+    </div>
+  );
+}
+
+function DirectWebhookDeliveryRow({ delivery }: { delivery: DirectWebhookDelivery }) {
+  const status = delivery.delivered ? "available" : "error";
+  return (
+    <div className="grid gap-3 px-3.5 py-3 md:grid-cols-[150px_minmax(180px,1fr)_minmax(210px,1fr)_110px]" style={{ background: "var(--oc-bg1)" }}>
+      <div>
+        <StatusPill status={status} />
+        <div className="mt-2 text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+          {delivery.timestamp ? new Date(delivery.timestamp).toLocaleString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "no timestamp"}
+        </div>
+      </div>
+      <div className="min-w-0">
+        <div className="truncate text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+          {delivery.webhook}
+        </div>
+        <div className="mt-0.5 text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+          {delivery.channel ?? "channel:unknown"} / {delivery.messageId ? `msg:${delivery.messageId}` : "no message"}
+        </div>
+      </div>
+      <div className="min-w-0">
+        <MetaLabel>Target</MetaLabel>
+        <TokenList values={[
+          delivery.accountId ? `account:${delivery.accountId}` : "account:default",
+          delivery.peerId ? `peer:${delivery.peerId}` : "peer:unknown",
+          delivery.threadId ? `thread:${delivery.threadId}` : "thread:none",
+        ]} />
+        {delivery.error && (
+          <div className="mt-2 line-clamp-2 text-[11px] leading-relaxed" style={{ color: "var(--oc-red)" }}>
+            {delivery.error}
+          </div>
+        )}
+      </div>
+      <div className="text-right text-[11px] font-semibold uppercase tracking-[0.4px]" style={{ color: delivery.delivered ? "var(--oc-green)" : "var(--oc-red)" }}>
+        {delivery.status.replace("_", " ")}
+      </div>
     </div>
   );
 }
