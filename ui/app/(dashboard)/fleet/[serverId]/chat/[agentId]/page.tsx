@@ -720,6 +720,21 @@ export default function ChatPage() {
     }
   };
 
+  const stopCurrentRun = async () => {
+    const active = activeRuns.find((run) => run.runId);
+    if (active?.runId) {
+      await fetch(
+        `/api/fleet/${serverId}/agents/${selected}/runs/${encodeURIComponent(active.runId)}/interrupt`,
+        { method: "POST" },
+      ).catch(() => {});
+      void loadActiveRuns();
+    }
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    setStreaming(false);
+  };
+
   const rewindCurrentSession = async () => {
     if (!sessionId || streaming) return;
     setRewindNotice("Checking file checkpoints...");
@@ -1092,9 +1107,8 @@ export default function ChatPage() {
               size="sm"
               disabled={!streaming && !input.trim()}
               onClick={() => {
-                if (streaming && abortRef.current) {
-                  abortRef.current.abort();
-                  setStreaming(false);
+                if (streaming) {
+                  void stopCurrentRun();
                 } else {
                   send(input);
                 }
