@@ -10,6 +10,8 @@ import type {
   StoredDiagnosticEvent,
   StoredFileOwnershipEvent,
   StoredIntegrationAuditEvent,
+  StoredMemoryInfluenceEvent,
+  StoredMemoryInfluenceSource,
   StoredInterruptRecord,
   StoredRouteDecision,
   StoredSessionEvent,
@@ -177,6 +179,10 @@ class MetricsCollector {
     this.store?.recordIntegrationAuditEvent(event);
   }
 
+  recordMemoryInfluenceEvent(event: StoredMemoryInfluenceEvent): void {
+    this.store?.recordMemoryInfluenceEvent(event);
+  }
+
   getAgentRun(runId: string): StoredAgentRunRecord | undefined {
     return this.store?.getAgentRun(runId);
   }
@@ -249,6 +255,18 @@ class MetricsCollector {
     offset?: number;
   } = {}): StoredIntegrationAuditEvent[] {
     return this.store?.listIntegrationAuditEvents(params) ?? [];
+  }
+
+  listMemoryInfluenceEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    runId?: string;
+    sdkSessionId?: string;
+    source?: StoredMemoryInfluenceSource;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredMemoryInfluenceEvent[] {
+    return this.store?.listMemoryInfluenceEvents(params) ?? [];
   }
 
   setStore(store: MetricsStore | null): void {

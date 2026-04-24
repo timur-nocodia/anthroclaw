@@ -25,6 +25,28 @@ export interface StoredIntegrationAuditEvent {
   reason?: string;
 }
 
+export type StoredMemoryInfluenceSource = 'prefetch' | 'memory_search';
+
+export interface StoredMemoryInfluenceRef {
+  memoryEntryId?: string;
+  path: string;
+  startLine?: number;
+  endLine?: number;
+  score?: number;
+}
+
+export interface StoredMemoryInfluenceEvent {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  sessionKey?: string;
+  runId?: string;
+  sdkSessionId?: string;
+  source: StoredMemoryInfluenceSource;
+  query?: string;
+  refs: StoredMemoryInfluenceRef[];
+}
+
 export interface StoredSessionEvent {
   timestamp?: number;
   agentId: string;
@@ -358,6 +380,18 @@ export class MetricsStore {
         reason TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS memory_influence_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        agent_id TEXT,
+        session_key TEXT,
+        run_id TEXT,
+        sdk_session_id TEXT,
+        source TEXT NOT NULL,
+        query TEXT,
+        refs_json TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_counter_events_name_ts ON counter_events(name, ts);
       CREATE INDEX IF NOT EXISTS idx_query_duration_events_ts ON query_duration_events(ts);
       CREATE INDEX IF NOT EXISTS idx_token_events_ts ON token_events(ts);
@@ -382,6 +416,9 @@ export class MetricsStore {
       CREATE INDEX IF NOT EXISTS idx_file_ownership_events_type_ts ON file_ownership_events(event_type, ts);
       CREATE INDEX IF NOT EXISTS idx_integration_audit_provider_ts ON integration_audit_events(provider, ts);
       CREATE INDEX IF NOT EXISTS idx_integration_audit_agent_ts ON integration_audit_events(agent_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_memory_influence_agent_ts ON memory_influence_events(agent_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_memory_influence_run_ts ON memory_influence_events(run_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_memory_influence_session_ts ON memory_influence_events(session_key, ts);
     `);
     this.ensureColumn('agent_runs', 'route_decision_id', 'TEXT');
     this.ensureColumn('agent_runs', 'trace_id', 'TEXT NOT NULL DEFAULT ""');
@@ -466,6 +503,24 @@ export class MetricsStore {
       event.capabilityId,
       event.status,
       event.reason ?? null,
+    );
+  }
+
+  recordMemoryInfluenceEvent(event: StoredMemoryInfluenceEvent): void {
+    this.db.prepare(`
+      INSERT INTO memory_influence_events(
+        ts, agent_id, session_key, run_id, sdk_session_id, source, query, refs_json
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.timestamp ?? Date.now(),
+      event.agentId ?? null,
+      event.sessionKey ?? null,
+      event.runId ?? null,
+      event.sdkSessionId ?? null,
+      event.source,
+      event.query ?? null,
+      JSON.stringify(event.refs),
     );
   }
 
@@ -936,6 +991,48 @@ export class MetricsStore {
     return rows.map(parseIntegrationAuditEventRow);
   }
 
+  listMemoryInfluenceEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    runId?: string;
+    sdkSessionId?: string;
+    source?: StoredMemoryInfluenceSource;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredMemoryInfluenceEvent[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.agentId) {
+      clauses.push('agent_id = ?');
+      values.push(params.agentId);
+    }
+    if (params.sessionKey) {
+      clauses.push('session_key = ?');
+      values.push(params.sessionKey);
+    }
+    if (params.runId) {
+      clauses.push('run_id = ?');
+      values.push(params.runId);
+    }
+    if (params.sdkSessionId) {
+      clauses.push('sdk_session_id = ?');
+      values.push(params.sdkSessionId);
+    }
+    if (params.source) {
+      clauses.push('source = ?');
+      values.push(params.source);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM memory_influence_events
+      ${where}
+      ORDER BY ts DESC, id DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as MemoryInfluenceEventRow[];
+    return rows.map(parseMemoryInfluenceEventRow);
+  }
+
   counters(): Record<string, number> {
     const rows = this.db.prepare(`
       SELECT name, SUM(value) as value
@@ -1255,6 +1352,18 @@ interface IntegrationAuditEventRow {
   reason: string | null;
 }
 
+interface MemoryInfluenceEventRow {
+  id: number;
+  ts: number;
+  agent_id: string | null;
+  session_key: string | null;
+  run_id: string | null;
+  sdk_session_id: string | null;
+  source: StoredMemoryInfluenceSource;
+  query: string | null;
+  refs_json: string;
+}
+
 function parseDiagnosticEventRow(row: DiagnosticEventRow): StoredDiagnosticEvent {
   return {
     id: row.id,
@@ -1267,6 +1376,29 @@ function parseDiagnosticEventRow(row: DiagnosticEventRow): StoredDiagnosticEvent
     eventType: row.event_type,
     detail: parseJsonObject(row.detail_json),
   };
+}
+
+function parseMemoryInfluenceEventRow(row: MemoryInfluenceEventRow): StoredMemoryInfluenceEvent {
+  return {
+    id: row.id,
+    timestamp: row.ts,
+    agentId: row.agent_id ?? undefined,
+    sessionKey: row.session_key ?? undefined,
+    runId: row.run_id ?? undefined,
+    sdkSessionId: row.sdk_session_id ?? undefined,
+    source: row.source,
+    query: row.query ?? undefined,
+    refs: parseMemoryInfluenceRefs(row.refs_json),
+  };
+}
+
+function parseMemoryInfluenceRefs(value: string): StoredMemoryInfluenceRef[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed as StoredMemoryInfluenceRef[] : [];
+  } catch {
+    return [];
+  }
 }
 
 function parseRouteDecisionRow(row: RouteDecisionRow): StoredRouteDecision {

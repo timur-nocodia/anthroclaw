@@ -13,6 +13,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
 
 import { Gateway } from '../src/gateway.js';
 import type { GlobalConfig } from '../src/config/schema.js';
+import { metrics } from '../src/metrics/collector.js';
 
 function minimalConfig(): GlobalConfig {
   return {
@@ -31,6 +32,7 @@ describe('Gateway memory write hook', () => {
   let dataDir: string;
 
   beforeEach(() => {
+    metrics._reset();
     tmpDir = mkdtempSync(join(tmpdir(), 'gw-memory-hook-'));
     agentsDir = join(tmpDir, 'agents');
     dataDir = join(tmpDir, 'data');
@@ -39,6 +41,7 @@ describe('Gateway memory write hook', () => {
   });
 
   afterEach(() => {
+    metrics._reset();
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -76,6 +79,60 @@ mcp_tools:
       reviewStatus: 'approved',
     });
     expect(JSON.stringify(events[0])).not.toContain('secret durable fact');
+
+    await gw.stop();
+  });
+
+  it('records memory_search influence refs from SDK hook output', async () => {
+    const agentDir = join(agentsDir, 'memory-agent');
+    mkdirSync(agentDir);
+    writeFileSync(join(agentDir, 'agent.yml'), `
+routes:
+  - channel: telegram
+    scope: dm
+mcp_tools:
+  - memory_search
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+    metrics.recordAgentRunStart({
+      runId: 'run-1',
+      agentId: 'memory-agent',
+      sessionKey: 'telegram:memory-agent:peer',
+      sdkSessionId: 'sdk-session-1',
+      source: 'channel',
+      channel: 'telegram',
+      status: 'running',
+    });
+
+    await gw._hookEmitters.get('memory-agent')!.emit('on_tool_result', {
+      agentId: 'memory-agent',
+      sdkSessionId: 'sdk-session-1',
+      toolName: 'mcp__memory-agent-tools__memory_search',
+      toolInput: { query: 'owner' },
+      toolResponse: {
+        content: [{
+          type: 'text',
+          text: '<memory-context>\n**memory/profile.md#L1-L3** (score: 0.42)\nOwner: Alice\n</memory-context>',
+        }],
+      },
+    });
+
+    expect(gw.listMemoryInfluenceEvents({ agentId: 'memory-agent', source: 'memory_search' })).toMatchObject([{
+      agentId: 'memory-agent',
+      sessionKey: 'telegram:memory-agent:peer',
+      runId: 'run-1',
+      sdkSessionId: 'sdk-session-1',
+      source: 'memory_search',
+      query: 'owner',
+      refs: [{
+        path: 'memory/profile.md',
+        startLine: 1,
+        endLine: 3,
+        score: 0.42,
+      }],
+    }]);
 
     await gw.stop();
   });

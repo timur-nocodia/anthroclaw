@@ -75,6 +75,22 @@ describe('MetricsStore', () => {
       action: 'allow',
       reason: 'soft file ownership records conflict and allows the claim',
     });
+    store.recordMemoryInfluenceEvent({
+      timestamp: now + 30,
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      sdkSessionId: 'session-1',
+      source: 'prefetch',
+      query: 'project owner',
+      refs: [{
+        memoryEntryId: 'entry-1',
+        path: 'memory/profile.md',
+        startLine: 1,
+        endLine: 3,
+        score: 0.75,
+      }],
+    });
     store.recordAgentRunStart({
       runId: 'run-1',
       traceId: 'trace-1',
@@ -219,6 +235,21 @@ describe('MetricsStore', () => {
       path: '/repo/src/app.ts',
       eventType: 'conflict',
       action: 'allow',
+    }]);
+    expect(store.listMemoryInfluenceEvents({ runId: 'run-1' })).toMatchObject([{
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      sdkSessionId: 'session-1',
+      source: 'prefetch',
+      query: 'project owner',
+      refs: [{
+        memoryEntryId: 'entry-1',
+        path: 'memory/profile.md',
+        startLine: 1,
+        endLine: 3,
+        score: 0.75,
+      }],
     }]);
 
     const report = store.usageReport(30);
