@@ -67,6 +67,12 @@ describe('createMemoryWikiTool', () => {
     expect(indexFile).toHaveBeenCalledWith(
       'memory/wiki/my-page.md',
       expect.stringContaining('data'),
+      expect.objectContaining({
+        source: 'memory_wiki',
+        reviewStatus: 'approved',
+        toolName: 'memory_wiki',
+        metadata: { action: 'create', title: 'My Page' },
+      }),
     );
   });
 

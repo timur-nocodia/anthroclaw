@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, unlink
 import { join } from 'node:path';
 import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
-import type { MemoryStore } from '../../memory/store.js';
+import type { MemoryProvider } from '../../memory/provider.js';
 import type { ToolDefinition } from './types.js';
 
 const WIKI_DIR = 'memory/wiki';
@@ -19,7 +19,7 @@ function slugify(title: string): string {
 
 export function createMemoryWikiTool(
   workspacePath: string,
-  store: MemoryStore,
+  store: MemoryProvider,
 ): ToolDefinition {
   const wikiDir = join(workspacePath, WIKI_DIR);
 
@@ -69,7 +69,12 @@ export function createMemoryWikiTool(
             const fullContent = `# ${title}\n\n${content}`;
             writeFileSync(filePath, fullContent, 'utf-8');
             const relPath = `${WIKI_DIR}/${slug}.md`;
-            store.indexFile(relPath, fullContent);
+            store.indexFile(relPath, fullContent, {
+              source: 'memory_wiki',
+              reviewStatus: 'approved',
+              toolName: 'memory_wiki',
+              metadata: { action, title },
+            });
             return { content: [{ type: 'text', text: `Created wiki page: ${title} (${relPath})` }] };
           }
 
@@ -119,7 +124,12 @@ export function createMemoryWikiTool(
 
             writeFileSync(filePath, existing, 'utf-8');
             const relPath = `${WIKI_DIR}/${slug}.md`;
-            store.indexFile(relPath, existing);
+            store.indexFile(relPath, existing, {
+              source: 'memory_wiki',
+              reviewStatus: 'approved',
+              toolName: 'memory_wiki',
+              metadata: { action, title, section: section ?? null },
+            });
             return { content: [{ type: 'text', text: `Updated wiki page: ${title}` }] };
           }
 

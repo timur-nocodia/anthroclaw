@@ -1,10 +1,12 @@
 import Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
+import type { MemoryProvider } from './provider.js';
 
 // ─── Types ────────────────────────────────────────────────────────
 
 export interface Chunk {
   id: string;
+  memoryEntryId?: string;
   path: string;
   startLine: number;
   endLine: number;
@@ -13,11 +15,40 @@ export interface Chunk {
 }
 
 export interface SearchResult {
+  memoryEntryId?: string;
   path: string;
   startLine: number;
   endLine: number;
   text: string;
   score: number;
+}
+
+export type MemoryReviewStatus = 'pending' | 'approved' | 'rejected';
+
+export interface MemoryProvenance {
+  source?: 'memory_write' | 'memory_wiki' | 'dreaming' | 'index' | 'import' | 'post_run_candidate';
+  reviewStatus?: MemoryReviewStatus;
+  runId?: string;
+  traceId?: string;
+  sessionKey?: string;
+  agentId?: string;
+  sdkSessionId?: string;
+  toolName?: string;
+  createdBy?: string;
+  note?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MemoryEntryRecord {
+  id: string;
+  path: string;
+  contentHash: string;
+  source: string;
+  reviewStatus: MemoryReviewStatus;
+  reviewNote?: string;
+  provenance: MemoryProvenance;
+  createdAt: number;
+  updatedAt: number;
 }
 
 // ─── Internal: Markdown Chunking ──────────────────────────────────
@@ -83,6 +114,7 @@ function chunkMarkdown(content: string, maxChars = 1600, overlap = 320): RawChun
 
 interface ChunkRow {
   id: string;
+  entry_id: string | null;
   path: string;
   start_line: number;
   end_line: number;
@@ -93,6 +125,7 @@ interface ChunkRow {
 function rowToChunk(r: ChunkRow): Chunk {
   return {
     id: r.id,
+    memoryEntryId: r.entry_id ?? undefined,
     path: r.path,
     startLine: r.start_line,
     endLine: r.end_line,
@@ -101,7 +134,7 @@ function rowToChunk(r: ChunkRow): Chunk {
   };
 }
 
-export class MemoryStore {
+export class MemoryStore implements MemoryProvider {
   private db: Database.Database;
   private stmtDeleteByPath!: Database.Statement;
   private stmtInsertChunk!: Database.Statement;
@@ -116,6 +149,7 @@ export class MemoryStore {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS chunks (
         id TEXT PRIMARY KEY,
+        entry_id TEXT,
         path TEXT NOT NULL,
         start_line INTEGER NOT NULL,
         end_line INTEGER NOT NULL,
@@ -127,6 +161,23 @@ export class MemoryStore {
       );
 
       CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);
+      CREATE INDEX IF NOT EXISTS idx_chunks_entry ON chunks(entry_id);
+
+      CREATE TABLE IF NOT EXISTS memory_entries (
+        id TEXT PRIMARY KEY,
+        path TEXT NOT NULL UNIQUE,
+        content_hash TEXT NOT NULL,
+        source TEXT NOT NULL,
+        review_status TEXT NOT NULL,
+        review_note TEXT,
+        provenance_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_memory_entries_path ON memory_entries(path);
+      CREATE INDEX IF NOT EXISTS idx_memory_entries_source_updated ON memory_entries(source, updated_at);
+      CREATE INDEX IF NOT EXISTS idx_memory_entries_review_updated ON memory_entries(review_status, updated_at);
 
       CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
         text,
@@ -149,18 +200,65 @@ export class MemoryStore {
       END;
     `);
 
+    this.ensureColumn('chunks', 'entry_id', 'TEXT');
     this.stmtDeleteByPath = this.db.prepare('DELETE FROM chunks WHERE path = ?');
     this.stmtInsertChunk = this.db.prepare(`
-      INSERT INTO chunks (id, path, start_line, end_line, text, content_hash, indexed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO chunks (id, entry_id, path, start_line, end_line, text, content_hash, indexed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
   }
 
-  indexFile(filePath: string, content: string): void {
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const rows = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (rows.some((row) => row.name === column)) return;
+    this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+  }
+
+  indexFile(filePath: string, content: string, provenance: MemoryProvenance = {}): MemoryEntryRecord {
     const rawChunks = chunkMarkdown(content);
     const now = Date.now();
+    const fileContentHash = createHash('sha256')
+      .update(content)
+      .digest('hex');
+    const existingEntry = this.getMemoryEntryByPath(filePath);
+    const entryId = existingEntry?.id ?? createHash('sha256')
+      .update(`memory-entry:${filePath}`)
+      .digest('hex');
+    const source = provenance.source ?? existingEntry?.provenance.source ?? 'index';
+    const reviewStatus = provenance.reviewStatus ?? existingEntry?.reviewStatus ?? 'approved';
+    const reviewNote = existingEntry?.reviewNote;
+    const createdAt = existingEntry?.createdAt ?? now;
+    const storedProvenance: MemoryProvenance = {
+      ...existingEntry?.provenance,
+      ...provenance,
+      source,
+      reviewStatus,
+    };
 
     const txn = this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO memory_entries(
+          id, path, content_hash, source, review_status, review_note, provenance_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET
+          content_hash = excluded.content_hash,
+          source = excluded.source,
+          review_status = excluded.review_status,
+          provenance_json = excluded.provenance_json,
+          updated_at = excluded.updated_at
+      `).run(
+        entryId,
+        filePath,
+        fileContentHash,
+        source,
+        reviewStatus,
+        reviewNote ?? null,
+        JSON.stringify(storedProvenance),
+        createdAt,
+        now,
+      );
+
       this.stmtDeleteByPath.run(filePath);
 
       for (const chunk of rawChunks) {
@@ -172,17 +270,28 @@ export class MemoryStore {
           .update(chunk.text)
           .digest('hex');
 
-        this.stmtInsertChunk.run(id, filePath, chunk.startLine, chunk.endLine, chunk.text, contentHash, now);
+        this.stmtInsertChunk.run(id, entryId, filePath, chunk.startLine, chunk.endLine, chunk.text, contentHash, now);
       }
     });
 
     txn();
+    return this.getMemoryEntry(entryId) ?? {
+      id: entryId,
+      path: filePath,
+      contentHash: fileContentHash,
+      source,
+      reviewStatus,
+      reviewNote,
+      provenance: storedProvenance,
+      createdAt,
+      updatedAt: now,
+    };
   }
 
   getChunks(filePath: string): Chunk[] {
     const rows = this.db
       .prepare(
-        'SELECT id, path, start_line, end_line, text, content_hash FROM chunks WHERE path = ? ORDER BY start_line',
+        'SELECT id, entry_id, path, start_line, end_line, text, content_hash FROM chunks WHERE path = ? ORDER BY start_line',
       )
       .all(filePath) as ChunkRow[];
 
@@ -192,7 +301,7 @@ export class MemoryStore {
   getAllChunks(): Chunk[] {
     const rows = this.db
       .prepare(
-        'SELECT id, path, start_line, end_line, text, content_hash FROM chunks ORDER BY path, start_line',
+        'SELECT id, entry_id, path, start_line, end_line, text, content_hash FROM chunks ORDER BY path, start_line',
       )
       .all() as ChunkRow[];
 
@@ -200,13 +309,17 @@ export class MemoryStore {
   }
 
   removeFile(filePath: string): void {
-    this.db.prepare('DELETE FROM chunks WHERE path = ?').run(filePath);
+    const txn = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM chunks WHERE path = ?').run(filePath);
+      this.db.prepare('DELETE FROM memory_entries WHERE path = ?').run(filePath);
+    });
+    txn();
   }
 
   textSearch(query: string, limit: number): SearchResult[] {
     const rows = this.db
       .prepare(
-        `SELECT c.path, c.start_line, c.end_line, c.text, rank
+        `SELECT c.entry_id, c.path, c.start_line, c.end_line, c.text, rank
          FROM chunks_fts fts
          JOIN chunks c ON c.rowid = fts.rowid
          WHERE chunks_fts MATCH ?
@@ -214,6 +327,7 @@ export class MemoryStore {
          LIMIT ?`,
       )
       .all(query, limit) as Array<{
+      entry_id: string | null;
       path: string;
       start_line: number;
       end_line: number;
@@ -222,6 +336,7 @@ export class MemoryStore {
     }>;
 
     return rows.map((r) => ({
+      memoryEntryId: r.entry_id ?? undefined,
       path: r.path,
       startLine: r.start_line,
       endLine: r.end_line,
@@ -240,10 +355,11 @@ export class MemoryStore {
   vectorSearch(queryEmbedding: Float32Array, limit: number): SearchResult[] {
     const rows = this.db
       .prepare(
-        'SELECT id, path, start_line, end_line, text, embedding FROM chunks WHERE embedding IS NOT NULL LIMIT 2000',
+        'SELECT id, entry_id, path, start_line, end_line, text, embedding FROM chunks WHERE embedding IS NOT NULL LIMIT 2000',
       )
       .all() as Array<{
       id: string;
+      entry_id: string | null;
       path: string;
       start_line: number;
       end_line: number;
@@ -263,6 +379,7 @@ export class MemoryStore {
       const sim = cosineSimilarity(queryEmbedding, stored);
 
       scored.push({
+        memoryEntryId: row.entry_id ?? undefined,
         path: row.path,
         startLine: row.start_line,
         endLine: row.end_line,
@@ -275,6 +392,61 @@ export class MemoryStore {
     return scored.slice(0, limit);
   }
 
+  getMemoryEntry(entryId: string): MemoryEntryRecord | null {
+    const row = this.db
+      .prepare('SELECT * FROM memory_entries WHERE id = ?')
+      .get(entryId) as MemoryEntryRow | undefined;
+    return row ? rowToMemoryEntry(row) : null;
+  }
+
+  getMemoryEntryByPath(filePath: string): MemoryEntryRecord | null {
+    const row = this.db
+      .prepare('SELECT * FROM memory_entries WHERE path = ?')
+      .get(filePath) as MemoryEntryRow | undefined;
+    return row ? rowToMemoryEntry(row) : null;
+  }
+
+  listMemoryEntries(params: {
+    path?: string;
+    source?: string;
+    reviewStatus?: MemoryReviewStatus;
+    limit?: number;
+    offset?: number;
+  } = {}): MemoryEntryRecord[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.path) {
+      clauses.push('path = ?');
+      values.push(params.path);
+    }
+    if (params.source) {
+      clauses.push('source = ?');
+      values.push(params.source);
+    }
+    if (params.reviewStatus) {
+      clauses.push('review_status = ?');
+      values.push(params.reviewStatus);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM memory_entries
+      ${where}
+      ORDER BY updated_at DESC, path ASC
+      LIMIT ? OFFSET ?
+    `).all(...values) as MemoryEntryRow[];
+    return rows.map(rowToMemoryEntry);
+  }
+
+  updateMemoryEntryReview(entryId: string, reviewStatus: MemoryReviewStatus, reviewNote?: string): boolean {
+    const result = this.db.prepare(`
+      UPDATE memory_entries
+      SET review_status = ?, review_note = ?, updated_at = ?
+      WHERE id = ?
+    `).run(reviewStatus, reviewNote ?? null, Date.now(), entryId);
+    return result.changes > 0;
+  }
+
   listTables(): string[] {
     const rows = this.db
       .prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual table') ORDER BY name")
@@ -284,6 +456,43 @@ export class MemoryStore {
 
   close(): void {
     this.db.close();
+  }
+}
+
+interface MemoryEntryRow {
+  id: string;
+  path: string;
+  content_hash: string;
+  source: string;
+  review_status: MemoryReviewStatus;
+  review_note: string | null;
+  provenance_json: string;
+  created_at: number;
+  updated_at: number;
+}
+
+function rowToMemoryEntry(row: MemoryEntryRow): MemoryEntryRecord {
+  return {
+    id: row.id,
+    path: row.path,
+    contentHash: row.content_hash,
+    source: row.source,
+    reviewStatus: row.review_status,
+    reviewNote: row.review_note ?? undefined,
+    provenance: parseProvenance(row.provenance_json),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function parseProvenance(value: string): MemoryProvenance {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as MemoryProvenance
+      : {};
+  } catch {
+    return {};
   }
 }
 

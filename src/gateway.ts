@@ -21,8 +21,10 @@ import { transcribeAudio } from './media/transcribe.js';
 import { extractPdfText } from './media/pdf.js';
 import { metrics } from './metrics/collector.js';
 import { MetricsStore } from './metrics/store.js';
+import { buildDiagnosticsBundle, type DiagnosticsBundle } from './diagnostics/bundle.js';
 import type {
   StoredAgentRunRecord,
+  StoredAgentRunSource,
   StoredAgentRunStatus,
   StoredAgentRunUsage,
   StoredRouteDecision,
@@ -62,6 +64,12 @@ import {
   type SdkHookLifecycleEvent,
   type SdkTaskProgress,
 } from './sdk/events.js';
+import {
+  parseDirectWebhookPayload,
+  renderDirectWebhook,
+  verifyDirectWebhookSecret,
+  type DirectWebhookHeaders,
+} from './webhooks/direct.js';
 
 const PROMPT_SUGGESTION_WAIT_MS = 750;
 
@@ -81,10 +89,57 @@ export interface SessionProvenanceView {
   status: StoredAgentRunStatus;
 }
 
+export interface DirectWebhookDeliveryResult {
+  delivered: boolean;
+  status: 'delivered' | 'not_found' | 'disabled' | 'unauthorized' | 'bad_payload' | 'channel_unavailable' | 'delivery_failed';
+  messageId?: string;
+  error?: string;
+}
+
+export interface InterruptAgentRunResult {
+  targetId: string;
+  runId?: string;
+  sessionKey?: string;
+  sdkSessionId?: string;
+  interrupted: boolean;
+  reason: string;
+}
+
 export interface SessionMessagePreview {
   type: string;
   uuid: string;
   text: string;
+}
+
+export type SessionActiveFilter = 'active' | 'inactive' | 'all';
+
+export interface ListAgentSessionsParams {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  source?: StoredAgentRunSource;
+  channel?: string;
+  status?: StoredAgentRunStatus;
+  active?: SessionActiveFilter;
+  hasRouteDecision?: boolean;
+  hasErrors?: boolean;
+  modifiedAfter?: number;
+  modifiedBefore?: number;
+}
+
+export interface AgentSessionMailboxRow {
+  sessionId: string;
+  summary: string;
+  tag?: string;
+  customTitle?: string;
+  lastModified: number;
+  createdAt?: number;
+  cwd?: string;
+  activeKeys: string[];
+  messageCount: number;
+  provenance?: SessionProvenanceView;
+  firstMessage?: SessionMessagePreview;
+  lastMessage?: SessionMessagePreview;
 }
 
 function compactError(value: unknown): string {
@@ -181,6 +236,60 @@ function previewSessionMessages(messages: SdkSessionMessageView[]): {
     firstMessage: toPreview(visible[0]),
     lastMessage: toPreview(visible.at(-1)),
   };
+}
+
+function hasSessionMailboxFilters(params: ListAgentSessionsParams): boolean {
+  return Boolean(
+    params.search
+      || params.source
+      || params.channel
+      || params.status
+      || (params.active && params.active !== 'all')
+      || params.hasRouteDecision !== undefined
+      || params.hasErrors !== undefined
+      || params.modifiedAfter !== undefined
+      || params.modifiedBefore !== undefined,
+  );
+}
+
+function matchesSessionMailboxFilters(row: AgentSessionMailboxRow, params: ListAgentSessionsParams): boolean {
+  const provenance = row.provenance;
+
+  if (params.source && provenance?.source !== params.source) return false;
+  if (params.channel && provenance?.channel !== params.channel) return false;
+  if (params.status && provenance?.status !== params.status) return false;
+  if (params.active === 'active' && row.activeKeys.length === 0) return false;
+  if (params.active === 'inactive' && row.activeKeys.length > 0) return false;
+  if (params.hasRouteDecision !== undefined && Boolean(provenance?.routeDecisionId) !== params.hasRouteDecision) return false;
+  if (params.hasErrors !== undefined && (provenance?.status === 'failed') !== params.hasErrors) return false;
+  if (params.modifiedAfter !== undefined && row.lastModified < params.modifiedAfter) return false;
+  if (params.modifiedBefore !== undefined && row.lastModified > params.modifiedBefore) return false;
+
+  const query = params.search?.trim().toLowerCase();
+  if (!query) return true;
+
+  const haystack = [
+    row.sessionId,
+    row.summary,
+    row.tag,
+    row.customTitle,
+    row.firstMessage?.text,
+    row.lastMessage?.text,
+    provenance?.source,
+    provenance?.channel,
+    provenance?.accountId,
+    provenance?.peerId,
+    provenance?.threadId,
+    provenance?.messageId,
+    provenance?.routeDecisionId,
+    provenance?.routeOutcome,
+    provenance?.status,
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .toLowerCase();
+
+  return haystack.includes(query);
 }
 
 async function nextWithTimeout<T>(
@@ -525,12 +634,79 @@ export class Gateway {
     return this.globalConfig;
   }
 
+  async deliverDirectWebhook(
+    name: string,
+    rawBody: string,
+    headers: DirectWebhookHeaders,
+  ): Promise<DirectWebhookDeliveryResult> {
+    const config = this.globalConfig?.webhooks?.[name];
+    if (!config) {
+      return { delivered: false, status: 'not_found', error: `Webhook "${name}" is not configured` };
+    }
+    if (!config.enabled) {
+      return { delivered: false, status: 'disabled', error: `Webhook "${name}" is disabled` };
+    }
+    if (!verifyDirectWebhookSecret(headers, config.secret)) {
+      return { delivered: false, status: 'unauthorized', error: 'Invalid webhook secret' };
+    }
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = parseDirectWebhookPayload(rawBody, config.max_payload_bytes);
+    } catch (err) {
+      return {
+        delivered: false,
+        status: 'bad_payload',
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    const channel = this.channels.get(config.deliver_to.channel);
+    if (!channel) {
+      return {
+        delivered: false,
+        status: 'channel_unavailable',
+        error: `Channel "${config.deliver_to.channel}" is unavailable`,
+      };
+    }
+
+    const rendered = renderDirectWebhook(config, payload);
+    try {
+      const messageId = await channel.sendText(config.deliver_to.peer_id, rendered.text, {
+        accountId: config.deliver_to.account_id,
+        threadId: config.deliver_to.thread_id,
+        parseMode: 'plain',
+      });
+      metrics.increment('direct_webhook_deliveries');
+      logger.info({ webhook: name, channel: config.deliver_to.channel }, 'Direct webhook delivered');
+      return { delivered: true, status: 'delivered', messageId };
+    } catch (err) {
+      metrics.increment('direct_webhook_delivery_errors');
+      const error = err instanceof Error ? err.message : String(err);
+      logger.warn({ webhook: name, err: redactSecrets(error) }, 'Direct webhook delivery failed');
+      return { delivered: false, status: 'delivery_failed', error: redactSecrets(error) };
+    }
+  }
+
   getAgentsDir(): string | null {
     return this.agentsDir;
   }
 
   getDataDir(): string | null {
     return this.dataDir;
+  }
+
+  exportDiagnostics(options: {
+    includeLogs?: boolean;
+    logLimit?: number;
+    runLimit?: number;
+    routeDecisionLimit?: number;
+    diagnosticEventLimit?: number;
+  } = {}): DiagnosticsBundle {
+    return buildDiagnosticsBundle({
+      ...options,
+      status: this.getStatus(),
+    });
   }
 
   private resolveAgentSessionId(
@@ -546,26 +722,14 @@ export class Gateway {
 
   async listAgentSessions(
     agentId: string,
-    params: { limit?: number; offset?: number } = {},
-  ): Promise<Array<{
-    sessionId: string;
-    summary: string;
-    tag?: string;
-    customTitle?: string;
-    lastModified: number;
-    createdAt?: number;
-    cwd?: string;
-    activeKeys: string[];
-    messageCount: number;
-    provenance?: SessionProvenanceView;
-    firstMessage?: SessionMessagePreview;
-    lastMessage?: SessionMessagePreview;
-  }>> {
+    params: ListAgentSessionsParams = {},
+  ): Promise<AgentSessionMailboxRow[]> {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent "${agentId}" not found`);
     if (!this.sdkSessionService) return [];
 
-    const sdkSessions = await this.sdkSessionService.listAgentSessions(agent, params);
+    const shouldFilter = hasSessionMailboxFilters(params);
+    const sdkSessions = await this.sdkSessionService.listAgentSessions(agent, shouldFilter ? {} : params);
     const mappings = agent.listSessionMappings();
     const activeBySession = new Map<string, typeof mappings>();
     for (const mapping of mappings) {
@@ -636,7 +800,15 @@ export class Gateway {
       });
     }
 
-    return rows.sort((a, b) => b.lastModified - a.lastModified);
+    const filtered = rows
+      .sort((a, b) => b.lastModified - a.lastModified)
+      .filter((row) => matchesSessionMailboxFilters(row, params));
+
+    if (!shouldFilter) return filtered;
+
+    const offset = params.offset ?? 0;
+    const limit = params.limit ?? 25;
+    return filtered.slice(offset, offset + limit);
   }
 
   async getAgentSessionDetails(
@@ -843,7 +1015,65 @@ export class Gateway {
       interruptScope: 'parent_session',
       reason: result.interrupted
         ? 'Parent query interrupt requested successfully.'
-        : (result.error ?? 'Parent query interrupt failed.'),
+      : (result.error ?? 'Parent query interrupt failed.'),
+    };
+  }
+
+  async interruptAgentRun(
+    agentId: string,
+    targetId: string,
+    requestedBy = 'api',
+  ): Promise<InterruptAgentRunResult> {
+    const agent = this.agents.get(agentId);
+    if (!agent) throw new Error(`Agent "${agentId}" not found`);
+
+    const run = metrics.getAgentRun(targetId);
+    if (run && run.agentId !== agentId) {
+      const reason = `Run "${targetId}" does not belong to agent "${agentId}".`;
+      metrics.recordInterrupt({
+        agentId,
+        runId: run.runId,
+        sessionKey: run.sessionKey,
+        sdkSessionId: run.sdkSessionId,
+        targetId,
+        requestedBy,
+        result: 'failed',
+        reason,
+      });
+      return {
+        targetId,
+        runId: run.runId,
+        sessionKey: run.sessionKey,
+        sdkSessionId: run.sdkSessionId,
+        interrupted: false,
+        reason,
+      };
+    }
+    const scopedRun = run?.agentId === agentId ? run : undefined;
+    const interruptTarget = scopedRun?.runId ?? targetId;
+    const result = await this.controlRegistry.interrupt(interruptTarget);
+    const reason = result.interrupted
+      ? 'Active query interrupt requested successfully.'
+      : (result.error ?? 'Active query interrupt failed.');
+
+    metrics.recordInterrupt({
+      agentId,
+      runId: scopedRun?.runId,
+      sessionKey: scopedRun?.sessionKey,
+      sdkSessionId: scopedRun?.sdkSessionId,
+      targetId,
+      requestedBy,
+      result: result.interrupted ? 'interrupted' : 'failed',
+      reason,
+    });
+
+    return {
+      targetId,
+      runId: scopedRun?.runId,
+      sessionKey: scopedRun?.sessionKey,
+      sdkSessionId: scopedRun?.sdkSessionId,
+      interrupted: result.interrupted,
+      reason,
     };
   }
 
@@ -1059,7 +1289,7 @@ export class Gateway {
         existingSessionId,
       );
       this.controlRegistry.register(
-        [sessionKey, ...(existingSessionId ? [existingSessionId] : []), ...(sessionId ? [sessionId] : [])],
+        [runId, sessionKey, ...(existingSessionId ? [existingSessionId] : []), ...(sessionId ? [sessionId] : [])],
         result,
         abort,
       );
@@ -1892,9 +2122,17 @@ export class Gateway {
       });
       const result = this.startQuery(agent, prompt, options, existingSessionId);
       const abort = new AbortController();
-      this.queueManager.register(sessionKey, result, abort);
+      this.queueManager.register(sessionKey, result, abort, {
+        traceId: runId,
+        channelDeliveryTarget: {
+          channel: msg.channel,
+          peerId: msg.peerId,
+          accountId: msg.accountId,
+          threadId: msg.threadId,
+        },
+      });
       this.controlRegistry.register(
-        [sessionKey, ...(existingSessionId ? [existingSessionId] : [])],
+        [runId, sessionKey, ...(existingSessionId ? [existingSessionId] : [])],
         result,
         abort,
       );
@@ -1904,18 +2142,48 @@ export class Gateway {
         ? new IterationBudget({
             maxToolCalls: budgetConfig.max_tool_calls,
             timeoutMs: budgetConfig.timeout_ms,
+            absoluteTimeoutMs: budgetConfig.absolute_timeout_ms,
             graceMessage: budgetConfig.grace_message,
           })
         : null;
       budget?.start();
+      const markRunActivity = (eventType: string, taskId?: string) => {
+        budget?.recordActivity(eventType);
+        this.queueManager.markActivity(sessionKey, eventType, taskId);
+      };
 
       try {
         const textParts: string[] = [];
         let sessionId: string | undefined;
         let budgetInterrupted = false;
+        const iterator = result[Symbol.asyncIterator]();
 
-        for await (const event of result) {
-          const evt = event as Record<string, unknown>;
+        while (true) {
+          const next = budget
+            ? await nextWithTimeout(iterator, Math.max(1, budget.timeUntilInterruptMs))
+            : await iterator.next();
+          if (!next) {
+            budgetInterrupted = true;
+            if (budget?.shouldInterrupt()) {
+              try { result.interrupt(); } catch {}
+            }
+            break;
+          }
+          if (next.done) break;
+
+          const evt = next.value as Record<string, unknown>;
+          const partialText = extractPartialText(evt);
+          const taskProgress = extractTaskProgress(evt);
+          const hookEvent = extractHookLifecycleEvent(evt);
+          if (partialText) {
+            markRunActivity('partial_text');
+          } else if (taskProgress) {
+            markRunActivity('task_progress', taskProgress.taskId);
+          } else if (hookEvent) {
+            markRunActivity(hookEvent.subtype);
+          } else {
+            markRunActivity(typeof evt.type === 'string' ? evt.type : 'sdk_event');
+          }
 
           if (evt.session_id && typeof evt.session_id === 'string') {
             sessionId = evt.session_id;
@@ -1981,7 +2249,7 @@ export class Gateway {
               if (pressureWarning) {
                 logger.info({ agentId: agent.id, warning: pressureWarning, stats: budget.stats }, 'Budget pressure warning');
               }
-              if (exceeded || budget.isTimeoutExceeded()) {
+              if (exceeded || budget.shouldInterrupt()) {
                 budgetInterrupted = true;
                 try { result.interrupt(); } catch {}
                 break;
@@ -1989,7 +2257,7 @@ export class Gateway {
             }
           }
 
-          if (budget && budget.isTimeoutExceeded()) {
+          if (budget && budget.shouldInterrupt()) {
             budgetInterrupted = true;
             try { result.interrupt(); } catch {}
             break;

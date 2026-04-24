@@ -3,6 +3,7 @@ import { logger } from '../logger.js';
 export interface BudgetConfig {
   maxToolCalls: number;
   timeoutMs: number;
+  absoluteTimeoutMs?: number;
   graceMessage: boolean;
 }
 
@@ -16,6 +17,8 @@ export class IterationBudget {
   private config: BudgetConfig;
   private toolCallCount = 0;
   private startTime = 0;
+  private lastActivityAt = 0;
+  private lastEventType = 'start';
   private exhausted = false;
 
   constructor(config?: Partial<BudgetConfig>) {
@@ -25,11 +28,19 @@ export class IterationBudget {
   start(): void {
     this.toolCallCount = 0;
     this.startTime = Date.now();
+    this.lastActivityAt = this.startTime;
+    this.lastEventType = 'start';
     this.exhausted = false;
+  }
+
+  recordActivity(eventType = 'activity'): void {
+    this.lastActivityAt = Date.now();
+    this.lastEventType = eventType;
   }
 
   recordToolCall(): boolean {
     this.toolCallCount++;
+    this.recordActivity('tool_use');
     if (this.toolCallCount >= this.config.maxToolCalls) {
       this.exhausted = true;
       logger.info(
@@ -42,15 +53,44 @@ export class IterationBudget {
   }
 
   isTimeoutExceeded(): boolean {
-    if (Date.now() - this.startTime >= this.config.timeoutMs) {
+    const now = Date.now();
+    const idleMs = now - this.lastActivityAt;
+    if (idleMs >= this.config.timeoutMs) {
       this.exhausted = true;
       logger.info(
-        { elapsed: Date.now() - this.startTime, timeout: this.config.timeoutMs },
-        'Iteration budget exhausted: timeout',
+        { idleMs, timeout: this.config.timeoutMs, lastEventType: this.lastEventType },
+        'Iteration budget exhausted: inactivity timeout',
       );
       return true;
     }
     return false;
+  }
+
+  isAbsoluteTimeoutExceeded(): boolean {
+    if (!this.config.absoluteTimeoutMs) return false;
+    const elapsedMs = Date.now() - this.startTime;
+    if (elapsedMs >= this.config.absoluteTimeoutMs) {
+      this.exhausted = true;
+      logger.info(
+        { elapsedMs, timeout: this.config.absoluteTimeoutMs },
+        'Iteration budget exhausted: absolute timeout',
+      );
+      return true;
+    }
+    return false;
+  }
+
+  shouldInterrupt(): boolean {
+    return this.isTimeoutExceeded() || this.isAbsoluteTimeoutExceeded();
+  }
+
+  get timeUntilInterruptMs(): number {
+    const now = Date.now();
+    const inactivityRemaining = this.config.timeoutMs - (now - this.lastActivityAt);
+    const absoluteRemaining = this.config.absoluteTimeoutMs
+      ? this.config.absoluteTimeoutMs - (now - this.startTime)
+      : Number.POSITIVE_INFINITY;
+    return Math.max(0, Math.min(inactivityRemaining, absoluteRemaining));
   }
 
   isExhausted(): boolean {
@@ -68,10 +108,14 @@ export class IterationBudget {
     return null;
   }
 
-  get stats(): { toolCalls: number; elapsedMs: number } {
+  get stats(): { toolCalls: number; elapsedMs: number; idleMs: number; lastActivityAt: number; lastEventType: string } {
+    const now = Date.now();
     return {
       toolCalls: this.toolCallCount,
-      elapsedMs: Date.now() - this.startTime,
+      elapsedMs: now - this.startTime,
+      idleMs: now - this.lastActivityAt,
+      lastActivityAt: this.lastActivityAt,
+      lastEventType: this.lastEventType,
     };
   }
 }

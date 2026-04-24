@@ -35,6 +35,46 @@ describe('IterationBudget', () => {
     expect(budget.isExhausted()).toBe(true);
   });
 
+  it('treats timeoutMs as inactivity timeout', () => {
+    vi.useFakeTimers();
+    const budget = new IterationBudget({ maxToolCalls: 100, timeoutMs: 5_000, graceMessage: true });
+    budget.start();
+
+    vi.advanceTimersByTime(4_000);
+    budget.recordActivity('task_progress');
+    vi.advanceTimersByTime(4_000);
+
+    expect(budget.isTimeoutExceeded()).toBe(false);
+    expect(budget.timeUntilInterruptMs).toBe(1_000);
+    expect(budget.stats).toMatchObject({
+      elapsedMs: 8_000,
+      idleMs: 4_000,
+      lastEventType: 'task_progress',
+    });
+  });
+
+  it('honors absolute timeout even when activity continues', () => {
+    vi.useFakeTimers();
+    const budget = new IterationBudget({
+      maxToolCalls: 100,
+      timeoutMs: 5_000,
+      absoluteTimeoutMs: 10_000,
+      graceMessage: true,
+    });
+    budget.start();
+
+    vi.advanceTimersByTime(4_000);
+    budget.recordActivity('task_progress');
+    vi.advanceTimersByTime(4_000);
+    budget.recordActivity('partial_text');
+    vi.advanceTimersByTime(2_001);
+
+    expect(budget.isTimeoutExceeded()).toBe(false);
+    expect(budget.timeUntilInterruptMs).toBe(0);
+    expect(budget.isAbsoluteTimeoutExceeded()).toBe(true);
+    expect(budget.isExhausted()).toBe(true);
+  });
+
   it('tracks stats correctly', () => {
     vi.useFakeTimers();
     const budget = new IterationBudget({ maxToolCalls: 100, timeoutMs: 60_000, graceMessage: false });
@@ -47,6 +87,7 @@ describe('IterationBudget', () => {
     const stats = budget.stats;
     expect(stats.toolCalls).toBe(2);
     expect(stats.elapsedMs).toBe(3_000);
+    expect(stats.idleMs).toBe(3_000);
   });
 
   it('graceMessage reflects config', () => {

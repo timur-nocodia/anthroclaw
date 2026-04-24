@@ -24,21 +24,61 @@ describe('MemoryStore', () => {
     const tables = store.listTables();
     expect(tables).toContain('chunks');
     expect(tables).toContain('chunks_fts');
+    expect(tables).toContain('memory_entries');
   });
 
   // ─── 2. indexes and retrieves chunks ────────────────────────────
   it('indexes and retrieves chunks', () => {
     const content = '# Hello\n\nSome markdown content here.';
-    store.indexFile('docs/readme.md', content);
+    const entry = store.indexFile('docs/readme.md', content, {
+      source: 'memory_write',
+      runId: 'run-1',
+      traceId: 'trace-1',
+      sessionKey: 'web:agent:session',
+    });
 
     const chunks = store.getChunks('docs/readme.md');
+    expect(entry).toMatchObject({
+      path: 'docs/readme.md',
+      source: 'memory_write',
+      reviewStatus: 'approved',
+      provenance: {
+        runId: 'run-1',
+        traceId: 'trace-1',
+        sessionKey: 'web:agent:session',
+      },
+    });
     expect(chunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks[0].memoryEntryId).toBe(entry.id);
     expect(chunks[0].path).toBe('docs/readme.md');
     expect(chunks[0].text).toBe(content);
     expect(chunks[0].startLine).toBe(0);
     expect(chunks[0].endLine).toBe(2);
     expect(chunks[0].contentHash).toBeTruthy();
     expect(chunks[0].id).toBeTruthy();
+  });
+
+  it('lists and updates memory entry review metadata', () => {
+    const entry = store.indexFile('docs/review.md', 'candidate memory', {
+      source: 'post_run_candidate',
+      reviewStatus: 'pending',
+      runId: 'run-2',
+    });
+
+    expect(store.getMemoryEntry(entry.id)).toMatchObject({
+      id: entry.id,
+      path: 'docs/review.md',
+      source: 'post_run_candidate',
+      reviewStatus: 'pending',
+    });
+    expect(store.getMemoryEntryByPath('docs/review.md')?.id).toBe(entry.id);
+    expect(store.listMemoryEntries({ reviewStatus: 'pending' }).map((item) => item.id)).toEqual([entry.id]);
+
+    expect(store.updateMemoryEntryReview(entry.id, 'rejected', 'stale')).toBe(true);
+    expect(store.getMemoryEntry(entry.id)).toMatchObject({
+      reviewStatus: 'rejected',
+      reviewNote: 'stale',
+    });
   });
 
   // ─── 3. re-indexes on content change ────────────────────────────
@@ -72,6 +112,7 @@ describe('MemoryStore', () => {
     const results = store.textSearch('fox', 10);
     expect(results.length).toBe(1);
     expect(results[0].path).toBe('docs/alpha.md');
+    expect(results[0].memoryEntryId).toBeTruthy();
     expect(results[0].text).toContain('fox');
     expect(results[0].score).toBeDefined();
   });
@@ -131,6 +172,7 @@ describe('MemoryStore', () => {
     expect(results.length).toBe(3);
     // A should be most similar (exact match), then B (close), then C (orthogonal)
     expect(results[0].path).toBe('docs/a.md');
+    expect(results[0].memoryEntryId).toBeTruthy();
     expect(results[1].path).toBe('docs/b.md');
     expect(results[2].path).toBe('docs/c.md');
     expect(results[0].score).toBeGreaterThan(results[1].score);
