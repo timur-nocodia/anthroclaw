@@ -3,13 +3,26 @@ import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createMemoryWriteTool } from '../../../src/agent/tools/memory-write.js';
-import type { MemoryStore } from '../../../src/memory/store.js';
+import type { MemoryEntryRecord, MemoryStore } from '../../../src/memory/store.js';
+
+function memoryEntry(path: string): MemoryEntryRecord {
+  return {
+    id: `entry:${path}`,
+    path,
+    contentHash: 'hash-1',
+    source: 'memory_write',
+    reviewStatus: 'approved',
+    provenance: {},
+    createdAt: 1000,
+    updatedAt: 1000,
+  };
+}
 
 function makeStore(overrides: Partial<MemoryStore> = {}): MemoryStore {
   return {
     textSearch: vi.fn(() => []),
     vectorSearch: vi.fn(() => []),
-    indexFile: vi.fn(),
+    indexFile: vi.fn((path: string) => memoryEntry(path)),
     getChunks: vi.fn(() => []),
     getAllChunks: vi.fn(() => []),
     removeFile: vi.fn(),
@@ -104,7 +117,7 @@ describe('createMemoryWriteTool', () => {
   });
 
   it('reindexes file after write', async () => {
-    const indexFile = vi.fn();
+    const indexFile = vi.fn((path: string) => memoryEntry(path));
     const store = makeStore({ indexFile });
     const tool = createMemoryWriteTool(tmpDir, store);
 
@@ -121,6 +134,25 @@ describe('createMemoryWriteTool', () => {
         metadata: { mode: 'append' },
       }),
     );
+  });
+
+  it('emits memory write metadata after successful writes', async () => {
+    const onMemoryWrite = vi.fn();
+    const store = makeStore();
+    const tool = createMemoryWriteTool(tmpDir, store, 'UTC', { onMemoryWrite });
+
+    await tool.handler({ content: 'Index me without leaking full text', file: 'notes/test.md' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onMemoryWrite).toHaveBeenCalledWith({
+      file: 'notes/test.md',
+      mode: 'append',
+      contentLength: 'Index me without leaking full text'.length,
+      entry: expect.objectContaining({
+        id: 'entry:notes/test.md',
+        path: 'notes/test.md',
+      }),
+    });
   });
 
   it('returns isError on failure', async () => {

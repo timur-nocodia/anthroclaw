@@ -452,7 +452,17 @@ export class Gateway {
     const onCronUpdate = () => this.reloadDynamicCron();
 
     for (const dir of agentDirs) {
-      const agent = await Agent.load(dir, dataDir, getChannel, undefined, config, this.accessControl ?? undefined, this.dynamicCronStore, onCronUpdate);
+      const agent = await Agent.load(
+        dir,
+        dataDir,
+        getChannel,
+        undefined,
+        config,
+        this.accessControl ?? undefined,
+        this.dynamicCronStore,
+        onCronUpdate,
+        (event) => this.emitMemoryWriteHook(event),
+      );
       this.agents.set(agent.id, agent);
       logger.info({ agentId: agent.id, routes: agent.config.routes.length }, 'Loaded agent');
     }
@@ -2958,6 +2968,40 @@ export class Gateway {
         logger.info({ agentId: agent.id, hookCount: agent.config.hooks?.length ?? 0 }, 'Hook emitter created');
       }
     }
+  }
+
+  private emitMemoryWriteHook(event: {
+    agentId: string;
+    file: string;
+    mode: 'append' | 'replace';
+    contentLength: number;
+    entry: {
+      id: string;
+      path: string;
+      contentHash: string;
+      source: string;
+      reviewStatus: string;
+      createdAt: number;
+      updatedAt: number;
+    };
+  }): void {
+    metrics.increment('memory_writes');
+    const emitter = this.hookEmitters.get(event.agentId);
+    if (!emitter) return;
+
+    void emitter.emit('on_memory_write', {
+      agentId: event.agentId,
+      file: event.file,
+      mode: event.mode,
+      contentLength: event.contentLength,
+      entryId: event.entry.id,
+      entryPath: event.entry.path,
+      contentHash: event.entry.contentHash,
+      source: event.entry.source,
+      reviewStatus: event.entry.reviewStatus,
+      createdAt: event.entry.createdAt,
+      updatedAt: event.entry.updatedAt,
+    });
   }
 
   private clearHookEmitters(): void {

@@ -413,7 +413,7 @@ describe('AgentYmlSchema', () => {
       routes: [{ channel: 'telegram' }],
       hooks: [
         {
-          event: 'on_tool_use',
+          event: 'on_memory_write',
           action: 'webhook',
           url: 'https://example.com/tool-hook',
           timeout_ms: 1000,
@@ -427,7 +427,7 @@ describe('AgentYmlSchema', () => {
       ],
     });
 
-    expect(result.hooks![0].event).toBe('on_tool_use');
+    expect(result.hooks![0].event).toBe('on_memory_write');
     expect(result.hooks![1].event).toBe('on_subagent_stop');
   });
 

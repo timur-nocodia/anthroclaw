@@ -9,6 +9,7 @@ export type HookEvent =
   | 'on_after_query'
   | 'on_session_reset'
   | 'on_cron_fire'
+  | 'on_memory_write'
   | 'on_tool_use'
   | 'on_tool_result'
   | 'on_tool_error'

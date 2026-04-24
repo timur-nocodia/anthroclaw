@@ -4,7 +4,7 @@ import { loadAgentYml } from '../config/loader.js';
 import type { AgentYml, GlobalConfig } from '../config/schema.js';
 import { MemoryStore } from '../memory/store.js';
 import { createMemorySearchTool } from './tools/memory-search.js';
-import { createMemoryWriteTool } from './tools/memory-write.js';
+import { createMemoryWriteTool, type MemoryWriteToolEvent } from './tools/memory-write.js';
 import { createMemoryWikiTool } from './tools/memory-wiki.js';
 import { createSendMessageTool } from './tools/send-message.js';
 import { createSendMediaTool } from './tools/send-media.js';
@@ -143,6 +143,7 @@ export class Agent {
     accessControl?: AccessControl,
     dynamicCronStore?: DynamicCronStore,
     onCronUpdate?: () => void,
+    onMemoryWrite?: (event: MemoryWriteToolEvent & { agentId: string }) => void | Promise<void>,
   ): Promise<Agent> {
     const id = basename(agentDir);
     const config = loadAgentYml(agentDir);
@@ -170,7 +171,11 @@ export class Agent {
           tools.push(createMemorySearchTool(memoryStore, embedFn));
           break;
         case 'memory_write':
-          tools.push(createMemoryWriteTool(agentDir, memoryStore, config.timezone));
+          tools.push(createMemoryWriteTool(agentDir, memoryStore, config.timezone, {
+            onMemoryWrite: onMemoryWrite
+              ? (event) => onMemoryWrite({ ...event, agentId: id })
+              : undefined,
+          }));
           break;
         case 'memory_wiki':
           tools.push(createMemoryWikiTool(agentDir, memoryStore));
