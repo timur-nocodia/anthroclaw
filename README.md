@@ -446,11 +446,24 @@ The original SDK-native migration scope is complete. The next useful work is pro
 - better deploy/fleet ergonomics
 - more high-quality example agents and skills
 
-## Relationship to OpenClaw
+## Inspiration and Compatibility
 
-AnthroClaw is inspired by the broader OpenClaw idea of a personal assistant gateway, but this repository is intentionally focused on a stricter Claude Agent SDK-native runtime and a smaller set of first-class channels.
+AnthroClaw is inspired by two projects:
+
+- [OpenClaw](https://github.com/openclaw/openclaw), for the broader idea of a personal assistant gateway.
+- Hermes-style agent infrastructure patterns, especially around operational discipline, memory, sessions, routing, and runtime visibility.
+
+This repository is a separate implementation focused on a stricter Claude Agent SDK-native runtime and a smaller set of first-class channels.
 
 The goal is not to support every provider and every surface. The goal is to make the Claude-native path excellent.
+
+### Anthropic subscription usage
+
+AnthroClaw is designed so user-facing LLM execution goes through the native Claude Agent SDK / Claude Code path, rather than a custom provider wrapper. That is intentional: it keeps the runtime aligned with Anthropic's native agent tooling and makes the project suitable for personal use with Anthropic subscription plans where that usage is allowed by Anthropic's current terms.
+
+OpenAI is only used for optional memory embeddings, not for user-facing agent responses.
+
+You should still review Anthropic's current plan terms for your own use case. AnthroClaw does not bypass login, hide usage, proxy other users through your account, or replace Claude Code with a disguised API client.
 
 ## License
 
