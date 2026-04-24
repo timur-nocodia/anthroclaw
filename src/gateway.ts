@@ -158,6 +158,18 @@ export interface AgentFileOwnershipView {
   events: StoredFileOwnershipEvent[];
 }
 
+export type AgentSubagentOwnershipView = AgentFileOwnershipView;
+
+export interface AgentSubagentRunView extends SubagentRunRecord {
+  ownership: AgentSubagentOwnershipView;
+}
+
+export interface AgentSubagentRunDetail extends AgentSubagentRunView {
+  interruptSupported: boolean;
+  interruptScope?: 'parent_session';
+  interruptReason: string;
+}
+
 export interface ListAgentFileOwnershipParams {
   sessionKey?: string;
   runId?: string;
@@ -1025,7 +1037,7 @@ export class Gateway {
       limit?: number;
       offset?: number;
     } = {},
-  ): SubagentRunRecord[] {
+  ): AgentSubagentRunView[] {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent "${agentId}" not found`);
 
@@ -1039,26 +1051,23 @@ export class Gateway {
       status: params.status,
       limit: params.limit,
       offset: params.offset,
-    });
+    }).map((run) => this.withSubagentRunOwnership(agentId, run));
   }
 
   getAgentSubagentRun(
     agentId: string,
     runId: string,
-  ): (SubagentRunRecord & {
-    interruptSupported: boolean;
-    interruptScope?: 'parent_session';
-    interruptReason: string;
-  }) | undefined {
+  ): AgentSubagentRunDetail | undefined {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent "${agentId}" not found`);
 
     const run = this.subagentRegistry.getRun(agentId, runId);
     if (!run) return undefined;
+    const view = this.withSubagentRunOwnership(agentId, run);
 
     if (run.status !== 'running') {
       return {
-        ...run,
+        ...view,
         interruptSupported: false,
         interruptReason: 'This subagent run has already finished.',
       };
@@ -1066,17 +1075,32 @@ export class Gateway {
 
     if (!this.controlRegistry.has(run.parentSessionId)) {
       return {
-        ...run,
+        ...view,
         interruptSupported: false,
         interruptReason: 'No active parent query control handle is currently available for this run.',
       };
     }
 
     return {
-      ...run,
+      ...view,
       interruptSupported: true,
       interruptScope: 'parent_session',
       interruptReason: 'Interrupting this run interrupts the parent agent query and any sibling subagents still running under it.',
+    };
+  }
+
+  private withSubagentRunOwnership(agentId: string, run: SubagentRunRecord): AgentSubagentRunView {
+    return {
+      ...run,
+      ownership: {
+        claims: this.fileOwnershipRegistry.listClaims({ runId: run.runId }),
+        conflicts: this.fileOwnershipRegistry.listConflicts({ runId: run.runId }),
+        events: metrics.listFileOwnershipEvents({
+          agentId,
+          runId: run.runId,
+          limit: 100,
+        }),
+      },
     };
   }
 

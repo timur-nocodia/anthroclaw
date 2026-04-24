@@ -19,6 +19,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
 
 import { Gateway } from '../src/gateway.js';
 import type { GlobalConfig } from '../src/config/schema.js';
+import { metrics } from '../src/metrics/collector.js';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -606,6 +607,48 @@ routes:
     });
 
     const run = gw.listAgentSubagentRuns('main-agent', { status: 'running' })[0];
+    const now = Date.now();
+    gw._fileOwnershipRegistry.claim({
+      sessionKey: 'web:main-agent:web-session',
+      runId: 'other-run',
+      subagentId: 'other-helper',
+      path: '/tmp/workspace/src/app.ts',
+      mode: 'write',
+    }, 'soft', now);
+    const ownershipDecision = gw._fileOwnershipRegistry.claim({
+      sessionKey: 'web:main-agent:web-session',
+      runId: run.runId,
+      subagentId: 'helper',
+      path: '/tmp/workspace/src/app.ts',
+      mode: 'write',
+    }, 'soft', now + 1);
+    metrics.recordFileOwnershipEvent({
+      agentId: 'main-agent',
+      sessionKey: 'web:main-agent:web-session',
+      runId: run.runId,
+      subagentId: 'helper',
+      path: '/tmp/workspace/src/app.ts',
+      eventType: 'conflict',
+      action: 'allow',
+      reason: 'soft file ownership records conflict and allows the claim',
+    });
+
+    const enrichedRuns = gw.listAgentSubagentRuns('main-agent', { status: 'running' });
+    expect(enrichedRuns[0].ownership.claims).toMatchObject([{
+      claimId: ownershipDecision.claim!.claimId,
+      runId: run.runId,
+      subagentId: 'helper',
+      path: '/tmp/workspace/src/app.ts',
+      mode: 'write',
+    }]);
+    expect(enrichedRuns[0].ownership.conflicts).toHaveLength(1);
+    expect(enrichedRuns[0].ownership.events).toMatchObject([{
+      eventType: 'conflict',
+      action: 'allow',
+      runId: run.runId,
+      path: '/tmp/workspace/src/app.ts',
+    }]);
+
     const detail = gw.getAgentSubagentRun('main-agent', run.runId);
 
     expect(detail).toMatchObject({
@@ -613,6 +656,29 @@ routes:
       status: 'running',
       interruptSupported: true,
       interruptScope: 'parent_session',
+      ownership: {
+        claims: [{
+          claimId: ownershipDecision.claim!.claimId,
+          runId: run.runId,
+          subagentId: 'helper',
+          path: '/tmp/workspace/src/app.ts',
+          mode: 'write',
+        }],
+        conflicts: [{
+          action: 'allow',
+          requested: {
+            runId: run.runId,
+          },
+          existing: {
+            runId: 'other-run',
+          },
+        }],
+        events: [{
+          eventType: 'conflict',
+          action: 'allow',
+          runId: run.runId,
+        }],
+      },
     });
     expect(detail?.interruptReason).toContain('parent agent query');
 
