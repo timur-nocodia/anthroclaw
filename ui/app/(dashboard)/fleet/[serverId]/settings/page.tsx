@@ -121,6 +121,23 @@ interface McpPreflightResponse {
   servers: McpPreflightServer[];
 }
 
+interface IntegrationAuditEvent {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  sessionKey?: string;
+  sdkSessionId?: string;
+  toolName: string;
+  provider: string;
+  capabilityId: string;
+  status: "started" | "completed" | "failed";
+  reason?: string;
+}
+
+interface IntegrationAuditResponse {
+  events: IntegrationAuditEvent[];
+}
+
 function formatCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 10_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -647,6 +664,7 @@ function StorageSection({ serverId }: { serverId: string }) {
 function IntegrationsSection({ serverId }: { serverId: string }) {
   const [capabilities, setCapabilities] = useState<CapabilityMatrix | null>(null);
   const [preflight, setPreflight] = useState<McpPreflightResponse | null>(null);
+  const [audit, setAudit] = useState<IntegrationAuditResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -657,20 +675,23 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
       setLoading(true);
       setError("");
       try {
-        const [capabilityRes, preflightRes] = await Promise.all([
+        const [capabilityRes, preflightRes, auditRes] = await Promise.all([
           fetch(`/api/fleet/${serverId}/integrations/capabilities`),
           fetch(`/api/fleet/${serverId}/integrations/mcp-preflight`),
+          fetch(`/api/fleet/${serverId}/integrations/audit?limit=12`),
         ]);
-        if (!capabilityRes.ok || !preflightRes.ok) {
+        if (!capabilityRes.ok || !preflightRes.ok || !auditRes.ok) {
           throw new Error("integration_status_unavailable");
         }
-        const [capabilityData, preflightData] = await Promise.all([
+        const [capabilityData, preflightData, auditData] = await Promise.all([
           capabilityRes.json(),
           preflightRes.json(),
+          auditRes.json(),
         ]);
         if (!cancelled) {
           setCapabilities(capabilityData);
           setPreflight(preflightData);
+          setAudit(auditData);
         }
       } catch {
         if (!cancelled) setError("Integration status is unavailable for this gateway.");
@@ -685,6 +706,7 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
 
   const caps = capabilities?.capabilities ?? [];
   const servers = preflight?.servers ?? [];
+  const auditEvents = audit?.events ?? [];
   const available = caps.filter((capability) => capability.status === "available").length;
   const missing = caps.filter((capability) => capability.status === "missing_config").length;
   const review = servers.filter((server) => server.approvalStatus !== "approved").length;
@@ -720,6 +742,7 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
             <MiniCard label="Available" value={formatCompact(available)} delta={`${formatCompact(caps.length)} total capabilities`} />
             <MiniCard label="Missing config" value={formatCompact(missing)} delta="Requires env or config" />
             <MiniCard label="MCP review" value={formatCompact(review)} delta={`${formatCompact(servers.length)} servers inspected`} />
+            <MiniCard label="Audit events" value={formatCompact(auditEvents.length)} delta="Recent integration tool calls" />
           </div>
 
           <Divider />
@@ -753,8 +776,56 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
               </div>
             </div>
           </div>
+
+          <Divider />
+
+          <div>
+            <SectionHead title="Recent audit" desc="SDK hook events for integration and MCP tool calls." />
+            <div className="mt-3 overflow-hidden rounded-md border" style={{ borderColor: "var(--oc-border)" }}>
+              {auditEvents.length === 0 ? (
+                <EmptyPanel text="No integration tool calls recorded yet." />
+              ) : (
+                <div className="divide-y" style={{ borderColor: "var(--oc-border)" }}>
+                  {auditEvents.map((event, index) => (
+                    <AuditEventRow key={`${event.id ?? index}:${event.toolName}:${event.status}`} event={event} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </>
       )}
+    </div>
+  );
+}
+
+function AuditEventRow({ event }: { event: IntegrationAuditEvent }) {
+  return (
+    <div className="grid gap-3 px-3.5 py-3 md:grid-cols-[150px_minmax(180px,1fr)_minmax(210px,1fr)_110px]" style={{ background: "var(--oc-bg1)" }}>
+      <div>
+        <StatusPill status={event.status === "failed" ? "error" : event.status === "completed" ? "available" : "disabled"} />
+        <div className="mt-2 text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+          {event.timestamp ? new Date(event.timestamp).toLocaleString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "no timestamp"}
+        </div>
+      </div>
+      <div className="min-w-0">
+        <div className="truncate text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+          {event.toolName}
+        </div>
+        <div className="mt-0.5 text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+          {event.provider} / {event.capabilityId}
+        </div>
+      </div>
+      <div className="min-w-0">
+        <MetaLabel>Scope</MetaLabel>
+        <TokenList values={[
+          event.agentId ? `agent:${event.agentId}` : "agent:unknown",
+          event.sdkSessionId ? `sdk:${event.sdkSessionId}` : "sdk:unknown",
+        ]} />
+      </div>
+      <div className="text-right text-[11px] font-semibold uppercase tracking-[0.4px]" style={{ color: event.status === "failed" ? "var(--oc-red)" : event.status === "completed" ? "var(--oc-green)" : "var(--oc-text-muted)" }}>
+        {event.status}
+      </div>
     </div>
   );
 }
