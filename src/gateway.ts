@@ -49,6 +49,10 @@ import { matchQuickCommand, executeQuickCommand } from './commands/quick.js';
 import { resolveDisplayConfig } from './channels/display-config.js';
 import { InsightsEngine } from './metrics/insights.js';
 import { parseReferences, resolveReference, formatReferences } from './references/parser.js';
+import {
+  buildIntegrationCapabilityMatrix,
+  type IntegrationCapabilityMatrix,
+} from './integrations/capabilities.js';
 import { buildSdkOptions } from './sdk/options.js';
 import { buildAllowedTools } from './sdk/permissions.js';
 import { SdkControlRegistry } from './sdk/control-registry.js';
@@ -704,6 +708,11 @@ export class Gateway {
 
   getGlobalConfig(): GlobalConfig | null {
     return this.globalConfig;
+  }
+
+  listIntegrationCapabilities(): IntegrationCapabilityMatrix {
+    if (!this.globalConfig) throw new Error('Gateway is not started');
+    return buildIntegrationCapabilityMatrix(this.globalConfig, Array.from(this.agents.values()));
   }
 
   async deliverDirectWebhook(
