@@ -32,6 +32,8 @@ interface CommandDef {
   name: string;
   desc: string;
   kind: "safe" | "careful" | "danger";
+  state: "ready" | "ssh-only" | "disabled";
+  stateLabel: string;
 }
 
 const COMMANDS: CommandDef[] = [
@@ -39,50 +41,64 @@ const COMMANDS: CommandDef[] = [
     id: "rolling_restart",
     icon: RefreshCw,
     name: "Rolling restart",
-    desc: "Restart each gateway in series, draining sessions.",
+    desc: "Restart each gateway in series via SSH or the local restart API.",
     kind: "safe",
+    state: "ready",
+    stateLabel: "Ready",
   },
   {
     id: "hot_reload",
     icon: Zap,
     name: "Hot-reload config",
-    desc: "Re-read agent & channel config without downtime.",
+    desc: "Requires a gateway reload endpoint before it can run safely.",
     kind: "safe",
+    state: "disabled",
+    stateLabel: "Not wired",
   },
   {
     id: "pull_redeploy",
     icon: GitBranch,
     name: "Pull & redeploy",
-    desc: "git pull \u2192 build \u2192 restart across selected gateways.",
+    desc: "SSH-managed gateways only: git pull \u2192 install \u2192 restart.",
     kind: "careful",
+    state: "ssh-only",
+    stateLabel: "SSH only",
   },
   {
     id: "sync_agents",
     icon: Bot,
     name: "Sync all agents",
-    desc: "Push canonical agent versions to selected gateways.",
+    desc: "Copy local agent configs to selected gateways through the API.",
     kind: "safe",
+    state: "ready",
+    stateLabel: "Ready",
   },
   {
     id: "backup",
     icon: Download,
     name: "Backup now",
-    desc: "Trigger on-demand snapshots. Fans out in parallel.",
+    desc: "Requires a gateway backup endpoint before it can run safely.",
     kind: "safe",
+    state: "disabled",
+    stateLabel: "Not wired",
   },
   {
     id: "rotate_keys",
     icon: Key,
-    name: "Rotate API keys",
-    desc: "Rotate Anthropic + channel tokens across the fleet.",
+    name: "Rotate JWT secret",
+    desc: "Disabled until key rotation semantics are explicit and audited.",
     kind: "careful",
+    state: "disabled",
+    stateLabel: "Disabled",
   },
   {
     id: "stop_fleet",
     icon: Power,
     name: "Stop fleet",
-    desc: "Halt all selected gateways. Disconnects channels.",
+    desc: "Requires a gateway stop endpoint before it can run safely.",
     kind: "danger",
+    state: "disabled",
+    stateLabel: "Not wired",
   },
 ];
 
@@ -149,6 +165,8 @@ export function FleetCommandsDialog({
 
   /* ---- Select command ---- */
   const handleChooseCommand = (cmdId: string) => {
+    const command = COMMANDS.find((c) => c.id === cmdId);
+    if (!command || command.state === "disabled") return;
     setChosen(cmdId);
     setPhase("targets");
   };
@@ -332,19 +350,31 @@ export function FleetCommandsDialog({
                       ? "var(--oc-yellow)"
                       : "var(--oc-accent)";
                 const Icon = c.icon;
+                const disabled = c.state === "disabled";
+                const labelTone =
+                  c.state === "ready"
+                    ? "var(--oc-green)"
+                    : c.state === "ssh-only"
+                      ? "var(--oc-yellow)"
+                      : "var(--oc-text-muted)";
                 return (
                   <button
                     key={c.id}
                     onClick={() => handleChooseCommand(c.id)}
-                    className="flex cursor-pointer items-start gap-2.5 rounded-md p-3 text-left transition-colors"
+                    disabled={disabled}
+                    className="flex items-start gap-2.5 rounded-md p-3 text-left transition-colors"
                     style={{
                       background: "var(--oc-bg0)",
                       border: "1px solid var(--oc-border)",
                       fontFamily: "inherit",
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      opacity: disabled ? 0.52 : 1,
                     }}
                     onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.borderColor =
-                        "#323a50";
+                      if (!disabled) {
+                        (e.currentTarget as HTMLElement).style.borderColor =
+                          "#323a50";
+                      }
                     }}
                     onMouseLeave={(e) => {
                       (e.currentTarget as HTMLElement).style.borderColor =
@@ -360,12 +390,24 @@ export function FleetCommandsDialog({
                     >
                       <Icon className="h-[14px] w-[14px]" style={{ color: tone }} />
                     </div>
-                    <div>
-                      <div
-                        className="text-[12.5px] font-semibold"
-                        style={{ color: "var(--color-foreground)" }}
-                      >
-                        {c.name}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="text-[12.5px] font-semibold"
+                          style={{ color: "var(--color-foreground)" }}
+                        >
+                          {c.name}
+                        </div>
+                        <span
+                          className="ml-auto inline-flex shrink-0 items-center rounded px-1.5 py-px text-[9.5px] font-medium uppercase tracking-[0.08em]"
+                          style={{
+                            color: labelTone,
+                            background: "var(--oc-bg2)",
+                            border: "1px solid var(--oc-border)",
+                          }}
+                        >
+                          {c.stateLabel}
+                        </span>
                       </div>
                       <div
                         className="mt-0.5 text-[11px] leading-relaxed"
@@ -424,8 +466,10 @@ export function FleetCommandsDialog({
                     className="mt-0.5 text-[11px] leading-relaxed"
                     style={{ color: "var(--oc-text-muted)" }}
                   >
-                    {cmd.desc} Commands run with a 60s per-gateway timeout and
-                    circuit-break after 2 consecutive failures.
+                    {cmd.desc}
+                    {cmd.state === "ssh-only"
+                      ? " This command requires SSH configuration on every selected gateway."
+                      : " Commands stream real gateway results and do not simulate success."}
                   </div>
                 </div>
               </div>
