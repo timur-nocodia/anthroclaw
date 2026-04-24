@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { query, startup } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentDefinition, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent/agent.js';
-import { RouteTable } from './routing/table.js';
+import { RouteTable, type RouteEntry } from './routing/table.js';
 import { AccessControl } from './routing/access.js';
 import { buildSessionKey } from './routing/session-key.js';
 import { MessageDebouncer } from './routing/debounce.js';
@@ -21,7 +21,13 @@ import { transcribeAudio } from './media/transcribe.js';
 import { extractPdfText } from './media/pdf.js';
 import { metrics } from './metrics/collector.js';
 import { MetricsStore } from './metrics/store.js';
-import type { StoredAgentRunRecord, StoredAgentRunStatus, StoredAgentRunUsage } from './metrics/store.js';
+import type {
+  StoredAgentRunRecord,
+  StoredAgentRunStatus,
+  StoredAgentRunUsage,
+  StoredRouteDecision,
+  StoredRouteDecisionCandidate,
+} from './metrics/store.js';
 import type { ScheduledJob } from './cron/scheduler.js';
 import type { ChannelAdapter, InboundMessage } from './channels/types.js';
 import type { GlobalConfig } from './config/schema.js';
@@ -68,6 +74,8 @@ export interface SessionProvenanceView {
   threadId?: string;
   messageId?: string;
   sessionKey: string;
+  routeDecisionId?: string;
+  routeOutcome?: string;
   startedAt: number;
   completedAt?: number;
   status: StoredAgentRunStatus;
@@ -113,7 +121,30 @@ function readResultUsage(event: Record<string, unknown>, durationMs: number): St
   }) as StoredAgentRunUsage;
 }
 
-function sessionProvenanceFromRun(run: StoredAgentRunRecord | undefined): SessionProvenanceView | undefined {
+function routeCandidateFromEntry(entry: RouteEntry): StoredRouteDecisionCandidate {
+  return {
+    agentId: entry.agentId,
+    channel: entry.channel,
+    accountId: entry.accountId,
+    scope: entry.scope,
+    peers: entry.peers ?? undefined,
+    topics: entry.topics ?? undefined,
+    mentionOnly: entry.mentionOnly,
+    priority: entry.priority,
+  };
+}
+
+function withMessageRawMeta(msg: InboundMessage, meta: Record<string, unknown>): void {
+  msg.raw = {
+    ...(msg.raw && typeof msg.raw === 'object' ? msg.raw as Record<string, unknown> : {}),
+    ...meta,
+  };
+}
+
+function sessionProvenanceFromRun(
+  run: StoredAgentRunRecord | undefined,
+  routeDecision?: StoredRouteDecision,
+): SessionProvenanceView | undefined {
   if (!run) return undefined;
   return {
     runId: run.runId,
@@ -124,6 +155,8 @@ function sessionProvenanceFromRun(run: StoredAgentRunRecord | undefined): Sessio
     threadId: run.threadId,
     messageId: run.messageId,
     sessionKey: run.sessionKey,
+    routeDecisionId: routeDecision?.id,
+    routeOutcome: routeDecision?.outcome,
     startedAt: run.startedAt,
     completedAt: run.completedAt,
     status: run.status,
@@ -554,6 +587,9 @@ export class Gateway {
         sdkSessionId: session.sessionId,
         limit: 1,
       })[0];
+      const latestRouteDecision = latestRun?.routeDecisionId
+        ? metrics.listRouteDecisions({ id: latestRun.routeDecisionId, limit: 1 })[0]
+        : undefined;
       const previews = previewSessionMessages(messages);
       return {
         sessionId: session.sessionId,
@@ -565,7 +601,7 @@ export class Gateway {
         cwd: session.cwd,
         activeKeys: active.map((item) => item.sessionKey),
         messageCount: Math.max(active.reduce((sum, item) => sum + item.messageCount, 0), messages.length),
-        provenance: sessionProvenanceFromRun(latestRun),
+        provenance: sessionProvenanceFromRun(latestRun, latestRouteDecision),
         ...previews,
       };
     }));
@@ -581,6 +617,9 @@ export class Gateway {
         sdkSessionId: sessionId,
         limit: 1,
       })[0];
+      const latestRouteDecision = latestRun?.routeDecisionId
+        ? metrics.listRouteDecisions({ id: latestRun.routeDecisionId, limit: 1 })[0]
+        : undefined;
       const previews = previewSessionMessages(messages);
       rows.push({
         sessionId,
@@ -592,7 +631,7 @@ export class Gateway {
         cwd: agent.workspacePath,
         activeKeys: active.map((item) => item.sessionKey),
         messageCount: Math.max(active.reduce((sum, item) => sum + item.messageCount, 0), messages.length),
-        provenance: sessionProvenanceFromRun(latestRun),
+        provenance: sessionProvenanceFromRun(latestRun, latestRouteDecision),
         ...previews,
       });
     }
@@ -626,6 +665,17 @@ export class Gateway {
       lastModified: info?.lastModified,
       messages,
     };
+  }
+
+  listRouteDecisions(params: {
+    id?: string;
+    agentId?: string;
+    sessionKey?: string;
+    outcome?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredRouteDecision[] {
+    return metrics.listRouteDecisions(params);
   }
 
   async forkAgentSession(
@@ -1321,19 +1371,55 @@ export class Gateway {
     metrics.recordMessage();
     if (!this.routeTable || !this.accessControl) return;
 
+    const routeDecisionId = randomUUID();
+    const recordRouteDecision = (decision: {
+      outcome: string;
+      candidates: StoredRouteDecisionCandidate[];
+      winnerAgentId?: string;
+      accessAllowed?: boolean;
+      accessReason?: string;
+      queueAction?: string;
+      sessionKey?: string;
+    }) => {
+      metrics.recordRouteDecision({
+        id: routeDecisionId,
+        messageId: msg.messageId,
+        channel: msg.channel,
+        accountId: msg.accountId,
+        chatType: msg.chatType,
+        peerId: msg.peerId,
+        senderId: msg.senderId,
+        threadId: msg.threadId,
+        ...decision,
+      });
+    };
+
     const route = this.routeTable.resolve(msg.channel, msg.accountId, msg.chatType, msg.peerId, msg.threadId);
     if (!route) {
+      recordRouteDecision({ outcome: 'no_route', candidates: [] });
       logger.debug({ channel: msg.channel, peerId: msg.peerId }, 'No route matched');
       return;
     }
 
+    const routeCandidates = [routeCandidateFromEntry(route)];
+
     if (route.mentionOnly && msg.chatType === 'group' && !msg.mentionedBot) {
+      recordRouteDecision({
+        outcome: 'mention_required',
+        candidates: routeCandidates,
+        winnerAgentId: route.agentId,
+      });
       logger.debug({ agentId: route.agentId, peerId: msg.peerId }, 'Mention-only: bot not mentioned');
       return;
     }
 
     const agent = this.agents.get(route.agentId);
     if (!agent) {
+      recordRouteDecision({
+        outcome: 'unknown_agent',
+        candidates: routeCandidates,
+        winnerAgentId: route.agentId,
+      });
       logger.warn({ agentId: route.agentId }, 'Routed to unknown agent');
       return;
     }
@@ -1363,6 +1449,13 @@ export class Gateway {
             });
           }
         }
+        recordRouteDecision({
+          outcome: success ? 'pairing_granted' : 'pairing_rejected',
+          candidates: routeCandidates,
+          winnerAgentId: route.agentId,
+          accessAllowed: success,
+          accessReason: accessResult.reason,
+        });
         return;
       }
 
@@ -1374,6 +1467,21 @@ export class Gateway {
             accountId: msg.accountId,
           });
         }
+        recordRouteDecision({
+          outcome: 'approval_pending',
+          candidates: routeCandidates,
+          winnerAgentId: route.agentId,
+          accessAllowed: false,
+          accessReason: accessResult.reason,
+        });
+      } else {
+        recordRouteDecision({
+          outcome: 'access_denied',
+          candidates: routeCandidates,
+          winnerAgentId: route.agentId,
+          accessAllowed: false,
+          accessReason: accessResult.reason,
+        });
       }
       return;
     }
@@ -1396,6 +1504,12 @@ export class Gateway {
             );
           }
           logger.info({ senderId: msg.senderId, retryAfterMs: rl.retryAfterMs }, 'Message rate-limited');
+          recordRouteDecision({
+            outcome: 'rate_limited',
+            candidates: routeCandidates,
+            winnerAgentId: route.agentId,
+            accessAllowed: true,
+          });
           return;
         }
       }
@@ -1430,10 +1544,26 @@ export class Gateway {
       const action = await this.queueManager.handleConflict(sessionKey, queueMode);
       if (action === 'skip') {
         logger.info({ sessionKey, queueMode }, 'Queue: message skipped (interrupt mode)');
+        recordRouteDecision({
+          outcome: 'queue_skipped',
+          candidates: routeCandidates,
+          winnerAgentId: route.agentId,
+          accessAllowed: true,
+          queueAction: action,
+          sessionKey,
+        });
         return;
       }
       if (action === 'queued') {
         logger.info({ sessionKey, queueMode }, 'Queue: message queued (collect mode)');
+        recordRouteDecision({
+          outcome: 'queue_queued',
+          candidates: routeCandidates,
+          winnerAgentId: route.agentId,
+          accessAllowed: true,
+          queueAction: action,
+          sessionKey,
+        });
         return;
       }
       // 'proceed' — continue to new query
@@ -1468,6 +1598,13 @@ export class Gateway {
           accountId: msg.accountId, threadId: msg.threadId,
         });
       }
+      recordRouteDecision({
+        outcome: 'session_reset',
+        candidates: routeCandidates,
+        winnerAgentId: route.agentId,
+        accessAllowed: true,
+        sessionKey,
+      });
       return;
     }
 
@@ -1486,6 +1623,13 @@ export class Gateway {
           { accountId: msg.accountId, threadId: msg.threadId },
         );
       }
+      recordRouteDecision({
+        outcome: 'command',
+        candidates: routeCandidates,
+        winnerAgentId: route.agentId,
+        accessAllowed: true,
+        sessionKey,
+      });
       return;
     }
 
@@ -1500,6 +1644,13 @@ export class Gateway {
             accountId: msg.accountId, threadId: msg.threadId,
           });
         }
+        recordRouteDecision({
+          outcome: 'quick_command',
+          candidates: routeCandidates,
+          winnerAgentId: route.agentId,
+          accessAllowed: true,
+          sessionKey,
+        });
         return;
       }
     }
@@ -1535,6 +1686,14 @@ export class Gateway {
 
     // Enrich media: audio transcription and PDF text extraction
     await this.enrichMedia(msg);
+    withMessageRawMeta(msg, { routeDecisionId });
+    recordRouteDecision({
+      outcome: 'dispatched',
+      candidates: routeCandidates,
+      winnerAgentId: route.agentId,
+      accessAllowed: true,
+      sessionKey,
+    });
 
     const sendOpts: import('./channels/types.js').SendOptions = {
       accountId: msg.accountId,
@@ -1682,6 +1841,7 @@ export class Gateway {
     let runUsage: StoredAgentRunUsage = {};
     const rawMeta = msg.raw && typeof msg.raw === 'object' ? msg.raw as Record<string, unknown> : {};
     const source = rawMeta.cron === true ? 'cron' : 'channel';
+    const routeDecisionId = typeof rawMeta.routeDecisionId === 'string' ? rawMeta.routeDecisionId : undefined;
     const finishRun = (
       status: Exclude<StoredAgentRunStatus, 'running'>,
       error?: unknown,
@@ -1714,6 +1874,7 @@ export class Gateway {
         peerId: msg.peerId,
         threadId: msg.threadId,
         messageId: msg.messageId,
+        routeDecisionId,
         status: 'running',
         model: (options.model as string) ?? agent.config.model,
         budget: buildAgentRunBudget(agent, options),

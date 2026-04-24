@@ -67,6 +67,8 @@ interface AgentSession {
     threadId?: string;
     messageId?: string;
     sessionKey: string;
+    routeDecisionId?: string;
+    routeOutcome?: string;
     startedAt: number;
     status: "running" | "succeeded" | "failed" | "interrupted";
   };
@@ -742,6 +744,7 @@ export default function ChatPage() {
               <option key={session.sessionId} value={session.sessionId}>
                 {session.tag ? `[${session.tag}] ` : ""}
                 {session.provenance ? `${session.provenance.source}/${session.provenance.channel} · ` : ""}
+                {session.provenance?.routeOutcome ? `${session.provenance.routeOutcome} · ` : ""}
                 {session.customTitle || session.summary || session.sessionId}
               </option>
             ))}

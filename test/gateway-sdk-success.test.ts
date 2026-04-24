@@ -205,9 +205,20 @@ pairing:
         peerId: 'peer-123',
         messageId: 'mid-1',
         sessionKey: 'sdk-bot:telegram:dm:peer-123',
+        routeOutcome: 'dispatched',
         status: 'succeeded',
       },
     });
+    expect(sessions[0]?.provenance?.routeDecisionId).toEqual(expect.any(String));
+    expect(gw.listRouteDecisions({ agentId: 'sdk-bot' })).toMatchObject([{
+      id: sessions[0]?.provenance?.routeDecisionId,
+      messageId: 'mid-1',
+      winnerAgentId: 'sdk-bot',
+      accessAllowed: true,
+      sessionKey: 'sdk-bot:telegram:dm:peer-123',
+      outcome: 'dispatched',
+      candidates: [{ agentId: 'sdk-bot', scope: 'dm' }],
+    }]);
 
     await gw.stop();
   });

@@ -7,6 +7,7 @@ import type {
   StoredAgentRunRecord,
   StoredAgentRunStart,
   StoredAgentRunStatus,
+  StoredRouteDecision,
   StoredSessionEvent,
   StoredSubagentEvent,
   StoredToolEvent,
@@ -151,6 +152,10 @@ class MetricsCollector {
     this.store?.recordAgentRunFinish(run);
   }
 
+  recordRouteDecision(decision: StoredRouteDecision): void {
+    this.store?.recordRouteDecision(decision);
+  }
+
   listAgentRuns(params: {
     agentId?: string;
     sessionKey?: string;
@@ -160,6 +165,17 @@ class MetricsCollector {
     offset?: number;
   } = {}): StoredAgentRunRecord[] {
     return this.store?.listAgentRuns(params) ?? [];
+  }
+
+  listRouteDecisions(params: {
+    id?: string;
+    agentId?: string;
+    sessionKey?: string;
+    outcome?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredRouteDecision[] {
+    return this.store?.listRouteDecisions(params) ?? [];
   }
 
   setStore(store: MetricsStore | null): void {

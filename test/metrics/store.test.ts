@@ -73,6 +73,7 @@ describe('MetricsStore', () => {
       source: 'web',
       channel: 'web',
       peerId: 'web-user',
+      routeDecisionId: 'route-1',
       status: 'running',
       model: 'claude-sonnet',
       budget: { maxTurns: 10 },
@@ -88,6 +89,28 @@ describe('MetricsStore', () => {
         cacheReadTokens: 2,
         durationMs: 123,
       },
+    });
+    store.recordRouteDecision({
+      id: 'route-1',
+      timestamp: now,
+      messageId: 'mid-1',
+      channel: 'telegram',
+      accountId: 'default',
+      chatType: 'dm',
+      peerId: 'peer-123',
+      senderId: 'sender-456',
+      candidates: [{
+        agentId: 'agent',
+        channel: 'telegram',
+        accountId: 'default',
+        scope: 'dm',
+        mentionOnly: false,
+        priority: 2,
+      }],
+      winnerAgentId: 'agent',
+      accessAllowed: true,
+      sessionKey: 'web:agent:session-1',
+      outcome: 'dispatched',
     });
     store.close();
     store = null;
@@ -118,6 +141,7 @@ describe('MetricsStore', () => {
       source: 'web',
       channel: 'web',
       peerId: 'web-user',
+      routeDecisionId: 'route-1',
       status: 'succeeded',
       model: 'claude-sonnet',
       budget: { maxTurns: 10 },
@@ -131,6 +155,17 @@ describe('MetricsStore', () => {
     expect(store.listAgentRuns({ agentId: 'agent' }).map((run) => run.runId)).toEqual(['run-1']);
     expect(store.listAgentRuns({ agentId: 'agent', sdkSessionId: 'session-1' }).map((run) => run.runId)).toEqual(['run-1']);
     expect(store.listAgentRuns({ agentId: 'agent', sdkSessionId: 'missing' })).toEqual([]);
+    expect(store.listRouteDecisions({ agentId: 'agent' })).toMatchObject([{
+      id: 'route-1',
+      messageId: 'mid-1',
+      winnerAgentId: 'agent',
+      accessAllowed: true,
+      sessionKey: 'web:agent:session-1',
+      outcome: 'dispatched',
+      candidates: [{ agentId: 'agent', priority: 2 }],
+    }]);
+    expect(store.listRouteDecisions({ sessionKey: 'web:agent:session-1' }).map((decision) => decision.id)).toEqual(['route-1']);
+    expect(store.listRouteDecisions({ outcome: 'no_route' })).toEqual([]);
 
     const report = store.usageReport(30);
     expect(report.totalSessions).toBe(1);

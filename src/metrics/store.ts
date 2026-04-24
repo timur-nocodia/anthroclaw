@@ -55,6 +55,7 @@ export interface StoredAgentRunStart {
   peerId?: string;
   threadId?: string;
   messageId?: string;
+  routeDecisionId?: string;
   status?: StoredAgentRunStatus;
   model?: string;
   budget?: Record<string, unknown>;
@@ -76,6 +77,36 @@ export interface StoredAgentRunRecord extends StoredAgentRunStart {
   status: StoredAgentRunStatus;
   usage: StoredAgentRunUsage;
   error?: string;
+}
+
+export interface StoredRouteDecisionCandidate {
+  agentId: string;
+  channel: string;
+  accountId: string;
+  scope: string;
+  peers?: string[];
+  topics?: string[];
+  mentionOnly: boolean;
+  priority: number;
+}
+
+export interface StoredRouteDecision {
+  id: string;
+  timestamp?: number;
+  messageId?: string;
+  channel: string;
+  accountId: string;
+  chatType: string;
+  peerId: string;
+  senderId: string;
+  threadId?: string;
+  candidates: StoredRouteDecisionCandidate[];
+  winnerAgentId?: string;
+  accessAllowed?: boolean;
+  accessReason?: string;
+  queueAction?: string;
+  sessionKey?: string;
+  outcome: string;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -182,11 +213,31 @@ export class MetricsStore {
         peer_id TEXT,
         thread_id TEXT,
         message_id TEXT,
+        route_decision_id TEXT,
         status TEXT NOT NULL,
         model TEXT,
         budget_json TEXT NOT NULL,
         usage_json TEXT NOT NULL,
         error TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS route_decisions (
+        id TEXT PRIMARY KEY,
+        ts INTEGER NOT NULL,
+        message_id TEXT,
+        channel TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        chat_type TEXT NOT NULL,
+        peer_id TEXT NOT NULL,
+        sender_id TEXT NOT NULL,
+        thread_id TEXT,
+        candidates_json TEXT NOT NULL,
+        winner_agent_id TEXT,
+        access_allowed INTEGER,
+        access_reason TEXT,
+        queue_action TEXT,
+        session_key TEXT,
+        outcome TEXT NOT NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_counter_events_name_ts ON counter_events(name, ts);
@@ -200,7 +251,18 @@ export class MetricsStore {
       CREATE INDEX IF NOT EXISTS idx_agent_runs_agent_started ON agent_runs(agent_id, started_at);
       CREATE INDEX IF NOT EXISTS idx_agent_runs_session ON agent_runs(sdk_session_id);
       CREATE INDEX IF NOT EXISTS idx_agent_runs_status_started ON agent_runs(status, started_at);
+      CREATE INDEX IF NOT EXISTS idx_route_decisions_agent_ts ON route_decisions(winner_agent_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_route_decisions_session_ts ON route_decisions(session_key, ts);
+      CREATE INDEX IF NOT EXISTS idx_route_decisions_outcome_ts ON route_decisions(outcome, ts);
     `);
+    this.ensureColumn('agent_runs', 'route_decision_id', 'TEXT');
+  }
+
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const rows = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (!rows.some((row) => row.name === column)) {
+      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
   }
 
   recordCounter(name: string, value = 1, timestamp = Date.now()): void {
@@ -293,13 +355,14 @@ export class MetricsStore {
       INSERT INTO agent_runs(
         run_id, started_at, updated_at, completed_at,
         agent_id, session_key, sdk_session_id, source, channel,
-        account_id, peer_id, thread_id, message_id,
+        account_id, peer_id, thread_id, message_id, route_decision_id,
         status, model, budget_json, usage_json, error
       )
-      VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
       ON CONFLICT(run_id) DO UPDATE SET
         updated_at = excluded.updated_at,
         sdk_session_id = COALESCE(excluded.sdk_session_id, agent_runs.sdk_session_id),
+        route_decision_id = COALESCE(excluded.route_decision_id, agent_runs.route_decision_id),
         status = excluded.status,
         model = COALESCE(excluded.model, agent_runs.model),
         budget_json = excluded.budget_json
@@ -316,6 +379,7 @@ export class MetricsStore {
       run.peerId ?? null,
       run.threadId ?? null,
       run.messageId ?? null,
+      run.routeDecisionId ?? null,
       run.status ?? 'running',
       run.model ?? null,
       JSON.stringify(run.budget ?? {}),
@@ -343,6 +407,44 @@ export class MetricsStore {
       JSON.stringify(run.usage ?? {}),
       run.error ?? null,
       run.runId,
+    );
+  }
+
+  recordRouteDecision(decision: StoredRouteDecision): void {
+    this.db.prepare(`
+      INSERT INTO route_decisions(
+        id, ts, message_id, channel, account_id, chat_type, peer_id, sender_id,
+        thread_id, candidates_json, winner_agent_id, access_allowed, access_reason,
+        queue_action, session_key, outcome
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        ts = excluded.ts,
+        message_id = excluded.message_id,
+        candidates_json = excluded.candidates_json,
+        winner_agent_id = excluded.winner_agent_id,
+        access_allowed = excluded.access_allowed,
+        access_reason = excluded.access_reason,
+        queue_action = excluded.queue_action,
+        session_key = excluded.session_key,
+        outcome = excluded.outcome
+    `).run(
+      decision.id,
+      decision.timestamp ?? Date.now(),
+      decision.messageId ?? null,
+      decision.channel,
+      decision.accountId,
+      decision.chatType,
+      decision.peerId,
+      decision.senderId,
+      decision.threadId ?? null,
+      JSON.stringify(decision.candidates),
+      decision.winnerAgentId ?? null,
+      decision.accessAllowed === undefined ? null : (decision.accessAllowed ? 1 : 0),
+      decision.accessReason ?? null,
+      decision.queueAction ?? null,
+      decision.sessionKey ?? null,
+      decision.outcome,
     );
   }
 
@@ -386,6 +488,43 @@ export class MetricsStore {
       LIMIT ? OFFSET ?
     `).all(...values) as AgentRunRow[];
     return rows.map(parseAgentRunRow);
+  }
+
+  listRouteDecisions(params: {
+    id?: string;
+    agentId?: string;
+    sessionKey?: string;
+    outcome?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredRouteDecision[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.id) {
+      clauses.push('id = ?');
+      values.push(params.id);
+    }
+    if (params.agentId) {
+      clauses.push('winner_agent_id = ?');
+      values.push(params.agentId);
+    }
+    if (params.sessionKey) {
+      clauses.push('session_key = ?');
+      values.push(params.sessionKey);
+    }
+    if (params.outcome) {
+      clauses.push('outcome = ?');
+      values.push(params.outcome);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM route_decisions
+      ${where}
+      ORDER BY ts DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as RouteDecisionRow[];
+    return rows.map(parseRouteDecisionRow);
   }
 
   counters(): Record<string, number> {
@@ -555,6 +694,7 @@ export class MetricsStore {
       DELETE FROM session_events;
       DELETE FROM subagent_events;
       DELETE FROM agent_runs;
+      DELETE FROM route_decisions;
     `);
   }
 
@@ -577,11 +717,31 @@ interface AgentRunRow {
   peer_id: string | null;
   thread_id: string | null;
   message_id: string | null;
+  route_decision_id: string | null;
   status: StoredAgentRunStatus;
   model: string | null;
   budget_json: string;
   usage_json: string;
   error: string | null;
+}
+
+interface RouteDecisionRow {
+  id: string;
+  ts: number;
+  message_id: string | null;
+  channel: string;
+  account_id: string;
+  chat_type: string;
+  peer_id: string;
+  sender_id: string;
+  thread_id: string | null;
+  candidates_json: string;
+  winner_agent_id: string | null;
+  access_allowed: number | null;
+  access_reason: string | null;
+  queue_action: string | null;
+  session_key: string | null;
+  outcome: string;
 }
 
 function parseJsonObject(value: string): Record<string, unknown> {
@@ -592,6 +752,15 @@ function parseJsonObject(value: string): Record<string, unknown> {
       : {};
   } catch {
     return {};
+  }
+}
+
+function parseRouteCandidates(value: string): StoredRouteDecisionCandidate[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed as StoredRouteDecisionCandidate[] : [];
+  } catch {
+    return [];
   }
 }
 
@@ -610,10 +779,32 @@ function parseAgentRunRow(row: AgentRunRow): StoredAgentRunRecord {
     peerId: row.peer_id ?? undefined,
     threadId: row.thread_id ?? undefined,
     messageId: row.message_id ?? undefined,
+    routeDecisionId: row.route_decision_id ?? undefined,
     status: row.status,
     model: row.model ?? undefined,
     budget: parseJsonObject(row.budget_json),
     usage: parseJsonObject(row.usage_json) as StoredAgentRunUsage,
     error: row.error ?? undefined,
+  };
+}
+
+function parseRouteDecisionRow(row: RouteDecisionRow): StoredRouteDecision {
+  return {
+    id: row.id,
+    timestamp: row.ts,
+    messageId: row.message_id ?? undefined,
+    channel: row.channel,
+    accountId: row.account_id,
+    chatType: row.chat_type,
+    peerId: row.peer_id,
+    senderId: row.sender_id,
+    threadId: row.thread_id ?? undefined,
+    candidates: parseRouteCandidates(row.candidates_json),
+    winnerAgentId: row.winner_agent_id ?? undefined,
+    accessAllowed: row.access_allowed === null ? undefined : row.access_allowed === 1,
+    accessReason: row.access_reason ?? undefined,
+    queueAction: row.queue_action ?? undefined,
+    sessionKey: row.session_key ?? undefined,
+    outcome: row.outcome,
   };
 }
