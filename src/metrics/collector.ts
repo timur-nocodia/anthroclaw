@@ -7,6 +7,7 @@ import type {
   StoredAgentRunRecord,
   StoredAgentRunStart,
   StoredAgentRunStatus,
+  StoredInterruptRecord,
   StoredRouteDecision,
   StoredSessionEvent,
   StoredSubagentEvent,
@@ -156,6 +157,14 @@ class MetricsCollector {
     this.store?.recordRouteDecision(decision);
   }
 
+  recordInterrupt(record: StoredInterruptRecord): void {
+    this.store?.recordInterrupt(record);
+  }
+
+  getAgentRun(runId: string): StoredAgentRunRecord | undefined {
+    return this.store?.getAgentRun(runId);
+  }
+
   listAgentRuns(params: {
     agentId?: string;
     sessionKey?: string;
@@ -176,6 +185,16 @@ class MetricsCollector {
     offset?: number;
   } = {}): StoredRouteDecision[] {
     return this.store?.listRouteDecisions(params) ?? [];
+  }
+
+  listInterrupts(params: {
+    agentId?: string;
+    runId?: string;
+    targetId?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredInterruptRecord[] {
+    return this.store?.listInterrupts(params) ?? [];
   }
 
   setStore(store: MetricsStore | null): void {

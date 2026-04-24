@@ -79,6 +79,19 @@ export interface StoredAgentRunRecord extends StoredAgentRunStart {
   error?: string;
 }
 
+export interface StoredInterruptRecord {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  runId?: string;
+  sessionKey?: string;
+  sdkSessionId?: string;
+  targetId: string;
+  requestedBy?: string;
+  result: 'interrupted' | 'failed';
+  reason?: string;
+}
+
 export interface StoredRouteDecisionCandidate {
   agentId: string;
   channel: string;
@@ -240,6 +253,19 @@ export class MetricsStore {
         outcome TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS interrupt_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        agent_id TEXT,
+        run_id TEXT,
+        session_key TEXT,
+        sdk_session_id TEXT,
+        target_id TEXT NOT NULL,
+        requested_by TEXT,
+        result TEXT NOT NULL,
+        reason TEXT
+      );
+
       CREATE INDEX IF NOT EXISTS idx_counter_events_name_ts ON counter_events(name, ts);
       CREATE INDEX IF NOT EXISTS idx_query_duration_events_ts ON query_duration_events(ts);
       CREATE INDEX IF NOT EXISTS idx_token_events_ts ON token_events(ts);
@@ -254,6 +280,8 @@ export class MetricsStore {
       CREATE INDEX IF NOT EXISTS idx_route_decisions_agent_ts ON route_decisions(winner_agent_id, ts);
       CREATE INDEX IF NOT EXISTS idx_route_decisions_session_ts ON route_decisions(session_key, ts);
       CREATE INDEX IF NOT EXISTS idx_route_decisions_outcome_ts ON route_decisions(outcome, ts);
+      CREATE INDEX IF NOT EXISTS idx_interrupt_events_target_ts ON interrupt_events(target_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_interrupt_events_run_ts ON interrupt_events(run_id, ts);
     `);
     this.ensureColumn('agent_runs', 'route_decision_id', 'TEXT');
   }
@@ -448,6 +476,25 @@ export class MetricsStore {
     );
   }
 
+  recordInterrupt(record: StoredInterruptRecord): void {
+    this.db.prepare(`
+      INSERT INTO interrupt_events(
+        ts, agent_id, run_id, session_key, sdk_session_id, target_id, requested_by, result, reason
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      record.timestamp ?? Date.now(),
+      record.agentId ?? null,
+      record.runId ?? null,
+      record.sessionKey ?? null,
+      record.sdkSessionId ?? null,
+      record.targetId,
+      record.requestedBy ?? null,
+      record.result,
+      record.reason ?? null,
+    );
+  }
+
   getAgentRun(runId: string): StoredAgentRunRecord | undefined {
     const row = this.db.prepare('SELECT * FROM agent_runs WHERE run_id = ?').get(runId) as AgentRunRow | undefined;
     return row ? parseAgentRunRow(row) : undefined;
@@ -525,6 +572,38 @@ export class MetricsStore {
       LIMIT ? OFFSET ?
     `).all(...values) as RouteDecisionRow[];
     return rows.map(parseRouteDecisionRow);
+  }
+
+  listInterrupts(params: {
+    agentId?: string;
+    runId?: string;
+    targetId?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredInterruptRecord[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.agentId) {
+      clauses.push('agent_id = ?');
+      values.push(params.agentId);
+    }
+    if (params.runId) {
+      clauses.push('run_id = ?');
+      values.push(params.runId);
+    }
+    if (params.targetId) {
+      clauses.push('target_id = ?');
+      values.push(params.targetId);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM interrupt_events
+      ${where}
+      ORDER BY ts DESC, id DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as InterruptEventRow[];
+    return rows.map(parseInterruptEventRow);
   }
 
   counters(): Record<string, number> {
@@ -695,6 +774,7 @@ export class MetricsStore {
       DELETE FROM subagent_events;
       DELETE FROM agent_runs;
       DELETE FROM route_decisions;
+      DELETE FROM interrupt_events;
     `);
   }
 
@@ -742,6 +822,19 @@ interface RouteDecisionRow {
   queue_action: string | null;
   session_key: string | null;
   outcome: string;
+}
+
+interface InterruptEventRow {
+  id: number;
+  ts: number;
+  agent_id: string | null;
+  run_id: string | null;
+  session_key: string | null;
+  sdk_session_id: string | null;
+  target_id: string;
+  requested_by: string | null;
+  result: 'interrupted' | 'failed';
+  reason: string | null;
 }
 
 function parseJsonObject(value: string): Record<string, unknown> {
@@ -806,5 +899,20 @@ function parseRouteDecisionRow(row: RouteDecisionRow): StoredRouteDecision {
     queueAction: row.queue_action ?? undefined,
     sessionKey: row.session_key ?? undefined,
     outcome: row.outcome,
+  };
+}
+
+function parseInterruptEventRow(row: InterruptEventRow): StoredInterruptRecord {
+  return {
+    id: row.id,
+    timestamp: row.ts,
+    agentId: row.agent_id ?? undefined,
+    runId: row.run_id ?? undefined,
+    sessionKey: row.session_key ?? undefined,
+    sdkSessionId: row.sdk_session_id ?? undefined,
+    targetId: row.target_id,
+    requestedBy: row.requested_by ?? undefined,
+    result: row.result,
+    reason: row.reason ?? undefined,
   };
 }

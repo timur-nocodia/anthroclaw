@@ -81,6 +81,15 @@ export interface SessionProvenanceView {
   status: StoredAgentRunStatus;
 }
 
+export interface InterruptAgentRunResult {
+  targetId: string;
+  runId?: string;
+  sessionKey?: string;
+  sdkSessionId?: string;
+  interrupted: boolean;
+  reason: string;
+}
+
 export interface SessionMessagePreview {
   type: string;
   uuid: string;
@@ -843,7 +852,65 @@ export class Gateway {
       interruptScope: 'parent_session',
       reason: result.interrupted
         ? 'Parent query interrupt requested successfully.'
-        : (result.error ?? 'Parent query interrupt failed.'),
+      : (result.error ?? 'Parent query interrupt failed.'),
+    };
+  }
+
+  async interruptAgentRun(
+    agentId: string,
+    targetId: string,
+    requestedBy = 'api',
+  ): Promise<InterruptAgentRunResult> {
+    const agent = this.agents.get(agentId);
+    if (!agent) throw new Error(`Agent "${agentId}" not found`);
+
+    const run = metrics.getAgentRun(targetId);
+    if (run && run.agentId !== agentId) {
+      const reason = `Run "${targetId}" does not belong to agent "${agentId}".`;
+      metrics.recordInterrupt({
+        agentId,
+        runId: run.runId,
+        sessionKey: run.sessionKey,
+        sdkSessionId: run.sdkSessionId,
+        targetId,
+        requestedBy,
+        result: 'failed',
+        reason,
+      });
+      return {
+        targetId,
+        runId: run.runId,
+        sessionKey: run.sessionKey,
+        sdkSessionId: run.sdkSessionId,
+        interrupted: false,
+        reason,
+      };
+    }
+    const scopedRun = run?.agentId === agentId ? run : undefined;
+    const interruptTarget = scopedRun?.runId ?? targetId;
+    const result = await this.controlRegistry.interrupt(interruptTarget);
+    const reason = result.interrupted
+      ? 'Active query interrupt requested successfully.'
+      : (result.error ?? 'Active query interrupt failed.');
+
+    metrics.recordInterrupt({
+      agentId,
+      runId: scopedRun?.runId,
+      sessionKey: scopedRun?.sessionKey,
+      sdkSessionId: scopedRun?.sdkSessionId,
+      targetId,
+      requestedBy,
+      result: result.interrupted ? 'interrupted' : 'failed',
+      reason,
+    });
+
+    return {
+      targetId,
+      runId: scopedRun?.runId,
+      sessionKey: scopedRun?.sessionKey,
+      sdkSessionId: scopedRun?.sdkSessionId,
+      interrupted: result.interrupted,
+      reason,
     };
   }
 
@@ -1059,7 +1126,7 @@ export class Gateway {
         existingSessionId,
       );
       this.controlRegistry.register(
-        [sessionKey, ...(existingSessionId ? [existingSessionId] : []), ...(sessionId ? [sessionId] : [])],
+        [runId, sessionKey, ...(existingSessionId ? [existingSessionId] : []), ...(sessionId ? [sessionId] : [])],
         result,
         abort,
       );
@@ -1894,7 +1961,7 @@ export class Gateway {
       const abort = new AbortController();
       this.queueManager.register(sessionKey, result, abort);
       this.controlRegistry.register(
-        [sessionKey, ...(existingSessionId ? [existingSessionId] : [])],
+        [runId, sessionKey, ...(existingSessionId ? [existingSessionId] : [])],
         result,
         abort,
       );

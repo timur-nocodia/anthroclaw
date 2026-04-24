@@ -112,6 +112,17 @@ describe('MetricsStore', () => {
       sessionKey: 'web:agent:session-1',
       outcome: 'dispatched',
     });
+    store.recordInterrupt({
+      timestamp: now + 50,
+      agentId: 'agent',
+      runId: 'run-1',
+      sessionKey: 'web:agent:session-1',
+      sdkSessionId: 'session-1',
+      targetId: 'run-1',
+      requestedBy: 'web',
+      result: 'interrupted',
+      reason: 'Active query interrupt requested successfully.',
+    });
     store.close();
     store = null;
 
@@ -166,6 +177,16 @@ describe('MetricsStore', () => {
     }]);
     expect(store.listRouteDecisions({ sessionKey: 'web:agent:session-1' }).map((decision) => decision.id)).toEqual(['route-1']);
     expect(store.listRouteDecisions({ outcome: 'no_route' })).toEqual([]);
+    expect(store.listInterrupts({ runId: 'run-1' })).toMatchObject([{
+      agentId: 'agent',
+      runId: 'run-1',
+      sessionKey: 'web:agent:session-1',
+      sdkSessionId: 'session-1',
+      targetId: 'run-1',
+      requestedBy: 'web',
+      result: 'interrupted',
+      reason: 'Active query interrupt requested successfully.',
+    }]);
 
     const report = store.usageReport(30);
     expect(report.totalSessions).toBe(1);
