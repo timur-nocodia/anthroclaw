@@ -217,32 +217,83 @@ export function buildIntegrationCapabilityMatrix(
   env: NodeJS.ProcessEnv = process.env,
   now = Date.now(),
 ): IntegrationCapabilityMatrix {
+  const builtinCapabilities = [...TOOL_DEFINITIONS, ...STT_DEFINITIONS].map((definition) => {
+    const enabledForAgents = agents
+      .filter((agent) => isCapabilityRequested(definition, agent))
+      .map((agent) => agent.id)
+      .sort();
+    const configured = definition.isConfigured ? definition.isConfigured(config, env) : true;
+    const requested = definition.kind === 'stt_provider' || enabledForAgents.length > 0;
+    const status = resolveCapabilityStatus(definition, requested, configured);
+
+    return {
+      id: definition.id,
+      kind: definition.kind,
+      provider: definition.provider,
+      toolNames: [...definition.toolNames],
+      status,
+      risk: definition.risk,
+      costModel: definition.costModel,
+      requiredConfig: definition.requiredConfig ? [...definition.requiredConfig] : undefined,
+      permissionDefaults: clonePermissionDefaults(definition.permissionDefaults),
+      enabledForAgents,
+      reason: capabilityReason(definition, status, requested),
+    };
+  });
+
   return {
     generatedAt: now,
-    capabilities: [...TOOL_DEFINITIONS, ...STT_DEFINITIONS].map((definition) => {
-      const enabledForAgents = agents
-        .filter((agent) => isCapabilityRequested(definition, agent))
-        .map((agent) => agent.id)
-        .sort();
-      const configured = definition.isConfigured ? definition.isConfigured(config, env) : true;
-      const requested = definition.kind === 'stt_provider' || enabledForAgents.length > 0;
-      const status = resolveCapabilityStatus(definition, requested, configured);
-
-      return {
-        id: definition.id,
-        kind: definition.kind,
-        provider: definition.provider,
-        toolNames: [...definition.toolNames],
-        status,
-        risk: definition.risk,
-        costModel: definition.costModel,
-        requiredConfig: definition.requiredConfig ? [...definition.requiredConfig] : undefined,
-        permissionDefaults: clonePermissionDefaults(definition.permissionDefaults),
-        enabledForAgents,
-        reason: capabilityReason(definition, status, requested),
-      };
-    }),
+    capabilities: [...builtinCapabilities, ...buildExternalMcpCapabilities(agents)],
   };
+}
+
+function buildExternalMcpCapabilities(agents: AgentConfigCarrier[]): IntegrationCapability[] {
+  const byServer = new Map<string, {
+    toolNames: Set<string>;
+    enabledForAgents: Set<string>;
+    risk: IntegrationCapabilityRisk;
+  }>();
+
+  for (const agent of agents) {
+    for (const [serverName, server] of Object.entries(agent.config.external_mcp_servers ?? {})) {
+      const entry = byServer.get(serverName) ?? {
+        toolNames: new Set<string>(),
+        enabledForAgents: new Set<string>(),
+        risk: 'medium' as IntegrationCapabilityRisk,
+      };
+      entry.enabledForAgents.add(agent.id);
+      for (const toolName of server.allowed_tools ?? []) {
+        entry.toolNames.add(`mcp__${serverName}__${toolName}`);
+      }
+      if ('env' in server && server.env && Object.keys(server.env).some((key) => /(API|KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|CLIENT)/i.test(key))) {
+        entry.risk = 'high';
+      }
+      if ('headers' in server && server.headers && Object.keys(server.headers).some((key) => /AUTH|TOKEN|KEY|SECRET/i.test(key))) {
+        entry.risk = 'high';
+      }
+      byServer.set(serverName, entry);
+    }
+  }
+
+  return [...byServer.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([serverName, entry]) => ({
+      id: `external_mcp.${serverName}`,
+      kind: 'mcp_tool',
+      provider: serverName,
+      toolNames: [...entry.toolNames].sort(),
+      status: 'available',
+      risk: entry.risk,
+      costModel: 'external_mcp',
+      permissionDefaults: {
+        defaultBehavior: 'deny',
+        allowMcp: true,
+        allowedMcpTools: [...entry.toolNames].sort(),
+        notes: ['External MCP server configured on one or more agents; review MCP preflight before enabling in production.'],
+      },
+      enabledForAgents: [...entry.enabledForAgents].sort(),
+      reason: 'External MCP server is configured in agent.yml and passed through Claude Agent SDK mcpServers.',
+    }));
 }
 
 function clonePermissionDefaults(

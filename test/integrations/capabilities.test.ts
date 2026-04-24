@@ -136,4 +136,42 @@ describe('integration capability matrix', () => {
       },
     });
   });
+
+  it('adds configured external MCP servers to the capability matrix', () => {
+    const matrix = buildIntegrationCapabilityMatrix(
+      baseConfig(),
+      [{
+        id: 'ops',
+        config: {
+          routes: [{ channel: 'telegram', scope: 'dm' }],
+          timezone: 'UTC',
+          external_mcp_servers: {
+            calendar: {
+              type: 'stdio',
+              command: 'npx',
+              args: ['google-calendar-mcp'],
+              env: { GOOGLE_CLIENT_SECRET: 'secret' },
+              allowed_tools: ['calendar_daily_brief', 'calendar_lookup'],
+            },
+          },
+        },
+      }],
+      {},
+    );
+
+    expect(matrix.capabilities.find((capability) => capability.id === 'external_mcp.calendar')).toMatchObject({
+      kind: 'mcp_tool',
+      provider: 'calendar',
+      status: 'available',
+      risk: 'high',
+      toolNames: ['mcp__calendar__calendar_daily_brief', 'mcp__calendar__calendar_lookup'],
+      enabledForAgents: ['ops'],
+      permissionDefaults: {
+        defaultBehavior: 'deny',
+        allowMcp: true,
+        allowedMcpTools: ['mcp__calendar__calendar_daily_brief', 'mcp__calendar__calendar_lookup'],
+      },
+    });
+    expect(JSON.stringify(matrix)).not.toContain('secret');
+  });
 });
