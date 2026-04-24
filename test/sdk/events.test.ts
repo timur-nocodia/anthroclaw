@@ -3,6 +3,8 @@ import {
   extractHookLifecycleEvent,
   extractPartialText,
   extractPromptSuggestion,
+  extractTaskLifecycleEvent,
+  extractTaskNotification,
   extractTaskProgress,
 } from '../../src/sdk/events.js';
 
@@ -62,6 +64,64 @@ describe('SDK event extractors', () => {
       totalTokens: 1234,
       toolUses: 3,
       durationMs: 456,
+    });
+  });
+
+  it('extracts terminal task notifications', () => {
+    const result = extractTaskNotification({
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: 'task-1',
+      status: 'completed',
+      output_file: '/tmp/task.out',
+      summary: 'Finished indexing docs',
+      skip_transcript: true,
+      usage: {
+        total_tokens: 200,
+        tool_uses: 4,
+        duration_ms: 500,
+      },
+    });
+
+    expect(result).toEqual({
+      taskId: 'task-1',
+      status: 'completed',
+      summary: 'Finished indexing docs',
+      outputFile: '/tmp/task.out',
+      toolUseId: undefined,
+      totalTokens: 200,
+      toolUses: 4,
+      durationMs: 500,
+      skipTranscript: true,
+    });
+  });
+
+  it('normalizes task lifecycle events', () => {
+    expect(extractTaskLifecycleEvent({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: 'task-1',
+      description: 'Indexing docs',
+      task_type: 'background',
+    })).toMatchObject({
+      taskId: 'task-1',
+      status: 'started',
+      description: 'Indexing docs',
+      taskType: 'background',
+    });
+
+    expect(extractTaskLifecycleEvent({
+      type: 'system',
+      subtype: 'task_updated',
+      task_id: 'task-1',
+      patch: {
+        status: 'failed',
+        error: 'boom',
+      },
+    })).toMatchObject({
+      taskId: 'task-1',
+      status: 'failed',
+      error: 'boom',
     });
   });
 

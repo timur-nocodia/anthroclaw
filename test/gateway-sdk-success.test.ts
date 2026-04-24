@@ -72,6 +72,39 @@ function createQueryForPrompt(prompt: unknown) {
     ]);
   }
 
+  if (text.includes('background task notification')) {
+    return createSdkStream([
+      { session_id: 'sdk-session-1' },
+      {
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'task-1',
+        description: 'Checking background work',
+        session_id: 'sdk-session-1',
+      },
+      {
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'task-1',
+        status: 'completed',
+        output_file: '/tmp/task-1.txt',
+        summary: 'Background work finished.',
+        session_id: 'sdk-session-1',
+      },
+      {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'text', text: 'SDK says hi' }],
+        },
+      },
+      {
+        type: 'result',
+        result: 'SDK says hi',
+        session_id: 'sdk-session-1',
+      },
+    ]);
+  }
+
   return createSdkStream([
     { session_id: 'sdk-session-1' },
     {
@@ -411,6 +444,48 @@ memory_extraction:
     const updated = gw.updateAgentMemoryEntryReview('memory-bot', pending[0].id, 'approved');
     expect(updated.updated).toBe(true);
     expect(store.textSearch('review', 10).map((result) => result.path)).toEqual([pending[0].path]);
+
+    await gw.stop();
+  });
+
+  it('routes terminal task notifications to the originating channel', async () => {
+    const botDir = join(agentsDir, 'task-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return `msg-${sent.length}`;
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg({ text: 'please run background task notification' }));
+
+    expect(sent).toEqual([
+      'Task completed: Background work finished.',
+      'SDK says hi',
+    ]);
+    expect(metrics.snapshot().counters.task_notifications_delivered).toBe(1);
 
     await gw.stop();
   });

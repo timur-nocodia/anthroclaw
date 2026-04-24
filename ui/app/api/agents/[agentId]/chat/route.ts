@@ -55,6 +55,9 @@ export async function POST(
         onTaskProgress(progress) {
           send({ type: 'task_progress', ...progress });
         },
+        onTaskNotification(notification) {
+          send({ type: 'task_notification', ...notification });
+        },
         onHookEvent(event) {
           send({ type: event.subtype, ...event });
         },

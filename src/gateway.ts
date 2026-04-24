@@ -91,8 +91,11 @@ import {
   extractHookLifecycleEvent,
   extractPartialText,
   extractPromptSuggestion,
+  extractTaskLifecycleEvent,
+  extractTaskNotification,
   extractTaskProgress,
   type SdkHookLifecycleEvent,
+  type SdkTaskNotification,
   type SdkTaskProgress,
 } from './sdk/events.js';
 import {
@@ -1463,6 +1466,7 @@ export class Gateway {
       onPartialText?: (chunk: string) => void;
       onPromptSuggestion?: (suggestion: string) => void;
       onTaskProgress?: (progress: SdkTaskProgress) => void;
+      onTaskNotification?: (notification: SdkTaskNotification) => void;
       onHookEvent?: (event: SdkHookLifecycleEvent) => void;
       onDone: (sessionId: string, totalTokens: number) => void;
       onError: (err: Error) => void;
@@ -1599,6 +1603,12 @@ export class Gateway {
         const taskProgress = extractTaskProgress(evt);
         if (taskProgress) {
           callbacks.onTaskProgress?.(taskProgress);
+          continue;
+        }
+
+        const taskNotification = extractTaskNotification(evt);
+        if (taskNotification) {
+          callbacks.onTaskNotification?.(taskNotification);
           continue;
         }
 
@@ -2431,6 +2441,21 @@ export class Gateway {
         budget?.recordActivity(eventType);
         this.queueManager.markActivity(sessionKey, eventType, taskId);
       };
+      const deliverTaskNotification = async (notification: SdkTaskNotification) => {
+        const channel = this.channels.get(msg.channel);
+        if (!channel) return;
+        try {
+          await channel.sendText(msg.peerId, formatTaskNotification(notification), {
+            accountId: msg.accountId,
+            threadId: msg.threadId,
+            parseMode: 'plain',
+          });
+          metrics.increment('task_notifications_delivered');
+        } catch (err) {
+          metrics.increment('task_notification_delivery_errors');
+          logger.warn({ err: redactSecrets(String(err)), agentId: agent.id, taskId: notification.taskId }, 'Task notification delivery failed');
+        }
+      };
 
       try {
         const textParts: string[] = [];
@@ -2454,9 +2479,23 @@ export class Gateway {
           const evt = next.value as Record<string, unknown>;
           const partialText = extractPartialText(evt);
           const taskProgress = extractTaskProgress(evt);
+          const taskNotification = extractTaskNotification(evt);
+          const taskLifecycle = extractTaskLifecycleEvent(evt);
           const hookEvent = extractHookLifecycleEvent(evt);
           if (partialText) {
             markRunActivity('partial_text');
+          } else if (taskNotification) {
+            markRunActivity(`task_${taskNotification.status}`, taskNotification.taskId);
+            this.queueManager.markTaskFinished(sessionKey, taskNotification.taskId, `task_${taskNotification.status}`);
+            await deliverTaskNotification(taskNotification);
+          } else if (taskLifecycle) {
+            const eventType = `task_${taskLifecycle.status}`;
+            if (taskLifecycle.status === 'completed' || taskLifecycle.status === 'failed' || taskLifecycle.status === 'stopped' || taskLifecycle.status === 'killed') {
+              this.queueManager.markTaskFinished(sessionKey, taskLifecycle.taskId, eventType);
+              budget?.recordActivity(eventType);
+            } else {
+              markRunActivity(eventType, taskLifecycle.taskId);
+            }
           } else if (taskProgress) {
             markRunActivity('task_progress', taskProgress.taskId);
           } else if (hookEvent) {
@@ -3344,4 +3383,14 @@ function extractToolResponseText(value: unknown): string | undefined {
 function hashIdentifier(value: string | undefined): string | undefined {
   if (!value) return undefined;
   return createHash('sha256').update(value).digest('hex').slice(0, 24);
+}
+
+function formatTaskNotification(notification: SdkTaskNotification): string {
+  const label = notification.status === 'completed'
+    ? 'Task completed'
+    : notification.status === 'failed'
+      ? 'Task failed'
+      : 'Task stopped';
+  const summary = notification.summary.trim();
+  return summary ? `${label}: ${summary}` : `${label}: ${notification.taskId}`;
 }
