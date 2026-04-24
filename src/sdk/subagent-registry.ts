@@ -143,6 +143,18 @@ export class SdkSubagentRegistry {
     return { ...run, parentSessionKeys: [...run.parentSessionKeys] };
   }
 
+  getActiveRun(
+    agentId: string,
+    parentSessionId: string,
+    subagentId: string,
+  ): SubagentRunRecord | undefined {
+    const stack = this.activeRuns.get(activeKey(agentId, parentSessionId, subagentId));
+    const runId = stack?.at(-1);
+    if (!runId) return undefined;
+    const run = this.runs.get(runId);
+    return run ? { ...run, parentSessionKeys: [...run.parentSessionKeys] } : undefined;
+  }
+
   deleteSession(agentId: string, parentSessionId: string): number {
     const runIds = [...this.runs.values()]
       .filter((run) => run.agentId === agentId && run.parentSessionId === parentSessionId)

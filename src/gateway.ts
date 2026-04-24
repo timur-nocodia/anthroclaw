@@ -61,6 +61,7 @@ import {
   shouldExposeDirectSubagents,
   shouldExposeNestedSubagents,
 } from './sdk/subagent-policy.js';
+import { FileOwnershipRegistry } from './sdk/file-ownership.js';
 import { WarmQueryPool } from './sdk/warm-pool.js';
 import { SdkCheckpointRegistry, type RewindResponse } from './sdk/checkpoints.js';
 import { SdkSubagentRegistry, type SubagentRunRecord, type SubagentRunStatus } from './sdk/subagent-registry.js';
@@ -362,6 +363,7 @@ export class Gateway {
   private checkpointRegistry = new SdkCheckpointRegistry();
   private controlRegistry = new SdkControlRegistry();
   private subagentRegistry = new SdkSubagentRegistry();
+  private fileOwnershipRegistry = new FileOwnershipRegistry();
 
   async start(config: GlobalConfig, agentsDir: string, dataDir: string): Promise<void> {
     this.startedAt = Date.now();
@@ -541,6 +543,7 @@ export class Gateway {
     this.queueManager.stop();
     this.warmQueries.closeAll();
     this.controlRegistry.clear();
+    this.fileOwnershipRegistry.clear();
     this.clearHookEmitters();
     this.scheduler?.stop();
     this.scheduler = null;
@@ -565,6 +568,31 @@ export class Gateway {
       subagents: this.buildSubagents(agent),
       resume,
       hookEmitter: this.hookEmitters.get(agent.id),
+      fileOwnership: {
+        registry: this.fileOwnershipRegistry,
+        resolveContext: (input) => {
+          const parentSessionId = input.session_id;
+          const subagentId = typeof input.agent_id === 'string' ? input.agent_id : undefined;
+          if (!parentSessionId || !subagentId || subagentId === agent.id) return undefined;
+
+          const run = this.subagentRegistry.getActiveRun(agent.id, parentSessionId, subagentId);
+          if (!run) return undefined;
+
+          return {
+            sessionKey: run.parentSessionKeys[0] ?? parentSessionId,
+            runId: run.runId,
+            subagentId: run.subagentId,
+            toolName: input.tool_name,
+            toolInput: input.tool_input,
+            cwd: input.cwd,
+            conflictMode: agent.config.subagents?.conflict_mode ?? 'soft',
+          };
+        },
+        onEvent: (event) => metrics.recordFileOwnershipEvent({
+          ...event,
+          agentId: agent.id,
+        }),
+      },
       ...this.sdkSessionService?.getQueryOptions(),
     });
   }
@@ -2675,6 +2703,19 @@ export class Gateway {
           const event = this.extractSubagentRegistryEvent(agent, payload);
           if (!event) return;
           const run = this.subagentRegistry.recordStop(event);
+          const claims = this.fileOwnershipRegistry.listClaims({ runId: run.runId });
+          for (const claim of claims) {
+            metrics.recordFileOwnershipEvent({
+              agentId: run.agentId,
+              sessionKey: claim.sessionKey,
+              runId: claim.runId,
+              subagentId: claim.subagentId,
+              path: claim.path,
+              eventType: 'released',
+              reason: 'subagent run completed',
+            });
+          }
+          this.fileOwnershipRegistry.releaseRun(run.runId);
           metrics.recordSubagentEvent({
             agentId: run.agentId,
             parentSessionId: run.parentSessionId,

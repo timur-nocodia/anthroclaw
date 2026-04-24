@@ -64,6 +64,29 @@ describe('SdkSubagentRegistry', () => {
     expect(stopFirst.runId).toBe(first.runId);
   });
 
+  it('returns the active run for a subagent in LIFO order', () => {
+    const registry = new SdkSubagentRegistry();
+
+    const first = registry.recordStart({
+      agentId: 'orchestrator',
+      parentSessionId: 'session-1',
+      subagentId: 'helper',
+    }, 1_000);
+    const second = registry.recordStart({
+      agentId: 'orchestrator',
+      parentSessionId: 'session-1',
+      subagentId: 'helper',
+    }, 2_000);
+
+    expect(registry.getActiveRun('orchestrator', 'session-1', 'helper')?.runId).toBe(second.runId);
+    registry.recordStop({
+      agentId: 'orchestrator',
+      parentSessionId: 'session-1',
+      subagentId: 'helper',
+    }, 3_000);
+    expect(registry.getActiveRun('orchestrator', 'session-1', 'helper')?.runId).toBe(first.runId);
+  });
+
   it('creates a completed synthetic record when a stop arrives without a start', () => {
     const registry = new SdkSubagentRegistry();
 
