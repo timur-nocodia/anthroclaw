@@ -64,6 +64,31 @@ describe('MetricsStore', () => {
       eventType: 'started',
       status: 'running',
     });
+    store.recordAgentRunStart({
+      runId: 'run-1',
+      startedAt: now,
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      sdkSessionId: 'session-1',
+      source: 'web',
+      channel: 'web',
+      peerId: 'web-user',
+      status: 'running',
+      model: 'claude-sonnet',
+      budget: { maxTurns: 10 },
+    });
+    store.recordAgentRunFinish({
+      runId: 'run-1',
+      completedAt: now + 123,
+      status: 'succeeded',
+      sdkSessionId: 'session-1',
+      usage: {
+        inputTokens: 10,
+        outputTokens: 5,
+        cacheReadTokens: 2,
+        durationMs: 123,
+      },
+    });
     store.close();
     store = null;
 
@@ -85,6 +110,27 @@ describe('MetricsStore', () => {
       sessions: { created: 1 },
       subagents: { started: 1 },
     });
+    expect(store.getAgentRun('run-1')).toMatchObject({
+      runId: 'run-1',
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      sdkSessionId: 'session-1',
+      source: 'web',
+      channel: 'web',
+      peerId: 'web-user',
+      status: 'succeeded',
+      model: 'claude-sonnet',
+      budget: { maxTurns: 10 },
+      usage: {
+        inputTokens: 10,
+        outputTokens: 5,
+        cacheReadTokens: 2,
+        durationMs: 123,
+      },
+    });
+    expect(store.listAgentRuns({ agentId: 'agent' }).map((run) => run.runId)).toEqual(['run-1']);
+    expect(store.listAgentRuns({ agentId: 'agent', sdkSessionId: 'session-1' }).map((run) => run.runId)).toEqual(['run-1']);
+    expect(store.listAgentRuns({ agentId: 'agent', sdkSessionId: 'missing' })).toEqual([]);
 
     const report = store.usageReport(30);
     expect(report.totalSessions).toBe(1);

@@ -1,7 +1,16 @@
 import { execSync } from 'node:child_process';
 import * as os from 'node:os';
 import type { UsageRecord } from './insights.js';
-import type { MetricsStore, StoredSessionEvent, StoredSubagentEvent, StoredToolEvent } from './store.js';
+import type {
+  MetricsStore,
+  StoredAgentRunFinish,
+  StoredAgentRunRecord,
+  StoredAgentRunStart,
+  StoredAgentRunStatus,
+  StoredSessionEvent,
+  StoredSubagentEvent,
+  StoredToolEvent,
+} from './store.js';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -132,6 +141,25 @@ class MetricsCollector {
 
   recordSubagentEvent(event: StoredSubagentEvent): void {
     this.store?.recordSubagentEvent(event);
+  }
+
+  recordAgentRunStart(run: StoredAgentRunStart): void {
+    this.store?.recordAgentRunStart(run);
+  }
+
+  recordAgentRunFinish(run: StoredAgentRunFinish): void {
+    this.store?.recordAgentRunFinish(run);
+  }
+
+  listAgentRuns(params: {
+    agentId?: string;
+    sessionKey?: string;
+    sdkSessionId?: string;
+    status?: StoredAgentRunStatus;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredAgentRunRecord[] {
+    return this.store?.listAgentRuns(params) ?? [];
   }
 
   setStore(store: MetricsStore | null): void {

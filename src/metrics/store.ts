@@ -30,6 +30,54 @@ export interface StoredSubagentEvent {
   status?: string;
 }
 
+export type StoredAgentRunStatus = 'running' | 'succeeded' | 'failed' | 'interrupted';
+export type StoredAgentRunSource = 'channel' | 'web' | 'cron';
+
+export interface StoredAgentRunUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  totalCostUsd?: number;
+  durationMs?: number;
+  durationApiMs?: number;
+  numTurns?: number;
+}
+
+export interface StoredAgentRunStart {
+  runId: string;
+  startedAt?: number;
+  agentId: string;
+  sessionKey: string;
+  sdkSessionId?: string;
+  source: StoredAgentRunSource;
+  channel: string;
+  accountId?: string;
+  peerId?: string;
+  threadId?: string;
+  messageId?: string;
+  status?: StoredAgentRunStatus;
+  model?: string;
+  budget?: Record<string, unknown>;
+}
+
+export interface StoredAgentRunFinish {
+  runId: string;
+  completedAt?: number;
+  status: Exclude<StoredAgentRunStatus, 'running'>;
+  sdkSessionId?: string;
+  usage?: StoredAgentRunUsage;
+  error?: string;
+}
+
+export interface StoredAgentRunRecord extends StoredAgentRunStart {
+  startedAt: number;
+  updatedAt: number;
+  completedAt?: number;
+  status: StoredAgentRunStatus;
+  usage: StoredAgentRunUsage;
+  error?: string;
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function percentile(sorted: number[], p: number): number {
@@ -120,6 +168,27 @@ export class MetricsStore {
         status TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS agent_runs (
+        run_id TEXT PRIMARY KEY,
+        started_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        agent_id TEXT NOT NULL,
+        session_key TEXT NOT NULL,
+        sdk_session_id TEXT,
+        source TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        account_id TEXT,
+        peer_id TEXT,
+        thread_id TEXT,
+        message_id TEXT,
+        status TEXT NOT NULL,
+        model TEXT,
+        budget_json TEXT NOT NULL,
+        usage_json TEXT NOT NULL,
+        error TEXT
+      );
+
       CREATE INDEX IF NOT EXISTS idx_counter_events_name_ts ON counter_events(name, ts);
       CREATE INDEX IF NOT EXISTS idx_query_duration_events_ts ON query_duration_events(ts);
       CREATE INDEX IF NOT EXISTS idx_token_events_ts ON token_events(ts);
@@ -128,6 +197,9 @@ export class MetricsStore {
       CREATE INDEX IF NOT EXISTS idx_tool_events_ts ON tool_events(ts);
       CREATE INDEX IF NOT EXISTS idx_session_events_ts ON session_events(ts);
       CREATE INDEX IF NOT EXISTS idx_subagent_events_ts ON subagent_events(ts);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_agent_started ON agent_runs(agent_id, started_at);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_session ON agent_runs(sdk_session_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_status_started ON agent_runs(status, started_at);
     `);
   }
 
@@ -213,6 +285,107 @@ export class MetricsStore {
       event.eventType,
       event.status ?? null,
     );
+  }
+
+  recordAgentRunStart(run: StoredAgentRunStart): void {
+    const startedAt = run.startedAt ?? Date.now();
+    this.db.prepare(`
+      INSERT INTO agent_runs(
+        run_id, started_at, updated_at, completed_at,
+        agent_id, session_key, sdk_session_id, source, channel,
+        account_id, peer_id, thread_id, message_id,
+        status, model, budget_json, usage_json, error
+      )
+      VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      ON CONFLICT(run_id) DO UPDATE SET
+        updated_at = excluded.updated_at,
+        sdk_session_id = COALESCE(excluded.sdk_session_id, agent_runs.sdk_session_id),
+        status = excluded.status,
+        model = COALESCE(excluded.model, agent_runs.model),
+        budget_json = excluded.budget_json
+    `).run(
+      run.runId,
+      startedAt,
+      startedAt,
+      run.agentId,
+      run.sessionKey,
+      run.sdkSessionId ?? null,
+      run.source,
+      run.channel,
+      run.accountId ?? null,
+      run.peerId ?? null,
+      run.threadId ?? null,
+      run.messageId ?? null,
+      run.status ?? 'running',
+      run.model ?? null,
+      JSON.stringify(run.budget ?? {}),
+      JSON.stringify({}),
+    );
+  }
+
+  recordAgentRunFinish(run: StoredAgentRunFinish): void {
+    const completedAt = run.completedAt ?? Date.now();
+    this.db.prepare(`
+      UPDATE agent_runs
+      SET
+        updated_at = ?,
+        completed_at = ?,
+        status = ?,
+        sdk_session_id = COALESCE(?, sdk_session_id),
+        usage_json = ?,
+        error = ?
+      WHERE run_id = ?
+    `).run(
+      completedAt,
+      completedAt,
+      run.status,
+      run.sdkSessionId ?? null,
+      JSON.stringify(run.usage ?? {}),
+      run.error ?? null,
+      run.runId,
+    );
+  }
+
+  getAgentRun(runId: string): StoredAgentRunRecord | undefined {
+    const row = this.db.prepare('SELECT * FROM agent_runs WHERE run_id = ?').get(runId) as AgentRunRow | undefined;
+    return row ? parseAgentRunRow(row) : undefined;
+  }
+
+  listAgentRuns(params: {
+    agentId?: string;
+    sessionKey?: string;
+    sdkSessionId?: string;
+    status?: StoredAgentRunStatus;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredAgentRunRecord[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.agentId) {
+      clauses.push('agent_id = ?');
+      values.push(params.agentId);
+    }
+    if (params.sessionKey) {
+      clauses.push('session_key = ?');
+      values.push(params.sessionKey);
+    }
+    if (params.sdkSessionId) {
+      clauses.push('sdk_session_id = ?');
+      values.push(params.sdkSessionId);
+    }
+    if (params.status) {
+      clauses.push('status = ?');
+      values.push(params.status);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM agent_runs
+      ${where}
+      ORDER BY started_at DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as AgentRunRow[];
+    return rows.map(parseAgentRunRow);
   }
 
   counters(): Record<string, number> {
@@ -381,10 +554,66 @@ export class MetricsStore {
       DELETE FROM tool_events;
       DELETE FROM session_events;
       DELETE FROM subagent_events;
+      DELETE FROM agent_runs;
     `);
   }
 
   close(): void {
     this.db.close();
   }
+}
+
+interface AgentRunRow {
+  run_id: string;
+  started_at: number;
+  updated_at: number;
+  completed_at: number | null;
+  agent_id: string;
+  session_key: string;
+  sdk_session_id: string | null;
+  source: StoredAgentRunSource;
+  channel: string;
+  account_id: string | null;
+  peer_id: string | null;
+  thread_id: string | null;
+  message_id: string | null;
+  status: StoredAgentRunStatus;
+  model: string | null;
+  budget_json: string;
+  usage_json: string;
+  error: string | null;
+}
+
+function parseJsonObject(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseAgentRunRow(row: AgentRunRow): StoredAgentRunRecord {
+  return {
+    runId: row.run_id,
+    startedAt: row.started_at,
+    updatedAt: row.updated_at,
+    completedAt: row.completed_at ?? undefined,
+    agentId: row.agent_id,
+    sessionKey: row.session_key,
+    sdkSessionId: row.sdk_session_id ?? undefined,
+    source: row.source,
+    channel: row.channel,
+    accountId: row.account_id ?? undefined,
+    peerId: row.peer_id ?? undefined,
+    threadId: row.thread_id ?? undefined,
+    messageId: row.message_id ?? undefined,
+    status: row.status,
+    model: row.model ?? undefined,
+    budget: parseJsonObject(row.budget_json),
+    usage: parseJsonObject(row.usage_json) as StoredAgentRunUsage,
+    error: row.error ?? undefined,
+  };
 }

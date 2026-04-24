@@ -1,5 +1,6 @@
 import { readdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { query, startup } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentDefinition, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent/agent.js';
@@ -20,6 +21,7 @@ import { transcribeAudio } from './media/transcribe.js';
 import { extractPdfText } from './media/pdf.js';
 import { metrics } from './metrics/collector.js';
 import { MetricsStore } from './metrics/store.js';
+import type { StoredAgentRunStatus, StoredAgentRunUsage } from './metrics/store.js';
 import type { ScheduledJob } from './cron/scheduler.js';
 import type { ChannelAdapter, InboundMessage } from './channels/types.js';
 import type { GlobalConfig } from './config/schema.js';
@@ -56,6 +58,40 @@ import {
 } from './sdk/events.js';
 
 const PROMPT_SUGGESTION_WAIT_MS = 750;
+
+function compactError(value: unknown): string {
+  const text = value instanceof Error ? value.message : String(value);
+  return redactSecrets(text).slice(0, 2000);
+}
+
+function definedBudget(values: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined));
+}
+
+function buildAgentRunBudget(agent: Agent, options: ReturnType<typeof buildSdkOptions>): Record<string, unknown> {
+  return definedBudget({
+    maxTurns: options.maxTurns,
+    maxBudgetUsd: options.maxBudgetUsd,
+    taskBudget: options.taskBudget,
+    iterationBudget: agent.config.iteration_budget,
+    permissionMode: options.permissionMode,
+  });
+}
+
+function readResultUsage(event: Record<string, unknown>, durationMs: number): StoredAgentRunUsage {
+  const usage = event.usage && typeof event.usage === 'object'
+    ? event.usage as Record<string, unknown>
+    : {};
+  return definedBudget({
+    inputTokens: typeof usage.input_tokens === 'number' ? usage.input_tokens : undefined,
+    outputTokens: typeof usage.output_tokens === 'number' ? usage.output_tokens : undefined,
+    cacheReadTokens: typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : undefined,
+    totalCostUsd: typeof event.total_cost_usd === 'number' ? event.total_cost_usd : undefined,
+    durationMs,
+    durationApiMs: typeof event.duration_api_ms === 'number' ? event.duration_api_ms : undefined,
+    numTurns: typeof event.num_turns === 'number' ? event.num_turns : undefined,
+  }) as StoredAgentRunUsage;
+}
 
 async function nextWithTimeout<T>(
   iterator: AsyncIterator<T>,
@@ -828,9 +864,43 @@ export class Gateway {
 
     const prompt = sessionCtx + `[web-user]: ${message}`;
     const queryStartMs = Date.now();
+    let runId: string | undefined;
+    let runUsage: StoredAgentRunUsage = {};
+    let newSessionId = existingSessionId ?? '';
+
+    const finishRun = (
+      status: Exclude<StoredAgentRunStatus, 'running'>,
+      error?: unknown,
+    ) => {
+      if (!runId) return;
+      metrics.recordAgentRunFinish({
+        runId,
+        status,
+        sdkSessionId: newSessionId || existingSessionId,
+        usage: {
+          ...runUsage,
+          durationMs: Date.now() - queryStartMs,
+        },
+        error: error === undefined ? undefined : compactError(error),
+      });
+      runId = undefined;
+    };
 
     try {
       const options = this.buildUserQueryOptions(agent, existingSessionId);
+      runId = randomUUID();
+      metrics.recordAgentRunStart({
+        runId,
+        agentId,
+        sessionKey,
+        sdkSessionId: existingSessionId,
+        source: 'web',
+        channel: context.channel ?? 'web',
+        peerId: 'web-user',
+        status: 'running',
+        model: (options.model as string) ?? agent.config.model,
+        budget: buildAgentRunBudget(agent, options),
+      });
       const keepCheckpointHandle = Boolean(agent.config.sdk?.enableFileCheckpointing);
       const abort = new AbortController();
       const result = this.startQuery(
@@ -850,7 +920,6 @@ export class Gateway {
           result,
         );
       }
-      let newSessionId = '';
       let inputTokens = 0;
       let outputTokens = 0;
       let totalTokens = 0;
@@ -932,6 +1001,13 @@ export class Gateway {
           if (evt.session_id && typeof evt.session_id === 'string') {
             newSessionId = evt.session_id;
           }
+          const resultUsage = readResultUsage(evt, Date.now() - queryStartMs);
+          if (Object.keys(resultUsage).length > 1) {
+            runUsage = resultUsage;
+            inputTokens = resultUsage.inputTokens ?? inputTokens;
+            outputTokens = resultUsage.outputTokens ?? outputTokens;
+            totalTokens = inputTokens + outputTokens;
+          }
           if (typeof evt.result === 'string' && evt.result.length > 0) {
             assistantTextParts.length = 0;
             assistantTextParts.push(evt.result);
@@ -1000,9 +1076,18 @@ export class Gateway {
         });
       }
 
+      if (Object.keys(runUsage).length === 0) {
+        runUsage = {
+          inputTokens,
+          outputTokens,
+          cacheReadTokens: 0,
+        };
+      }
+      finishRun('succeeded');
       callbacks.onDone(newSessionId || sessionKey, totalTokens);
     } catch (err) {
       metrics.increment('query_errors');
+      finishRun('failed', err);
       callbacks.onError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       metrics.recordQueryDuration(Date.now() - queryStartMs);
@@ -1504,8 +1589,47 @@ export class Gateway {
     }
 
     const queryStartMs = Date.now();
+    let runId: string | undefined;
+    let observedSessionId = existingSessionId;
+    let runUsage: StoredAgentRunUsage = {};
+    const rawMeta = msg.raw && typeof msg.raw === 'object' ? msg.raw as Record<string, unknown> : {};
+    const source = rawMeta.cron === true ? 'cron' : 'channel';
+    const finishRun = (
+      status: Exclude<StoredAgentRunStatus, 'running'>,
+      error?: unknown,
+    ) => {
+      if (!runId) return;
+      metrics.recordAgentRunFinish({
+        runId,
+        status,
+        sdkSessionId: observedSessionId,
+        usage: {
+          ...runUsage,
+          durationMs: Date.now() - queryStartMs,
+        },
+        error: error === undefined ? undefined : compactError(error),
+      });
+      runId = undefined;
+    };
+
     try {
       const options = this.buildUserQueryOptions(agent, existingSessionId);
+      runId = randomUUID();
+      metrics.recordAgentRunStart({
+        runId,
+        agentId: agent.id,
+        sessionKey,
+        sdkSessionId: existingSessionId,
+        source,
+        channel: msg.channel,
+        accountId: msg.accountId,
+        peerId: msg.peerId,
+        threadId: msg.threadId,
+        messageId: msg.messageId,
+        status: 'running',
+        model: (options.model as string) ?? agent.config.model,
+        budget: buildAgentRunBudget(agent, options),
+      });
       const result = this.startQuery(agent, prompt, options, existingSessionId);
       const abort = new AbortController();
       this.queueManager.register(sessionKey, result, abort);
@@ -1535,6 +1659,7 @@ export class Gateway {
 
           if (evt.session_id && typeof evt.session_id === 'string') {
             sessionId = evt.session_id;
+            observedSessionId = sessionId;
             this.controlRegistry.alias(sessionId, sessionKey);
           }
 
@@ -1554,6 +1679,7 @@ export class Gateway {
             }
             if (evt.session_id && typeof evt.session_id === 'string') {
               sessionId = evt.session_id;
+              observedSessionId = sessionId;
             }
             const usage = evt.usage as {
               input_tokens?: number;
@@ -1579,6 +1705,7 @@ export class Gateway {
               this.insightsEngine.record(usageRecord);
               metrics.recordUsage(usageRecord);
             }
+            runUsage = readResultUsage(evt, Date.now() - queryStartMs);
             break;
           } else if (evt.type === 'tool_use') {
             metrics.increment('tool_calls');
@@ -1625,15 +1752,18 @@ export class Gateway {
         if (budgetInterrupted && budget?.graceMessage) {
           const stats = budget.stats;
           const suffix = `\n\n⚠️ Agent reached processing limit (${stats.toolCalls} tool calls, ${Math.round(stats.elapsedMs / 1000)}s). Partial work may have been completed.`;
+          finishRun('interrupted');
           return responseText.length > 0 ? responseText + suffix : suffix.trim();
         }
 
         void this.maybeGenerateSessionTitle(agent, sessionId, msg.text || msg.transcript || '[media]', responseText);
 
         if (responseText.length > 0) {
+          finishRun(budgetInterrupted ? 'interrupted' : 'succeeded');
           return responseText;
         }
 
+        finishRun(budgetInterrupted ? 'interrupted' : 'succeeded');
         return `Agent ${agent.id} processed your message but produced no text response.`;
       } finally {
         this.queueManager.unregister(sessionKey);
@@ -1642,6 +1772,7 @@ export class Gateway {
       }
     } catch (err) {
       metrics.increment('query_errors');
+      finishRun('failed', err);
       logger.error(
         {
           err: redactSecrets(String(err)),
