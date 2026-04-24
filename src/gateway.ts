@@ -9,7 +9,7 @@ import { AccessControl } from './routing/access.js';
 import { buildSessionKey } from './routing/session-key.js';
 import { MessageDebouncer } from './routing/debounce.js';
 import { RateLimiter } from './routing/rate-limiter.js';
-import { QueueManager } from './routing/queue-manager.js';
+import { QueueManager, type ActiveQueryView } from './routing/queue-manager.js';
 import { TelegramChannel } from './channels/telegram.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import { CronScheduler } from './cron/scheduler.js';
@@ -209,6 +209,12 @@ export interface FileOwnershipMutationResult {
   claimId: string;
   action: 'release' | 'override';
   released: boolean;
+}
+
+export interface ActiveAgentRunView extends ActiveQueryView {
+  agentId?: string;
+  runId?: string;
+  sdkSessionId?: string;
 }
 
 function compactError(value: unknown): string {
@@ -1012,6 +1018,25 @@ export class Gateway {
     offset?: number;
   } = {}): StoredAgentRunRecord[] {
     return metrics.listAgentRuns(params);
+  }
+
+  listActiveAgentRuns(agentId?: string): ActiveAgentRunView[] {
+    const running = metrics.listAgentRuns({ status: 'running', limit: 1000 });
+    const bySessionKey = new Map(running.map((run) => [run.sessionKey, run]));
+    const byRunId = new Map(running.map((run) => [run.runId, run]));
+
+    return this.queueManager.listActive()
+      .map((active) => {
+        const run = bySessionKey.get(active.sessionKey) ?? (active.traceId ? byRunId.get(active.traceId) : undefined);
+        const resolvedAgentId = run?.agentId ?? inferAgentIdFromSessionKey(active.sessionKey);
+        return {
+          ...active,
+          agentId: resolvedAgentId,
+          runId: run?.runId ?? active.traceId,
+          sdkSessionId: run?.sdkSessionId,
+        };
+      })
+      .filter((active) => !agentId || active.agentId === agentId);
   }
 
   listMemoryInfluenceEvents(params: {
@@ -3329,6 +3354,11 @@ export class Gateway {
     return this.controlRegistry;
   }
 
+  /** @internal Expose active query registry for testing */
+  get _queueManager(): QueueManager {
+    return this.queueManager;
+  }
+
   /** @internal Expose file ownership registry for testing */
   get _fileOwnershipRegistry(): FileOwnershipRegistry {
     return this.fileOwnershipRegistry;
@@ -3383,6 +3413,12 @@ function extractToolResponseText(value: unknown): string | undefined {
 function hashIdentifier(value: string | undefined): string | undefined {
   if (!value) return undefined;
   return createHash('sha256').update(value).digest('hex').slice(0, 24);
+}
+
+function inferAgentIdFromSessionKey(sessionKey: string): string | undefined {
+  const parts = sessionKey.split(':');
+  if (parts[0] === 'web') return parts[1];
+  return parts[0] || undefined;
 }
 
 function formatTaskNotification(notification: SdkTaskNotification): string {
