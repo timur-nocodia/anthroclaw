@@ -173,6 +173,24 @@ interface HookEventView {
   ts: Date;
 }
 
+interface ActiveRunView {
+  sessionKey: string;
+  registeredAt: number;
+  lastActivityAt: number;
+  lastEventType: string;
+  activeTaskIds: string[];
+  traceId?: string;
+  agentId?: string;
+  runId?: string;
+  sdkSessionId?: string;
+  channelDeliveryTarget?: {
+    channel: string;
+    peerId: string;
+    accountId?: string;
+    threadId?: string;
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /*  Main                                                               */
 /* ------------------------------------------------------------------ */
@@ -211,6 +229,8 @@ export default function ChatPage() {
   const [routeDecisionLoading, setRouteDecisionLoading] = useState(false);
   const [subagentRuns, setSubagentRuns] = useState<SubagentRun[]>([]);
   const [subagentsLoading, setSubagentsLoading] = useState(false);
+  const [activeRuns, setActiveRuns] = useState<ActiveRunView[]>([]);
+  const [activeRunsLoading, setActiveRunsLoading] = useState(false);
   const [hookEvents, setHookEvents] = useState<HookEventView[]>([]);
   const [rewindNotice, setRewindNotice] = useState<string | null>(null);
   const [channel, setChannel] = useState("web");
@@ -372,15 +392,32 @@ export default function ChatPage() {
     void loadSubagentRuns();
   }, [loadSubagentRuns]);
 
+  const loadActiveRuns = useCallback(async () => {
+    setActiveRunsLoading(true);
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/runs/active`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setActiveRuns(Array.isArray(data.activeRuns) ? data.activeRuns as ActiveRunView[] : []);
+    } finally {
+      setActiveRunsLoading(false);
+    }
+  }, [selected, serverId]);
+
+  useEffect(() => {
+    void loadActiveRuns();
+  }, [loadActiveRuns]);
+
   useEffect(() => {
     if (!streaming) return;
     const id = window.setInterval(() => {
       void loadSubagentRuns();
+      void loadActiveRuns();
       void loadSessionDetails();
       void loadRouteDecision();
     }, 1500);
     return () => window.clearInterval(id);
-  }, [loadRouteDecision, loadSessionDetails, loadSubagentRuns, streaming]);
+  }, [loadActiveRuns, loadRouteDecision, loadSessionDetails, loadSubagentRuns, streaming]);
 
   // Auto-scroll
   useEffect(() => {
@@ -483,6 +520,7 @@ export default function ChatPage() {
               if (ev.totalTokens) setTotalTokens((t) => t + ev.totalTokens);
               void loadSessions();
               void loadSubagentRuns();
+              void loadActiveRuns();
               void loadSessionDetails();
               void loadRouteDecision();
               continue;
@@ -525,6 +563,14 @@ export default function ChatPage() {
                   return {
                     ...x,
                     taskProgress: ev.summary ?? ev.description ?? "Subagent is working...",
+                  };
+                }
+                if (ev.type === "task_notification") {
+                  const status = typeof ev.status === "string" ? ev.status : "completed";
+                  const summary = typeof ev.summary === "string" && ev.summary.length > 0 ? ev.summary : "Task finished";
+                  return {
+                    ...x,
+                    taskProgress: `${status}: ${summary}`,
                   };
                 }
                 if (ev.type === "tool_call" || ev.type === "tool_use") {
@@ -591,6 +637,7 @@ export default function ChatPage() {
     setRewindNotice(null);
     setSessionDetails(null);
     setSubagentRuns([]);
+    setActiveRuns([]);
     setHookEvents([]);
     setSessionId("sess_" + Math.random().toString(36).slice(2, 10));
     setStreaming(false);
@@ -644,6 +691,7 @@ export default function ChatPage() {
       setSessionId(data.sessionId);
       setSessionDetails(null);
       setSubagentRuns([]);
+      setActiveRuns([]);
       setHookEvents([]);
       setPromptSuggestion(null);
       setRewindNotice(null);
@@ -951,11 +999,14 @@ export default function ChatPage() {
           routeDecisionLoading={routeDecisionLoading}
           hookEvents={hookEvents}
           runs={subagentRuns}
+          activeRuns={activeRuns}
           loading={subagentsLoading}
+          activeRunsLoading={activeRunsLoading}
           onRefresh={() => {
             void loadSessionDetails();
             void loadRouteDecision();
             void loadSubagentRuns();
+            void loadActiveRuns();
           }}
           onInterrupt={interruptSubagentRun}
         />
@@ -1080,7 +1131,9 @@ function SubagentRunsPanel({
   routeDecisionLoading,
   hookEvents,
   runs,
+  activeRuns,
   loading,
+  activeRunsLoading,
   onRefresh,
   onInterrupt,
 }: {
@@ -1091,11 +1144,14 @@ function SubagentRunsPanel({
   routeDecisionLoading: boolean;
   hookEvents: HookEventView[];
   runs: SubagentRun[];
+  activeRuns: ActiveRunView[];
   loading: boolean;
+  activeRunsLoading: boolean;
   onRefresh: () => void | Promise<void>;
   onInterrupt: (runId: string) => void | Promise<void>;
 }) {
   const running = runs.filter((run) => run.status === "running").length;
+  const activeTaskCount = activeRuns.reduce((sum, run) => sum + run.activeTaskIds.length, 0);
 
   return (
     <aside
@@ -1139,6 +1195,7 @@ function SubagentRunsPanel({
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-3">
         <SessionDebugCard session={session} loading={sessionLoading} />
+        <ActiveRunsCard runs={activeRuns} loading={activeRunsLoading} activeTaskCount={activeTaskCount} />
         <RouteDecisionCard
           selectedSession={selectedSession}
           decision={routeDecision}
@@ -1173,6 +1230,97 @@ function SubagentRunsPanel({
         )}
       </div>
     </aside>
+  );
+}
+
+function ActiveRunsCard({
+  runs,
+  loading,
+  activeTaskCount,
+}: {
+  runs: ActiveRunView[];
+  loading: boolean;
+  activeTaskCount: number;
+}) {
+  return (
+    <section
+      className="rounded-lg border p-2.5"
+      style={{
+        background: "var(--oc-bg2)",
+        borderColor: runs.length > 0 ? "var(--oc-accent-ring)" : "var(--oc-border)",
+      }}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Activity className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--oc-accent)" }} />
+          <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>
+            Active SDK runs
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <SubagentPill tone={loading ? "running" : runs.length > 0 ? "running" : "default"}>
+            {loading ? "loading" : `${runs.length} runs`}
+          </SubagentPill>
+          {activeTaskCount > 0 && <SubagentPill tone="running">{activeTaskCount} tasks</SubagentPill>}
+        </div>
+      </div>
+
+      {runs.length === 0 ? (
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+          No active SDK run is registered for this agent.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {runs.slice(0, 4).map((run) => {
+            const idleMs = Date.now() - run.lastActivityAt;
+            return (
+              <div
+                key={run.runId ?? run.sessionKey}
+                className="rounded border px-2 py-1.5"
+                style={{
+                  background: "var(--oc-bg1)",
+                  borderColor: "var(--oc-border)",
+                }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className="truncate text-[10.5px]"
+                    style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                    title={run.runId ?? run.sessionKey}
+                  >
+                    {shortId(run.runId ?? run.sessionKey, 16)}
+                  </span>
+                  <SubagentPill tone="running">{run.lastEventType}</SubagentPill>
+                </div>
+                <div className="mt-1 grid grid-cols-2 gap-1.5 text-[10.5px]">
+                  <SubagentMeta label="idle" value={formatDuration(idleMs)} />
+                  <SubagentMeta label="registered" value={formatTime(run.registeredAt)} />
+                  {run.sdkSessionId && (
+                    <SubagentMeta label="sdk" value={shortId(run.sdkSessionId, 12)} title={run.sdkSessionId} />
+                  )}
+                  {run.channelDeliveryTarget && (
+                    <SubagentMeta
+                      label="channel"
+                      value={run.channelDeliveryTarget.channel}
+                      title={run.channelDeliveryTarget.peerId}
+                    />
+                  )}
+                </div>
+                {run.activeTaskIds.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {run.activeTaskIds.slice(0, 4).map((taskId) => (
+                      <SubagentPill key={taskId} tone="running" title={taskId}>
+                        {shortId(taskId, 12)}
+                      </SubagentPill>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
