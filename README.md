@@ -1,82 +1,248 @@
-# OpenClaw Agent SDK Edition
+<p align="center">
+  <img src="ui/public/anthroClaw-logo.svg" alt="AnthroClaw" width="116" />
+</p>
 
-Lightweight multi-agent AI assistant framework built on [Anthropic Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk). Telegram + WhatsApp channels.
+<h1 align="center">AnthroClaw</h1>
 
-## Features
+<p align="center">
+  <strong>A Claude Agent SDK-native control plane for personal, multi-agent assistants.</strong>
+</p>
 
-- **Agent-as-folder** — each agent = directory with `agent.yml` + `CLAUDE.md` + skills + memory
-- **Multi-agent routing** — priority-based routing with topic-specific agents
-- **Access control** — allowlist, pairing (code/approve/open), per-agent isolation
-- **Memory system** — daily files, wiki, hybrid search (FTS5 + vector), auto-consolidation (dreaming)
-- **Skills** — SDK-native `.claude/skills/*/SKILL.md` with compatibility discovery for legacy `skills/*/SKILL.md`
-- **MCP tools** — memory_search, session_search, memory_write, send_message, send_media, access_control, list_skills, manage_skills, web_search
-- **Cron scheduler** — 5-field cron with channel delivery
-- **Telegram commands** — /start, /newsession (auto-summary), /skills, /pending, /whoami
-- **Queue modes** — collect (debounce), steer (interrupt + restart), interrupt (cancel)
-- **Hooks** — webhook/script hooks on lifecycle events (message, query, session reset, cron)
-- **Rate limiting** — sliding window with lockout, allowlist bypass, persistent state
-- **Session pruning** — LRU eviction + hourly cleanup
-- **Session reset policies** — auto-reset hourly/daily/weekly with summary saved to memory
-- **Auto context compression** — auto-newsession when message count exceeds threshold
-- **Iteration budget** — limit tool calls and query duration, grace message on budget exceeded
-- **Memory context fencing** — `<memory-context>` tags prevent prompt injection from recalled memory
-- **Tool output pruning** — truncated search results with snippet limits
-- **YAML frontmatter in skills** — metadata, platform filtering, tags, descriptions in SKILL.md
-- **Agent self-scheduling** — create/list/delete/toggle cron jobs from chat via `manage_cron` tool
-- **Background memory prefetch** — async pre-fetch relevant memory after each response
-- **Hot reload** — agent config changes detected automatically, no restart needed
-- **Subagents** — delegate tasks to other agents via SDK
-- **Media enrichment** — audio transcription (AssemblyAI), PDF text extraction
+<p align="center">
+  <a href="https://github.com/timur-nocodia/anthroclaw/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-f59e0b.svg"></a>
+  <img alt="Node.js >= 22" src="https://img.shields.io/badge/node-%3E%3D22-3b82f6.svg">
+  <img alt="Claude Agent SDK native" src="https://img.shields.io/badge/Claude%20Agent%20SDK-native-111827.svg">
+  <img alt="Telegram + WhatsApp" src="https://img.shields.io/badge/channels-Telegram%20%2B%20WhatsApp-10b981.svg">
+</p>
+
+AnthroClaw is a local-first gateway for running multiple Claude-powered agents across real chat channels, with a web control surface for sessions, agents, skills, channels, logs, fleet status, metrics, and deploy operations.
+
+The important part: AnthroClaw does **not** wrap Claude as a generic provider. User-facing LLM execution is routed through the **Claude Agent SDK / Claude Code path**. Permissions, hooks, sessions, checkpoints, subagents, skills, MCP tools, sandbox options, and retry/fallback behavior are intentionally aligned with the native SDK surface.
+
+If you want a personal assistant platform that feels like an operator console instead of a toy chatbot, this is the shape of it.
+
+## What It Is
+
+AnthroClaw gives every agent its own workspace, prompt, skills, memory, tools, routes, policies, and runtime settings. The gateway receives messages from channels, routes them to the right agent, executes Claude through the Agent SDK, records sessions and telemetry, and exposes the whole system through a Next.js control UI.
+
+It is designed for one person or a small trusted team running their own assistant fleet.
+
+Current first-class channels:
+
+- Telegram
+- WhatsApp
+- Web chat through the control UI
+
+Current first-class runtime:
+
+- Claude Agent SDK / Claude Code for user-facing LLM calls
+- OpenAI only for optional memory embeddings
+- Native `.claude/skills` layout
+- MCP tools and SDK `tool()` definitions
+- SDK SessionStore-backed sessions
+- SDK hooks, permissions, subagents, checkpoints, and partial events
+
+## Why It Exists
+
+Most assistant frameworks become provider routers with a chat UI bolted on top. AnthroClaw is intentionally narrower and more opinionated:
+
+- **Native Claude execution** instead of generic LLM abstraction.
+- **Agents as folders** instead of database-only configuration.
+- **Real channels** instead of a demo chat box.
+- **Persistent memory and sessions** instead of one-off prompts.
+- **Fleet and runtime telemetry** instead of blind background processes.
+- **Strict separation between product UI and fake controls**: if a button is visible, it should map to a real backend path or be clearly read-only.
+
+## Highlights
+
+### Claude Agent SDK-native runtime
+
+AnthroClaw uses `@anthropic-ai/claude-agent-sdk` as the core execution surface. The runtime intentionally keeps SDK concepts visible:
+
+- explicit SDK options and setting sources
+- SDK-native permission mode and tool allow/deny policy
+- SDK hooks for lifecycle and tool events
+- SDK SessionStore-backed session persistence
+- SDK checkpoints, rewind, fork, and session reads
+- SDK subagents with explicit capabilities
+- SDK-compatible `.claude/skills/*/SKILL.md`
+- prompt suggestions, partial messages, progress summaries, and hook events
+
+### Agents as workspaces
+
+Each agent is a directory:
+
+```text
+agents/
+  example/
+    agent.yml
+    CLAUDE.md
+    soul.md
+    .claude/
+      skills/
+        example-skill/
+          SKILL.md
+```
+
+That makes agents reviewable, portable, and easy to version. A prompt change is a diff. A skill is a folder. A policy is YAML.
+
+### Multi-agent routing
+
+AnthroClaw can route messages by channel, peer, group, topic, and agent policy. Agents can operate independently while sharing the same gateway.
+
+Supported routing patterns include:
+
+- personal DMs
+- group chats with mention-only behavior
+- topic-specific Telegram forum threads
+- per-agent allowlists
+- pairing-code or approval-based access
+- queue modes for collect, steer, and interrupt behavior
+
+### Memory that survives the chat
+
+Agents can search and write memory through MCP tools:
+
+- daily memory files
+- wiki pages
+- SQLite FTS5 search
+- optional vector search
+- background memory prefetch
+- automatic memory consolidation
+- prompt-injection fencing for recalled memory
+
+### Sessions, checkpoints, and search
+
+AnthroClaw treats sessions as operational data, not hidden SDK internals:
+
+- persistent SDK sessions
+- transcript indexing
+- `session_search`
+- focused summaries
+- fork and rewind
+- title generation
+- session pruning
+- reset policies
+- context compression
+
+### Skills as native folders
+
+Skills live in `.claude/skills`. They can be attached, detached, uploaded, cloned, inspected, and managed from the UI and tools.
+
+AnthroClaw keeps a thin compatibility/admin layer, but the canonical layout stays Claude-native.
+
+### Control UI
+
+The web UI gives you an operator-grade control surface:
+
+- fleet overview
+- agent list and editor
+- chat with session controls
+- subagent visibility and scoped interrupt
+- channel pairing and routing
+- runtime metrics
+- lifecycle telemetry
+- logs
+- settings
+- deploy wizard
+- fleet commands
+
+### Fleet and runtime telemetry
+
+Runtime metrics are persisted and surfaced in the UI:
+
+- uptime
+- active sessions
+- messages and tokens over 24h
+- model and tool usage
+- session/tool/subagent lifecycle events
+- query latency
+- memory/media store size
+- system CPU, memory, disk, Node, platform, and Git status
 
 ## Quick Start
 
+### Requirements
+
+- Node.js `>= 22`
+- `pnpm`
+- authenticated Claude Code CLI
+- Telegram bot token if using Telegram
+- WhatsApp pairing if using WhatsApp
+- optional OpenAI API key for memory embeddings
+
+### Install
+
 ```bash
-# Install
+git clone https://github.com/timur-nocodia/anthroclaw.git
+cd anthroclaw
 pnpm install
+```
 
-# Configure
+### Configure
+
+```bash
 cp .env.example .env
-# Edit .env with your tokens
-
-# Edit config.yml and agents/example/agent.yml
-
-# Run
-npx tsx src/index.ts
 ```
 
-## Requirements
+Edit:
 
-- Node.js >= 22
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) authenticated (SDK uses OAuth)
-- Telegram bot token (from [@BotFather](https://t.me/BotFather))
+- `.env` for secrets
+- `config.yml` for gateway/channel defaults
+- `agents/example/agent.yml` for the example agent
+- `agents/example/CLAUDE.md` for the agent prompt
 
-## Project Structure
+### Run the gateway
 
-```
-project/
-├── config.yml              # Global config (channels, defaults, rate limits)
-├── .env                    # Secrets (tokens, API keys)
-├── agents/                 # Agents (each = folder)
-│   └── example/
-│       ├── agent.yml       # Agent config (routes, pairing, tools, cron, hooks)
-│       ├── CLAUDE.md       # System prompt (@include support)
-│       ├── soul.md         # Persona file
-│       ├── .claude/
-│       │   └── skills/
-│       │       └── example-skill/
-│       │           └── SKILL.md
-│       └── memory/         # Agent memory (daily files, wiki)
-├── data/                   # Runtime data (auto-created)
-│   ├── access.json         # Approved/pending users
-│   ├── skill-catalog/      # Instance-wide skill source of truth
-│   ├── memory-db/          # SQLite FTS5 databases
-│   └── media/              # Downloaded media
-└── src/                    # Source code
+```bash
+pnpm dev
 ```
 
-## Agent Configuration
+### Pair WhatsApp
 
-### agent.yml
+```bash
+pnpm whatsapp:pair
+```
+
+### Run the control UI
+
+```bash
+pnpm ui
+```
+
+The UI is a Next.js app under `ui/`.
+
+## Common Commands
+
+```bash
+# Gateway dev loop
+pnpm dev
+
+# Build TypeScript
+pnpm build
+
+# Backend tests
+pnpm test
+
+# Backend tests in watch mode
+pnpm test:watch
+
+# Control UI dev server
+pnpm ui
+
+# Control UI production build
+pnpm ui:build
+
+# Reset local admin password
+pnpm reset-password
+
+# WhatsApp pairing helper
+pnpm whatsapp:pair
+```
+
+## Configuration Shape
+
+Minimal agent example:
 
 ```yaml
 model: claude-sonnet-4-6
@@ -84,17 +250,16 @@ timezone: UTC
 
 routes:
   - channel: telegram
-    scope: dm                    # dm | group | any
-    peers: ["TELEGRAM_USER_ID"]  # optional: specific users
-    topics: ["123"]              # optional: forum thread IDs
-    mention_only: false          # group-only: respond only to @mentions
+    scope: dm
+    peers: ["TELEGRAM_USER_ID"]
+    mention_only: false
 
 pairing:
-  mode: code                     # off | code | approve | open
-  code: "SECRET_CODE"
+  mode: code
+  code: "CHANGE_ME"
 
 allowlist:
-  telegram: ["YOUR_ID"]
+  telegram: ["YOUR_TELEGRAM_ID"]
 
 mcp_tools:
   - memory_search
@@ -104,93 +269,189 @@ mcp_tools:
   - list_skills
   - manage_skills
 
-queue_mode: collect              # collect | steer | interrupt
-
-session_policy: never            # never | hourly | daily | weekly
+queue_mode: collect
+session_policy: never
 
 auto_compress:
   enabled: true
-  threshold_messages: 30         # auto-reset after N exchanges
+  threshold_messages: 30
 
 iteration_budget:
-  max_tool_calls: 30             # max tool_use events per query
-  timeout_ms: 120000             # max query duration
-  grace_message: true            # notify when budget exceeded
-
-hooks:
-  - event: on_after_query
-    action: webhook
-    url: "https://example.com/hook"
+  max_tool_calls: 30
+  timeout_ms: 120000
+  grace_message: true
 
 subagents:
-  allow: ["other-agent"]
-
-maxSessions: 100
-
-cron:
-  - id: daily-check
-    schedule: "0 9 * * *"
-    prompt: "Daily check."
-    deliver_to:
-      channel: telegram
-      peer_id: "YOUR_ID"
-    enabled: true
+  allow: ["research"]
 ```
 
-### MCP Tools
+## Built-in Tools
 
 | Tool | Purpose |
-|------|---------|
-| `memory_search` | Hybrid search (FTS5 + vector) |
+| --- | --- |
+| `memory_search` | Search agent memory using FTS/vector retrieval |
+| `memory_write` | Write durable memory entries |
+| `memory_wiki` | Create, read, update, and delete wiki pages |
 | `session_search` | Search prior SDK session transcripts |
-| `memory_write` | Write to daily file + index |
-| `memory_wiki` | CRUD for wiki pages |
-| `send_message` | Send text to any channel |
-| `send_media` | Send files (image, video, document) |
-| `access_control` | Manage user access |
-| `list_skills` | Thin compatibility/admin view over workspace skills |
-| `manage_skills` | Safely create/update/read/remove `.claude/skills/*/SKILL.md` |
-| `web_search_brave` | Brave web search |
-| `web_search_exa` | Exa neural search |
-| `manage_cron` | Create/list/delete/toggle cron jobs from chat |
+| `send_message` | Send text back through configured channels |
+| `send_media` | Send media files through channels |
+| `access_control` | Manage allowlists and pending access |
+| `list_skills` | Inspect available/attached skills |
+| `manage_skills` | Create, update, attach, detach, and remove skills |
+| `manage_cron` | Create and control scheduled agent jobs |
+| `web_search_brave` | Search the web through Brave |
+| `web_search_exa` | Search the web through Exa |
 
-### Hook Events
+## Security Model
 
-| Event | When |
-|-------|------|
-| `on_message_received` | After routing, before query |
-| `on_before_query` | Before Claude SDK call |
-| `on_after_query` | After response |
-| `on_session_reset` | On /newsession |
-| `on_cron_fire` | When cron job fires |
-| `on_tool_use` | SDK tool invocation starts |
-| `on_tool_result` | SDK tool invocation completes |
-| `on_tool_error` | SDK tool invocation fails |
-| `on_permission_request` | SDK requests approval |
-| `on_sdk_notification` | SDK emits notification |
-| `on_subagent_start` | SDK subagent run starts |
-| `on_subagent_stop` | SDK subagent run stops |
+AnthroClaw connects Claude to real tools, files, channels, and users. Treat inbound messages as untrusted input.
 
-## Development
+Core defaults and design goals:
 
-```bash
-# Run tests
-pnpm test
+- unknown users should pair or be approved before an agent processes their messages
+- agent tools should be explicitly configured
+- dangerous Bash/file operations should route through SDK permission policy
+- context references are guarded by SSRF, prompt-injection, budget, and workspace-root checks
+- OpenAI is not used for user-facing agent LLM calls
+- remote/channel access should be reviewed before exposing an agent publicly
+- secrets belong in `.env`, not in `agent.yml`, prompts, skills, or commits
 
-# Watch mode
-pnpm test:watch
+Before adding powerful tools to an agent, verify:
 
-# Type check
-npx tsc --noEmit
+- who can reach the agent
+- what files it can read/write
+- whether it can call shell commands
+- which MCP tools it can access
+- whether the session is personal, group, or channel-facing
 
-# Dev with auto-restart
-npx tsx watch src/index.ts
+## Project Layout
+
+```text
+.
+├── agents/
+│   └── example/                 # Example agent workspace
+├── config.yml                   # Gateway/channel/runtime defaults
+├── docs/                        # Design notes, guide, UI/API specs
+├── src/                         # Gateway, runtime, tools, channels, memory
+│   ├── agent/
+│   ├── channels/
+│   ├── config/
+│   ├── memory/
+│   ├── metrics/
+│   ├── sdk/
+│   ├── security/
+│   └── session/
+├── test/                        # Backend test suite
+├── ui/                          # Next.js control UI
+│   ├── app/
+│   ├── components/
+│   ├── lib/
+│   └── __tests__/
+├── package.json
+└── pnpm-workspace.yaml
 ```
 
-## Full Guide
+Runtime data is created under `data/` and intentionally ignored by Git.
 
-See [docs/guide.md](docs/guide.md) for the complete user guide.
+## Development Workflow
+
+Use small, reviewable changes:
+
+```bash
+pnpm build
+pnpm test
+pnpm ui:build
+cd ui && pnpm test --run
+```
+
+For UI-only work, at minimum run:
+
+```bash
+pnpm ui:build
+cd ui && pnpm test --run
+```
+
+For runtime or SDK changes, run backend build/tests as well.
+
+## Contributing
+
+Contributions are welcome, but AnthroClaw has a few strong rules because the runtime can control real accounts, files, tools, and infrastructure.
+
+### Contribution Principles
+
+- Keep Claude Agent SDK native behavior intact.
+- Do not add alternate user-facing LLM providers.
+- Do not hide SDK concepts behind generic abstractions when the SDK already provides the primitive.
+- Do not introduce fake UI states, simulated success, or buttons without backend behavior.
+- Prefer small PRs with clear scope.
+- Add or update tests for behavior changes.
+- Update docs when user-facing behavior changes.
+- Treat channel input, file references, URLs, and tool output as untrusted.
+
+### Before Opening a PR
+
+Run the relevant checks:
+
+```bash
+pnpm build
+pnpm test
+pnpm ui:build
+cd ui && pnpm test --run
+```
+
+If a check cannot be run locally, say exactly why in the PR description.
+
+### PR Format
+
+Please include:
+
+- what changed
+- why it changed
+- how it was tested
+- screenshots or short screen recordings for UI changes
+- security notes for channel/tool/permission changes
+- migration notes if config shape changed
+
+### Good First Areas
+
+- UI empty states and operator flows
+- tests around fleet/deploy/channel behavior
+- documentation examples
+- agent templates
+- skills that use the native `.claude/skills` layout
+- observability and metrics views
+- channel-specific troubleshooting docs
+
+### Changes That Need Extra Care
+
+- permission behavior
+- shell/file tools
+- reference parsing
+- channel access control
+- deploy/fleet commands
+- memory retrieval and injection handling
+- session persistence
+- subagent capabilities
+
+If in doubt, open an issue or draft PR before implementing a large change.
+
+## Roadmap
+
+The original SDK-native migration scope is complete. The next useful work is product hardening:
+
+- deeper subagent steering UX
+- richer observability dashboards
+- stricter reference policies
+- more channel setup polish
+- better deploy/fleet ergonomics
+- more high-quality example agents and skills
+
+## Relationship to OpenClaw
+
+AnthroClaw is inspired by the broader OpenClaw idea of a personal assistant gateway, but this repository is intentionally focused on a stricter Claude Agent SDK-native runtime and a smaller set of first-class channels.
+
+The goal is not to support every provider and every surface. The goal is to make the Claude-native path excellent.
 
 ## License
 
-MIT
+AnthroClaw is released under the [MIT License](LICENSE).
