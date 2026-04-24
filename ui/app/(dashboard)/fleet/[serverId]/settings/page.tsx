@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Database,
+  Download,
   Key,
   Plug,
   RotateCcw,
@@ -253,7 +254,7 @@ export default function SettingsPage() {
           {section === "access" && <AccessSection serverId={serverId} />}
           {section === "storage" && <StorageSection serverId={serverId} />}
           {section === "integrations" && <IntegrationsSection serverId={serverId} />}
-          {section === "advanced" && <AdvancedSection />}
+          {section === "advanced" && <AdvancedSection serverId={serverId} />}
         </div>
       </div>
     </div>
@@ -1093,7 +1094,9 @@ function SkeletonMetric() {
 /*  Advanced Section                                                   */
 /* ------------------------------------------------------------------ */
 
-function AdvancedSection() {
+function AdvancedSection({ serverId }: { serverId: string }) {
+  const diagnosticsUrl = `/api/fleet/${serverId}/diagnostics/export?includeLogs=true&runLimit=50&routeDecisionLimit=50&diagnosticEventLimit=200`;
+
   return (
     <div className="flex max-w-[720px] flex-col gap-4">
       <SectionHead
@@ -1111,6 +1114,30 @@ function AdvancedSection() {
         <RuntimeRow label="Retry/fallback" value="Delegated to native SDK behavior" />
         <RuntimeRow label="OpenAI usage" value="Embeddings for memory only" />
         <RuntimeRow label="Agent tools" value="SDK-native MCP servers and tool() definitions" />
+      </div>
+      <Divider />
+      <SectionHead
+        title="Diagnostics"
+        desc="Download a redacted support bundle for failed runs, route decisions, logs, metrics, and environment metadata."
+      />
+      <div
+        className="flex items-center justify-between gap-3 rounded-md border px-3.5 py-3"
+        style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
+      >
+        <div className="min-w-0">
+          <div className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>
+            Support bundle
+          </div>
+          <div className="mt-0.5 text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
+            JSON export with secrets redacted. Transcript content is excluded by backend defaults.
+          </div>
+        </div>
+        <a href={diagnosticsUrl} download={`anthroclaw-${serverId}-diagnostics.json`}>
+          <Button variant="outline" size="sm">
+            <Download className="h-3.5 w-3.5" />
+            Download
+          </Button>
+        </a>
       </div>
       <Divider />
       <SectionHead
