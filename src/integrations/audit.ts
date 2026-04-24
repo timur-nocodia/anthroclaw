@@ -22,9 +22,26 @@ const TOOL_CAPABILITIES: Record<string, { capabilityId: string; provider: string
 export function classifyIntegrationToolName(toolName: string): IntegrationToolClassification | undefined {
   const localToolName = toolName.split('__').at(-1) ?? toolName;
   const match = TOOL_CAPABILITIES[localToolName];
-  if (!match) return undefined;
+  if (!match) {
+    const external = classifyExternalMcpToolName(toolName);
+    if (external) return external;
+    return undefined;
+  }
   return {
     ...match,
+    localToolName,
+  };
+}
+
+function classifyExternalMcpToolName(toolName: string): IntegrationToolClassification | undefined {
+  const parts = toolName.split('__');
+  if (parts.length < 3 || parts[0] !== 'mcp') return undefined;
+  const serverName = parts[1];
+  const localToolName = parts.slice(2).join('__');
+  if (!serverName || !localToolName || serverName.endsWith('-tools')) return undefined;
+  return {
+    capabilityId: `external_mcp.${serverName}`,
+    provider: serverName,
     localToolName,
   };
 }

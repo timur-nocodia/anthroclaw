@@ -89,4 +89,46 @@ mcp_tools:
 
     await gw.stop();
   });
+
+  it('records external MCP integration audit events by server name', async () => {
+    const agentDir = join(agentsDir, 'ops-agent');
+    mkdirSync(agentDir);
+    writeFileSync(join(agentDir, 'agent.yml'), `
+routes:
+  - channel: telegram
+    scope: dm
+external_mcp_servers:
+  calendar:
+    type: stdio
+    command: npx
+    args:
+      - google-calendar-mcp
+    allowed_tools:
+      - calendar_daily_brief
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const emitter = gw._hookEmitters.get('ops-agent')!;
+    await emitter.emit('on_tool_use', {
+      source: 'claude-agent-sdk',
+      agentId: 'ops-agent',
+      sdkSessionId: 'sdk-session-2',
+      toolName: 'mcp__calendar__calendar_daily_brief',
+    });
+
+    expect(gw.listIntegrationAuditEvents({ provider: 'calendar' })).toMatchObject([
+      {
+        agentId: 'ops-agent',
+        sdkSessionId: 'sdk-session-2',
+        toolName: 'mcp__calendar__calendar_daily_brief',
+        provider: 'calendar',
+        capabilityId: 'external_mcp.calendar',
+        status: 'started',
+      },
+    ]);
+
+    await gw.stop();
+  });
 });
