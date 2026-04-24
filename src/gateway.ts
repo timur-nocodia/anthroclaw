@@ -62,6 +62,12 @@ import {
   type SdkHookLifecycleEvent,
   type SdkTaskProgress,
 } from './sdk/events.js';
+import {
+  parseDirectWebhookPayload,
+  renderDirectWebhook,
+  verifyDirectWebhookSecret,
+  type DirectWebhookHeaders,
+} from './webhooks/direct.js';
 
 const PROMPT_SUGGESTION_WAIT_MS = 750;
 
@@ -79,6 +85,13 @@ export interface SessionProvenanceView {
   startedAt: number;
   completedAt?: number;
   status: StoredAgentRunStatus;
+}
+
+export interface DirectWebhookDeliveryResult {
+  delivered: boolean;
+  status: 'delivered' | 'not_found' | 'disabled' | 'unauthorized' | 'bad_payload' | 'channel_unavailable' | 'delivery_failed';
+  messageId?: string;
+  error?: string;
 }
 
 export interface SessionMessagePreview {
@@ -523,6 +536,60 @@ export class Gateway {
 
   getGlobalConfig(): GlobalConfig | null {
     return this.globalConfig;
+  }
+
+  async deliverDirectWebhook(
+    name: string,
+    rawBody: string,
+    headers: DirectWebhookHeaders,
+  ): Promise<DirectWebhookDeliveryResult> {
+    const config = this.globalConfig?.webhooks?.[name];
+    if (!config) {
+      return { delivered: false, status: 'not_found', error: `Webhook "${name}" is not configured` };
+    }
+    if (!config.enabled) {
+      return { delivered: false, status: 'disabled', error: `Webhook "${name}" is disabled` };
+    }
+    if (!verifyDirectWebhookSecret(headers, config.secret)) {
+      return { delivered: false, status: 'unauthorized', error: 'Invalid webhook secret' };
+    }
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = parseDirectWebhookPayload(rawBody, config.max_payload_bytes);
+    } catch (err) {
+      return {
+        delivered: false,
+        status: 'bad_payload',
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    const channel = this.channels.get(config.deliver_to.channel);
+    if (!channel) {
+      return {
+        delivered: false,
+        status: 'channel_unavailable',
+        error: `Channel "${config.deliver_to.channel}" is unavailable`,
+      };
+    }
+
+    const rendered = renderDirectWebhook(config, payload);
+    try {
+      const messageId = await channel.sendText(config.deliver_to.peer_id, rendered.text, {
+        accountId: config.deliver_to.account_id,
+        threadId: config.deliver_to.thread_id,
+        parseMode: 'plain',
+      });
+      metrics.increment('direct_webhook_deliveries');
+      logger.info({ webhook: name, channel: config.deliver_to.channel }, 'Direct webhook delivered');
+      return { delivered: true, status: 'delivered', messageId };
+    } catch (err) {
+      metrics.increment('direct_webhook_delivery_errors');
+      const error = err instanceof Error ? err.message : String(err);
+      logger.warn({ webhook: name, err: redactSecrets(error) }, 'Direct webhook delivery failed');
+      return { delivered: false, status: 'delivery_failed', error: redactSecrets(error) };
+    }
   }
 
   getAgentsDir(): string | null {

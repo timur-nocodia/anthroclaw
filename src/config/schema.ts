@@ -16,6 +16,20 @@ const WhatsappAccountSchema = z.object({
   auth_dir: z.string(),
 });
 
+const DirectWebhookSchema = z.object({
+  secret: z.string().min(1),
+  enabled: z.boolean().default(false),
+  deliver_to: z.object({
+    channel: z.enum(['telegram', 'whatsapp']),
+    peer_id: z.string(),
+    account_id: z.string().optional(),
+    thread_id: z.string().optional(),
+  }),
+  template: z.string().min(1),
+  fields: z.array(z.string()).optional(),
+  max_payload_bytes: z.number().int().min(1).max(131_072).default(32_768),
+});
+
 // ─── GlobalConfigSchema ────────────────────────────────────────────
 
 export const GlobalConfigSchema = z.object({
@@ -56,6 +70,7 @@ export const GlobalConfigSchema = z.object({
   exa: z.object({
     api_key: z.string(),
   }).optional(),
+  webhooks: z.record(z.string(), DirectWebhookSchema).optional(),
 });
 
 // ─── RouteSchema ───────────────────────────────────────────────────
