@@ -141,6 +141,8 @@ The web UI gives you an operator-grade control surface:
 - fleet overview
 - agent list and editor
 - chat with session controls
+- chat debug rail with SDK session, route decision, hook, and subagent runtime details
+- per-agent Runs tab for SDK run history and route decisions
 - subagent visibility and scoped interrupt
 - channel pairing and routing
 - runtime metrics
@@ -158,6 +160,8 @@ Runtime metrics are persisted and surfaced in the UI:
 - active sessions
 - messages and tokens over 24h
 - model and tool usage
+- SDK run records with source/channel/session provenance
+- route decision history with outcomes, winning agent, access result, queue action, and candidates
 - session/tool/subagent lifecycle events
 - query latency
 - memory/media store size
@@ -468,7 +472,7 @@ If in doubt, open an issue or draft PR before implementing a large change.
 The original SDK-native migration scope is complete. The next useful work is product hardening:
 
 - deeper subagent steering UX
-- richer observability dashboards
+- richer observability dashboards beyond the current agent Runs tab and chat debug rail
 - stricter reference policies
 - more channel setup polish
 - better deploy/fleet ergonomics

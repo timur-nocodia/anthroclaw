@@ -75,10 +75,11 @@ AnthroClaw is inspired by OpenClaw and Hermes-style agent infrastructure, but it
 42. [Channel Directory](#channel-directory)
 43. [Doctor Command](#doctor-command)
 44. [Usage Insights](#usage-insights)
-45. [Prompt Caching](#prompt-caching)
-46. [Releases](#releases)
-47. [Running in Production](#running-in-production)
-48. [FAQ](#faq)
+45. [Runtime Observability](#runtime-observability)
+46. [Prompt Caching](#prompt-caching)
+47. [Releases](#releases)
+48. [Running in Production](#running-in-production)
+49. [FAQ](#faq)
 
 ---
 
@@ -1863,6 +1864,56 @@ Built-in pricing for Claude models:
 | claude-sonnet-4-6 | $3 | $15 | $0.30 |
 | claude-opus-4-6 | $15 | $75 | $1.50 |
 | claude-haiku-4-5 | $0.80 | $4 | $0.08 |
+
+---
+
+## Runtime Observability
+
+AnthroClaw records runtime provenance around the native Claude Agent SDK call without replacing or patching the SDK.
+
+### What's Persisted
+
+For each SDK-backed query, the gateway stores an agent run record:
+
+- `runId`
+- agent id and session key
+- SDK `session_id` when observed
+- source: `channel`, `web`, or `cron`
+- channel/account/peer/thread/message ids when available
+- status: `running`, `succeeded`, `failed`, or `interrupted`
+- model, SDK budget options, usage, duration, cache-read tokens, and compact error text
+- linked `routeDecisionId` for channel-dispatched messages
+
+For inbound channel messages, the gateway also stores a route decision:
+
+- route outcome, for example `dispatched`, `no_route`, `mention_required`, `access_denied`, `rate_limited`, `queue_queued`, `queue_skipped`, `quick_command`, or `session_reset`
+- winning agent id, if any
+- matched route candidate summary
+- access result and reason, when applicable
+- queue action and session key, when applicable
+
+This is an observability layer only. Claude execution still goes through `@anthropic-ai/claude-agent-sdk`.
+
+### UI Surfaces
+
+- **Chat debug rail**: shows the selected SDK session transcript summary, latest run provenance, linked route decision, hook events, and subagent runs.
+- **Agent → Runs tab**: shows recent SDK runs and route decisions for the agent, with filters for run status and route outcome.
+- **Session selector**: shows SDK session title/preview/provenance when available.
+
+### API Surfaces
+
+```http
+GET /api/agents/:agentId/runs?limit=50&status=succeeded
+GET /api/routing/decisions?agentId=:agentId&limit=50&outcome=dispatched
+GET /api/routing/decisions?id=:routeDecisionId
+```
+
+Fleet routes preserve query strings, so the same endpoints are reachable through:
+
+```http
+GET /api/fleet/:serverId/agents/:agentId/runs?limit=50
+GET /api/fleet/:serverId/routing/decisions?agentId=:agentId&limit=50
+```
 
 ---
 
