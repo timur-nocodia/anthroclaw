@@ -345,6 +345,18 @@ describe('AgentYmlSchema', () => {
     expect(result.iteration_budget!.grace_message).toBe(false);
   });
 
+  it('accepts post-run memory extraction config with defaults', () => {
+    const result = AgentYmlSchema.parse({
+      routes: [{ channel: 'telegram' }],
+      memory_extraction: { enabled: true },
+    });
+    expect(result.memory_extraction).toEqual({
+      enabled: true,
+      max_candidates: 5,
+      max_input_chars: 6000,
+    });
+  });
+
   it('ignores legacy skills config in strict-native mode', () => {
     const result = AgentYmlSchema.parse({
       routes: [{ channel: 'telegram' }],

@@ -1,8 +1,8 @@
 import { readdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { query, startup } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentDefinition, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentDefinition, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent/agent.js';
 import { RouteTable, type RouteEntry } from './routing/table.js';
 import { AccessControl } from './routing/access.js';
@@ -16,6 +16,11 @@ import { CronScheduler } from './cron/scheduler.js';
 import { DynamicCronStore } from './cron/dynamic-store.js';
 import { ConfigWatcher } from './config/watcher.js';
 import { runDreaming } from './memory/dreaming.js';
+import {
+  buildPostRunMemoryExtractionPrompt,
+  parseMemoryCandidates,
+  storePostRunMemoryCandidates,
+} from './memory/extraction.js';
 import { runMemoryDoctor, type MemoryDoctorOptions, type MemoryDoctorReport } from './memory/doctor.js';
 import { PrefetchCache } from './memory/prefetch.js';
 import type { MemoryEntryRecord, MemoryReviewStatus, SearchResult } from './memory/store.js';
@@ -2562,6 +2567,17 @@ export class Gateway {
         void this.maybeGenerateSessionTitle(agent, sessionId, msg.text || msg.transcript || '[media]', responseText);
 
         if (responseText.length > 0) {
+          if (!budgetInterrupted && runId) {
+            void this.extractPostRunMemoryCandidates(agent, {
+              runId,
+              sessionKey,
+              sdkSessionId: observedSessionId,
+              channel: msg.channel,
+              peerHash: hashIdentifier(msg.peerId),
+              userText: msg.text || msg.transcript || '[media]',
+              assistantText: responseText,
+            });
+          }
           finishRun(budgetInterrupted ? 'interrupted' : 'succeeded');
           return responseText;
         }
@@ -2759,6 +2775,91 @@ export class Gateway {
           'Memory dreaming completed',
         );
       }
+    }
+  }
+
+  private async extractPostRunMemoryCandidates(
+    agent: Agent,
+    input: {
+      runId: string;
+      sessionKey: string;
+      sdkSessionId?: string;
+      channel?: string;
+      peerHash?: string;
+      userText: string;
+      assistantText: string;
+    },
+  ): Promise<void> {
+    const config = agent.config.memory_extraction;
+    if (!config?.enabled || !this.sdkReady) return;
+    if (!input.userText.trim() || !input.assistantText.trim()) return;
+
+    try {
+      const prompt = buildPostRunMemoryExtractionPrompt({
+        agentId: agent.id,
+        ...input,
+      }, {
+        maxCandidates: config.max_candidates,
+        maxInputChars: config.max_input_chars,
+      });
+      const options: Options = {
+        model: agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6',
+        cwd: agent.workspacePath,
+        tools: [],
+        allowedTools: [],
+        permissionMode: 'dontAsk',
+        canUseTool: async () => ({ behavior: 'deny', message: 'Tools disabled for memory extraction.' }),
+        settingSources: ['project'],
+        persistSession: false,
+        maxTurns: 1,
+        systemPrompt: {
+          type: 'preset',
+          preset: 'claude_code',
+          excludeDynamicSections: true,
+        },
+      };
+      const result = query({ prompt, options });
+      const parts: string[] = [];
+
+      try {
+        for await (const event of result) {
+          const evt = event as Record<string, unknown>;
+          if (evt.type === 'result') {
+            if (typeof evt.result === 'string') parts.push(evt.result);
+            break;
+          }
+          if (evt.type === 'assistant') {
+            const message = evt.message as Record<string, unknown> | undefined;
+            if (!Array.isArray(message?.content)) continue;
+            for (const block of message.content) {
+              if (block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string') {
+                parts.push(block.text);
+              }
+            }
+          }
+        }
+      } finally {
+        result.close?.();
+      }
+
+      const candidates = parseMemoryCandidates(parts.join('\n'), config.max_candidates);
+      if (candidates.length === 0) return;
+
+      const stored = storePostRunMemoryCandidates(agent.memoryStore, {
+        agentId: agent.id,
+        ...input,
+      }, candidates, {
+        maxCandidates: config.max_candidates,
+      });
+
+      metrics.increment('memory_candidates_proposed', stored.candidates.length);
+      logger.info({
+        agentId: agent.id,
+        runId: input.runId,
+        candidates: stored.candidates.length,
+      }, 'Post-run memory candidates proposed');
+    } catch (err) {
+      logger.warn({ err, agentId: agent.id, runId: input.runId }, 'Post-run memory extraction failed');
     }
   }
 
@@ -3238,4 +3339,9 @@ function extractToolResponseText(value: unknown): string | undefined {
       .join('\n');
   }
   return undefined;
+}
+
+function hashIdentifier(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return createHash('sha256').update(value).digest('hex').slice(0, 24);
 }

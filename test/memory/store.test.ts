@@ -117,6 +117,23 @@ describe('MemoryStore', () => {
     expect(results[0].score).toBeDefined();
   });
 
+  it('excludes pending and rejected entries from search until approved', () => {
+    const pending = store.indexFile('docs/pending.md', 'Durable pending project codename phoenix.', {
+      source: 'post_run_candidate',
+      reviewStatus: 'pending',
+    });
+    store.indexFile('docs/approved.md', 'Durable approved project codename falcon.', {
+      source: 'memory_write',
+      reviewStatus: 'approved',
+    });
+
+    expect(store.textSearch('phoenix', 10)).toEqual([]);
+    expect(store.textSearch('falcon', 10).map((result) => result.path)).toEqual(['docs/approved.md']);
+
+    store.updateMemoryEntryReview(pending.id, 'approved');
+    expect(store.textSearch('phoenix', 10).map((result) => result.path)).toEqual(['docs/pending.md']);
+  });
+
   // ─── 6. chunking: long content gets split ───────────────────────
   it('chunking: long content gets split into multiple chunks', () => {
     // Create content that exceeds maxChars (1600)

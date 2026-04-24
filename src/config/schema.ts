@@ -251,6 +251,12 @@ const SubagentPolicySchema = z.object({
   roles: z.record(z.string(), SubagentRolePolicySchema).optional(),
 }).optional();
 
+const MemoryExtractionSchema = z.object({
+  enabled: z.boolean().default(false),
+  max_candidates: z.number().int().min(1).max(10).default(5),
+  max_input_chars: z.number().int().min(500).max(20_000).default(6000),
+}).optional();
+
 export const AgentYmlSchema = z.object({
   model: z.string().optional(),
   thinking: ThinkingConfigSchema.optional(),
@@ -262,6 +268,7 @@ export const AgentYmlSchema = z.object({
   pairing: PairingSchema.optional(),
   allowlist: z.record(z.string(), z.array(z.string())).optional(),
   mcp_tools: z.array(z.string()).optional(),
+  memory_extraction: MemoryExtractionSchema,
   subagents: SubagentPolicySchema,
   cron: z.array(CronJobSchema).optional(),
   hooks: z.array(HookConfigSchema).optional(),
@@ -308,3 +315,4 @@ export type SubagentPolicy = NonNullable<z.infer<typeof SubagentPolicySchema>>;
 export type SdkPermissionPolicy = z.infer<typeof SdkPermissionPolicySchema>;
 export type SdkSandboxConfig = z.infer<typeof SdkSandboxSchema>;
 export type SdkAgentConfig = z.infer<typeof SdkAgentConfigSchema>;
+export type MemoryExtractionConfig = z.infer<typeof MemoryExtractionSchema>;

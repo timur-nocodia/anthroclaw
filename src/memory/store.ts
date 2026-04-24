@@ -33,6 +33,8 @@ export interface MemoryProvenance {
   sessionKey?: string;
   agentId?: string;
   sdkSessionId?: string;
+  sourceChannel?: string;
+  sourcePeerHash?: string;
   toolName?: string;
   createdBy?: string;
   note?: string;
@@ -322,7 +324,9 @@ export class MemoryStore implements MemoryProvider {
         `SELECT c.entry_id, c.path, c.start_line, c.end_line, c.text, rank
          FROM chunks_fts fts
          JOIN chunks c ON c.rowid = fts.rowid
+         LEFT JOIN memory_entries e ON e.id = c.entry_id
          WHERE chunks_fts MATCH ?
+           AND (c.entry_id IS NULL OR e.review_status = 'approved')
          ORDER BY rank
          LIMIT ?`,
       )
@@ -355,7 +359,12 @@ export class MemoryStore implements MemoryProvider {
   vectorSearch(queryEmbedding: Float32Array, limit: number): SearchResult[] {
     const rows = this.db
       .prepare(
-        'SELECT id, entry_id, path, start_line, end_line, text, embedding FROM chunks WHERE embedding IS NOT NULL LIMIT 2000',
+        `SELECT c.id, c.entry_id, c.path, c.start_line, c.end_line, c.text, c.embedding
+         FROM chunks c
+         LEFT JOIN memory_entries e ON e.id = c.entry_id
+         WHERE c.embedding IS NOT NULL
+           AND (c.entry_id IS NULL OR e.review_status = 'approved')
+         LIMIT 2000`,
       )
       .all() as Array<{
       id: string;

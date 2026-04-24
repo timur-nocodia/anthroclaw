@@ -25,6 +25,23 @@ function createQueryForPrompt(prompt: unknown) {
   seenPrompts.push(prompt);
   const text = typeof prompt === 'string' ? prompt : '';
 
+  if (text.includes('Extract durable memory candidates')) {
+    return createSdkStream([
+      {
+        type: 'result',
+        result: JSON.stringify({
+          candidates: [{
+            kind: 'decision',
+            text: 'The team chose SDK-native memory review.',
+            confidence: 0.91,
+            reason: 'The run discussed it.',
+          }],
+        }),
+        session_id: 'memory-extraction-session',
+      },
+    ]);
+  }
+
   if (text.includes('Generate a short, descriptive title')) {
     return createSdkStream([
       {
@@ -119,6 +136,15 @@ function makeMsg(overrides: Partial<InboundMessage> = {}): InboundMessage {
     raw: {},
     ...overrides,
   };
+}
+
+async function waitForPendingMemory(gw: Gateway, agentId: string) {
+  for (let i = 0; i < 20; i++) {
+    const entries = gw.listAgentMemoryEntries(agentId, { reviewStatus: 'pending' });
+    if (entries.length > 0) return entries;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return gw.listAgentMemoryEntries(agentId, { reviewStatus: 'pending' });
 }
 
 describe('Gateway SDK success path', () => {
@@ -313,6 +339,78 @@ routes:
 
     expect(textParts.join('')).toBe('Web SDK says hi');
     expect(doneSessionId).toBe('web-sdk-session-1');
+
+    await gw.stop();
+  });
+
+  it('proposes post-run memory candidates for review without making them searchable before approval', async () => {
+    const botDir = join(agentsDir, 'memory-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+memory_extraction:
+  enabled: true
+  max_candidates: 2
+  max_input_chars: 2000
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg({ text: 'remember that we chose SDK-native memory review' }));
+
+    expect(sent).toEqual(['SDK says hi']);
+    const pending = await waitForPendingMemory(gw, 'memory-bot');
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({
+      source: 'post_run_candidate',
+      reviewStatus: 'pending',
+      provenance: {
+        source: 'post_run_candidate',
+        reviewStatus: 'pending',
+        runId: expect.any(String),
+        sessionKey: 'memory-bot:telegram:dm:peer-123',
+        agentId: 'memory-bot',
+        sdkSessionId: 'sdk-session-1',
+        sourceChannel: 'telegram',
+        sourcePeerHash: expect.any(String),
+        metadata: {
+          kind: 'decision',
+          confidence: 0.91,
+          reason: 'The run discussed it.',
+        },
+      },
+    });
+    expect(pending[0].path).toContain('memory/candidates/');
+    expect(metrics.snapshot().counters.memory_candidates_proposed).toBe(1);
+
+    const store = gw.getAgent('memory-bot')!.memoryStore;
+    expect(store.textSearch('review', 10)).toEqual([]);
+
+    const updated = gw.updateAgentMemoryEntryReview('memory-bot', pending[0].id, 'approved');
+    expect(updated.updated).toBe(true);
+    expect(store.textSearch('review', 10).map((result) => result.path)).toEqual([pending[0].path]);
 
     await gw.stop();
   });
