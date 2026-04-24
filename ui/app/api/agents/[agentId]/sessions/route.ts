@@ -41,6 +41,7 @@ export async function GET(
       channel: url.searchParams.get('channel') ?? undefined,
       status: status && RUN_STATUSES.has(status) ? status as 'running' | 'succeeded' | 'failed' | 'interrupted' : undefined,
       active: active && ACTIVE_FILTERS.has(active) ? active as 'active' | 'inactive' | 'all' : undefined,
+      label: url.searchParams.get('label') ?? undefined,
       hasRouteDecision: optionalBoolean(url.searchParams.get('hasRouteDecision')),
       hasErrors: optionalBoolean(url.searchParams.get('hasErrors')),
       modifiedAfter: optionalNumber(url.searchParams.get('modifiedAfter')),

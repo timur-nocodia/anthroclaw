@@ -158,6 +158,7 @@ export interface ListAgentSessionsParams {
   active?: SessionActiveFilter;
   hasRouteDecision?: boolean;
   hasErrors?: boolean;
+  label?: string;
   modifiedAfter?: number;
   modifiedBefore?: number;
 }
@@ -167,6 +168,7 @@ export interface AgentSessionMailboxRow {
   summary: string;
   tag?: string;
   customTitle?: string;
+  labels?: string[];
   lastModified: number;
   createdAt?: number;
   cwd?: string;
@@ -320,6 +322,7 @@ function hasSessionMailboxFilters(params: ListAgentSessionsParams): boolean {
       || params.source
       || params.channel
       || params.status
+      || params.label
       || (params.active && params.active !== 'all')
       || params.hasRouteDecision !== undefined
       || params.hasErrors !== undefined
@@ -338,6 +341,7 @@ function matchesSessionMailboxFilters(row: AgentSessionMailboxRow, params: ListA
   if (params.active === 'inactive' && row.activeKeys.length > 0) return false;
   if (params.hasRouteDecision !== undefined && Boolean(provenance?.routeDecisionId) !== params.hasRouteDecision) return false;
   if (params.hasErrors !== undefined && (provenance?.status === 'failed') !== params.hasErrors) return false;
+  if (params.label && !row.labels?.includes(params.label)) return false;
   if (params.modifiedAfter !== undefined && row.lastModified < params.modifiedAfter) return false;
   if (params.modifiedBefore !== undefined && row.lastModified > params.modifiedBefore) return false;
 
@@ -349,6 +353,7 @@ function matchesSessionMailboxFilters(row: AgentSessionMailboxRow, params: ListA
     row.summary,
     row.tag,
     row.customTitle,
+    ...(row.labels ?? []),
     row.firstMessage?.text,
     row.lastMessage?.text,
     provenance?.source,
@@ -979,8 +984,9 @@ export class Gateway {
     const rows = await Promise.all(sdkSessions.map(async (session) => {
       seen.add(session.sessionId);
       const active = activeBySession.get(session.sessionId) ?? [];
-      const [title, messages] = await Promise.all([
+      const [title, labels, messages] = await Promise.all([
         this.sdkSessionService!.getAgentSessionTitle(agent, session.sessionId).catch(() => undefined),
+        this.sdkSessionService!.getAgentSessionLabels(agent, session.sessionId).catch(() => []),
         this.sdkSessionService!.getAgentSessionMessages(agent, session.sessionId, { limit: 100 }).catch(() => []),
       ]);
       const latestRun = metrics.listAgentRuns({
@@ -997,6 +1003,7 @@ export class Gateway {
         summary: title ?? session.summary,
         tag: session.tag,
         customTitle: session.customTitle,
+        labels,
         lastModified: session.lastModified,
         createdAt: session.createdAt,
         cwd: session.cwd,
@@ -1009,8 +1016,9 @@ export class Gateway {
 
     for (const [sessionId, active] of activeBySession) {
       if (seen.has(sessionId)) continue;
-      const [title, messages] = await Promise.all([
+      const [title, labels, messages] = await Promise.all([
         this.sdkSessionService.getAgentSessionTitle(agent, sessionId).catch(() => undefined),
+        this.sdkSessionService.getAgentSessionLabels(agent, sessionId).catch(() => []),
         this.sdkSessionService.getAgentSessionMessages(agent, sessionId, { limit: 100 }).catch(() => []),
       ]);
       const latestRun = metrics.listAgentRuns({
@@ -1027,6 +1035,7 @@ export class Gateway {
         summary: title ?? sessionId,
         tag: undefined,
         customTitle: undefined,
+        labels,
         lastModified: Math.max(...active.map((item) => item.lastUsed ?? 0), 0),
         createdAt: Math.min(...active.map((item) => item.started ?? Date.now())),
         cwd: agent.workspacePath,
@@ -1240,6 +1249,16 @@ export class Gateway {
       eventType: 'forked',
     });
     return forked;
+  }
+
+  async setAgentSessionLabels(agentId: string, sessionId: string, labels: string[]): Promise<{ sessionId: string; labels: string[] }> {
+    const agent = this.agents.get(agentId);
+    if (!agent) throw new Error(`Agent "${agentId}" not found`);
+    if (!this.sdkSessionService) throw new Error('SDK session service is not initialized');
+
+    const resolvedSessionId = this.resolveAgentSessionId(agent, agentId, sessionId) ?? sessionId;
+    const saved = await this.sdkSessionService.setAgentSessionLabels(agent, resolvedSessionId, labels);
+    return { sessionId: resolvedSessionId, labels: saved };
   }
 
   async deleteAgentSession(agentId: string, sessionId: string): Promise<void> {

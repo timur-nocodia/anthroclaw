@@ -35,3 +35,19 @@ export async function DELETE(
     return NextResponse.json({ ok: true });
   });
 }
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ agentId: string; sessionId: string }> },
+) {
+  return withAuth(async () => {
+    const { agentId, sessionId } = await params;
+    const body = await req.json().catch(() => ({}));
+    const labels = Array.isArray(body.labels)
+      ? body.labels.filter((label: unknown): label is string => typeof label === 'string')
+      : [];
+    const gw = await getGateway();
+    const result = await gw.setAgentSessionLabels(agentId, decodeURIComponent(sessionId), labels);
+    return NextResponse.json(result);
+  });
+}

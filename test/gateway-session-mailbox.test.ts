@@ -19,6 +19,8 @@ describe('Gateway session mailbox filters', () => {
     gw = new Gateway();
     (gw as any).agents.set('agent', {
       workspacePath: tmpDir,
+      getSessionId: () => undefined,
+      getSessionIdByValue: () => undefined,
       listSessionMappings: () => [{
         sessionKey: 'web:agent:s1',
         sessionId: 's1',
@@ -40,6 +42,10 @@ describe('Gateway session mailbox filters', () => {
       getAgentSessionTitle: async (_agent: unknown, sessionId: string) => (
         sessionId === 's1' ? 'Deploy Alpha' : undefined
       ),
+      getAgentSessionLabels: async (_agent: unknown, sessionId: string) => (
+        sessionId === 's1' ? ['prod', 'release'] : ['incident']
+      ),
+      setAgentSessionLabels: async (_agent: unknown, _sessionId: string, labels: string[]) => labels,
       getAgentSessionMessages: async (_agent: unknown, sessionId: string) => (
         sessionId === 's1'
           ? [
@@ -96,6 +102,9 @@ describe('Gateway session mailbox filters', () => {
     await expect(gw.listAgentSessions('agent', { search: 'payments failed' })).resolves.toMatchObject([
       { sessionId: 's2' },
     ]);
+    await expect(gw.listAgentSessions('agent', { search: 'release' })).resolves.toMatchObject([
+      { sessionId: 's1', labels: ['prod', 'release'] },
+    ]);
   });
 
   it('filters by source, channel, status, active state, and errors', async () => {
@@ -111,5 +120,15 @@ describe('Gateway session mailbox filters', () => {
     await expect(gw.listAgentSessions('agent', { hasErrors: true })).resolves.toMatchObject([
       { sessionId: 's2' },
     ]);
+    await expect(gw.listAgentSessions('agent', { label: 'incident' })).resolves.toMatchObject([
+      { sessionId: 's2', labels: ['incident'] },
+    ]);
+  });
+
+  it('updates session labels through sidecar metadata', async () => {
+    await expect(gw.setAgentSessionLabels('agent', 's1', ['prod', 'release'])).resolves.toEqual({
+      sessionId: 's1',
+      labels: ['prod', 'release'],
+    });
   });
 });
