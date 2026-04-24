@@ -80,6 +80,7 @@ interface AgentConfig {
     mentionOnly?: boolean;
   }>;
   raw?: string;
+  channel_context?: ChannelContextConfig;
   mcp_tools?: string[];
   allowlist?: Record<string, string[]>;
   quick_commands?: Record<string, { command: string; timeout: number }>;
@@ -143,6 +144,27 @@ interface AgentConfig {
     includeHookEvents?: boolean;
     enableFileCheckpointing?: boolean;
     fallbackModel?: string;
+  };
+}
+
+type ReplyToMode = "always" | "incoming_reply_only" | "never";
+
+interface ChannelBehaviorRule {
+  prompt?: string;
+  reply_to_mode?: ReplyToMode;
+}
+
+interface ChannelContextConfig {
+  reply_to_mode?: ReplyToMode;
+  telegram?: {
+    wildcard?: ChannelBehaviorRule;
+    peers?: Record<string, ChannelBehaviorRule>;
+    topics?: Record<string, ChannelBehaviorRule>;
+  };
+  whatsapp?: {
+    wildcard?: ChannelBehaviorRule;
+    direct?: Record<string, ChannelBehaviorRule>;
+    groups?: Record<string, ChannelBehaviorRule>;
   };
 }
 
@@ -590,6 +612,7 @@ function ConfigTab({
       code: agent.pairing?.code ?? "",
     },
     routes: agent.routes ?? [],
+    channel_context: agent.channel_context ?? { reply_to_mode: "always" as ReplyToMode },
     mcp_tools: agent.mcp_tools ?? [],
     allowlist: agent.allowlist ?? {},
     quick_commands: agent.quick_commands ?? {},
@@ -665,6 +688,75 @@ function ConfigTab({
     updateSdkSandbox({ filesystem: { ...cfg.sdk.sandbox.filesystem, ...patch } });
   };
 
+  const updateChannelContext = (patch: Partial<ChannelContextConfig>) => {
+    update({ channel_context: { ...cfg.channel_context, ...patch } });
+  };
+
+  const updateWildcardChannelPrompt = (channel: "telegram" | "whatsapp", prompt: string) => {
+    const current = cfg.channel_context[channel] ?? {};
+    updateChannelContext({
+      [channel]: {
+        ...current,
+        wildcard: {
+          ...current.wildcard,
+          prompt,
+        },
+      },
+    });
+  };
+
+  const buildChannelRule = (rule: ChannelBehaviorRule | undefined): ChannelBehaviorRule | undefined => {
+    if (!rule) return undefined;
+    const prompt = rule.prompt?.trim();
+    const clean: ChannelBehaviorRule = {};
+    if (prompt) clean.prompt = prompt;
+    if (rule.reply_to_mode) clean.reply_to_mode = rule.reply_to_mode;
+    return Object.keys(clean).length > 0 ? clean : undefined;
+  };
+
+  const buildChannelRuleMap = (
+    rules: Record<string, ChannelBehaviorRule> | undefined,
+  ): Record<string, ChannelBehaviorRule> | undefined => {
+    if (!rules) return undefined;
+    const clean = Object.fromEntries(
+      Object.entries(rules)
+        .map(([key, rule]) => [key, buildChannelRule(rule)] as const)
+        .filter((entry): entry is readonly [string, ChannelBehaviorRule] => Boolean(entry[1])),
+    );
+    return Object.keys(clean).length > 0 ? clean : undefined;
+  };
+
+  const buildChannelContextPayload = (): ChannelContextConfig | undefined => {
+    const clean: ChannelContextConfig = {};
+    if (cfg.channel_context.reply_to_mode && cfg.channel_context.reply_to_mode !== "always") {
+      clean.reply_to_mode = cfg.channel_context.reply_to_mode;
+    }
+
+    const telegramWildcard = buildChannelRule(cfg.channel_context.telegram?.wildcard);
+    const telegramPeers = buildChannelRuleMap(cfg.channel_context.telegram?.peers);
+    const telegramTopics = buildChannelRuleMap(cfg.channel_context.telegram?.topics);
+    if (telegramWildcard || telegramPeers || telegramTopics) {
+      clean.telegram = {
+        ...(telegramWildcard ? { wildcard: telegramWildcard } : {}),
+        ...(telegramPeers ? { peers: telegramPeers } : {}),
+        ...(telegramTopics ? { topics: telegramTopics } : {}),
+      };
+    }
+
+    const whatsappWildcard = buildChannelRule(cfg.channel_context.whatsapp?.wildcard);
+    const whatsappDirect = buildChannelRuleMap(cfg.channel_context.whatsapp?.direct);
+    const whatsappGroups = buildChannelRuleMap(cfg.channel_context.whatsapp?.groups);
+    if (whatsappWildcard || whatsappDirect || whatsappGroups) {
+      clean.whatsapp = {
+        ...(whatsappWildcard ? { wildcard: whatsappWildcard } : {}),
+        ...(whatsappDirect ? { direct: whatsappDirect } : {}),
+        ...(whatsappGroups ? { groups: whatsappGroups } : {}),
+      };
+    }
+
+    return Object.keys(clean).length > 0 ? clean : undefined;
+  };
+
   const buildSdkPayload = () => {
     const sdk: Record<string, unknown> = {};
     if (cfg.sdk.allowedTools.length > 0) sdk.allowedTools = cfg.sdk.allowedTools;
@@ -718,12 +810,14 @@ function ConfigTab({
       if (mode === "raw") {
         payload = { yaml: rawYaml };
       } else {
-        const { thinking, effort, maxTurns, maxBudgetUsd, sdk: _sdk, ...rest } = cfg;
+        const { thinking, effort, maxTurns, maxBudgetUsd, sdk: _sdk, channel_context: _channelContext, ...rest } = cfg;
         const clean: Record<string, unknown> = { ...rest };
         if (thinking.type !== "disabled") clean.thinking = thinking;
         if (effort && effort !== "high") clean.effort = effort;
         if (maxTurns > 0) clean.maxTurns = maxTurns;
         if (maxBudgetUsd > 0) clean.maxBudgetUsd = maxBudgetUsd;
+        const channelContextPayload = buildChannelContextPayload();
+        if (channelContextPayload) clean.channel_context = channelContextPayload;
         const sdkPayload = buildSdkPayload();
         if (sdkPayload) clean.sdk = sdkPayload;
         payload = clean;
@@ -1111,6 +1205,60 @@ function ConfigTab({
               onChange={(rs) => update({ routes: rs })}
               onAllowlistChange={(al) => update({ allowlist: al })}
             />
+          </Section>
+
+          {/* Channel behavior */}
+          <Section
+            title="Channel behavior"
+            tooltip="Operator-configured channel context is injected as fenced, untrusted context. It adds behavior hints without replacing CLAUDE.md or mutating SDK sessions."
+            icon={<MessageSquare className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+          >
+            <FormGrid>
+              <Field label="Reply target" tooltip="Controls reply threading for channel deliveries. Incoming reply only keeps replies scoped when the user replied to an existing message.">
+                <select
+                  value={cfg.channel_context.reply_to_mode ?? "always"}
+                  onChange={(e) => updateChannelContext({ reply_to_mode: e.target.value as ReplyToMode })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                >
+                  <option value="always">always</option>
+                  <option value="incoming_reply_only">incoming_reply_only</option>
+                  <option value="never">never</option>
+                </select>
+              </Field>
+              <Field label="Telegram wildcard" tooltip="Default Telegram operator context for chats without a more specific peer or topic rule. Fenced as untrusted channel context.">
+                <textarea
+                  value={cfg.channel_context.telegram?.wildcard?.prompt ?? ""}
+                  onChange={(e) => updateWildcardChannelPrompt("telegram", e.target.value)}
+                  rows={3}
+                  placeholder="Operator context for Telegram chats"
+                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                />
+              </Field>
+              <Field label="WhatsApp wildcard" tooltip="Default WhatsApp operator context for chats without a more specific direct or group rule. Fenced as untrusted channel context.">
+                <textarea
+                  value={cfg.channel_context.whatsapp?.wildcard?.prompt ?? ""}
+                  onChange={(e) => updateWildcardChannelPrompt("whatsapp", e.target.value)}
+                  rows={3}
+                  placeholder="Operator context for WhatsApp chats"
+                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                />
+              </Field>
+            </FormGrid>
           </Section>
 
           {/* Quick commands */}
