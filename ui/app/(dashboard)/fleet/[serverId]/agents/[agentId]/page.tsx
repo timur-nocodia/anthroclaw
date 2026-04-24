@@ -180,6 +180,21 @@ interface ExternalMcpServerConfig {
   allowed_tools?: string[];
 }
 
+interface ExternalMcpPreflightServer {
+  serverName: string;
+  approvalStatus: "approved" | "review_required" | "blocked";
+  networkRisk: "low" | "medium" | "high";
+  filesystemRisk: "low" | "medium" | "high";
+  packageSource: string;
+  reasons: string[];
+}
+
+interface ExternalMcpPreflightState {
+  loading?: boolean;
+  error?: string;
+  server?: ExternalMcpPreflightServer;
+}
+
 const HOOK_EVENTS = [
   "on_message_received",
   "on_before_query",
@@ -694,6 +709,7 @@ function ConfigTab({
     },
   });
   const [rawYaml, setRawYaml] = useState(agent.raw ?? "");
+  const [externalMcpPreflight, setExternalMcpPreflight] = useState<Record<string, ExternalMcpPreflightState>>({});
 
   const update = (patch: Partial<typeof cfg>) => {
     setCfg((c) => ({ ...c, ...patch }));
@@ -845,6 +861,70 @@ function ConfigTab({
       return [[name, clean]] as Array<[string, ExternalMcpServerConfig]>;
     });
     return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  };
+
+  const buildExternalMcpSpecEntry = (server: ExternalMcpServerConfig): Record<string, unknown> | null => {
+    const type = server.type ?? "stdio";
+    if (type === "stdio") {
+      const command = server.command?.trim();
+      if (!command) return null;
+      return {
+        type: "stdio",
+        command,
+        ...(server.args?.length ? { args: server.args } : {}),
+        ...(server.env && Object.keys(server.env).length > 0 ? { env: server.env } : {}),
+      };
+    }
+    const url = server.url?.trim();
+    if (!url) return null;
+    return {
+      type,
+      url,
+      ...(server.headers && Object.keys(server.headers).length > 0 ? { headers: server.headers } : {}),
+    };
+  };
+
+  const preflightExternalMcpServer = async (serverName: string) => {
+    const server = cfg.external_mcp_servers[serverName];
+    const specEntry = buildExternalMcpSpecEntry(server);
+    if (!specEntry) {
+      setExternalMcpPreflight((state) => ({
+        ...state,
+        [serverName]: { error: "Set a command or URL before running preflight." },
+      }));
+      return;
+    }
+
+    setExternalMcpPreflight((state) => ({
+      ...state,
+      [serverName]: { loading: true },
+    }));
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/integrations/mcp-preflight`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ownerAgentId: agentId,
+          source: "external",
+          spec: { [serverName]: specEntry },
+          toolNamesByServer: {
+            [serverName]: server.allowed_tools ?? [],
+          },
+        }),
+      });
+      if (!res.ok) throw new Error(`preflight ${res.status}`);
+      const data = await res.json();
+      const preflightServer = Array.isArray(data.servers) ? data.servers[0] as ExternalMcpPreflightServer | undefined : undefined;
+      setExternalMcpPreflight((state) => ({
+        ...state,
+        [serverName]: preflightServer ? { server: preflightServer } : { error: "No preflight result returned." },
+      }));
+    } catch (err) {
+      setExternalMcpPreflight((state) => ({
+        ...state,
+        [serverName]: { error: err instanceof Error ? err.message : "Preflight failed." },
+      }));
+    }
   };
 
   const buildSdkPayload = () => {
@@ -1656,6 +1736,7 @@ function ConfigTab({
               <div className="flex flex-col gap-2.5">
                 {Object.entries(cfg.external_mcp_servers).map(([serverName, server]) => {
                   const type = server.type ?? "stdio";
+                  const preflight = externalMcpPreflight[serverName];
                   return (
                     <div
                       key={serverName}
@@ -1671,14 +1752,26 @@ function ConfigTab({
                             {type} / {(server.allowed_tools ?? []).length} allowed tools
                           </div>
                         </div>
-                        <button
-                          onClick={() => removeExternalMcpServer(serverName)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-[var(--oc-bg3)]"
-                          style={{ color: "var(--oc-text-dim)" }}
-                          title="Remove external MCP server"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void preflightExternalMcpServer(serverName)}
+                            disabled={preflight?.loading}
+                            className="h-7 px-2"
+                          >
+                            <Shield className="h-3.5 w-3.5" />
+                            {preflight?.loading ? "Checking" : "Preflight"}
+                          </Button>
+                          <button
+                            onClick={() => removeExternalMcpServer(serverName)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-[var(--oc-bg3)]"
+                            style={{ color: "var(--oc-text-dim)" }}
+                            title="Remove external MCP server"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
                       <div className="grid grid-cols-1 gap-2 md:grid-cols-[120px_minmax(0,1fr)]">
                         <Field label="Transport" tooltip="SDK MCP transport for this external server. stdio is the common local MCP shape; sse/http are remote transports.">
@@ -1760,6 +1853,9 @@ function ConfigTab({
                           />
                         </Field>
                       </FormGrid>
+                      {preflight && (
+                        <ExternalMcpPreflightResult state={preflight} />
+                      )}
                     </div>
                   );
                 })}
@@ -2209,6 +2305,54 @@ function ToggleField({
         style={{ accentColor: "var(--oc-accent)" }}
       />
     </label>
+  );
+}
+
+function ExternalMcpPreflightResult({ state }: { state: ExternalMcpPreflightState }) {
+  if (state.loading) {
+    return (
+      <div className="mt-3 rounded-[5px] border px-3 py-2 text-[11.5px]" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)", color: "var(--oc-text-muted)" }}>
+        Checking MCP command, env, tools, and transport risk...
+      </div>
+    );
+  }
+
+  if (state.error) {
+    return (
+      <div className="mt-3 rounded-[5px] border px-3 py-2 text-[11.5px]" style={{ borderColor: "rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.08)", color: "var(--oc-red)" }}>
+        {state.error}
+      </div>
+    );
+  }
+
+  const server = state.server;
+  if (!server) return null;
+  const approvalColor = server.approvalStatus === "approved"
+    ? "var(--oc-green)"
+    : server.approvalStatus === "blocked"
+      ? "var(--oc-red)"
+      : "var(--oc-yellow)";
+
+  return (
+    <div className="mt-3 rounded-[5px] border px-3 py-2.5" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)" }}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.4px]" style={{ color: approvalColor, background: "var(--oc-bg2)" }}>
+          {server.approvalStatus.replace("_", " ")}
+        </span>
+        <span className="text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+          network:{server.networkRisk} / fs:{server.filesystemRisk} / {server.packageSource}
+        </span>
+      </div>
+      {server.reasons.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {server.reasons.slice(0, 3).map((reason) => (
+            <div key={reason} className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+              {reason}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
