@@ -113,7 +113,16 @@ interface AgentConfig {
     enabled: boolean;
   }>;
   maxSessions?: number;
-  subagents?: { allow: string[] };
+  subagents?: {
+    allow: string[];
+    max_spawn_depth?: number;
+    conflict_mode?: "soft" | "strict";
+    roles?: Record<string, {
+      kind?: "explorer" | "worker" | "custom";
+      write_policy?: "allow" | "deny" | "claim_required";
+      description?: string;
+    }>;
+  };
   sdk?: {
     allowedTools?: string[];
     disallowedTools?: string[];
@@ -674,7 +683,12 @@ function ConfigTab({
     hooks: agent.hooks ?? [],
     cron: agent.cron ?? [],
     maxSessions: agent.maxSessions ?? 100,
-    subagents: agent.subagents ?? { allow: [] },
+    subagents: {
+      allow: agent.subagents?.allow ?? [],
+      max_spawn_depth: agent.subagents?.max_spawn_depth ?? 1,
+      conflict_mode: agent.subagents?.conflict_mode ?? "soft" as const,
+      roles: agent.subagents?.roles ?? {},
+    },
     sdk: {
       allowedTools: agent.sdk?.allowedTools ?? [],
       disallowedTools: agent.sdk?.disallowedTools ?? [],
@@ -2151,11 +2165,108 @@ function ConfigTab({
             <div className="flex flex-col gap-3.5">
               <Field label="Subagents" tooltip="Other agents this one can delegate subtasks to. For example, one agent talks to the user while another does research.">
                 <input value={cfg.subagents.allow.join(", ")}
-                  onChange={(e) => update({ subagents: { allow: e.target.value ? e.target.value.split(",").map(s => s.trim()).filter(Boolean) : [] } })}
+                  onChange={(e) => update({ subagents: { ...cfg.subagents, allow: csvToArray(e.target.value) } })}
                   placeholder="research-agent, code-agent"
                   className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
                   style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} />
               </Field>
+              <FormGrid>
+                <Field label="Max spawn depth" tooltip="SDK delegation surface policy. 0 disables direct subagent exposure, 1 allows direct subagents, 2 allows nested subagents.">
+                  <input
+                    type="number"
+                    value={cfg.subagents.max_spawn_depth}
+                    onChange={(e) => update({
+                      subagents: {
+                        ...cfg.subagents,
+                        max_spawn_depth: Math.max(0, +e.target.value || 0),
+                      },
+                    })}
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+                <Field label="Conflict mode" tooltip="Soft records sibling file ownership conflicts and allows them. Strict denies conflicting writes through SDK permission hooks.">
+                  <select
+                    value={cfg.subagents.conflict_mode}
+                    onChange={(e) => update({
+                      subagents: {
+                        ...cfg.subagents,
+                        conflict_mode: e.target.value as "soft" | "strict",
+                      },
+                    })}
+                    className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                  >
+                    <option value="soft">soft -- record conflicts</option>
+                    <option value="strict">strict -- deny conflicts</option>
+                  </select>
+                </Field>
+              </FormGrid>
+              {cfg.subagents.allow.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {cfg.subagents.allow.map((subagentId) => {
+                    const role = cfg.subagents.roles?.[subagentId] ?? {};
+                    const updateRole = (patch: Partial<typeof role>) => update({
+                      subagents: {
+                        ...cfg.subagents,
+                        roles: {
+                          ...cfg.subagents.roles,
+                          [subagentId]: {
+                            ...role,
+                            ...patch,
+                          },
+                        },
+                      },
+                    });
+                    return (
+                      <div
+                        key={subagentId}
+                        className="rounded-[5px] border p-3"
+                        style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)" }}
+                      >
+                        <div className="mb-2 text-[11px] font-semibold" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
+                          {subagentId}
+                        </div>
+                        <FormGrid>
+                          <Field label="Role kind" tooltip="Policy label used in the SDK Agent tool description. Explorer and worker are AnthroClaw policy hints, not custom runtimes.">
+                            <select
+                              value={role.kind ?? "custom"}
+                              onChange={(e) => updateRole({ kind: e.target.value as "explorer" | "worker" | "custom" })}
+                              className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                            >
+                              <option value="custom">custom</option>
+                              <option value="explorer">explorer</option>
+                              <option value="worker">worker</option>
+                            </select>
+                          </Field>
+                          <Field label="Write policy" tooltip="Allow keeps all delegated tools, deny removes write-capable tools, claim_required keeps writes behind file ownership permission checks.">
+                            <select
+                              value={role.write_policy ?? "allow"}
+                              onChange={(e) => updateRole({ write_policy: e.target.value as "allow" | "deny" | "claim_required" })}
+                              className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                            >
+                              <option value="allow">allow</option>
+                              <option value="deny">deny</option>
+                              <option value="claim_required">claim_required</option>
+                            </select>
+                          </Field>
+                          <Field label="Description" tooltip="Optional role note stored in config for operators and future policy UI.">
+                            <input
+                              value={role.description ?? ""}
+                              onChange={(e) => updateRole({ description: e.target.value })}
+                              placeholder="Role-specific operating note"
+                              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                            />
+                          </Field>
+                        </FormGrid>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </Section>
         </>
