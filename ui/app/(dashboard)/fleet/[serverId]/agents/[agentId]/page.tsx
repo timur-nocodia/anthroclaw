@@ -4,10 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  AlertTriangle,
   Brain,
   ChevronLeft,
+  CheckCircle2,
   Clock,
   Copy,
+  Database,
   DollarSign,
   FileText,
   GitBranch,
@@ -26,6 +29,7 @@ import {
   Terminal,
   Trash2,
   Upload,
+  XCircle,
   Zap,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -233,6 +237,49 @@ interface RouteDecisionRecord {
   queueAction?: string;
   sessionKey?: string;
   outcome: string;
+}
+
+type MemoryReviewStatus = "pending" | "approved" | "rejected";
+
+interface MemoryEntryRecord {
+  id: string;
+  path: string;
+  contentHash: string;
+  source: string;
+  reviewStatus: MemoryReviewStatus;
+  reviewNote?: string;
+  provenance: {
+    runId?: string;
+    traceId?: string;
+    sessionKey?: string;
+    sdkSessionId?: string;
+    toolName?: string;
+    metadata?: Record<string, unknown>;
+  };
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface MemoryDoctorIssue {
+  kind: "duplicate_content" | "stale_entry" | "oversized_file" | "conflicting_fact";
+  severity: "info" | "warn" | "error";
+  message: string;
+  paths: string[];
+  entryIds: string[];
+  evidence?: Record<string, unknown>;
+}
+
+interface MemoryDoctorReport {
+  checkedAt: number;
+  entriesChecked: number;
+  chunksChecked: number;
+  issues: MemoryDoctorIssue[];
+  summary: {
+    duplicateContent: number;
+    staleEntries: number;
+    oversizedFiles: number;
+    conflictingFacts: number;
+  };
 }
 
 const MODELS = [
@@ -452,6 +499,13 @@ export default function AgentEditorPage() {
             Runs
           </TabsTrigger>
           <TabsTrigger
+            value="memory"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <Database className="mr-1.5 h-3.5 w-3.5" />
+            Memory
+          </TabsTrigger>
+          <TabsTrigger
             value="skills"
             className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
           >
@@ -468,6 +522,9 @@ export default function AgentEditorPage() {
         </TabsContent>
         <TabsContent value="runs" className="mt-0 flex-1 overflow-auto">
           <RunsTab serverId={serverId} agentId={agentId} />
+        </TabsContent>
+        <TabsContent value="memory" className="mt-0 flex-1 overflow-auto">
+          <MemoryReviewTab serverId={serverId} agentId={agentId} />
         </TabsContent>
         <TabsContent value="skills" className="mt-0 flex-1 overflow-auto">
           <SkillsTab serverId={serverId} agentId={agentId} />
@@ -1867,6 +1924,325 @@ function RoutesTable({
       )}
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Memory Tab                                                        */
+/* ------------------------------------------------------------------ */
+
+function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: string }) {
+  const [status, setStatus] = useState<MemoryReviewStatus | "all">("pending");
+  const [entries, setEntries] = useState<MemoryEntryRecord[]>([]);
+  const [doctor, setDoctor] = useState<MemoryDoctorReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadMemory = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const reviewQuery = status === "all" ? "" : `&reviewStatus=${status}`;
+      const [entriesRes, doctorRes] = await Promise.all([
+        fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory?limit=80${reviewQuery}`),
+        fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory/doctor?limit=1000`),
+      ]);
+      if (!entriesRes.ok) throw new Error(`entries ${entriesRes.status}`);
+      if (!doctorRes.ok) throw new Error(`doctor ${doctorRes.status}`);
+      const entriesJson = await entriesRes.json() as { entries?: MemoryEntryRecord[] };
+      const doctorJson = await doctorRes.json() as MemoryDoctorReport;
+      setEntries(entriesJson.entries ?? []);
+      setDoctor(doctorJson);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load memory review");
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId, serverId, status]);
+
+  useEffect(() => {
+    void loadMemory();
+  }, [loadMemory]);
+
+  const updateReview = async (entryId: string, reviewStatus: MemoryReviewStatus) => {
+    setSavingId(entryId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId, reviewStatus }),
+      });
+      if (!res.ok) throw new Error(`review ${res.status}`);
+      await loadMemory();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update memory review");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[15px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+            Memory review
+          </h2>
+          <p className="mt-1 text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
+            Provenance, review status, and doctor findings for this agent&apos;s long-term memory.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={status}
+            onChange={(event) => setStatus(event.target.value as MemoryReviewStatus | "all")}
+            className="h-8 cursor-pointer rounded-[5px] border px-2 text-xs"
+            style={{
+              background: "var(--oc-bg2)",
+              borderColor: "var(--oc-border)",
+              color: "var(--color-foreground)",
+            }}
+          >
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="all">All</option>
+          </select>
+          <Button variant="outline" size="sm" onClick={loadMemory} disabled={loading}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {error && (
+        <div
+          className="rounded-md border px-3 py-2 text-[12px]"
+          style={{
+            background: "rgba(248,113,113,0.1)",
+            borderColor: "rgba(248,113,113,0.35)",
+            color: "var(--oc-red)",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-[1.35fr_1fr]">
+        <div className="rounded-md border" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}>
+          <div className="flex items-center justify-between gap-2 border-b px-3.5 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
+            <div className="flex items-center gap-2">
+              <Database className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />
+              <span className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+                Entries
+              </span>
+            </div>
+            <span className="text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+              {entries.length} shown
+            </span>
+          </div>
+          <div className="divide-y" style={{ borderColor: "var(--oc-border)" }}>
+            {loading ? (
+              <MemorySkeletonRows />
+            ) : entries.length === 0 ? (
+              <div className="p-6 text-center text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
+                No memory entries match this filter.
+              </div>
+            ) : entries.map((entry) => (
+              <MemoryEntryRow
+                key={entry.id}
+                entry={entry}
+                saving={savingId === entry.id}
+                onApprove={() => updateReview(entry.id, "approved")}
+                onReject={() => updateReview(entry.id, "rejected")}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div className="rounded-md border" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}>
+            <div className="flex items-center gap-2 border-b px-3.5 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
+              <AlertTriangle className="h-3.5 w-3.5" style={{ color: "var(--oc-yellow)" }} />
+              <span className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+                Doctor
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 p-3">
+              <MemoryDoctorMetric label="Entries" value={doctor?.entriesChecked ?? 0} />
+              <MemoryDoctorMetric label="Chunks" value={doctor?.chunksChecked ?? 0} />
+              <MemoryDoctorMetric label="Duplicates" value={doctor?.summary.duplicateContent ?? 0} />
+              <MemoryDoctorMetric label="Conflicts" value={doctor?.summary.conflictingFacts ?? 0} />
+            </div>
+          </div>
+
+          <div className="rounded-md border" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}>
+            <div className="border-b px-3.5 py-2.5 text-[13px] font-semibold" style={{ borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+              Recent findings
+            </div>
+            <div className="divide-y" style={{ borderColor: "var(--oc-border)" }}>
+              {!doctor || doctor.issues.length === 0 ? (
+                <div className="p-5 text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
+                  No doctor findings for the current memory set.
+                </div>
+              ) : doctor.issues.slice(0, 8).map((issue, index) => (
+                <div key={`${issue.kind}-${index}`} className="px-3.5 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12px] font-medium" style={{ color: "var(--color-foreground)" }}>
+                      {memoryIssueLabel(issue.kind)}
+                    </span>
+                    <span className="rounded px-1.5 py-px text-[10px]" style={memoryIssueStyle(issue.severity)}>
+                      {issue.severity}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11.5px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+                    {issue.message}
+                  </p>
+                  <div className="mt-2 truncate text-[10.5px]" style={{ color: "var(--oc-text-dim)", fontFamily: "var(--oc-mono)" }}>
+                    {issue.paths.join(", ")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MemoryEntryRow({
+  entry,
+  saving,
+  onApprove,
+  onReject,
+}: {
+  entry: MemoryEntryRecord;
+  saving: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div className="px-3.5 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-[12.5px] font-medium" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
+              {entry.path}
+            </span>
+            <span className="shrink-0 rounded px-1.5 py-px text-[10px]" style={memoryStatusStyle(entry.reviewStatus)}>
+              {entry.reviewStatus}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+            <span>{entry.source}</span>
+            <span>{formatRuntimeTime(entry.updatedAt)}</span>
+            {entry.provenance.runId && <span>run {shortRuntimeId(entry.provenance.runId, 10)}</span>}
+            {entry.provenance.sessionKey && <span>{shortRuntimeId(entry.provenance.sessionKey, 28)}</span>}
+          </div>
+          {entry.reviewNote && (
+            <p className="mt-1 text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
+              {entry.reviewNote}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={saving || entry.reviewStatus === "approved"}
+            onClick={onApprove}
+            title="Approve memory entry"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Approve
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={saving || entry.reviewStatus === "rejected"}
+            onClick={onReject}
+            title="Reject memory entry"
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            Reject
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MemoryDoctorMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[5px] border px-2.5 py-2" style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)" }}>
+      <div className="text-[10px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+        {label}
+      </div>
+      <div className="mt-1 text-[18px] font-semibold" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function MemorySkeletonRows() {
+  return (
+    <>
+      {[0, 1, 2].map((item) => (
+        <div key={item} className="px-3.5 py-3">
+          <div className="h-3.5 w-2/3 animate-pulse rounded" style={{ background: "var(--oc-bg3)" }} />
+          <div className="mt-2 h-2.5 w-1/2 animate-pulse rounded" style={{ background: "var(--oc-bg3)" }} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function memoryStatusStyle(status: MemoryReviewStatus): React.CSSProperties {
+  if (status === "approved") {
+    return {
+      background: "rgba(74,222,128,0.13)",
+      border: "1px solid rgba(74,222,128,0.32)",
+      color: "var(--oc-green)",
+    };
+  }
+  if (status === "rejected") {
+    return {
+      background: "rgba(248,113,113,0.12)",
+      border: "1px solid rgba(248,113,113,0.32)",
+      color: "var(--oc-red)",
+    };
+  }
+  return {
+    background: "rgba(250,204,21,0.12)",
+    border: "1px solid rgba(250,204,21,0.32)",
+    color: "var(--oc-yellow)",
+  };
+}
+
+function memoryIssueStyle(severity: MemoryDoctorIssue["severity"]): React.CSSProperties {
+  if (severity === "error") {
+    return { background: "rgba(248,113,113,0.12)", color: "var(--oc-red)" };
+  }
+  if (severity === "warn") {
+    return { background: "rgba(250,204,21,0.12)", color: "var(--oc-yellow)" };
+  }
+  return { background: "var(--oc-bg3)", color: "var(--oc-text-muted)" };
+}
+
+function memoryIssueLabel(kind: MemoryDoctorIssue["kind"]): string {
+  switch (kind) {
+    case "duplicate_content":
+      return "Duplicate content";
+    case "stale_entry":
+      return "Stale entry";
+    case "oversized_file":
+      return "Oversized file";
+    case "conflicting_fact":
+      return "Conflicting fact";
+  }
 }
 
 /* ------------------------------------------------------------------ */
