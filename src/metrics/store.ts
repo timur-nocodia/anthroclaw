@@ -25,6 +25,20 @@ export interface StoredIntegrationAuditEvent {
   reason?: string;
 }
 
+export interface StoredDirectWebhookDelivery {
+  id?: number;
+  timestamp?: number;
+  webhook: string;
+  status: 'delivered' | 'not_found' | 'disabled' | 'unauthorized' | 'bad_payload' | 'channel_unavailable' | 'delivery_failed';
+  delivered: boolean;
+  channel?: string;
+  accountId?: string;
+  peerId?: string;
+  threadId?: string;
+  messageId?: string;
+  error?: string;
+}
+
 export type StoredMemoryInfluenceSource = 'prefetch' | 'memory_search';
 
 export interface StoredMemoryInfluenceRef {
@@ -380,6 +394,20 @@ export class MetricsStore {
         reason TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS direct_webhook_deliveries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        webhook TEXT NOT NULL,
+        status TEXT NOT NULL,
+        delivered INTEGER NOT NULL,
+        channel TEXT,
+        account_id TEXT,
+        peer_id TEXT,
+        thread_id TEXT,
+        message_id TEXT,
+        error TEXT
+      );
+
       CREATE TABLE IF NOT EXISTS memory_influence_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ts INTEGER NOT NULL,
@@ -416,6 +444,8 @@ export class MetricsStore {
       CREATE INDEX IF NOT EXISTS idx_file_ownership_events_type_ts ON file_ownership_events(event_type, ts);
       CREATE INDEX IF NOT EXISTS idx_integration_audit_provider_ts ON integration_audit_events(provider, ts);
       CREATE INDEX IF NOT EXISTS idx_integration_audit_agent_ts ON integration_audit_events(agent_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_direct_webhook_deliveries_webhook_ts ON direct_webhook_deliveries(webhook, ts);
+      CREATE INDEX IF NOT EXISTS idx_direct_webhook_deliveries_status_ts ON direct_webhook_deliveries(status, ts);
       CREATE INDEX IF NOT EXISTS idx_memory_influence_agent_ts ON memory_influence_events(agent_id, ts);
       CREATE INDEX IF NOT EXISTS idx_memory_influence_run_ts ON memory_influence_events(run_id, ts);
       CREATE INDEX IF NOT EXISTS idx_memory_influence_session_ts ON memory_influence_events(session_key, ts);
@@ -503,6 +533,26 @@ export class MetricsStore {
       event.capabilityId,
       event.status,
       event.reason ?? null,
+    );
+  }
+
+  recordDirectWebhookDelivery(event: StoredDirectWebhookDelivery): void {
+    this.db.prepare(`
+      INSERT INTO direct_webhook_deliveries(
+        ts, webhook, status, delivered, channel, account_id, peer_id, thread_id, message_id, error
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.timestamp ?? Date.now(),
+      event.webhook,
+      event.status,
+      event.delivered ? 1 : 0,
+      event.channel ?? null,
+      event.accountId ?? null,
+      event.peerId ?? null,
+      event.threadId ?? null,
+      event.messageId ?? null,
+      event.error ?? null,
     );
   }
 
@@ -991,6 +1041,38 @@ export class MetricsStore {
     return rows.map(parseIntegrationAuditEventRow);
   }
 
+  listDirectWebhookDeliveries(params: {
+    webhook?: string;
+    status?: StoredDirectWebhookDelivery['status'];
+    delivered?: boolean;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredDirectWebhookDelivery[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.webhook) {
+      clauses.push('webhook = ?');
+      values.push(params.webhook);
+    }
+    if (params.status) {
+      clauses.push('status = ?');
+      values.push(params.status);
+    }
+    if (params.delivered !== undefined) {
+      clauses.push('delivered = ?');
+      values.push(params.delivered ? 1 : 0);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM direct_webhook_deliveries
+      ${where}
+      ORDER BY ts DESC, id DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as DirectWebhookDeliveryRow[];
+    return rows.map(parseDirectWebhookDeliveryRow);
+  }
+
   listMemoryInfluenceEvents(params: {
     agentId?: string;
     sessionKey?: string;
@@ -1352,6 +1434,20 @@ interface IntegrationAuditEventRow {
   reason: string | null;
 }
 
+interface DirectWebhookDeliveryRow {
+  id: number;
+  ts: number;
+  webhook: string;
+  status: StoredDirectWebhookDelivery['status'];
+  delivered: number;
+  channel: string | null;
+  account_id: string | null;
+  peer_id: string | null;
+  thread_id: string | null;
+  message_id: string | null;
+  error: string | null;
+}
+
 interface MemoryInfluenceEventRow {
   id: number;
   ts: number;
@@ -1464,5 +1560,21 @@ function parseIntegrationAuditEventRow(row: IntegrationAuditEventRow): StoredInt
     capabilityId: row.capability_id,
     status: row.status,
     reason: row.reason ?? undefined,
+  };
+}
+
+function parseDirectWebhookDeliveryRow(row: DirectWebhookDeliveryRow): StoredDirectWebhookDelivery {
+  return {
+    id: row.id,
+    timestamp: row.ts,
+    webhook: row.webhook,
+    status: row.status,
+    delivered: row.delivered === 1,
+    channel: row.channel ?? undefined,
+    accountId: row.account_id ?? undefined,
+    peerId: row.peer_id ?? undefined,
+    threadId: row.thread_id ?? undefined,
+    messageId: row.message_id ?? undefined,
+    error: row.error ?? undefined,
   };
 }

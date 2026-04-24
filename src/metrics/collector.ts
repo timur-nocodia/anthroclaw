@@ -8,6 +8,7 @@ import type {
   StoredAgentRunStart,
   StoredAgentRunStatus,
   StoredDiagnosticEvent,
+  StoredDirectWebhookDelivery,
   StoredFileOwnershipEvent,
   StoredIntegrationAuditEvent,
   StoredMemoryInfluenceEvent,
@@ -179,6 +180,10 @@ class MetricsCollector {
     this.store?.recordIntegrationAuditEvent(event);
   }
 
+  recordDirectWebhookDelivery(event: StoredDirectWebhookDelivery): void {
+    this.store?.recordDirectWebhookDelivery(event);
+  }
+
   recordMemoryInfluenceEvent(event: StoredMemoryInfluenceEvent): void {
     this.store?.recordMemoryInfluenceEvent(event);
   }
@@ -255,6 +260,16 @@ class MetricsCollector {
     offset?: number;
   } = {}): StoredIntegrationAuditEvent[] {
     return this.store?.listIntegrationAuditEvents(params) ?? [];
+  }
+
+  listDirectWebhookDeliveries(params: {
+    webhook?: string;
+    status?: StoredDirectWebhookDelivery['status'];
+    delivered?: boolean;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredDirectWebhookDelivery[] {
+    return this.store?.listDirectWebhookDeliveries(params) ?? [];
   }
 
   listMemoryInfluenceEvents(params: {

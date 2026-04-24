@@ -34,6 +34,7 @@ import type {
   StoredAgentRunSource,
   StoredAgentRunStatus,
   StoredAgentRunUsage,
+  StoredDirectWebhookDelivery,
   StoredFileOwnershipEvent,
   StoredIntegrationAuditEvent,
   StoredMemoryInfluenceEvent,
@@ -793,6 +794,16 @@ export class Gateway {
     return metrics.listIntegrationAuditEvents(params);
   }
 
+  listDirectWebhookDeliveries(params: {
+    webhook?: string;
+    status?: StoredDirectWebhookDelivery['status'];
+    delivered?: boolean;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredDirectWebhookDelivery[] {
+    return metrics.listDirectWebhookDeliveries(params);
+  }
+
   async deliverDirectWebhook(
     name: string,
     rawBody: string,
@@ -800,12 +811,38 @@ export class Gateway {
   ): Promise<DirectWebhookDeliveryResult> {
     const config = this.globalConfig?.webhooks?.[name];
     if (!config) {
+      metrics.recordDirectWebhookDelivery({
+        webhook: name,
+        status: 'not_found',
+        delivered: false,
+        error: `Webhook "${name}" is not configured`,
+      });
       return { delivered: false, status: 'not_found', error: `Webhook "${name}" is not configured` };
     }
     if (!config.enabled) {
+      metrics.recordDirectWebhookDelivery({
+        webhook: name,
+        status: 'disabled',
+        delivered: false,
+        channel: config.deliver_to.channel,
+        accountId: config.deliver_to.account_id,
+        peerId: config.deliver_to.peer_id,
+        threadId: config.deliver_to.thread_id,
+        error: `Webhook "${name}" is disabled`,
+      });
       return { delivered: false, status: 'disabled', error: `Webhook "${name}" is disabled` };
     }
     if (!verifyDirectWebhookSecret(headers, config.secret)) {
+      metrics.recordDirectWebhookDelivery({
+        webhook: name,
+        status: 'unauthorized',
+        delivered: false,
+        channel: config.deliver_to.channel,
+        accountId: config.deliver_to.account_id,
+        peerId: config.deliver_to.peer_id,
+        threadId: config.deliver_to.thread_id,
+        error: 'Invalid webhook secret',
+      });
       return { delivered: false, status: 'unauthorized', error: 'Invalid webhook secret' };
     }
 
@@ -813,15 +850,36 @@ export class Gateway {
     try {
       payload = parseDirectWebhookPayload(rawBody, config.max_payload_bytes);
     } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      metrics.recordDirectWebhookDelivery({
+        webhook: name,
+        status: 'bad_payload',
+        delivered: false,
+        channel: config.deliver_to.channel,
+        accountId: config.deliver_to.account_id,
+        peerId: config.deliver_to.peer_id,
+        threadId: config.deliver_to.thread_id,
+        error,
+      });
       return {
         delivered: false,
         status: 'bad_payload',
-        error: err instanceof Error ? err.message : String(err),
+        error,
       };
     }
 
     const channel = this.channels.get(config.deliver_to.channel);
     if (!channel) {
+      metrics.recordDirectWebhookDelivery({
+        webhook: name,
+        status: 'channel_unavailable',
+        delivered: false,
+        channel: config.deliver_to.channel,
+        accountId: config.deliver_to.account_id,
+        peerId: config.deliver_to.peer_id,
+        threadId: config.deliver_to.thread_id,
+        error: `Channel "${config.deliver_to.channel}" is unavailable`,
+      });
       return {
         delivered: false,
         status: 'channel_unavailable',
@@ -837,11 +895,31 @@ export class Gateway {
         parseMode: 'plain',
       });
       metrics.increment('direct_webhook_deliveries');
+      metrics.recordDirectWebhookDelivery({
+        webhook: name,
+        status: 'delivered',
+        delivered: true,
+        channel: config.deliver_to.channel,
+        accountId: config.deliver_to.account_id,
+        peerId: config.deliver_to.peer_id,
+        threadId: config.deliver_to.thread_id,
+        messageId,
+      });
       logger.info({ webhook: name, channel: config.deliver_to.channel }, 'Direct webhook delivered');
       return { delivered: true, status: 'delivered', messageId };
     } catch (err) {
       metrics.increment('direct_webhook_delivery_errors');
       const error = err instanceof Error ? err.message : String(err);
+      metrics.recordDirectWebhookDelivery({
+        webhook: name,
+        status: 'delivery_failed',
+        delivered: false,
+        channel: config.deliver_to.channel,
+        accountId: config.deliver_to.account_id,
+        peerId: config.deliver_to.peer_id,
+        threadId: config.deliver_to.thread_id,
+        error: redactSecrets(error),
+      });
       logger.warn({ webhook: name, err: redactSecrets(error) }, 'Direct webhook delivery failed');
       return { delivered: false, status: 'delivery_failed', error: redactSecrets(error) };
     }

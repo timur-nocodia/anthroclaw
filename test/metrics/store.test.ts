@@ -91,6 +91,17 @@ describe('MetricsStore', () => {
         score: 0.75,
       }],
     });
+    store.recordDirectWebhookDelivery({
+      timestamp: now + 35,
+      webhook: 'ci',
+      status: 'delivered',
+      delivered: true,
+      channel: 'telegram',
+      accountId: 'default',
+      peerId: 'peer-1',
+      threadId: 'topic-1',
+      messageId: 'msg-1',
+    });
     store.recordAgentRunStart({
       runId: 'run-1',
       traceId: 'trace-1',
@@ -250,6 +261,16 @@ describe('MetricsStore', () => {
         endLine: 3,
         score: 0.75,
       }],
+    }]);
+    expect(store.listDirectWebhookDeliveries({ webhook: 'ci' })).toMatchObject([{
+      webhook: 'ci',
+      status: 'delivered',
+      delivered: true,
+      channel: 'telegram',
+      accountId: 'default',
+      peerId: 'peer-1',
+      threadId: 'topic-1',
+      messageId: 'msg-1',
     }]);
 
     const report = store.usageReport(30);
