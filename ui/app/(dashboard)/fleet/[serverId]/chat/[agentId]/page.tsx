@@ -60,6 +60,7 @@ interface AgentSession {
   activeKeys?: string[];
   messageCount?: number;
   provenance?: {
+    runId: string;
     source: "channel" | "web" | "cron";
     channel: string;
     accountId?: string;
@@ -70,6 +71,7 @@ interface AgentSession {
     routeDecisionId?: string;
     routeOutcome?: string;
     startedAt: number;
+    completedAt?: number;
     status: "running" | "succeeded" | "failed" | "interrupted";
   };
   firstMessage?: {
@@ -97,6 +99,36 @@ interface SessionDetails {
   summary?: string;
   lastModified?: number;
   messages: SessionMessageView[];
+}
+
+interface RouteDecisionCandidate {
+  agentId: string;
+  channel: string;
+  accountId: string;
+  scope: string;
+  peers?: string[];
+  topics?: string[];
+  mentionOnly: boolean;
+  priority: number;
+}
+
+interface RouteDecision {
+  id: string;
+  timestamp?: number;
+  messageId?: string;
+  channel: string;
+  accountId: string;
+  chatType: string;
+  peerId: string;
+  senderId: string;
+  threadId?: string;
+  candidates: RouteDecisionCandidate[];
+  winnerAgentId?: string;
+  accessAllowed?: boolean;
+  accessReason?: string;
+  queueAction?: string;
+  sessionKey?: string;
+  outcome: string;
 }
 
 interface RewindResult {
@@ -175,6 +207,8 @@ export default function ChatPage() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
   const [sessionDetailsLoading, setSessionDetailsLoading] = useState(false);
+  const [routeDecision, setRouteDecision] = useState<RouteDecision | null>(null);
+  const [routeDecisionLoading, setRouteDecisionLoading] = useState(false);
   const [subagentRuns, setSubagentRuns] = useState<SubagentRun[]>([]);
   const [subagentsLoading, setSubagentsLoading] = useState(false);
   const [hookEvents, setHookEvents] = useState<HookEventView[]>([]);
@@ -227,6 +261,8 @@ export default function ChatPage() {
   }, [serverId]);
 
   const agent = agents.find((a) => a.id === selected);
+  const selectedSession = sessions.find((session) => session.sessionId === sessionId);
+  const selectedRouteDecisionId = selectedSession?.provenance?.routeDecisionId;
 
   const loadSessions = useCallback(async () => {
     setSessionsLoading(true);
@@ -274,6 +310,31 @@ export default function ChatPage() {
     void loadSessionDetails();
   }, [loadSessionDetails]);
 
+  const loadRouteDecision = useCallback(async () => {
+    if (!selectedRouteDecisionId) {
+      setRouteDecision(null);
+      return;
+    }
+    setRouteDecisionLoading(true);
+    try {
+      const res = await fetch(
+        `/api/fleet/${serverId}/routing/decisions?id=${encodeURIComponent(selectedRouteDecisionId)}&limit=1`,
+      );
+      if (!res.ok) {
+        setRouteDecision(null);
+        return;
+      }
+      const data = await res.json();
+      setRouteDecision(Array.isArray(data) ? data[0] ?? null : null);
+    } finally {
+      setRouteDecisionLoading(false);
+    }
+  }, [selectedRouteDecisionId, serverId]);
+
+  useEffect(() => {
+    void loadRouteDecision();
+  }, [loadRouteDecision]);
+
   const loadSubagentRuns = useCallback(async () => {
     if (!sessionId) {
       setSubagentRuns([]);
@@ -316,9 +377,10 @@ export default function ChatPage() {
     const id = window.setInterval(() => {
       void loadSubagentRuns();
       void loadSessionDetails();
+      void loadRouteDecision();
     }, 1500);
     return () => window.clearInterval(id);
-  }, [loadSessionDetails, loadSubagentRuns, streaming]);
+  }, [loadRouteDecision, loadSessionDetails, loadSubagentRuns, streaming]);
 
   // Auto-scroll
   useEffect(() => {
@@ -422,6 +484,7 @@ export default function ChatPage() {
               void loadSessions();
               void loadSubagentRuns();
               void loadSessionDetails();
+              void loadRouteDecision();
               continue;
             }
             if (ev.type === "error") {
@@ -881,13 +944,17 @@ export default function ChatPage() {
           </div>
         </div>
         <SubagentRunsPanel
+          selectedSession={selectedSession}
           session={sessionDetails}
           sessionLoading={sessionDetailsLoading}
+          routeDecision={routeDecision}
+          routeDecisionLoading={routeDecisionLoading}
           hookEvents={hookEvents}
           runs={subagentRuns}
           loading={subagentsLoading}
           onRefresh={() => {
             void loadSessionDetails();
+            void loadRouteDecision();
             void loadSubagentRuns();
           }}
           onInterrupt={interruptSubagentRun}
@@ -1006,16 +1073,22 @@ export default function ChatPage() {
 /* ------------------------------------------------------------------ */
 
 function SubagentRunsPanel({
+  selectedSession,
   session,
   sessionLoading,
+  routeDecision,
+  routeDecisionLoading,
   hookEvents,
   runs,
   loading,
   onRefresh,
   onInterrupt,
 }: {
+  selectedSession?: AgentSession;
   session: SessionDetails | null;
   sessionLoading: boolean;
+  routeDecision: RouteDecision | null;
+  routeDecisionLoading: boolean;
   hookEvents: HookEventView[];
   runs: SubagentRun[];
   loading: boolean;
@@ -1066,6 +1139,11 @@ function SubagentRunsPanel({
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-3">
         <SessionDebugCard session={session} loading={sessionLoading} />
+        <RouteDecisionCard
+          selectedSession={selectedSession}
+          decision={routeDecision}
+          loading={routeDecisionLoading}
+        />
         <HookEventsCard events={hookEvents} />
         {runs.length === 0 ? (
           <div
@@ -1172,6 +1250,116 @@ function SessionDebugCard({
         <p className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
           No SDK transcript loaded yet. It will appear after the session is persisted by Claude Agent SDK.
         </p>
+      )}
+    </section>
+  );
+}
+
+function RouteDecisionCard({
+  selectedSession,
+  decision,
+  loading,
+}: {
+  selectedSession?: AgentSession;
+  decision: RouteDecision | null;
+  loading: boolean;
+}) {
+  const provenance = selectedSession?.provenance;
+  const candidates = decision?.candidates ?? [];
+
+  return (
+    <section
+      className="rounded-lg border p-2.5"
+      style={{
+        background: "var(--oc-bg2)",
+        borderColor: "var(--oc-border)",
+      }}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Activity className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--oc-accent)" }} />
+          <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>
+            Route decision
+          </span>
+        </div>
+        <SubagentPill tone={loading ? "running" : decision ? "done" : "default"}>
+          {loading ? "loading" : decision?.outcome ?? "none"}
+        </SubagentPill>
+      </div>
+
+      {provenance ? (
+        <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
+          <SubagentMeta label="run" value={shortId(provenance.runId, 12)} title={provenance.runId} />
+          <SubagentMeta label="status" value={provenance.status} />
+          <SubagentMeta label="source" value={`${provenance.source}/${provenance.channel}`} />
+          <SubagentMeta label="started" value={formatTime(provenance.startedAt)} />
+          {provenance.routeDecisionId && (
+            <SubagentMeta
+              label="decision"
+              value={shortId(provenance.routeDecisionId, 12)}
+              title={provenance.routeDecisionId}
+            />
+          )}
+          <SubagentMeta label="session key" value={shortId(provenance.sessionKey, 18)} title={provenance.sessionKey} />
+        </div>
+      ) : (
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+          No run provenance is attached to this SDK session yet.
+        </p>
+      )}
+
+      {decision && (
+        <>
+          <div
+            className="mt-2 rounded border px-2 py-1.5"
+            style={{
+              background: "var(--oc-bg1)",
+              borderColor: "var(--oc-border)",
+            }}
+          >
+            <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
+              <SubagentMeta label="winner" value={decision.winnerAgentId ?? "none"} />
+              <SubagentMeta label="access" value={decision.accessAllowed === undefined ? "unknown" : decision.accessAllowed ? "allowed" : "denied"} />
+              <SubagentMeta label="chat" value={`${decision.channel}/${decision.chatType}`} />
+              <SubagentMeta label="peer" value={shortId(decision.peerId, 14)} title={decision.peerId} />
+              {decision.queueAction && <SubagentMeta label="queue" value={decision.queueAction} />}
+              {decision.messageId && <SubagentMeta label="message" value={shortId(decision.messageId, 12)} title={decision.messageId} />}
+            </div>
+            {decision.accessReason && (
+              <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed" style={{ color: "var(--oc-text-dim)" }}>
+                {decision.accessReason}
+              </p>
+            )}
+          </div>
+
+          {candidates.length > 0 && (
+            <div className="mt-2 flex flex-col gap-1">
+              {candidates.slice(0, 3).map((candidate) => (
+                <div
+                  key={`${candidate.agentId}-${candidate.priority}-${candidate.scope}`}
+                  className="flex items-center justify-between gap-2 rounded border px-2 py-1.5"
+                  style={{
+                    background: "var(--oc-bg1)",
+                    borderColor: "var(--oc-border)",
+                  }}
+                >
+                  <span
+                    className="truncate text-[10.5px]"
+                    title={candidate.agentId}
+                    style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  >
+                    {candidate.agentId}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {candidate.mentionOnly && <SubagentPill>mention</SubagentPill>}
+                    <SubagentPill>{candidate.scope}</SubagentPill>
+                    <SubagentPill>p{candidate.priority}</SubagentPill>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </section>
   );
