@@ -173,6 +173,68 @@ interface SkillInfo {
   catalog?: boolean;
 }
 
+type AgentRunStatus = "running" | "succeeded" | "failed" | "interrupted";
+
+interface AgentRunRecord {
+  runId: string;
+  startedAt: number;
+  updatedAt: number;
+  completedAt?: number;
+  agentId: string;
+  sessionKey: string;
+  sdkSessionId?: string;
+  source: "channel" | "web" | "cron";
+  channel: string;
+  accountId?: string;
+  peerId?: string;
+  threadId?: string;
+  messageId?: string;
+  routeDecisionId?: string;
+  status: AgentRunStatus;
+  model?: string;
+  budget?: Record<string, unknown>;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    totalCostUsd?: number;
+    durationMs?: number;
+    durationApiMs?: number;
+    numTurns?: number;
+  };
+  error?: string;
+}
+
+interface RouteDecisionCandidate {
+  agentId: string;
+  channel: string;
+  accountId: string;
+  scope: string;
+  peers?: string[];
+  topics?: string[];
+  mentionOnly: boolean;
+  priority: number;
+}
+
+interface RouteDecisionRecord {
+  id: string;
+  timestamp?: number;
+  messageId?: string;
+  channel: string;
+  accountId: string;
+  chatType: string;
+  peerId: string;
+  senderId: string;
+  threadId?: string;
+  candidates: RouteDecisionCandidate[];
+  winnerAgentId?: string;
+  accessAllowed?: boolean;
+  accessReason?: string;
+  queueAction?: string;
+  sessionKey?: string;
+  outcome: string;
+}
+
 const MODELS = [
   "claude-sonnet-4-6",
   "claude-opus-4-6",
@@ -383,6 +445,13 @@ export default function AgentEditorPage() {
             Files
           </TabsTrigger>
           <TabsTrigger
+            value="runs"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <Clock className="mr-1.5 h-3.5 w-3.5" />
+            Runs
+          </TabsTrigger>
+          <TabsTrigger
             value="skills"
             className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
           >
@@ -396,6 +465,9 @@ export default function AgentEditorPage() {
         </TabsContent>
         <TabsContent value="files" className="mt-0 flex-1 overflow-hidden">
           <FilesTab serverId={serverId} agentId={agentId} />
+        </TabsContent>
+        <TabsContent value="runs" className="mt-0 flex-1 overflow-auto">
+          <RunsTab serverId={serverId} agentId={agentId} />
         </TabsContent>
         <TabsContent value="skills" className="mt-0 flex-1 overflow-auto">
           <SkillsTab serverId={serverId} agentId={agentId} />
@@ -1795,6 +1867,357 @@ function RoutesTable({
       )}
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Runs Tab                                                           */
+/* ------------------------------------------------------------------ */
+
+function RunsTab({ serverId, agentId }: { serverId: string; agentId: string }) {
+  const [runs, setRuns] = useState<AgentRunRecord[]>([]);
+  const [decisions, setDecisions] = useState<RouteDecisionRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [runStatus, setRunStatus] = useState<"all" | AgentRunStatus>("all");
+  const [outcome, setOutcome] = useState("all");
+
+  const fetchRuns = useCallback(async () => {
+    setLoading(true);
+    try {
+      const statusQuery = runStatus === "all" ? "" : `&status=${encodeURIComponent(runStatus)}`;
+      const outcomeQuery = outcome === "all" ? "" : `&outcome=${encodeURIComponent(outcome)}`;
+      const [runsRes, decisionsRes] = await Promise.all([
+        fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/runs?limit=50${statusQuery}`),
+        fetch(`/api/fleet/${serverId}/routing/decisions?agentId=${encodeURIComponent(agentId)}&limit=50${outcomeQuery}`),
+      ]);
+      if (runsRes.ok) {
+        const data = await runsRes.json();
+        setRuns(Array.isArray(data.runs) ? data.runs as AgentRunRecord[] : []);
+      }
+      if (decisionsRes.ok) {
+        const data = await decisionsRes.json();
+        setDecisions(Array.isArray(data) ? data as RouteDecisionRecord[] : []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId, outcome, runStatus, serverId]);
+
+  useEffect(() => {
+    void fetchRuns();
+  }, [fetchRuns]);
+
+  const decisionsById = new Map(decisions.map((decision) => [decision.id, decision]));
+
+  return (
+    <div className="flex max-w-[1180px] flex-col gap-3.5 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[14px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+            Runtime observability
+          </h2>
+          <p className="mt-1 text-[11.5px]" style={{ color: "var(--oc-text-muted)" }}>
+            Native SDK run records and gateway route decisions for this agent.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={runStatus}
+            onChange={(e) => setRunStatus(e.target.value as "all" | AgentRunStatus)}
+            className="h-8 cursor-pointer rounded-[5px] border px-2 text-xs"
+            style={{
+              background: "var(--oc-bg3)",
+              borderColor: "var(--oc-border)",
+              color: "var(--color-foreground)",
+            }}
+          >
+            <option value="all">all runs</option>
+            <option value="running">running</option>
+            <option value="succeeded">succeeded</option>
+            <option value="failed">failed</option>
+            <option value="interrupted">interrupted</option>
+          </select>
+          <select
+            value={outcome}
+            onChange={(e) => setOutcome(e.target.value)}
+            className="h-8 cursor-pointer rounded-[5px] border px-2 text-xs"
+            style={{
+              background: "var(--oc-bg3)",
+              borderColor: "var(--oc-border)",
+              color: "var(--color-foreground)",
+            }}
+          >
+            <option value="all">all routes</option>
+            <option value="dispatched">dispatched</option>
+            <option value="no_route">no_route</option>
+            <option value="access_denied">access_denied</option>
+            <option value="rate_limited">rate_limited</option>
+            <option value="queue_queued">queue_queued</option>
+            <option value="queue_skipped">queue_skipped</option>
+          </select>
+          <Button variant="outline" size="sm" onClick={fetchRuns} disabled={loading}>
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)]">
+        <section
+          className="rounded-md border"
+          style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}
+        >
+          <div
+            className="flex items-center justify-between gap-2 border-b px-3.5 py-2.5"
+            style={{ borderColor: "var(--oc-border)" }}
+          >
+            <div className="flex items-center gap-2">
+              <Clock className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />
+              <span className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+                SDK runs
+              </span>
+            </div>
+            <RuntimePill>{runs.length}</RuntimePill>
+          </div>
+          <div className="flex flex-col divide-y" style={{ borderColor: "var(--oc-border)" }}>
+            {runs.length === 0 ? (
+              <EmptyRuntimeState text="No SDK runs recorded for this filter." />
+            ) : (
+              runs.map((run) => (
+                <RunRow
+                  key={run.runId}
+                  run={run}
+                  decision={run.routeDecisionId ? decisionsById.get(run.routeDecisionId) : undefined}
+                  serverId={serverId}
+                  agentId={agentId}
+                />
+              ))
+            )}
+          </div>
+        </section>
+
+        <section
+          className="rounded-md border"
+          style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}
+        >
+          <div
+            className="flex items-center justify-between gap-2 border-b px-3.5 py-2.5"
+            style={{ borderColor: "var(--oc-border)" }}
+          >
+            <div className="flex items-center gap-2">
+              <List className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />
+              <span className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+                Route decisions
+              </span>
+            </div>
+            <RuntimePill>{decisions.length}</RuntimePill>
+          </div>
+          <div className="flex max-h-[760px] flex-col overflow-auto">
+            {decisions.length === 0 ? (
+              <EmptyRuntimeState text="No route decisions recorded for this filter." />
+            ) : (
+              decisions.map((decision) => (
+                <RouteDecisionRow key={decision.id} decision={decision} />
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function RunRow({
+  run,
+  decision,
+  serverId,
+  agentId,
+}: {
+  run: AgentRunRecord;
+  decision?: RouteDecisionRecord;
+  serverId: string;
+  agentId: string;
+}) {
+  const tokens = (run.usage?.inputTokens ?? 0) + (run.usage?.outputTokens ?? 0);
+  const duration = run.usage?.durationMs ?? (run.completedAt ? run.completedAt - run.startedAt : Date.now() - run.startedAt);
+
+  return (
+    <div className="flex flex-col gap-2 px-3.5 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <RuntimePill tone={run.status === "succeeded" ? "done" : run.status === "running" ? "running" : "bad"}>
+              {run.status}
+            </RuntimePill>
+            <span
+              className="truncate text-[12px] font-medium"
+              title={run.runId}
+              style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+            >
+              {shortRuntimeId(run.runId, 18)}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            <RuntimePill>{run.source}/{run.channel}</RuntimePill>
+            {run.model && <RuntimePill>{run.model}</RuntimePill>}
+            {decision && <RuntimePill tone="done">{decision.outcome}</RuntimePill>}
+          </div>
+        </div>
+        <Link href={`/fleet/${serverId}/chat/${agentId}`} className="shrink-0">
+          <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
+            <MessageSquare className="h-3 w-3" />
+            Chat
+          </Button>
+        </Link>
+      </div>
+
+      <div className="grid gap-2 text-[10.5px] sm:grid-cols-4">
+        <RuntimeMeta label="started" value={formatRuntimeTime(run.startedAt)} />
+        <RuntimeMeta label="duration" value={formatRuntimeDuration(duration)} />
+        <RuntimeMeta label="tokens" value={tokens > 0 ? String(tokens) : "unknown"} />
+        <RuntimeMeta label="session" value={shortRuntimeId(run.sdkSessionId ?? run.sessionKey, 16)} title={run.sdkSessionId ?? run.sessionKey} />
+      </div>
+
+      {(run.usage?.cacheReadTokens || run.usage?.totalCostUsd !== undefined || run.error) && (
+        <div className="flex flex-wrap gap-2 text-[10.5px]">
+          {run.usage?.cacheReadTokens !== undefined && (
+            <RuntimePill>cache {run.usage.cacheReadTokens}</RuntimePill>
+          )}
+          {run.usage?.totalCostUsd !== undefined && (
+            <RuntimePill>${run.usage.totalCostUsd.toFixed(4)}</RuntimePill>
+          )}
+          {run.error && <RuntimePill tone="bad">{run.error}</RuntimePill>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RouteDecisionRow({ decision }: { decision: RouteDecisionRecord }) {
+  return (
+    <div
+      className="flex flex-col gap-2 border-b px-3.5 py-3 last:border-b-0"
+      style={{ borderColor: "var(--oc-border)" }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <RuntimePill tone={decision.outcome === "dispatched" ? "done" : "default"}>
+              {decision.outcome}
+            </RuntimePill>
+            <span
+              className="truncate text-[11.5px]"
+              title={decision.id}
+              style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+            >
+              {shortRuntimeId(decision.id, 16)}
+            </span>
+          </div>
+          <p className="mt-1 truncate text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
+            {decision.channel}/{decision.chatType} · peer {decision.peerId}
+          </p>
+        </div>
+        <RuntimePill tone={decision.accessAllowed === false ? "bad" : "default"}>
+          {decision.accessAllowed === undefined ? "access ?" : decision.accessAllowed ? "allowed" : "denied"}
+        </RuntimePill>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-[10.5px]">
+        <RuntimeMeta label="winner" value={decision.winnerAgentId ?? "none"} />
+        <RuntimeMeta label="candidates" value={String(decision.candidates.length)} />
+        {decision.timestamp && <RuntimeMeta label="time" value={formatRuntimeTime(decision.timestamp)} />}
+        {decision.queueAction && <RuntimeMeta label="queue" value={decision.queueAction} />}
+      </div>
+      {decision.candidates.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {decision.candidates.slice(0, 4).map((candidate) => (
+            <RuntimePill key={`${decision.id}-${candidate.agentId}-${candidate.priority}`}>
+              {candidate.agentId} p{candidate.priority}
+            </RuntimePill>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmptyRuntimeState({ text }: { text: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
+      <Monitor className="h-5 w-5" style={{ color: "var(--oc-text-muted)" }} />
+      <p className="text-xs" style={{ color: "var(--oc-text-muted)" }}>
+        {text}
+      </p>
+    </div>
+  );
+}
+
+function RuntimePill({
+  children,
+  tone = "default",
+}: {
+  children: React.ReactNode;
+  tone?: "default" | "running" | "done" | "bad";
+}) {
+  const color = tone === "running"
+    ? "var(--oc-yellow)"
+    : tone === "done"
+      ? "var(--oc-green)"
+      : tone === "bad"
+        ? "var(--oc-red)"
+        : "var(--oc-text-muted)";
+
+  return (
+    <span
+      className="inline-flex max-w-full items-center truncate rounded border px-1.5 py-px text-[10px]"
+      style={{
+        borderColor: "var(--oc-border)",
+        color,
+        fontFamily: "var(--oc-mono)",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function RuntimeMeta({ label, value, title }: { label: string; value: string; title?: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+        {label}
+      </div>
+      <div
+        className="truncate"
+        title={title ?? value}
+        style={{ color: "var(--oc-text-dim)", fontFamily: "var(--oc-mono)" }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function shortRuntimeId(value: string, max: number): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, Math.max(1, max - 3))}...`;
+}
+
+function formatRuntimeTime(value: number): string {
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatRuntimeDuration(value: number): string {
+  const safe = Math.max(0, value);
+  if (safe < 1000) return `${safe}ms`;
+  const seconds = Math.floor(safe / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes}m ${rest}s`;
 }
 
 /* ------------------------------------------------------------------ */

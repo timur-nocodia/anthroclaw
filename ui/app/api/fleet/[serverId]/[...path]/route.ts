@@ -13,7 +13,7 @@ async function handler(
   }
 
   const { serverId, path: pathSegments } = await params;
-  const apiPath = pathSegments.join('/');
+  const apiPath = `${pathSegments.join('/')}${req.nextUrl.search}`;
 
   const forwardHeaders: Record<string, string> = {};
   const isLocal = serverId === 'local';

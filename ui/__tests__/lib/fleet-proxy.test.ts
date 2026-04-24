@@ -106,6 +106,23 @@ describe('proxyRequest', () => {
     fetchSpy.mockRestore();
   });
 
+  it('preserves query strings in proxied paths', async () => {
+    const mockResponse = new Response(JSON.stringify({ runs: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse);
+
+    await proxyRequest('local', 'agents/bot/runs?limit=50&status=succeeded', 'GET', {
+      Accept: 'application/json',
+    });
+
+    const [url] = fetchSpy.mock.calls[0];
+    expect(url).toBe('http://localhost:3000/api/agents/bot/runs?limit=50&status=succeeded');
+
+    fetchSpy.mockRestore();
+  });
+
   it('forwards POST body to remote server', async () => {
     const mockResponse = new Response('{}', { status: 201 });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse);

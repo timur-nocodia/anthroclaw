@@ -678,6 +678,17 @@ export class Gateway {
     return metrics.listRouteDecisions(params);
   }
 
+  listAgentRuns(params: {
+    agentId?: string;
+    sessionKey?: string;
+    sdkSessionId?: string;
+    status?: StoredAgentRunStatus;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredAgentRunRecord[] {
+    return metrics.listAgentRuns(params);
+  }
+
   async forkAgentSession(
     agentId: string,
     sessionId: string,
