@@ -114,6 +114,12 @@ describe('createMemoryWriteTool', () => {
     expect(indexFile).toHaveBeenCalledWith(
       'notes/test.md',
       expect.stringContaining('Index me'),
+      expect.objectContaining({
+        source: 'memory_write',
+        reviewStatus: 'approved',
+        toolName: 'memory_write',
+        metadata: { mode: 'append' },
+      }),
     );
   });
 

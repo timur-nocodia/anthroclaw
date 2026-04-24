@@ -1,4 +1,5 @@
-import type { MemoryStore, SearchResult } from './store.js';
+import type { MemoryProvider } from './provider.js';
+import type { SearchResult } from './store.js';
 import { logger } from '../logger.js';
 
 interface PrefetchEntry {
@@ -49,7 +50,7 @@ export class PrefetchCache {
   async prefetch(
     sessionKey: string,
     responseText: string,
-    store: MemoryStore,
+    store: MemoryProvider,
     embedFn?: (text: string) => Promise<Float32Array>,
   ): Promise<void> {
     const keywords = this.extractKeywords(responseText);

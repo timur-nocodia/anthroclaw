@@ -3,12 +3,12 @@ import { join, dirname } from 'node:path';
 import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { nowInTimezone, formatTime, dailyMemoryPath } from '../../util/time.js';
-import type { MemoryStore } from '../../memory/store.js';
+import type { MemoryProvider } from '../../memory/provider.js';
 import type { ToolDefinition } from './types.js';
 
 export function createMemoryWriteTool(
   workspacePath: string,
-  store: MemoryStore,
+  store: MemoryProvider,
   timezone = 'UTC',
 ): ToolDefinition {
   const sdkTool = tool(
@@ -45,7 +45,12 @@ export function createMemoryWriteTool(
 
         writeFileSync(fullPath, fullContent, 'utf-8');
 
-        store.indexFile(file, fullContent);
+        store.indexFile(file, fullContent, {
+          source: 'memory_write',
+          reviewStatus: 'approved',
+          toolName: 'memory_write',
+          metadata: { mode },
+        });
 
         return {
           content: [{ type: 'text', text: `Written to ${file}` }],

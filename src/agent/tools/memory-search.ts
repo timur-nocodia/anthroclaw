@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
-import type { MemoryStore, SearchResult } from '../../memory/store.js';
+import type { MemoryProvider } from '../../memory/provider.js';
+import type { SearchResult } from '../../memory/store.js';
 import { mergeResults } from '../../memory/search.js';
 import type { ToolDefinition } from './types.js';
 
 export function createMemorySearchTool(
-  store: MemoryStore,
+  store: MemoryProvider,
   embedFn?: (text: string) => Promise<Float32Array>,
 ): ToolDefinition {
   const sdkTool = tool(

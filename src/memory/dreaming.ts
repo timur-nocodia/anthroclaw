@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { logger } from '../logger.js';
-import type { MemoryStore } from './store.js';
+import type { MemoryProvider } from './provider.js';
 
 export interface DreamingOptions {
   /** Days older than this threshold get consolidated (default: 7) */
@@ -24,7 +24,7 @@ const DEFAULT_OPTIONS: DreamingOptions = {
  */
 export async function runDreaming(
   workspacePath: string,
-  store: MemoryStore,
+  store: MemoryProvider,
   summarize: (text: string) => Promise<string>,
   opts?: Partial<DreamingOptions>,
 ): Promise<{ consolidated: string[]; summariesWritten: string[] }> {
@@ -92,7 +92,14 @@ export async function runDreaming(
 
       // Index the summary
       const relPath = `memory/summaries/${month}.md`;
-      store.indexFile(relPath, summaryContent);
+      store.indexFile(relPath, summaryContent, {
+        source: 'dreaming',
+        reviewStatus: 'approved',
+        metadata: {
+          month,
+          filesConsolidated: files.length,
+        },
+      });
 
       summariesWritten.push(relPath);
       consolidated.push(...files.map((f) => f.path));
