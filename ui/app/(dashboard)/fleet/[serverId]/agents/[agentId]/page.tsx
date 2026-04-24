@@ -70,7 +70,12 @@ interface AgentConfig {
   queue_mode?: string;
   session_policy?: string;
   auto_compress?: number;
-  iteration_budget?: { tool_call_limit?: number; timeout_ms?: number };
+  iteration_budget?: {
+    tool_call_limit?: number;
+    max_tool_calls?: number;
+    timeout_ms?: number;
+    absolute_timeout_ms?: number;
+  };
   pairing?: { mode?: string; code?: string };
   routes?: Array<{
     channel: string;
@@ -650,8 +655,9 @@ function ConfigTab({
     session_policy: agent.session_policy ?? "daily",
     auto_compress: agent.auto_compress ?? 0,
     iteration_budget: {
-      tool_call_limit: agent.iteration_budget?.tool_call_limit ?? 20,
+      tool_call_limit: agent.iteration_budget?.tool_call_limit ?? agent.iteration_budget?.max_tool_calls ?? 20,
       timeout_ms: agent.iteration_budget?.timeout_ms ?? 120000,
+      absolute_timeout_ms: agent.iteration_budget?.absolute_timeout_ms ?? 0,
     },
     pairing: {
       mode: agent.pairing?.mode ?? "open",
@@ -988,6 +994,7 @@ function ConfigTab({
           sdk: _sdk,
           channel_context: _channelContext,
           external_mcp_servers: _externalMcpServers,
+          iteration_budget: _iterationBudget,
           ...rest
         } = cfg;
         const clean: Record<string, unknown> = { ...rest };
@@ -999,6 +1006,14 @@ function ConfigTab({
         if (channelContextPayload) clean.channel_context = channelContextPayload;
         const externalMcpPayload = buildExternalMcpPayload();
         if (externalMcpPayload) clean.external_mcp_servers = externalMcpPayload;
+        const iterationBudget: Record<string, unknown> = {
+          max_tool_calls: cfg.iteration_budget.tool_call_limit,
+          timeout_ms: cfg.iteration_budget.timeout_ms,
+        };
+        if (cfg.iteration_budget.absolute_timeout_ms > 0) {
+          iterationBudget.absolute_timeout_ms = cfg.iteration_budget.absolute_timeout_ms;
+        }
+        clean.iteration_budget = iterationBudget;
         const sdkPayload = buildSdkPayload();
         if (sdkPayload) clean.sdk = sdkPayload;
         payload = clean;
@@ -1288,6 +1303,27 @@ function ConfigTab({
                       iteration_budget: {
                         ...cfg.iteration_budget,
                         timeout_ms: +e.target.value,
+                      },
+                    })
+                  }
+                  className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                    fontFamily: "var(--oc-mono)",
+                  }}
+                />
+              </Field>
+              <Field label="Absolute timeout (ms)" tooltip="Hard cap for one iteration even if tool activity continues. Set 0 to disable.">
+                <input
+                  type="number"
+                  value={cfg.iteration_budget.absolute_timeout_ms}
+                  onChange={(e) =>
+                    update({
+                      iteration_budget: {
+                        ...cfg.iteration_budget,
+                        absolute_timeout_ms: +e.target.value || 0,
                       },
                     })
                   }
