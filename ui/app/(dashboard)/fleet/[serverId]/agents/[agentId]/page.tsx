@@ -283,6 +283,26 @@ interface MemoryDoctorReport {
   };
 }
 
+interface MemoryInfluenceRef {
+  memoryEntryId?: string;
+  path: string;
+  startLine?: number;
+  endLine?: number;
+  score?: number;
+}
+
+interface MemoryInfluenceEvent {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  sessionKey?: string;
+  runId?: string;
+  sdkSessionId?: string;
+  source: "prefetch" | "memory_search";
+  query?: string;
+  refs: MemoryInfluenceRef[];
+}
+
 const MODELS = [
   "claude-sonnet-4-6",
   "claude-opus-4-6",
@@ -1935,6 +1955,7 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
   const [status, setStatus] = useState<MemoryReviewStatus | "all">("pending");
   const [entries, setEntries] = useState<MemoryEntryRecord[]>([]);
   const [doctor, setDoctor] = useState<MemoryDoctorReport | null>(null);
+  const [influence, setInfluence] = useState<MemoryInfluenceEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1944,16 +1965,20 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
     setError(null);
     try {
       const reviewQuery = status === "all" ? "" : `&reviewStatus=${status}`;
-      const [entriesRes, doctorRes] = await Promise.all([
+      const [entriesRes, doctorRes, influenceRes] = await Promise.all([
         fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory?limit=80${reviewQuery}`),
         fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory/doctor?limit=1000`),
+        fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory/influence?limit=12`),
       ]);
       if (!entriesRes.ok) throw new Error(`entries ${entriesRes.status}`);
       if (!doctorRes.ok) throw new Error(`doctor ${doctorRes.status}`);
+      if (!influenceRes.ok) throw new Error(`influence ${influenceRes.status}`);
       const entriesJson = await entriesRes.json() as { entries?: MemoryEntryRecord[] };
       const doctorJson = await doctorRes.json() as MemoryDoctorReport;
+      const influenceJson = await influenceRes.json() as { events?: MemoryInfluenceEvent[] };
       setEntries(entriesJson.entries ?? []);
       setDoctor(doctorJson);
+      setInfluence(influenceJson.events ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load memory review");
     } finally {
@@ -2107,6 +2132,21 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
               ))}
             </div>
           </div>
+
+          <div className="rounded-md border" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}>
+            <div className="border-b px-3.5 py-2.5 text-[13px] font-semibold" style={{ borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+              Recent influence
+            </div>
+            <div className="divide-y" style={{ borderColor: "var(--oc-border)" }}>
+              {influence.length === 0 ? (
+                <div className="p-5 text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
+                  No recorded memory influence yet.
+                </div>
+              ) : influence.map((event) => (
+                <MemoryInfluenceRow key={event.id ?? `${event.source}-${event.timestamp}`} event={event} />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2188,6 +2228,32 @@ function MemoryDoctorMetric({ label, value }: { label: string; value: number }) 
   );
 }
 
+function MemoryInfluenceRow({ event }: { event: MemoryInfluenceEvent }) {
+  const firstRef = event.refs[0];
+  return (
+    <div className="px-3.5 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="rounded px-1.5 py-px text-[10px]" style={memoryInfluenceStyle(event.source)}>
+          {event.source}
+        </span>
+        {event.timestamp && (
+          <span className="text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+            {formatRuntimeTime(event.timestamp)}
+          </span>
+        )}
+      </div>
+      <div className="mt-2 truncate text-[11.5px]" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
+        {firstRef ? `${firstRef.path}${firstRef.startLine !== undefined ? `#L${firstRef.startLine}` : ""}` : "No refs"}
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+        {event.query && <span>query {shortRuntimeId(event.query, 22)}</span>}
+        {event.runId && <span>run {shortRuntimeId(event.runId, 10)}</span>}
+        <span>{event.refs.length} refs</span>
+      </div>
+    </div>
+  );
+}
+
 function MemorySkeletonRows() {
   return (
     <>
@@ -2244,6 +2310,13 @@ function memoryIssueLabel(kind: MemoryDoctorIssue["kind"]): string {
     case "conflicting_fact":
       return "Conflicting fact";
   }
+}
+
+function memoryInfluenceStyle(source: MemoryInfluenceEvent["source"]): React.CSSProperties {
+  if (source === "memory_search") {
+    return { background: "var(--oc-accent-soft)", color: "var(--oc-accent)" };
+  }
+  return { background: "var(--oc-bg3)", color: "var(--oc-text-muted)" };
 }
 
 /* ------------------------------------------------------------------ */
