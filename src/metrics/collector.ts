@@ -7,7 +7,6 @@ import type {
   StoredAgentRunRecord,
   StoredAgentRunStart,
   StoredAgentRunStatus,
-  StoredDiagnosticEvent,
   StoredRouteDecision,
   StoredSessionEvent,
   StoredSubagentEvent,
@@ -157,10 +156,6 @@ class MetricsCollector {
     this.store?.recordRouteDecision(decision);
   }
 
-  recordDiagnosticEvent(event: StoredDiagnosticEvent): void {
-    this.store?.recordDiagnosticEvent(event);
-  }
-
   listAgentRuns(params: {
     agentId?: string;
     sessionKey?: string;
@@ -181,17 +176,6 @@ class MetricsCollector {
     offset?: number;
   } = {}): StoredRouteDecision[] {
     return this.store?.listRouteDecisions(params) ?? [];
-  }
-
-  listDiagnosticEvents(params: {
-    traceId?: string;
-    runId?: string;
-    agentId?: string;
-    sessionKey?: string;
-    limit?: number;
-    offset?: number;
-  } = {}): StoredDiagnosticEvent[] {
-    return this.store?.listDiagnosticEvents(params) ?? [];
   }
 
   setStore(store: MetricsStore | null): void {

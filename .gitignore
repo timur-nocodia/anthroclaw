@@ -10,7 +10,6 @@ data/
 .pnpm-store/
 .claude/
 .agents/
-.int-docs/
 
 # Personal agents (keep only example)
 # agents/my-agent/

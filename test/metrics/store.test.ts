@@ -66,7 +66,6 @@ describe('MetricsStore', () => {
     });
     store.recordAgentRunStart({
       runId: 'run-1',
-      traceId: 'trace-1',
       startedAt: now,
       agentId: 'agent',
       sessionKey: 'web:agent:session-1',
@@ -136,7 +135,6 @@ describe('MetricsStore', () => {
     });
     expect(store.getAgentRun('run-1')).toMatchObject({
       runId: 'run-1',
-      traceId: 'trace-1',
       agentId: 'agent',
       sessionKey: 'web:agent:session-1',
       sdkSessionId: 'session-1',
@@ -155,16 +153,6 @@ describe('MetricsStore', () => {
       },
     });
     expect(store.listAgentRuns({ agentId: 'agent' }).map((run) => run.runId)).toEqual(['run-1']);
-    expect(store.listDiagnosticEvents({ runId: 'run-1' }).map((event) => event.eventType)).toEqual([
-      'run.completed',
-      'run.sdk_started',
-    ]);
-    expect(store.listDiagnosticEvents({ traceId: 'trace-1' })[0]).toMatchObject({
-      traceId: 'trace-1',
-      runId: 'run-1',
-      agentId: 'agent',
-      eventType: 'run.completed',
-    });
     expect(store.listAgentRuns({ agentId: 'agent', sdkSessionId: 'session-1' }).map((run) => run.runId)).toEqual(['run-1']);
     expect(store.listAgentRuns({ agentId: 'agent', sdkSessionId: 'missing' })).toEqual([]);
     expect(store.listRouteDecisions({ agentId: 'agent' })).toMatchObject([{
