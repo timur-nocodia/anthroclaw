@@ -73,6 +73,12 @@ export interface SessionProvenanceView {
   status: StoredAgentRunStatus;
 }
 
+export interface SessionMessagePreview {
+  type: string;
+  uuid: string;
+  text: string;
+}
+
 function compactError(value: unknown): string {
   const text = value instanceof Error ? value.message : String(value);
   return redactSecrets(text).slice(0, 2000);
@@ -121,6 +127,26 @@ function sessionProvenanceFromRun(run: StoredAgentRunRecord | undefined): Sessio
     startedAt: run.startedAt,
     completedAt: run.completedAt,
     status: run.status,
+  };
+}
+
+function previewSessionMessages(messages: SdkSessionMessageView[]): {
+  firstMessage?: SessionMessagePreview;
+  lastMessage?: SessionMessagePreview;
+} {
+  const visible = messages.filter((message) => message.text.trim().length > 0);
+  const toPreview = (message: SdkSessionMessageView | undefined): SessionMessagePreview | undefined => {
+    if (!message) return undefined;
+    return {
+      type: message.type,
+      uuid: message.uuid,
+      text: message.text.slice(0, 500),
+    };
+  };
+
+  return {
+    firstMessage: toPreview(visible[0]),
+    lastMessage: toPreview(visible.at(-1)),
   };
 }
 
@@ -499,6 +525,8 @@ export class Gateway {
     activeKeys: string[];
     messageCount: number;
     provenance?: SessionProvenanceView;
+    firstMessage?: SessionMessagePreview;
+    lastMessage?: SessionMessagePreview;
   }>> {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent "${agentId}" not found`);
@@ -517,12 +545,16 @@ export class Gateway {
     const rows = await Promise.all(sdkSessions.map(async (session) => {
       seen.add(session.sessionId);
       const active = activeBySession.get(session.sessionId) ?? [];
-      const title = await this.sdkSessionService!.getAgentSessionTitle(agent, session.sessionId).catch(() => undefined);
+      const [title, messages] = await Promise.all([
+        this.sdkSessionService!.getAgentSessionTitle(agent, session.sessionId).catch(() => undefined),
+        this.sdkSessionService!.getAgentSessionMessages(agent, session.sessionId, { limit: 100 }).catch(() => []),
+      ]);
       const latestRun = metrics.listAgentRuns({
         agentId,
         sdkSessionId: session.sessionId,
         limit: 1,
       })[0];
+      const previews = previewSessionMessages(messages);
       return {
         sessionId: session.sessionId,
         summary: title ?? session.summary,
@@ -532,19 +564,24 @@ export class Gateway {
         createdAt: session.createdAt,
         cwd: session.cwd,
         activeKeys: active.map((item) => item.sessionKey),
-        messageCount: active.reduce((sum, item) => sum + item.messageCount, 0),
+        messageCount: Math.max(active.reduce((sum, item) => sum + item.messageCount, 0), messages.length),
         provenance: sessionProvenanceFromRun(latestRun),
+        ...previews,
       };
     }));
 
     for (const [sessionId, active] of activeBySession) {
       if (seen.has(sessionId)) continue;
-      const title = await this.sdkSessionService.getAgentSessionTitle(agent, sessionId).catch(() => undefined);
+      const [title, messages] = await Promise.all([
+        this.sdkSessionService.getAgentSessionTitle(agent, sessionId).catch(() => undefined),
+        this.sdkSessionService.getAgentSessionMessages(agent, sessionId, { limit: 100 }).catch(() => []),
+      ]);
       const latestRun = metrics.listAgentRuns({
         agentId,
         sdkSessionId: sessionId,
         limit: 1,
       })[0];
+      const previews = previewSessionMessages(messages);
       rows.push({
         sessionId,
         summary: title ?? sessionId,
@@ -554,8 +591,9 @@ export class Gateway {
         createdAt: Math.min(...active.map((item) => item.started ?? Date.now())),
         cwd: agent.workspacePath,
         activeKeys: active.map((item) => item.sessionKey),
-        messageCount: active.reduce((sum, item) => sum + item.messageCount, 0),
+        messageCount: Math.max(active.reduce((sum, item) => sum + item.messageCount, 0), messages.length),
         provenance: sessionProvenanceFromRun(latestRun),
+        ...previews,
       });
     }
 

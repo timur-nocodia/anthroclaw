@@ -70,6 +70,16 @@ interface AgentSession {
     startedAt: number;
     status: "running" | "succeeded" | "failed" | "interrupted";
   };
+  firstMessage?: {
+    type: string;
+    uuid: string;
+    text: string;
+  };
+  lastMessage?: {
+    type: string;
+    uuid: string;
+    text: string;
+  };
 }
 
 interface SessionMessageView {
