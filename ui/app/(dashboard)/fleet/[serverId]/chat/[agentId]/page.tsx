@@ -16,6 +16,7 @@ import {
   RefreshCw,
   RotateCcw,
   Send,
+  Tags,
   Trash2,
   Workflow,
   Zap,
@@ -56,6 +57,7 @@ interface AgentSession {
   summary: string;
   tag?: string;
   customTitle?: string;
+  labels?: string[];
   lastModified: number;
   activeKeys?: string[];
   messageCount?: number;
@@ -223,6 +225,7 @@ export default function ChatPage() {
   const [promptSuggestion, setPromptSuggestion] = useState<string | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionLabelFilter, setSessionLabelFilter] = useState("");
   const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
   const [sessionDetailsLoading, setSessionDetailsLoading] = useState(false);
   const [routeDecision, setRouteDecision] = useState<RouteDecision | null>(null);
@@ -287,14 +290,17 @@ export default function ChatPage() {
   const loadSessions = useCallback(async () => {
     setSessionsLoading(true);
     try {
-      const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/sessions?limit=25`);
+      const query = new URLSearchParams({ limit: "25" });
+      const label = sessionLabelFilter.trim();
+      if (label) query.set("label", label);
+      const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/sessions?${query.toString()}`);
       if (!res.ok) return;
       const data = await res.json();
       setSessions(Array.isArray(data.sessions) ? data.sessions : []);
     } finally {
       setSessionsLoading(false);
     }
-  }, [selected, serverId]);
+  }, [selected, serverId, sessionLabelFilter]);
 
   useEffect(() => {
     void loadSessions();
@@ -710,6 +716,38 @@ export default function ChatPage() {
     await loadSessions();
   };
 
+  const updateCurrentSessionLabels = async () => {
+    if (!sessionId || streaming) return;
+    const current = selectedSession?.labels ?? [];
+    const next = window.prompt("Session labels, comma-separated", current.join(", "));
+    if (next === null) return;
+
+    const labels = next
+      .split(",")
+      .map((label) => label.trim())
+      .filter(Boolean);
+    const res = await fetch(
+      `/api/fleet/${serverId}/agents/${selected}/sessions/${encodeURIComponent(sessionId)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labels }),
+      },
+    );
+    if (!res.ok) return;
+
+    const data = await res.json();
+    const savedLabels = Array.isArray(data.labels)
+      ? data.labels.filter((label: unknown): label is string => typeof label === "string")
+      : labels;
+    setSessions((items) => items.map((item) => (
+      item.sessionId === (data.sessionId ?? sessionId)
+        ? { ...item, labels: savedLabels }
+        : item
+    )));
+    await loadSessions();
+  };
+
   const interruptSubagentRun = async (runId: string) => {
     const res = await fetch(
       `/api/fleet/${serverId}/agents/${selected}/subagents/${encodeURIComponent(runId)}`,
@@ -871,12 +909,31 @@ export default function ChatPage() {
                 {session.tag ? `[${session.tag}] ` : ""}
                 {session.provenance ? `${session.provenance.source}/${session.provenance.channel} · ` : ""}
                 {session.provenance?.routeOutcome ? `${session.provenance.routeOutcome} · ` : ""}
+                {session.labels?.length ? `#${session.labels.join(" #")} · ` : ""}
                 {session.customTitle || session.summary || session.sessionId}
               </option>
             ))}
           </select>
+          <div className="flex items-center gap-1">
+            <Tags className="h-3.5 w-3.5" style={{ color: "var(--oc-text-muted)" }} />
+            <input
+              value={sessionLabelFilter}
+              onChange={(e) => setSessionLabelFilter(e.target.value)}
+              placeholder="label"
+              className="h-7 w-[92px] rounded border px-1.5 text-[11px] outline-none"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            />
+          </div>
           <Button variant="outline" size="sm" onClick={loadSessions} disabled={sessionsLoading}>
             <History className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={updateCurrentSessionLabels} disabled={streaming || !sessionId}>
+            <Tags className="h-3.5 w-3.5" />
+            Labels
           </Button>
           <Button variant="outline" size="sm" onClick={forkCurrentSession} disabled={streaming || !sessionId}>
             <GitFork className="h-3.5 w-3.5" />
@@ -1208,7 +1265,11 @@ function SubagentRunsPanel({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-3">
-        <SessionDebugCard session={session} loading={sessionLoading} />
+        <SessionDebugCard
+          session={session}
+          loading={sessionLoading}
+          labels={selectedSession?.labels ?? []}
+        />
         <ActiveRunsCard runs={activeRuns} loading={activeRunsLoading} activeTaskCount={activeTaskCount} />
         <RouteDecisionCard
           selectedSession={selectedSession}
@@ -1341,9 +1402,11 @@ function ActiveRunsCard({
 function SessionDebugCard({
   session,
   loading,
+  labels,
 }: {
   session: SessionDetails | null;
   loading: boolean;
+  labels: string[];
 }) {
   const messages = session?.messages ?? [];
   const userMessages = messages.filter((message) => message.type === "user").length;
@@ -1386,6 +1449,16 @@ function SessionDebugCard({
             <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed" style={{ color: "var(--oc-text-dim)" }}>
               {session.summary}
             </p>
+          )}
+
+          {labels.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {labels.slice(0, 6).map((label) => (
+                <SubagentPill key={label} title={label}>
+                  #{label}
+                </SubagentPill>
+              ))}
+            </div>
           )}
 
           {last && (
