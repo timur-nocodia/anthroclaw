@@ -8,6 +8,7 @@ import type {
   StoredAgentRunStart,
   StoredAgentRunStatus,
   StoredDiagnosticEvent,
+  StoredFileOwnershipEvent,
   StoredInterruptRecord,
   StoredRouteDecision,
   StoredSessionEvent,
@@ -52,6 +53,7 @@ export interface MetricsSnapshot {
     tools: Record<string, number>;
     sessions: Record<string, number>;
     subagents: Record<string, number>;
+    fileOwnership: Record<string, number>;
   };
   system: {
     cpu_percent: number;
@@ -166,6 +168,10 @@ class MetricsCollector {
     this.store?.recordInterrupt(record);
   }
 
+  recordFileOwnershipEvent(event: StoredFileOwnershipEvent): void {
+    this.store?.recordFileOwnershipEvent(event);
+  }
+
   getAgentRun(runId: string): StoredAgentRunRecord | undefined {
     return this.store?.getAgentRun(runId);
   }
@@ -213,6 +219,20 @@ class MetricsCollector {
     return this.store?.listInterrupts(params) ?? [];
   }
 
+  listFileOwnershipEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    runId?: string;
+    subagentId?: string;
+    path?: string;
+    eventType?: StoredFileOwnershipEvent['eventType'];
+    action?: StoredFileOwnershipEvent['action'];
+    limit?: number;
+    offset?: number;
+  } = {}): StoredFileOwnershipEvent[] {
+    return this.store?.listFileOwnershipEvents(params) ?? [];
+  }
+
   setStore(store: MetricsStore | null): void {
     this.store = store;
   }
@@ -246,7 +266,7 @@ class MetricsCollector {
       },
       events_30d: this.store
         ? this.store.eventsSince(now - 30 * TWENTY_FOUR_HOURS_MS)
-        : { tools: {}, sessions: {}, subagents: {} },
+        : { tools: {}, sessions: {}, subagents: {}, fileOwnership: {} },
       system: this.getSystemMetrics(),
     };
   }

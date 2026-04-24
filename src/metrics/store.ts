@@ -94,6 +94,19 @@ export interface StoredInterruptRecord {
   reason?: string;
 }
 
+export interface StoredFileOwnershipEvent {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  sessionKey: string;
+  runId?: string;
+  subagentId?: string;
+  path: string;
+  eventType: 'conflict' | 'denied_write' | 'override' | 'released';
+  action?: 'allow' | 'deny';
+  reason?: string;
+}
+
 export interface StoredRouteDecisionCandidate {
   agentId: string;
   channel: string;
@@ -306,6 +319,19 @@ export class MetricsStore {
         reason TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS file_ownership_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        agent_id TEXT,
+        session_key TEXT NOT NULL,
+        run_id TEXT,
+        subagent_id TEXT,
+        path TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        action TEXT,
+        reason TEXT
+      );
+
       CREATE INDEX IF NOT EXISTS idx_counter_events_name_ts ON counter_events(name, ts);
       CREATE INDEX IF NOT EXISTS idx_query_duration_events_ts ON query_duration_events(ts);
       CREATE INDEX IF NOT EXISTS idx_token_events_ts ON token_events(ts);
@@ -325,6 +351,9 @@ export class MetricsStore {
       CREATE INDEX IF NOT EXISTS idx_route_decisions_outcome_ts ON route_decisions(outcome, ts);
       CREATE INDEX IF NOT EXISTS idx_interrupt_events_target_ts ON interrupt_events(target_id, ts);
       CREATE INDEX IF NOT EXISTS idx_interrupt_events_run_ts ON interrupt_events(run_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_file_ownership_events_session_ts ON file_ownership_events(session_key, ts);
+      CREATE INDEX IF NOT EXISTS idx_file_ownership_events_path_ts ON file_ownership_events(path, ts);
+      CREATE INDEX IF NOT EXISTS idx_file_ownership_events_type_ts ON file_ownership_events(event_type, ts);
     `);
     this.ensureColumn('agent_runs', 'route_decision_id', 'TEXT');
     this.ensureColumn('agent_runs', 'trace_id', 'TEXT NOT NULL DEFAULT ""');
@@ -631,6 +660,25 @@ export class MetricsStore {
     );
   }
 
+  recordFileOwnershipEvent(event: StoredFileOwnershipEvent): void {
+    this.db.prepare(`
+      INSERT INTO file_ownership_events(
+        ts, agent_id, session_key, run_id, subagent_id, path, event_type, action, reason
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.timestamp ?? Date.now(),
+      event.agentId ?? null,
+      event.sessionKey,
+      event.runId ?? null,
+      event.subagentId ?? null,
+      event.path,
+      event.eventType,
+      event.action ?? null,
+      event.reason ?? null,
+    );
+  }
+
   getAgentRun(runId: string): StoredAgentRunRecord | undefined {
     const row = this.db.prepare('SELECT * FROM agent_runs WHERE run_id = ?').get(runId) as AgentRunRow | undefined;
     return row ? parseAgentRunRow(row) : undefined;
@@ -742,6 +790,58 @@ export class MetricsStore {
     return rows.map(parseInterruptEventRow);
   }
 
+  listFileOwnershipEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    runId?: string;
+    subagentId?: string;
+    path?: string;
+    eventType?: StoredFileOwnershipEvent['eventType'];
+    action?: StoredFileOwnershipEvent['action'];
+    limit?: number;
+    offset?: number;
+  } = {}): StoredFileOwnershipEvent[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.agentId) {
+      clauses.push('agent_id = ?');
+      values.push(params.agentId);
+    }
+    if (params.sessionKey) {
+      clauses.push('session_key = ?');
+      values.push(params.sessionKey);
+    }
+    if (params.runId) {
+      clauses.push('run_id = ?');
+      values.push(params.runId);
+    }
+    if (params.subagentId) {
+      clauses.push('subagent_id = ?');
+      values.push(params.subagentId);
+    }
+    if (params.path) {
+      clauses.push('path = ?');
+      values.push(params.path);
+    }
+    if (params.eventType) {
+      clauses.push('event_type = ?');
+      values.push(params.eventType);
+    }
+    if (params.action) {
+      clauses.push('action = ?');
+      values.push(params.action);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM file_ownership_events
+      ${where}
+      ORDER BY ts DESC, id DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as FileOwnershipEventRow[];
+    return rows.map(parseFileOwnershipEventRow);
+  }
+
   counters(): Record<string, number> {
     const rows = this.db.prepare(`
       SELECT name, SUM(value) as value
@@ -812,11 +912,13 @@ export class MetricsStore {
     tools: Record<string, number>;
     sessions: Record<string, number>;
     subagents: Record<string, number>;
+    fileOwnership: Record<string, number>;
   } {
     const tools = this.countEventsBy('tool_events', 'status', since);
     const sessions = this.countEventsBy('session_events', 'event_type', since);
     const subagents = this.countEventsBy('subagent_events', 'event_type', since);
-    return { tools, sessions, subagents };
+    const fileOwnership = this.countEventsBy('file_ownership_events', 'event_type', since);
+    return { tools, sessions, subagents, fileOwnership };
   }
 
   private countEventsBy(table: string, column: string, since: number): Record<string, number> {
@@ -912,6 +1014,7 @@ export class MetricsStore {
       DELETE FROM diagnostic_events;
       DELETE FROM route_decisions;
       DELETE FROM interrupt_events;
+      DELETE FROM file_ownership_events;
     `);
   }
 
@@ -1032,6 +1135,19 @@ interface DiagnosticEventRow {
   detail_json: string;
 }
 
+interface FileOwnershipEventRow {
+  id: number;
+  ts: number;
+  agent_id: string | null;
+  session_key: string;
+  run_id: string | null;
+  subagent_id: string | null;
+  path: string;
+  event_type: StoredFileOwnershipEvent['eventType'];
+  action: StoredFileOwnershipEvent['action'] | null;
+  reason: string | null;
+}
+
 function parseDiagnosticEventRow(row: DiagnosticEventRow): StoredDiagnosticEvent {
   return {
     id: row.id,
@@ -1078,6 +1194,21 @@ function parseInterruptEventRow(row: InterruptEventRow): StoredInterruptRecord {
     targetId: row.target_id,
     requestedBy: row.requested_by ?? undefined,
     result: row.result,
+    reason: row.reason ?? undefined,
+  };
+}
+
+function parseFileOwnershipEventRow(row: FileOwnershipEventRow): StoredFileOwnershipEvent {
+  return {
+    id: row.id,
+    timestamp: row.ts,
+    agentId: row.agent_id ?? undefined,
+    sessionKey: row.session_key,
+    runId: row.run_id ?? undefined,
+    subagentId: row.subagent_id ?? undefined,
+    path: row.path,
+    eventType: row.event_type,
+    action: row.action ?? undefined,
     reason: row.reason ?? undefined,
   };
 }

@@ -64,6 +64,17 @@ describe('MetricsStore', () => {
       eventType: 'started',
       status: 'running',
     });
+    store.recordFileOwnershipEvent({
+      timestamp: now + 25,
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      subagentId: 'researcher',
+      path: '/repo/src/app.ts',
+      eventType: 'conflict',
+      action: 'allow',
+      reason: 'soft file ownership records conflict and allows the claim',
+    });
     store.recordAgentRunStart({
       runId: 'run-1',
       traceId: 'trace-1',
@@ -144,6 +155,7 @@ describe('MetricsStore', () => {
       tools: { started: 1 },
       sessions: { created: 1 },
       subagents: { started: 1 },
+      fileOwnership: { conflict: 1 },
     });
     expect(store.getAgentRun('run-1')).toMatchObject({
       runId: 'run-1',
@@ -198,6 +210,15 @@ describe('MetricsStore', () => {
       requestedBy: 'web',
       result: 'interrupted',
       reason: 'Active query interrupt requested successfully.',
+    }]);
+    expect(store.listFileOwnershipEvents({ sessionKey: 'web:agent:session-1' })).toMatchObject([{
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      subagentId: 'researcher',
+      path: '/repo/src/app.ts',
+      eventType: 'conflict',
+      action: 'allow',
     }]);
 
     const report = store.usageReport(30);
