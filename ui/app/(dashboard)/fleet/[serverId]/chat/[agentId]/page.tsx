@@ -54,9 +54,22 @@ interface AgentSummary {
 interface AgentSession {
   sessionId: string;
   summary: string;
+  tag?: string;
+  customTitle?: string;
   lastModified: number;
   activeKeys?: string[];
   messageCount?: number;
+  provenance?: {
+    source: "channel" | "web" | "cron";
+    channel: string;
+    accountId?: string;
+    peerId?: string;
+    threadId?: string;
+    messageId?: string;
+    sessionKey: string;
+    startedAt: number;
+    status: "running" | "succeeded" | "failed" | "interrupted";
+  };
 }
 
 interface SessionMessageView {
@@ -717,7 +730,9 @@ export default function ChatPage() {
             </option>
             {sessions.map((session) => (
               <option key={session.sessionId} value={session.sessionId}>
-                {session.summary || session.sessionId}
+                {session.tag ? `[${session.tag}] ` : ""}
+                {session.provenance ? `${session.provenance.source}/${session.provenance.channel} · ` : ""}
+                {session.customTitle || session.summary || session.sessionId}
               </option>
             ))}
           </select>

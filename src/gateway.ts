@@ -21,7 +21,7 @@ import { transcribeAudio } from './media/transcribe.js';
 import { extractPdfText } from './media/pdf.js';
 import { metrics } from './metrics/collector.js';
 import { MetricsStore } from './metrics/store.js';
-import type { StoredAgentRunStatus, StoredAgentRunUsage } from './metrics/store.js';
+import type { StoredAgentRunRecord, StoredAgentRunStatus, StoredAgentRunUsage } from './metrics/store.js';
 import type { ScheduledJob } from './cron/scheduler.js';
 import type { ChannelAdapter, InboundMessage } from './channels/types.js';
 import type { GlobalConfig } from './config/schema.js';
@@ -59,6 +59,20 @@ import {
 
 const PROMPT_SUGGESTION_WAIT_MS = 750;
 
+export interface SessionProvenanceView {
+  runId: string;
+  source: string;
+  channel: string;
+  accountId?: string;
+  peerId?: string;
+  threadId?: string;
+  messageId?: string;
+  sessionKey: string;
+  startedAt: number;
+  completedAt?: number;
+  status: StoredAgentRunStatus;
+}
+
 function compactError(value: unknown): string {
   const text = value instanceof Error ? value.message : String(value);
   return redactSecrets(text).slice(0, 2000);
@@ -91,6 +105,23 @@ function readResultUsage(event: Record<string, unknown>, durationMs: number): St
     durationApiMs: typeof event.duration_api_ms === 'number' ? event.duration_api_ms : undefined,
     numTurns: typeof event.num_turns === 'number' ? event.num_turns : undefined,
   }) as StoredAgentRunUsage;
+}
+
+function sessionProvenanceFromRun(run: StoredAgentRunRecord | undefined): SessionProvenanceView | undefined {
+  if (!run) return undefined;
+  return {
+    runId: run.runId,
+    source: run.source,
+    channel: run.channel,
+    accountId: run.accountId,
+    peerId: run.peerId,
+    threadId: run.threadId,
+    messageId: run.messageId,
+    sessionKey: run.sessionKey,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt,
+    status: run.status,
+  };
 }
 
 async function nextWithTimeout<T>(
@@ -460,11 +491,14 @@ export class Gateway {
   ): Promise<Array<{
     sessionId: string;
     summary: string;
+    tag?: string;
+    customTitle?: string;
     lastModified: number;
     createdAt?: number;
     cwd?: string;
     activeKeys: string[];
     messageCount: number;
+    provenance?: SessionProvenanceView;
   }>> {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent "${agentId}" not found`);
@@ -484,28 +518,44 @@ export class Gateway {
       seen.add(session.sessionId);
       const active = activeBySession.get(session.sessionId) ?? [];
       const title = await this.sdkSessionService!.getAgentSessionTitle(agent, session.sessionId).catch(() => undefined);
+      const latestRun = metrics.listAgentRuns({
+        agentId,
+        sdkSessionId: session.sessionId,
+        limit: 1,
+      })[0];
       return {
         sessionId: session.sessionId,
         summary: title ?? session.summary,
+        tag: session.tag,
+        customTitle: session.customTitle,
         lastModified: session.lastModified,
         createdAt: session.createdAt,
         cwd: session.cwd,
         activeKeys: active.map((item) => item.sessionKey),
         messageCount: active.reduce((sum, item) => sum + item.messageCount, 0),
+        provenance: sessionProvenanceFromRun(latestRun),
       };
     }));
 
     for (const [sessionId, active] of activeBySession) {
       if (seen.has(sessionId)) continue;
       const title = await this.sdkSessionService.getAgentSessionTitle(agent, sessionId).catch(() => undefined);
+      const latestRun = metrics.listAgentRuns({
+        agentId,
+        sdkSessionId: sessionId,
+        limit: 1,
+      })[0];
       rows.push({
         sessionId,
         summary: title ?? sessionId,
+        tag: undefined,
+        customTitle: undefined,
         lastModified: Math.max(...active.map((item) => item.lastUsed ?? 0), 0),
         createdAt: Math.min(...active.map((item) => item.started ?? Date.now())),
         cwd: agent.workspacePath,
         activeKeys: active.map((item) => item.sessionKey),
         messageCount: active.reduce((sum, item) => sum + item.messageCount, 0),
+        provenance: sessionProvenanceFromRun(latestRun),
       });
     }
 

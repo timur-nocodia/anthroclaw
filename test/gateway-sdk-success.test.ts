@@ -195,6 +195,19 @@ pairing:
       output: 20,
       cache_read: 40,
     });
+    const sessions = await gw.listAgentSessions('sdk-bot');
+    expect(sessions[0]).toMatchObject({
+      sessionId: 'sdk-session-1',
+      provenance: {
+        source: 'channel',
+        channel: 'telegram',
+        accountId: 'default',
+        peerId: 'peer-123',
+        messageId: 'mid-1',
+        sessionKey: 'sdk-bot:telegram:dm:peer-123',
+        status: 'succeeded',
+      },
+    });
 
     await gw.stop();
   });
