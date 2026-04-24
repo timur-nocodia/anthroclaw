@@ -210,6 +210,7 @@ export const AgentYmlSchema = z.object({
   iteration_budget: z.object({
     max_tool_calls: z.number().int().min(1).default(30),
     timeout_ms: z.number().int().min(5000).default(120_000),
+    absolute_timeout_ms: z.number().int().min(5000).optional(),
     grace_message: z.boolean().default(true),
   }).optional(),
   quick_commands: z.record(z.string(), z.object({

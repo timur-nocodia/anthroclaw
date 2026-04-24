@@ -1892,7 +1892,15 @@ export class Gateway {
       });
       const result = this.startQuery(agent, prompt, options, existingSessionId);
       const abort = new AbortController();
-      this.queueManager.register(sessionKey, result, abort);
+      this.queueManager.register(sessionKey, result, abort, {
+        traceId: runId,
+        channelDeliveryTarget: {
+          channel: msg.channel,
+          peerId: msg.peerId,
+          accountId: msg.accountId,
+          threadId: msg.threadId,
+        },
+      });
       this.controlRegistry.register(
         [sessionKey, ...(existingSessionId ? [existingSessionId] : [])],
         result,
@@ -1904,18 +1912,48 @@ export class Gateway {
         ? new IterationBudget({
             maxToolCalls: budgetConfig.max_tool_calls,
             timeoutMs: budgetConfig.timeout_ms,
+            absoluteTimeoutMs: budgetConfig.absolute_timeout_ms,
             graceMessage: budgetConfig.grace_message,
           })
         : null;
       budget?.start();
+      const markRunActivity = (eventType: string, taskId?: string) => {
+        budget?.recordActivity(eventType);
+        this.queueManager.markActivity(sessionKey, eventType, taskId);
+      };
 
       try {
         const textParts: string[] = [];
         let sessionId: string | undefined;
         let budgetInterrupted = false;
+        const iterator = result[Symbol.asyncIterator]();
 
-        for await (const event of result) {
-          const evt = event as Record<string, unknown>;
+        while (true) {
+          const next = budget
+            ? await nextWithTimeout(iterator, Math.max(1, budget.timeUntilInterruptMs))
+            : await iterator.next();
+          if (!next) {
+            budgetInterrupted = true;
+            if (budget?.shouldInterrupt()) {
+              try { result.interrupt(); } catch {}
+            }
+            break;
+          }
+          if (next.done) break;
+
+          const evt = next.value as Record<string, unknown>;
+          const partialText = extractPartialText(evt);
+          const taskProgress = extractTaskProgress(evt);
+          const hookEvent = extractHookLifecycleEvent(evt);
+          if (partialText) {
+            markRunActivity('partial_text');
+          } else if (taskProgress) {
+            markRunActivity('task_progress', taskProgress.taskId);
+          } else if (hookEvent) {
+            markRunActivity(hookEvent.subtype);
+          } else {
+            markRunActivity(typeof evt.type === 'string' ? evt.type : 'sdk_event');
+          }
 
           if (evt.session_id && typeof evt.session_id === 'string') {
             sessionId = evt.session_id;
@@ -1981,7 +2019,7 @@ export class Gateway {
               if (pressureWarning) {
                 logger.info({ agentId: agent.id, warning: pressureWarning, stats: budget.stats }, 'Budget pressure warning');
               }
-              if (exceeded || budget.isTimeoutExceeded()) {
+              if (exceeded || budget.shouldInterrupt()) {
                 budgetInterrupted = true;
                 try { result.interrupt(); } catch {}
                 break;
@@ -1989,7 +2027,7 @@ export class Gateway {
             }
           }
 
-          if (budget && budget.isTimeoutExceeded()) {
+          if (budget && budget.shouldInterrupt()) {
             budgetInterrupted = true;
             try { result.interrupt(); } catch {}
             break;
