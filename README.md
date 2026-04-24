@@ -1,8 +1,10 @@
+# AnthroClaw
+
+Local-first control plane for Claude agents in real chat channels: Telegram, WhatsApp, and web.
+
 <p align="center">
   <img src="ui/public/anthroClaw-logo.svg" alt="AnthroClaw" width="116" />
 </p>
-
-<h1 align="center">AnthroClaw</h1>
 
 <p align="center">
   <strong>A Claude Agent SDK-native control plane for personal, multi-agent assistants.</strong>

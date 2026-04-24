@@ -1,0 +1,50 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="640" rx="42" fill="#090B10"/>
+  <rect x="1" y="1" width="1278" height="638" rx="41" stroke="#252B38" stroke-width="2"/>
+  <path d="M0 0H1280V640H0V0Z" fill="url(#bg)"/>
+  <circle cx="1078" cy="124" r="230" fill="#FBBE80" fill-opacity="0.12"/>
+  <circle cx="238" cy="592" r="280" fill="#CD2A11" fill-opacity="0.18"/>
+  <path d="M948 99C1008 196 1040 300 1040 410C1040 473 1031 520 1013 552H1234C1195 435 1143 310 1078 177C1061 142 1045 109 1030 78C1023 64 1010 55 994 55C970 55 955 72 948 99Z" fill="url(#mark1)" fill-opacity="0.9"/>
+  <path d="M875 430C875 338 910 254 981 178C929 191 879 223 832 274C780 331 746 397 731 473C724 507 724 539 731 570H835C824 513 837 466 875 430Z" fill="url(#mark2)"/>
+  <path d="M684 83L456 570H590C600 477 630 393 681 318C739 232 814 173 906 141L878 83H684Z" fill="url(#mark3)"/>
+  <rect x="72" y="72" width="172" height="44" rx="22" fill="#111827" stroke="#2D3545"/>
+  <text x="98" y="101" fill="#F8FAFC" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="18" font-weight="700" letter-spacing="2">ANTHROCLAW</text>
+  <text x="72" y="236" fill="#F8FAFC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="82" font-weight="850" letter-spacing="-3.5">Claude agents</text>
+  <text x="72" y="322" fill="#F8FAFC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="82" font-weight="850" letter-spacing="-3.5">in real chats.</text>
+  <text x="76" y="390" fill="#AAB3C5" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="500">Local-first control plane for Telegram, WhatsApp, and web.</text>
+  <g transform="translate(76 468)">
+    <rect width="244" height="46" rx="23" fill="#111827" stroke="#30394A"/>
+    <circle cx="26" cy="23" r="6" fill="#10B981"/>
+    <text x="45" y="31" fill="#F8FAFC" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="18" font-weight="700">Claude Agent SDK</text>
+  </g>
+  <g transform="translate(340 468)">
+    <rect width="154" height="46" rx="23" fill="#111827" stroke="#30394A"/>
+    <circle cx="26" cy="23" r="6" fill="#3B82F6"/>
+    <text x="45" y="31" fill="#F8FAFC" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="18" font-weight="700">Telegram</text>
+  </g>
+  <g transform="translate(514 468)">
+    <rect width="158" height="46" rx="23" fill="#111827" stroke="#30394A"/>
+    <circle cx="26" cy="23" r="6" fill="#F59E0B"/>
+    <text x="45" y="31" fill="#F8FAFC" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="18" font-weight="700">WhatsApp</text>
+  </g>
+  <text x="76" y="574" fill="#647084" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="18" font-weight="600">github.com/timur-nocodia/anthroclaw</text>
+  <defs>
+    <radialGradient id="bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1058 98) rotate(139) scale(860 1100)">
+      <stop stop-color="#1D2433"/>
+      <stop offset="0.42" stop-color="#0D111A"/>
+      <stop offset="1" stop-color="#07090D"/>
+    </radialGradient>
+    <linearGradient id="mark1" x1="1082" y1="72" x2="1000" y2="552" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FBBE80"/>
+      <stop offset="1" stop-color="#CD2A11"/>
+    </linearGradient>
+    <linearGradient id="mark2" x1="884" y1="178" x2="779" y2="570" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FBBE80"/>
+      <stop offset="1" stop-color="#CD2A11"/>
+    </linearGradient>
+    <linearGradient id="mark3" x1="808" y1="83" x2="623" y2="570" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FBBE80"/>
+      <stop offset="1" stop-color="#CD2A11"/>
+    </linearGradient>
+  </defs>
+</svg>
