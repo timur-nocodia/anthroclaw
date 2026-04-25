@@ -46,6 +46,8 @@ interface SdkActiveInputStatus {
   featureFlagEnabled: boolean;
   nativeSteerEnabled: boolean;
   fallbackMode: "interrupt_and_restart";
+  steerDeliveryState?: "accepted_native" | "queued_for_tool_boundary" | "fallback_interrupt_restart" | "unsupported";
+  uiDeliveryStates?: Array<"accepted_native" | "queued_for_tool_boundary" | "fallback_interrupt_restart" | "unsupported">;
   reason: string;
 }
 
@@ -1157,6 +1159,14 @@ function AdvancedSection({ serverId }: { serverId: string }) {
         <RuntimeRow
           label="Fallback mode"
           value={activeInput?.fallbackMode ?? "interrupt_and_restart"}
+        />
+        <RuntimeRow
+          label="Steer delivery"
+          value={activeInput?.steerDeliveryState ?? "fallback_interrupt_restart"}
+        />
+        <RuntimeRow
+          label="UI states"
+          value={(activeInput?.uiDeliveryStates ?? ["fallback_interrupt_restart", "unsupported"]).join(", ")}
         />
         <div className="pt-1 text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
           {activeInput?.reason ?? "Active input status is unavailable from this gateway."}

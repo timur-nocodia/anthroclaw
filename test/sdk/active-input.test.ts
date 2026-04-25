@@ -14,6 +14,8 @@ describe('sdk active input', () => {
       featureFlagEnabled: false,
       nativeSteerEnabled: false,
       fallbackMode: 'interrupt_and_restart',
+      steerDeliveryState: 'fallback_interrupt_restart',
+      uiDeliveryStates: ['fallback_interrupt_restart', 'unsupported'],
     });
   });
 
@@ -24,6 +26,7 @@ describe('sdk active input', () => {
       featureFlagEnabled: true,
       nativeSteerEnabled: false,
       fallbackMode: 'interrupt_and_restart',
+      steerDeliveryState: 'fallback_interrupt_restart',
     });
     expect(status.reason).toContain('still falls back to interrupt-and-restart');
   });
