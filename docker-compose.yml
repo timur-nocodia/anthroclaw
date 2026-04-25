@@ -1,0 +1,30 @@
+services:
+  app:
+    build: .
+    image: anthroclaw:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      TZ: ${TZ:-UTC}
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    volumes:
+      - ./data:/app/data
+      - ./agents:/app/agents
+      - ./config.yml:/app/config.yml:ro
+    ports:
+      # Bind to loopback only — put nginx/caddy in front for TLS + auth.
+      - "127.0.0.1:${UI_PORT:-3000}:3000"
+    init: true
+    working_dir: /app/ui
+    # Next.js hosts the UI AND embeds the Gateway runtime (Telegram polling,
+    # MCP tools, sessions, cron). One process, one Telegram polling owner,
+    # one source of truth for /api/gateway/status.
+    command: ["node", "node_modules/next/dist/bin/next", "start"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s

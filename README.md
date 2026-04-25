@@ -219,6 +219,25 @@ pnpm ui
 
 The UI is a Next.js app under `ui/`.
 
+## Deploy with Docker
+
+For Linux server deployment (VPS, Hetzner, Fly.io, self-hosted) — see **[DOCKER.md](DOCKER.md)** for the full guide. Short version:
+
+```bash
+# On the server, one-time auth (uses your Claude Max/Pro subscription):
+npm i -g @anthropic-ai/claude-code
+claude setup-token   # → CLAUDE_CODE_OAUTH_TOKEN
+
+# Deploy:
+git clone https://github.com/timur-nocodia/anthroclaw.git && cd anthroclaw
+cp .env.example .env   # add CLAUDE_CODE_OAUTH_TOKEN, TELEGRAM_BOT_TOKEN
+docker compose up -d --build
+```
+
+The container uses the SDK-native `CLAUDE_CODE_OAUTH_TOKEN` env var — Anthropic's official headless auth path. No Keychain mounts, no `~/.claude` bind, no separate API billing.
+
+Docker is intended for Linux servers only. On macOS, run `pnpm dev` directly.
+
 ## Common Commands
 
 ```bash
@@ -339,6 +358,9 @@ Before adding powerful tools to an agent, verify:
 │   └── example/                 # Example agent workspace
 ├── config.yml                   # Gateway/channel/runtime defaults
 ├── docs/                        # Public guide
+├── Dockerfile                   # Multi-stage Linux server image
+├── docker-compose.yml           # gateway + ui services
+├── DOCKER.md                    # Linux server deployment guide
 ├── src/                         # Gateway, runtime, tools, channels, memory
 │   ├── agent/
 │   ├── channels/
