@@ -11,6 +11,7 @@ import {
   Clock,
   Copy,
   Database,
+  Download,
   DollarSign,
   FileText,
   GitBranch,
@@ -3027,6 +3028,7 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
             ) : entries.map((entry) => (
               <MemoryEntryRow
                 key={entry.id}
+                serverId={serverId}
                 entry={entry}
                 saving={savingId === entry.id}
                 onApprove={() => updateReview(entry.id, "approved")}
@@ -3092,7 +3094,11 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
                   No recorded memory influence yet.
                 </div>
               ) : influence.map((event) => (
-                <MemoryInfluenceRow key={event.id ?? `${event.source}-${event.timestamp}`} event={event} />
+                <MemoryInfluenceRow
+                  key={event.id ?? `${event.source}-${event.timestamp}`}
+                  serverId={serverId}
+                  event={event}
+                />
               ))}
             </div>
           </div>
@@ -3103,11 +3109,13 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
 }
 
 function MemoryEntryRow({
+  serverId,
   entry,
   saving,
   onApprove,
   onReject,
 }: {
+  serverId: string;
   entry: MemoryEntryRecord;
   saving: boolean;
   onApprove: () => void;
@@ -3128,7 +3136,12 @@ function MemoryEntryRow({
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
             <span>{entry.source}</span>
             <span>{formatRuntimeTime(entry.updatedAt)}</span>
-            {entry.provenance.runId && <span>run {shortRuntimeId(entry.provenance.runId, 10)}</span>}
+            {entry.provenance.runId && (
+              <span className="inline-flex items-center gap-1">
+                run {shortRuntimeId(entry.provenance.runId, 10)}
+                <RuntimeDiagnosticsLink serverId={serverId} runId={entry.provenance.runId} />
+              </span>
+            )}
             {entry.provenance.sessionKey && <span>{shortRuntimeId(entry.provenance.sessionKey, 28)}</span>}
           </div>
           {entry.reviewNote && (
@@ -3177,7 +3190,7 @@ function MemoryDoctorMetric({ label, value }: { label: string; value: number }) 
   );
 }
 
-function MemoryInfluenceRow({ event }: { event: MemoryInfluenceEvent }) {
+function MemoryInfluenceRow({ serverId, event }: { serverId: string; event: MemoryInfluenceEvent }) {
   const firstRef = event.refs[0];
   return (
     <div className="px-3.5 py-3">
@@ -3185,11 +3198,14 @@ function MemoryInfluenceRow({ event }: { event: MemoryInfluenceEvent }) {
         <span className="rounded px-1.5 py-px text-[10px]" style={memoryInfluenceStyle(event.source)}>
           {event.source}
         </span>
-        {event.timestamp && (
-          <span className="text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
-            {formatRuntimeTime(event.timestamp)}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {event.runId && <RuntimeDiagnosticsLink serverId={serverId} runId={event.runId} />}
+          {event.timestamp && (
+            <span className="text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+              {formatRuntimeTime(event.timestamp)}
+            </span>
+          )}
+        </div>
       </div>
       <div className="mt-2 truncate text-[11.5px]" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
         {firstRef ? `${firstRef.path}${firstRef.startLine !== undefined ? `#L${firstRef.startLine}` : ""}` : "No refs"}
@@ -3461,12 +3477,15 @@ function RunRow({
             {decision && <RuntimePill tone="done">{decision.outcome}</RuntimePill>}
           </div>
         </div>
-        <Link href={`/fleet/${serverId}/chat/${agentId}`} className="shrink-0">
-          <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
-            <MessageSquare className="h-3 w-3" />
-            Chat
-          </Button>
-        </Link>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <RuntimeDiagnosticsLink serverId={serverId} runId={run.runId} />
+          <Link href={`/fleet/${serverId}/chat/${agentId}`} className="shrink-0">
+            <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
+              <MessageSquare className="h-3 w-3" />
+              Chat
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-2 text-[10.5px] sm:grid-cols-4">
@@ -3592,6 +3611,34 @@ function RuntimeMeta({ label, value, title }: { label: string; value: string; ti
         {value}
       </div>
     </div>
+  );
+}
+
+function runtimeDiagnosticsUrl(serverId: string, runId: string): string {
+  const params = new URLSearchParams({
+    includeLogs: "true",
+    runId,
+    diagnosticEventLimit: "300",
+    routeDecisionLimit: "25",
+  });
+  return `/api/fleet/${serverId}/diagnostics/export?${params.toString()}`;
+}
+
+function RuntimeDiagnosticsLink({ serverId, runId }: { serverId: string; runId: string }) {
+  return (
+    <a
+      href={runtimeDiagnosticsUrl(serverId, runId)}
+      download={`anthroclaw-run-${runId}-diagnostics.json`}
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] border"
+      style={{
+        borderColor: "var(--oc-border)",
+        color: "var(--oc-text-muted)",
+        background: "var(--oc-bg2)",
+      }}
+      title="Download diagnostics for this run"
+    >
+      <Download className="h-3.5 w-3.5" />
+    </a>
   );
 }
 
