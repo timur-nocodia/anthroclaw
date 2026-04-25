@@ -45,6 +45,7 @@ interface CapabilityDefinition {
   costModel?: string;
   requiredConfig?: string[];
   permissionDefaults?: IntegrationPermissionDefaults;
+  reviewRequired?: boolean;
   isConfigured?: (config: GlobalConfig, env: NodeJS.ProcessEnv) => boolean;
   isRequested?: (agent: AgentConfigCarrier) => boolean;
 }
@@ -103,6 +104,7 @@ const TOOL_DEFINITIONS: CapabilityDefinition[] = [
       allowedMcpTools: ['local_note_propose'],
       notes: ['Writes proposed notes under notes/review/ and keeps them pending until operator approval.'],
     },
+    reviewRequired: true,
   },
   {
     id: 'channels.messaging',
@@ -315,6 +317,7 @@ export function buildIntegrationCapabilityMatrix(
       selected,
       configSnippet: buildCapabilityConfigSnippet(definition.toolNames, definition.permissionDefaults, true),
       reason: capabilityReason(definition, status, requested, selected),
+      reviewRequired: definition.reviewRequired,
     };
   });
 
@@ -359,6 +362,7 @@ function buildExternalMcpPresetCapabilities(agents: AgentConfigCarrier[]): Integ
       enabledForAgents,
       configSnippet: buildExternalPresetConfigSnippet(preset, configuredToolNames),
       reason: externalPresetReason(preset, status, missingEnv),
+      reviewRequired: preset.id === 'google.gmail',
     };
   });
 }

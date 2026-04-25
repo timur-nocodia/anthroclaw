@@ -140,6 +140,7 @@ describe('integration capability matrix', () => {
       provider: 'anthroclaw-notes',
       status: 'available',
       risk: 'medium',
+      reviewRequired: true,
       toolNames: ['local_note_propose'],
       enabledForAgents: ['researcher'],
       permissionDefaults: {
@@ -169,6 +170,7 @@ describe('integration capability matrix', () => {
       provider: 'gmail',
       status: 'disabled',
       risk: 'high',
+      reviewRequired: true,
       toolNames: ['gmail_search', 'gmail_thread_summary', 'gmail_draft_reply'],
       enabledForAgents: [],
     });

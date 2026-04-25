@@ -109,6 +109,7 @@ interface IntegrationCapability {
   enabledForAgents: string[];
   selected?: boolean;
   configSnippet?: string;
+  reviewRequired?: boolean;
   reason?: string;
 }
 
@@ -1051,6 +1052,7 @@ function CapabilityRow({ capability }: { capability: IntegrationCapability }) {
           <StatusPill status={capability.status} />
           <RiskPill risk={capability.risk} />
           {capability.selected && <StatusPill status="available" label="selected" />}
+          {capability.reviewRequired && <StatusPill status="missing_config" label="review gated" />}
         </div>
         <div className="mt-2 truncate text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
           {capability.id}
