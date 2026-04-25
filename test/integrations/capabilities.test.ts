@@ -91,9 +91,12 @@ describe('integration capability matrix', () => {
       provider: 'assemblyai',
       toolNames: [],
       enabledForAgents: [],
+      selected: true,
+      reason: 'Provider is selected for inbound media transcription by current STT config.',
     });
     expect(matrix.capabilities.find((capability) => capability.id === 'stt.openai')).toMatchObject({
       status: 'available',
+      selected: false,
       requiredConfig: ['stt.openai.api_key or OPENAI_API_KEY'],
       permissionDefaults: {
         defaultBehavior: 'deny',
@@ -106,6 +109,31 @@ describe('integration capability matrix', () => {
     });
     expect(JSON.stringify(matrix)).not.toContain('assembly-key');
     expect(JSON.stringify(matrix)).not.toContain('openai-key');
+  });
+
+  it('marks an explicitly selected STT provider in the capability matrix', () => {
+    const matrix = buildIntegrationCapabilityMatrix(
+      {
+        ...baseConfig(),
+        assemblyai: { api_key: 'assembly-key' },
+        stt: {
+          provider: 'openai',
+          openai: { api_key: 'openai-key' },
+        },
+      },
+      [],
+      {},
+    );
+
+    expect(matrix.capabilities.find((capability) => capability.id === 'stt.assemblyai')).toMatchObject({
+      status: 'available',
+      selected: false,
+    });
+    expect(matrix.capabilities.find((capability) => capability.id === 'stt.openai')).toMatchObject({
+      status: 'available',
+      selected: true,
+      reason: 'Provider is selected for inbound media transcription by current STT config.',
+    });
   });
 
   it('does not recommend high-risk mutation tools by default', () => {

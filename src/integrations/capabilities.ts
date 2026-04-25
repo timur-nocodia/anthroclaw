@@ -1,5 +1,6 @@
 import type { Agent } from '../agent/agent.js';
 import type { AgentYml, GlobalConfig } from '../config/schema.js';
+import { resolveSttTranscriptionConfig } from '../media/transcribe.js';
 
 export type IntegrationCapabilityStatus = 'available' | 'missing_config' | 'disabled' | 'error';
 export type IntegrationCapabilityRisk = 'low' | 'medium' | 'high';
@@ -16,6 +17,7 @@ export interface IntegrationCapability {
   requiredConfig?: string[];
   permissionDefaults?: IntegrationPermissionDefaults;
   enabledForAgents: string[];
+  selected?: boolean;
   reason?: string;
 }
 
@@ -217,6 +219,7 @@ export function buildIntegrationCapabilityMatrix(
   env: NodeJS.ProcessEnv = process.env,
   now = Date.now(),
 ): IntegrationCapabilityMatrix {
+  const selectedSttProvider = resolveSttTranscriptionConfig(config, env)?.provider;
   const builtinCapabilities = [...TOOL_DEFINITIONS, ...STT_DEFINITIONS].map((definition) => {
     const enabledForAgents = agents
       .filter((agent) => isCapabilityRequested(definition, agent))
@@ -225,6 +228,9 @@ export function buildIntegrationCapabilityMatrix(
     const configured = definition.isConfigured ? definition.isConfigured(config, env) : true;
     const requested = definition.kind === 'stt_provider' || enabledForAgents.length > 0;
     const status = resolveCapabilityStatus(definition, requested, configured);
+    const selected = definition.kind === 'stt_provider'
+      && definition.provider === selectedSttProvider
+      && status === 'available';
 
     return {
       id: definition.id,
@@ -237,7 +243,8 @@ export function buildIntegrationCapabilityMatrix(
       requiredConfig: definition.requiredConfig ? [...definition.requiredConfig] : undefined,
       permissionDefaults: clonePermissionDefaults(definition.permissionDefaults),
       enabledForAgents,
-      reason: capabilityReason(definition, status, requested),
+      selected,
+      reason: capabilityReason(definition, status, requested, selected),
     };
   });
 
@@ -327,10 +334,14 @@ function capabilityReason(
   definition: CapabilityDefinition,
   status: IntegrationCapabilityStatus,
   requested: boolean,
+  selected = false,
 ): string | undefined {
   if (status === 'disabled') return 'No loaded agent currently enables this capability.';
   if (status === 'missing_config') {
     return `Missing required configuration: ${(definition.requiredConfig ?? []).join(', ')}`;
+  }
+  if (selected) {
+    return 'Provider is selected for inbound media transcription by current STT config.';
   }
   if (definition.kind === 'stt_provider' && requested) {
     return 'Provider can transcribe inbound media before SDK query execution.';

@@ -105,6 +105,7 @@ interface IntegrationCapability {
     notes: string[];
   };
   enabledForAgents: string[];
+  selected?: boolean;
   reason?: string;
 }
 
@@ -928,6 +929,7 @@ function CapabilityRow({ capability }: { capability: IntegrationCapability }) {
         <div className="flex min-w-0 items-center gap-2">
           <StatusPill status={capability.status} />
           <RiskPill risk={capability.risk} />
+          {capability.selected && <StatusPill status="available" label="selected" />}
         </div>
         <div className="mt-2 truncate text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
           {capability.id}
@@ -1008,7 +1010,7 @@ function McpServerPanel({ server }: { server: McpPreflightServer }) {
   );
 }
 
-function StatusPill({ status }: { status: CapabilityStatus }) {
+function StatusPill({ status, label }: { status: CapabilityStatus; label?: string }) {
   const color = status === "available"
     ? "var(--oc-green)"
     : status === "missing_config"
@@ -1020,7 +1022,7 @@ function StatusPill({ status }: { status: CapabilityStatus }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-[4px] border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.4px]" style={{ borderColor: "var(--oc-border-mid)", color, background: "var(--oc-bg2)" }}>
       <Icon className="h-3 w-3" />
-      {status.replace("_", " ")}
+      {(label ?? status).replace("_", " ")}
     </span>
   );
 }
