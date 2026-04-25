@@ -193,6 +193,33 @@ interface ActiveRunView {
   };
 }
 
+interface FileOwnershipClaim {
+  claimId: string;
+  sessionKey: string;
+  runId: string;
+  subagentId: string;
+  path: string;
+  mode: "read" | "write";
+  claimedAt: number;
+  expiresAt: number;
+}
+
+interface FileOwnershipConflict {
+  conflictId: string;
+  sessionKey: string;
+  path: string;
+  requested: FileOwnershipClaim;
+  existing: FileOwnershipClaim;
+  action: "allow" | "deny";
+  reason: string;
+  createdAt: number;
+}
+
+interface FileOwnershipView {
+  claims: FileOwnershipClaim[];
+  conflicts: FileOwnershipConflict[];
+}
+
 /* ------------------------------------------------------------------ */
 /*  Main                                                               */
 /* ------------------------------------------------------------------ */
@@ -234,6 +261,8 @@ export default function ChatPage() {
   const [subagentsLoading, setSubagentsLoading] = useState(false);
   const [activeRuns, setActiveRuns] = useState<ActiveRunView[]>([]);
   const [activeRunsLoading, setActiveRunsLoading] = useState(false);
+  const [fileOwnership, setFileOwnership] = useState<FileOwnershipView>({ claims: [], conflicts: [] });
+  const [fileOwnershipLoading, setFileOwnershipLoading] = useState(false);
   const [hookEvents, setHookEvents] = useState<HookEventView[]>([]);
   const [rewindNotice, setRewindNotice] = useState<string | null>(null);
   const [channel, setChannel] = useState("web");
@@ -414,16 +443,39 @@ export default function ChatPage() {
     void loadActiveRuns();
   }, [loadActiveRuns]);
 
+  const loadFileOwnership = useCallback(async () => {
+    setFileOwnershipLoading(true);
+    try {
+      const query = new URLSearchParams({ limit: "20" });
+      const sessionKey = selectedSession?.provenance?.sessionKey;
+      if (sessionKey) query.set("sessionKey", sessionKey);
+      const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/file-ownership?${query.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setFileOwnership({
+        claims: Array.isArray(data.claims) ? data.claims as FileOwnershipClaim[] : [],
+        conflicts: Array.isArray(data.conflicts) ? data.conflicts as FileOwnershipConflict[] : [],
+      });
+    } finally {
+      setFileOwnershipLoading(false);
+    }
+  }, [selected, selectedSession?.provenance?.sessionKey, serverId]);
+
+  useEffect(() => {
+    void loadFileOwnership();
+  }, [loadFileOwnership]);
+
   useEffect(() => {
     if (!streaming) return;
     const id = window.setInterval(() => {
       void loadSubagentRuns();
       void loadActiveRuns();
+      void loadFileOwnership();
       void loadSessionDetails();
       void loadRouteDecision();
     }, 1500);
     return () => window.clearInterval(id);
-  }, [loadActiveRuns, loadRouteDecision, loadSessionDetails, loadSubagentRuns, streaming]);
+  }, [loadActiveRuns, loadFileOwnership, loadRouteDecision, loadSessionDetails, loadSubagentRuns, streaming]);
 
   // Auto-scroll
   useEffect(() => {
@@ -527,6 +579,7 @@ export default function ChatPage() {
               void loadSessions();
               void loadSubagentRuns();
               void loadActiveRuns();
+              void loadFileOwnership();
               void loadSessionDetails();
               void loadRouteDecision();
               continue;
@@ -755,6 +808,17 @@ export default function ChatPage() {
     );
     if (res.ok || res.status === 409) {
       await loadSubagentRuns();
+    }
+  };
+
+  const mutateFileOwnershipClaim = async (claimId: string, action: "release" | "override") => {
+    const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/file-ownership`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claimId, action }),
+    });
+    if (res.ok || res.status === 404) {
+      await loadFileOwnership();
     }
   };
 
@@ -1072,15 +1136,19 @@ export default function ChatPage() {
           hookEvents={hookEvents}
           runs={subagentRuns}
           activeRuns={activeRuns}
+          fileOwnership={fileOwnership}
           loading={subagentsLoading}
           activeRunsLoading={activeRunsLoading}
+          fileOwnershipLoading={fileOwnershipLoading}
           onRefresh={() => {
             void loadSessionDetails();
             void loadRouteDecision();
             void loadSubagentRuns();
             void loadActiveRuns();
+            void loadFileOwnership();
           }}
           onInterrupt={interruptSubagentRun}
+          onMutateFileOwnership={mutateFileOwnershipClaim}
         />
       </div>
 
@@ -1203,10 +1271,13 @@ function SubagentRunsPanel({
   hookEvents,
   runs,
   activeRuns,
+  fileOwnership,
   loading,
   activeRunsLoading,
+  fileOwnershipLoading,
   onRefresh,
   onInterrupt,
+  onMutateFileOwnership,
 }: {
   selectedSession?: AgentSession;
   session: SessionDetails | null;
@@ -1216,10 +1287,13 @@ function SubagentRunsPanel({
   hookEvents: HookEventView[];
   runs: SubagentRun[];
   activeRuns: ActiveRunView[];
+  fileOwnership: FileOwnershipView;
   loading: boolean;
   activeRunsLoading: boolean;
+  fileOwnershipLoading: boolean;
   onRefresh: () => void | Promise<void>;
   onInterrupt: (runId: string) => void | Promise<void>;
+  onMutateFileOwnership: (claimId: string, action: "release" | "override") => void | Promise<void>;
 }) {
   const running = runs.filter((run) => run.status === "running").length;
   const activeTaskCount = activeRuns.reduce((sum, run) => sum + run.activeTaskIds.length, 0);
@@ -1271,6 +1345,11 @@ function SubagentRunsPanel({
           labels={selectedSession?.labels ?? []}
         />
         <ActiveRunsCard runs={activeRuns} loading={activeRunsLoading} activeTaskCount={activeTaskCount} />
+        <FileOwnershipCard
+          view={fileOwnership}
+          loading={fileOwnershipLoading}
+          onMutate={onMutateFileOwnership}
+        />
         <RouteDecisionCard
           selectedSession={selectedSession}
           decision={routeDecision}
@@ -1393,6 +1472,135 @@ function ActiveRunsCard({
               </div>
             );
           })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function FileOwnershipCard({
+  view,
+  loading,
+  onMutate,
+}: {
+  view: FileOwnershipView;
+  loading: boolean;
+  onMutate: (claimId: string, action: "release" | "override") => void | Promise<void>;
+}) {
+  const conflicts = view.conflicts;
+  const claims = view.claims;
+
+  return (
+    <section
+      className="rounded-lg border p-2.5"
+      style={{
+        background: "var(--oc-bg2)",
+        borderColor: conflicts.length > 0 ? "rgba(250,204,21,0.35)" : "var(--oc-border)",
+      }}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <FileText className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--oc-accent)" }} />
+          <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>
+            File ownership
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <SubagentPill tone={conflicts.length > 0 ? "running" : "default"}>
+            {loading ? "loading" : `${claims.length} claims`}
+          </SubagentPill>
+          {conflicts.length > 0 && <SubagentPill tone="running">{conflicts.length} conflicts</SubagentPill>}
+        </div>
+      </div>
+
+      {claims.length === 0 && conflicts.length === 0 ? (
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+          No active file claims or subagent write conflicts for this agent.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {conflicts.slice(0, 3).map((conflict) => (
+            <div
+              key={conflict.conflictId}
+              className="rounded border px-2 py-1.5"
+              style={{ background: "var(--oc-bg1)", borderColor: "rgba(250,204,21,0.28)" }}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div
+                    className="truncate text-[10.5px]"
+                    style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                    title={conflict.path}
+                  >
+                    {shortId(conflict.path, 28)}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    <SubagentPill tone={conflict.action === "deny" ? "running" : "default"}>
+                      {conflict.action}
+                    </SubagentPill>
+                    <SubagentPill title={conflict.requested.subagentId}>
+                      req {shortId(conflict.requested.subagentId, 10)}
+                    </SubagentPill>
+                    <SubagentPill title={conflict.existing.subagentId}>
+                      owner {shortId(conflict.existing.subagentId, 10)}
+                    </SubagentPill>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 shrink-0 px-2 text-[11px]"
+                  onClick={() => void onMutate(conflict.existing.claimId, "override")}
+                  title="Release the existing owner claim so the requesting subagent can retry."
+                >
+                  Override
+                </Button>
+              </div>
+              <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+                {conflict.reason}
+              </p>
+            </div>
+          ))}
+
+          {claims.slice(0, 4).map((claim) => (
+            <div
+              key={claim.claimId}
+              className="rounded border px-2 py-1.5"
+              style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div
+                    className="truncate text-[10.5px]"
+                    style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                    title={claim.path}
+                  >
+                    {shortId(claim.path, 28)}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    <SubagentPill tone={claim.mode === "write" ? "running" : "default"}>
+                      {claim.mode}
+                    </SubagentPill>
+                    <SubagentPill title={claim.subagentId}>{shortId(claim.subagentId, 12)}</SubagentPill>
+                    <SubagentPill title={claim.runId}>{shortId(claim.runId, 10)}</SubagentPill>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 shrink-0 px-2 text-[11px]"
+                  onClick={() => void onMutate(claim.claimId, "release")}
+                  title="Release this active file ownership claim."
+                >
+                  Release
+                </Button>
+              </div>
+              <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-[10.5px]">
+                <SubagentMeta label="claimed" value={formatTime(claim.claimedAt)} />
+                <SubagentMeta label="expires" value={formatTime(claim.expiresAt)} />
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </section>
