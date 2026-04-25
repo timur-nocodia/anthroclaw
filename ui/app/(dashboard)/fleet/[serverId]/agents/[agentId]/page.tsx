@@ -2922,14 +2922,14 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
     void loadMemory();
   }, [loadMemory]);
 
-  const updateReview = async (entryId: string, reviewStatus: MemoryReviewStatus) => {
+  const updateReview = async (entryId: string, reviewStatus: MemoryReviewStatus, reviewNote?: string) => {
     setSavingId(entryId);
     setError(null);
     try {
       const res = await fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entryId, reviewStatus }),
+        body: JSON.stringify({ entryId, reviewStatus, reviewNote }),
       });
       if (!res.ok) throw new Error(`review ${res.status}`);
       await loadMemory();
@@ -2938,6 +2938,14 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
     } finally {
       setSavingId(null);
     }
+  };
+
+  const reviewEntry = (entryId: string, reviewStatus: MemoryReviewStatus) => {
+    const note = window.prompt(
+      reviewStatus === "approved" ? "Approval note (optional)" : "Rejection reason (optional)",
+    );
+    if (note === null) return;
+    void updateReview(entryId, reviewStatus, note?.trim() || undefined);
   };
 
   return (
@@ -3031,8 +3039,8 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
                 serverId={serverId}
                 entry={entry}
                 saving={savingId === entry.id}
-                onApprove={() => updateReview(entry.id, "approved")}
-                onReject={() => updateReview(entry.id, "rejected")}
+                onApprove={() => reviewEntry(entry.id, "approved")}
+                onReject={() => reviewEntry(entry.id, "rejected")}
               />
             ))}
           </div>
