@@ -698,6 +698,9 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
   const [preflight, setPreflight] = useState<McpPreflightResponse | null>(null);
   const [audit, setAudit] = useState<IntegrationAuditResponse | null>(null);
   const [webhookDeliveries, setWebhookDeliveries] = useState<DirectWebhookDeliveryResponse | null>(null);
+  const [auditProviderFilter, setAuditProviderFilter] = useState("all");
+  const [auditCapabilityFilter, setAuditCapabilityFilter] = useState("all");
+  const [auditStatusFilter, setAuditStatusFilter] = useState<"all" | "started" | "completed" | "failed">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -708,10 +711,15 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
       setLoading(true);
       setError("");
       try {
+        const auditParams = new URLSearchParams({ limit: "12" });
+        if (auditProviderFilter !== "all") auditParams.set("provider", auditProviderFilter);
+        if (auditCapabilityFilter !== "all") auditParams.set("capabilityId", auditCapabilityFilter);
+        if (auditStatusFilter !== "all") auditParams.set("status", auditStatusFilter);
+
         const [capabilityRes, preflightRes, auditRes, webhookRes] = await Promise.all([
           fetch(`/api/fleet/${serverId}/integrations/capabilities`),
           fetch(`/api/fleet/${serverId}/integrations/mcp-preflight`),
-          fetch(`/api/fleet/${serverId}/integrations/audit?limit=12`),
+          fetch(`/api/fleet/${serverId}/integrations/audit?${auditParams.toString()}`),
           fetch(`/api/fleet/${serverId}/webhooks?limit=12`),
         ]);
         if (!capabilityRes.ok || !preflightRes.ok || !auditRes.ok || !webhookRes.ok) {
@@ -738,7 +746,7 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
 
     void load();
     return () => { cancelled = true; };
-  }, [serverId]);
+  }, [serverId, auditProviderFilter, auditCapabilityFilter, auditStatusFilter]);
 
   const caps = capabilities?.capabilities ?? [];
   const servers = preflight?.servers ?? [];
@@ -748,6 +756,8 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
   const missing = caps.filter((capability) => capability.status === "missing_config").length;
   const review = servers.filter((server) => server.approvalStatus !== "approved").length;
   const deliveryFailures = deliveries.filter((delivery) => !delivery.delivered).length;
+  const providerOptions = uniqueSorted(caps.map((capability) => capability.provider));
+  const capabilityOptions = uniqueSorted(caps.map((capability) => capability.id));
 
   return (
     <div className="flex max-w-[1040px] flex-col gap-5">
@@ -819,7 +829,29 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
           <Divider />
 
           <div>
-            <SectionHead title="Recent audit" desc="SDK hook events for integration and MCP tool calls." />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <SectionHead title="Recent audit" desc="SDK hook events for integration and MCP tool calls." />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <AuditSelect
+                  label="Provider"
+                  value={auditProviderFilter}
+                  onChange={setAuditProviderFilter}
+                  options={providerOptions}
+                />
+                <AuditSelect
+                  label="Capability"
+                  value={auditCapabilityFilter}
+                  onChange={setAuditCapabilityFilter}
+                  options={capabilityOptions}
+                />
+                <AuditSelect
+                  label="Status"
+                  value={auditStatusFilter}
+                  onChange={(value) => setAuditStatusFilter(value as typeof auditStatusFilter)}
+                  options={["started", "completed", "failed"]}
+                />
+              </div>
+            </div>
             <div className="mt-3 overflow-hidden rounded-md border" style={{ borderColor: "var(--oc-border)" }}>
               {auditEvents.length === 0 ? (
                 <EmptyPanel text="No integration tool calls recorded yet." />
@@ -850,6 +882,44 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
         </>
       )}
     </div>
+  );
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function AuditSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}) {
+  return (
+    <label className="min-w-[130px] text-[10px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+      {label}
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 h-8 w-full rounded-md border px-2 text-[11px] outline-none"
+        style={{
+          background: "var(--oc-bg1)",
+          borderColor: "var(--oc-border)",
+          color: "var(--color-foreground)",
+          fontFamily: "var(--oc-mono)",
+        }}
+      >
+        <option value="all">all</option>
+        {options.map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 
