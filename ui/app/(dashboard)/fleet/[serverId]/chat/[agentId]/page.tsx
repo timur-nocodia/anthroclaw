@@ -194,6 +194,19 @@ interface ActiveRunView {
   };
 }
 
+interface InterruptRecord {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  runId?: string;
+  sessionKey?: string;
+  sdkSessionId?: string;
+  targetId: string;
+  requestedBy?: string;
+  result: "interrupted" | "failed";
+  reason?: string;
+}
+
 interface FileOwnershipClaim {
   claimId: string;
   sessionKey: string;
@@ -268,6 +281,8 @@ export default function ChatPage() {
   const [subagentsLoading, setSubagentsLoading] = useState(false);
   const [activeRuns, setActiveRuns] = useState<ActiveRunView[]>([]);
   const [activeRunsLoading, setActiveRunsLoading] = useState(false);
+  const [interrupts, setInterrupts] = useState<InterruptRecord[]>([]);
+  const [interruptsLoading, setInterruptsLoading] = useState(false);
   const [fileOwnership, setFileOwnership] = useState<FileOwnershipView>({ claims: [], conflicts: [] });
   const [fileOwnershipLoading, setFileOwnershipLoading] = useState(false);
   const [hookEvents, setHookEvents] = useState<HookEventView[]>([]);
@@ -468,6 +483,29 @@ export default function ChatPage() {
     void loadActiveRuns();
   }, [loadActiveRuns]);
 
+  const loadInterrupts = useCallback(async () => {
+    setInterruptsLoading(true);
+    try {
+      const query = new URLSearchParams({ limit: "8" });
+      const runId = selectedSession?.provenance?.runId;
+      if (runId) {
+        query.set("runId", runId);
+      } else if (sessionId) {
+        query.set("targetId", sessionId);
+      }
+      const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/interrupts?${query.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setInterrupts(Array.isArray(data.interrupts) ? data.interrupts as InterruptRecord[] : []);
+    } finally {
+      setInterruptsLoading(false);
+    }
+  }, [selected, selectedSession?.provenance?.runId, serverId, sessionId]);
+
+  useEffect(() => {
+    void loadInterrupts();
+  }, [loadInterrupts]);
+
   const loadFileOwnership = useCallback(async () => {
     setFileOwnershipLoading(true);
     try {
@@ -496,11 +534,12 @@ export default function ChatPage() {
       void loadSubagentRuns();
       void loadActiveRuns();
       void loadFileOwnership();
+      void loadInterrupts();
       void loadSessionDetails();
       void loadRouteDecision();
     }, 1500);
     return () => window.clearInterval(id);
-  }, [loadActiveRuns, loadFileOwnership, loadRouteDecision, loadSessionDetails, loadSubagentRuns, streaming]);
+  }, [loadActiveRuns, loadFileOwnership, loadInterrupts, loadRouteDecision, loadSessionDetails, loadSubagentRuns, streaming]);
 
   // Auto-scroll
   useEffect(() => {
@@ -875,6 +914,7 @@ export default function ChatPage() {
         { method: "POST" },
       ).catch(() => {});
       void loadActiveRuns();
+      void loadInterrupts();
     }
     if (abortRef.current) {
       abortRef.current.abort();
@@ -1281,15 +1321,18 @@ export default function ChatPage() {
           hookEvents={hookEvents}
           runs={subagentRuns}
           activeRuns={activeRuns}
+          interrupts={interrupts}
           fileOwnership={fileOwnership}
           loading={subagentsLoading}
           activeRunsLoading={activeRunsLoading}
+          interruptsLoading={interruptsLoading}
           fileOwnershipLoading={fileOwnershipLoading}
           onRefresh={() => {
             void loadSessionDetails();
             void loadRouteDecision();
             void loadSubagentRuns();
             void loadActiveRuns();
+            void loadInterrupts();
             void loadFileOwnership();
           }}
           onInterrupt={interruptSubagentRun}
@@ -1416,9 +1459,11 @@ function SubagentRunsPanel({
   hookEvents,
   runs,
   activeRuns,
+  interrupts,
   fileOwnership,
   loading,
   activeRunsLoading,
+  interruptsLoading,
   fileOwnershipLoading,
   onRefresh,
   onInterrupt,
@@ -1432,9 +1477,11 @@ function SubagentRunsPanel({
   hookEvents: HookEventView[];
   runs: SubagentRun[];
   activeRuns: ActiveRunView[];
+  interrupts: InterruptRecord[];
   fileOwnership: FileOwnershipView;
   loading: boolean;
   activeRunsLoading: boolean;
+  interruptsLoading: boolean;
   fileOwnershipLoading: boolean;
   onRefresh: () => void | Promise<void>;
   onInterrupt: (runId: string) => void | Promise<void>;
@@ -1490,6 +1537,7 @@ function SubagentRunsPanel({
           labels={selectedSession?.labels ?? []}
         />
         <ActiveRunsCard runs={activeRuns} loading={activeRunsLoading} activeTaskCount={activeTaskCount} />
+        <InterruptsCard interrupts={interrupts} loading={interruptsLoading} />
         <FileOwnershipCard
           view={fileOwnership}
           loading={fileOwnershipLoading}
@@ -1617,6 +1665,78 @@ function ActiveRunsCard({
               </div>
             );
           })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function InterruptsCard({
+  interrupts,
+  loading,
+}: {
+  interrupts: InterruptRecord[];
+  loading: boolean;
+}) {
+  return (
+    <section
+      className="rounded-lg border p-2.5"
+      style={{
+        background: "var(--oc-bg2)",
+        borderColor: interrupts.some((item) => item.result === "failed") ? "var(--oc-red)" : "var(--oc-border)",
+      }}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Pause className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--oc-accent)" }} />
+          <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>
+            Interrupt requests
+          </span>
+        </div>
+        <SubagentPill tone={loading ? "running" : interrupts.length > 0 ? "running" : "default"}>
+          {loading ? "loading" : `${interrupts.length} recent`}
+        </SubagentPill>
+      </div>
+
+      {interrupts.length === 0 ? (
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+          No interrupt request is recorded for this selected run.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {interrupts.slice(0, 5).map((item) => (
+            <div
+              key={`${item.id ?? item.timestamp}:${item.targetId}`}
+              className="rounded border px-2 py-1.5"
+              style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className="truncate text-[10.5px]"
+                  style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  title={item.targetId}
+                >
+                  {shortId(item.targetId, 18)}
+                </span>
+                <SubagentPill tone={item.result === "interrupted" ? "done" : "error"}>
+                  {item.result}
+                </SubagentPill>
+              </div>
+              <div className="mt-1 grid grid-cols-2 gap-1.5 text-[10.5px]">
+                <SubagentMeta label="by" value={item.requestedBy ?? "unknown"} />
+                <SubagentMeta label="time" value={item.timestamp ? formatTime(item.timestamp) : "unknown"} />
+                {item.runId && <SubagentMeta label="run" value={shortId(item.runId, 10)} title={item.runId} />}
+                {item.sdkSessionId && (
+                  <SubagentMeta label="sdk" value={shortId(item.sdkSessionId, 10)} title={item.sdkSessionId} />
+                )}
+              </div>
+              {item.reason && (
+                <p className="mt-1 line-clamp-2 text-[10.5px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+                  {item.reason}
+                </p>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </section>
@@ -2128,12 +2248,14 @@ function SubagentPill({
 }: {
   children: ReactNode;
   title?: string;
-  tone?: "default" | "running" | "done";
+  tone?: "default" | "running" | "done" | "error";
 }) {
   const color = tone === "running"
     ? "var(--oc-yellow)"
     : tone === "done"
       ? "var(--oc-green)"
+      : tone === "error"
+        ? "var(--oc-red)"
       : "var(--oc-text-muted)";
 
   return (

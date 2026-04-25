@@ -60,6 +60,13 @@ describe('Gateway interruptAgentRun', () => {
       requestedBy: 'web',
       result: 'interrupted',
     }]);
+    expect(gw.listAgentInterrupts({ agentId: 'agent', runId: 'run-1' })).toMatchObject([{
+      agentId: 'agent',
+      runId: 'run-1',
+      targetId: 'run-1',
+      requestedBy: 'web',
+      result: 'interrupted',
+    }]);
   });
 
   it('records a failed interrupt without an active control handle', async () => {

@@ -37,6 +37,7 @@ import type {
   StoredDirectWebhookDelivery,
   StoredFileOwnershipEvent,
   StoredIntegrationAuditEvent,
+  StoredInterruptRecord,
   StoredMemoryInfluenceEvent,
   StoredMemoryInfluenceRef,
   StoredMemoryInfluenceSource,
@@ -1146,6 +1147,19 @@ export class Gateway {
     offset?: number;
   } = {}): StoredAgentRunRecord[] {
     return metrics.listAgentRuns(params);
+  }
+
+  listAgentInterrupts(params: {
+    agentId?: string;
+    runId?: string;
+    targetId?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredInterruptRecord[] {
+    if (params.agentId && !this.agents.has(params.agentId)) {
+      throw new Error(`Agent "${params.agentId}" not found`);
+    }
+    return metrics.listInterrupts(params);
   }
 
   listActiveAgentRuns(agentId?: string): ActiveAgentRunView[] {
