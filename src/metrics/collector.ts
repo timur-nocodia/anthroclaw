@@ -252,6 +252,7 @@ class MetricsCollector {
   listIntegrationAuditEvents(params: {
     agentId?: string;
     sessionKey?: string;
+    runId?: string;
     provider?: string;
     capabilityId?: string;
     toolName?: string;

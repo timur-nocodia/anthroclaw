@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
       events: gw.listIntegrationAuditEvents({
         agentId: url.searchParams.get('agentId') ?? undefined,
         sessionKey: url.searchParams.get('sessionKey') ?? undefined,
+        runId: url.searchParams.get('runId') ?? undefined,
         provider: url.searchParams.get('provider') ?? undefined,
         capabilityId: url.searchParams.get('capabilityId') ?? undefined,
         toolName: url.searchParams.get('toolName') ?? undefined,

@@ -141,6 +141,7 @@ interface IntegrationAuditEvent {
   timestamp?: number;
   agentId?: string;
   sessionKey?: string;
+  runId?: string;
   sdkSessionId?: string;
   toolName: string;
   provider: string;
@@ -983,6 +984,7 @@ function AuditEventRow({ event }: { event: IntegrationAuditEvent }) {
         <MetaLabel>Scope</MetaLabel>
         <TokenList values={[
           event.agentId ? `agent:${event.agentId}` : "agent:unknown",
+          event.runId ? `run:${event.runId}` : "run:unknown",
           event.sdkSessionId ? `sdk:${event.sdkSessionId}` : "sdk:unknown",
         ]} />
       </div>

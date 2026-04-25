@@ -833,6 +833,7 @@ export class Gateway {
   listIntegrationAuditEvents(params: {
     agentId?: string;
     sessionKey?: string;
+    runId?: string;
     provider?: string;
     capabilityId?: string;
     toolName?: string;
@@ -3398,11 +3399,16 @@ export class Gateway {
     if (!toolName) return;
     const classification = classifyIntegrationToolName(toolName);
     if (!classification) return;
+    const sdkSessionId = typeof payload.sdkSessionId === 'string' ? payload.sdkSessionId : undefined;
+    const runningRun = sdkSessionId
+      ? metrics.listAgentRuns({ agentId, sdkSessionId, status: 'running', limit: 1 })[0]
+      : undefined;
 
     metrics.recordIntegrationAuditEvent({
       agentId,
-      sessionKey: typeof payload.sessionKey === 'string' ? payload.sessionKey : undefined,
-      sdkSessionId: typeof payload.sdkSessionId === 'string' ? payload.sdkSessionId : undefined,
+      sessionKey: runningRun?.sessionKey ?? (typeof payload.sessionKey === 'string' ? payload.sessionKey : undefined),
+      runId: runningRun?.runId,
+      sdkSessionId,
       toolName,
       provider: classification.provider,
       capabilityId: classification.capabilityId,

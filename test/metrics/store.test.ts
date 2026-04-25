@@ -129,6 +129,17 @@ describe('MetricsStore', () => {
         durationMs: 123,
       },
     });
+    store.recordIntegrationAuditEvent({
+      timestamp: now + 124,
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      sdkSessionId: 'session-1',
+      toolName: 'mcp__agent-tools__local_note_search',
+      provider: 'anthroclaw-notes',
+      capabilityId: 'notes.local',
+      status: 'completed',
+    });
     store.recordRouteDecision({
       id: 'route-1',
       timestamp: now,
@@ -271,6 +282,16 @@ describe('MetricsStore', () => {
       peerId: 'peer-1',
       threadId: 'topic-1',
       messageId: 'msg-1',
+    }]);
+    expect(store.listIntegrationAuditEvents({ runId: 'run-1' })).toMatchObject([{
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      sdkSessionId: 'session-1',
+      toolName: 'mcp__agent-tools__local_note_search',
+      provider: 'anthroclaw-notes',
+      capabilityId: 'notes.local',
+      status: 'completed',
     }]);
 
     const report = store.usageReport(30);

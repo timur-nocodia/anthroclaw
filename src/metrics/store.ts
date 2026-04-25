@@ -17,6 +17,7 @@ export interface StoredIntegrationAuditEvent {
   timestamp?: number;
   agentId?: string;
   sessionKey?: string;
+  runId?: string;
   sdkSessionId?: string;
   toolName: string;
   provider: string;
@@ -386,6 +387,7 @@ export class MetricsStore {
         ts INTEGER NOT NULL,
         agent_id TEXT,
         session_key TEXT,
+        run_id TEXT,
         sdk_session_id TEXT,
         tool_name TEXT NOT NULL,
         provider TEXT NOT NULL,
@@ -420,6 +422,16 @@ export class MetricsStore {
         refs_json TEXT NOT NULL
       );
 
+    `);
+
+    // Legacy-column migrations must run before index creation so that
+    // upgrading an older DB doesn't fail on indexes that reference columns
+    // added later (e.g. agent_runs.trace_id).
+    this.ensureColumn('agent_runs', 'route_decision_id', 'TEXT');
+    this.ensureColumn('agent_runs', 'trace_id', 'TEXT NOT NULL DEFAULT ""');
+    this.ensureColumn('integration_audit_events', 'run_id', 'TEXT');
+
+    this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_counter_events_name_ts ON counter_events(name, ts);
       CREATE INDEX IF NOT EXISTS idx_query_duration_events_ts ON query_duration_events(ts);
       CREATE INDEX IF NOT EXISTS idx_token_events_ts ON token_events(ts);
@@ -450,8 +462,6 @@ export class MetricsStore {
       CREATE INDEX IF NOT EXISTS idx_memory_influence_run_ts ON memory_influence_events(run_id, ts);
       CREATE INDEX IF NOT EXISTS idx_memory_influence_session_ts ON memory_influence_events(session_key, ts);
     `);
-    this.ensureColumn('agent_runs', 'route_decision_id', 'TEXT');
-    this.ensureColumn('agent_runs', 'trace_id', 'TEXT NOT NULL DEFAULT ""');
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -520,13 +530,14 @@ export class MetricsStore {
   recordIntegrationAuditEvent(event: StoredIntegrationAuditEvent): void {
     this.db.prepare(`
       INSERT INTO integration_audit_events(
-        ts, agent_id, session_key, sdk_session_id, tool_name, provider, capability_id, status, reason
+        ts, agent_id, session_key, run_id, sdk_session_id, tool_name, provider, capability_id, status, reason
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       event.timestamp ?? Date.now(),
       event.agentId ?? null,
       event.sessionKey ?? null,
+      event.runId ?? null,
       event.sdkSessionId ?? null,
       event.toolName,
       event.provider,
@@ -997,6 +1008,7 @@ export class MetricsStore {
   listIntegrationAuditEvents(params: {
     agentId?: string;
     sessionKey?: string;
+    runId?: string;
     provider?: string;
     capabilityId?: string;
     toolName?: string;
@@ -1013,6 +1025,10 @@ export class MetricsStore {
     if (params.sessionKey) {
       clauses.push('session_key = ?');
       values.push(params.sessionKey);
+    }
+    if (params.runId) {
+      clauses.push('run_id = ?');
+      values.push(params.runId);
     }
     if (params.provider) {
       clauses.push('provider = ?');
@@ -1426,6 +1442,7 @@ interface IntegrationAuditEventRow {
   ts: number;
   agent_id: string | null;
   session_key: string | null;
+  run_id: string | null;
   sdk_session_id: string | null;
   tool_name: string;
   provider: string;
@@ -1554,6 +1571,7 @@ function parseIntegrationAuditEventRow(row: IntegrationAuditEventRow): StoredInt
     timestamp: row.ts,
     agentId: row.agent_id ?? undefined,
     sessionKey: row.session_key ?? undefined,
+    runId: row.run_id ?? undefined,
     sdkSessionId: row.sdk_session_id ?? undefined,
     toolName: row.tool_name,
     provider: row.provider,

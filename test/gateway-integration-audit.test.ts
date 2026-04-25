@@ -13,6 +13,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
 
 import { Gateway } from '../src/gateway.js';
 import type { GlobalConfig } from '../src/config/schema.js';
+import { metrics } from '../src/metrics/collector.js';
 
 function minimalConfig(): GlobalConfig {
   return {
@@ -58,6 +59,16 @@ mcp_tools:
 
     const gw = new Gateway();
     await gw.start(minimalConfig(), agentsDir, dataDir);
+    metrics.recordAgentRunStart({
+      runId: 'run-1',
+      traceId: 'trace-1',
+      agentId: 'main-agent',
+      sessionKey: 'web:main-agent:session-1',
+      sdkSessionId: 'sdk-session-1',
+      source: 'web',
+      channel: 'web',
+      status: 'running',
+    });
 
     const emitter = gw._hookEmitters.get('main-agent')!;
     await emitter.emit('on_tool_use', {
@@ -76,6 +87,8 @@ mcp_tools:
     expect(gw.listIntegrationAuditEvents({ provider: 'brave' })).toMatchObject([
       {
         agentId: 'main-agent',
+        sessionKey: 'web:main-agent:session-1',
+        runId: 'run-1',
         sdkSessionId: 'sdk-session-1',
         toolName: 'mcp__main-agent-tools__web_search_brave',
         provider: 'brave',
