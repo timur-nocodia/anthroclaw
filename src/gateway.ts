@@ -1316,6 +1316,17 @@ export class Gateway {
     return { sessionId: resolvedSessionId, labels: saved };
   }
 
+  async setAgentSessionTitle(agentId: string, sessionId: string, title: string): Promise<{ sessionId: string; title: string }> {
+    const agent = this.agents.get(agentId);
+    if (!agent) throw new Error(`Agent "${agentId}" not found`);
+    if (!this.sdkSessionService) throw new Error('SDK session service is not initialized');
+
+    const resolvedSessionId = this.resolveAgentSessionId(agent, agentId, sessionId) ?? sessionId;
+    await this.sdkSessionService.setAgentSessionTitle(agent, resolvedSessionId, title);
+    const saved = await this.sdkSessionService.getAgentSessionTitle(agent, resolvedSessionId).catch(() => title.trim());
+    return { sessionId: resolvedSessionId, title: saved ?? title.trim() };
+  }
+
   async deleteAgentSession(agentId: string, sessionId: string): Promise<void> {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent "${agentId}" not found`);

@@ -29,6 +29,7 @@ describe('Gateway session mailbox filters', () => {
         started: 1_000,
       }],
     });
+    const titles = new Map<string, string>([['s1', 'Deploy Alpha']]);
     (gw as any).sdkSessionService = {
       listAgentSessions: async (_agent: unknown, params: { limit?: number; offset?: number } = {}) => {
         const rows = [
@@ -39,13 +40,14 @@ describe('Gateway session mailbox filters', () => {
         const end = params.limit ? start + params.limit : undefined;
         return rows.slice(start, end);
       },
-      getAgentSessionTitle: async (_agent: unknown, sessionId: string) => (
-        sessionId === 's1' ? 'Deploy Alpha' : undefined
-      ),
+      getAgentSessionTitle: async (_agent: unknown, sessionId: string) => titles.get(sessionId),
       getAgentSessionLabels: async (_agent: unknown, sessionId: string) => (
         sessionId === 's1' ? ['prod', 'release'] : ['incident']
       ),
       setAgentSessionLabels: async (_agent: unknown, _sessionId: string, labels: string[]) => labels,
+      setAgentSessionTitle: async (_agent: unknown, sessionId: string, title: string) => {
+        titles.set(sessionId, title.trim());
+      },
       getAgentSessionMessages: async (_agent: unknown, sessionId: string) => (
         sessionId === 's1'
           ? [
@@ -138,6 +140,13 @@ describe('Gateway session mailbox filters', () => {
     await expect(gw.setAgentSessionLabels('agent', 's1', ['prod', 'release'])).resolves.toEqual({
       sessionId: 's1',
       labels: ['prod', 'release'],
+    });
+  });
+
+  it('updates session title through sidecar metadata', async () => {
+    await expect(gw.setAgentSessionTitle('agent', 's1', 'Renamed Alpha')).resolves.toEqual({
+      sessionId: 's1',
+      title: 'Renamed Alpha',
     });
   });
 });

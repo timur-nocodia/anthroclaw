@@ -858,6 +858,32 @@ export default function ChatPage() {
     await loadSessions();
   };
 
+  const renameCurrentSession = async () => {
+    if (!sessionId || streaming) return;
+    const current = selectedSession?.summary ?? selectedSession?.customTitle ?? "";
+    const title = window.prompt("Session title", current);
+    if (title === null) return;
+
+    const res = await fetch(
+      `/api/fleet/${serverId}/agents/${selected}/sessions/${encodeURIComponent(sessionId)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      },
+    );
+    if (!res.ok) return;
+
+    const data = await res.json();
+    const savedTitle = typeof data.title === "string" ? data.title : title.trim();
+    setSessions((items) => items.map((item) => (
+      item.sessionId === (data.sessionId ?? sessionId)
+        ? { ...item, summary: savedTitle, customTitle: savedTitle }
+        : item
+    )));
+    await loadSessions();
+  };
+
   const updateCurrentSessionLabels = async () => {
     if (!sessionId || streaming) return;
     const current = selectedSession?.labels ?? [];
@@ -1237,6 +1263,10 @@ export default function ChatPage() {
           </Button>
           <Button variant="outline" size="sm" onClick={clearSessionFilters} disabled={sessionsLoading}>
             Clear
+          </Button>
+          <Button variant="outline" size="sm" onClick={renameCurrentSession} disabled={streaming || !sessionId}>
+            <FileText className="h-3.5 w-3.5" />
+            Rename
           </Button>
           <Button variant="outline" size="sm" onClick={updateCurrentSessionLabels} disabled={streaming || !sessionId}>
             <Tags className="h-3.5 w-3.5" />
