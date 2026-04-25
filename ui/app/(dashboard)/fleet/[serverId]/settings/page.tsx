@@ -37,6 +37,15 @@ interface GatewayInfo {
   agents?: number | string[];
   activeSessions?: number;
   sessions?: number;
+  sdkActiveInput?: SdkActiveInputStatus;
+}
+
+interface SdkActiveInputStatus {
+  streamInputAvailable: boolean;
+  unstableSessionApiAvailable: boolean;
+  nativeSteerEnabled: boolean;
+  fallbackMode: "interrupt_and_restart";
+  reason: string;
 }
 
 interface MetricsResponse {
@@ -1096,6 +1105,14 @@ function SkeletonMetric() {
 
 function AdvancedSection({ serverId }: { serverId: string }) {
   const diagnosticsUrl = `/api/fleet/${serverId}/diagnostics/export?includeLogs=true&runLimit=50&routeDecisionLimit=50&diagnosticEventLimit=200`;
+  const [activeInput, setActiveInput] = useState<SdkActiveInputStatus | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/fleet/${serverId}/gateway/status`)
+      .then((r) => r.json())
+      .then((data: GatewayInfo) => setActiveInput(data.sdkActiveInput ?? null))
+      .catch(() => setActiveInput(null));
+  }, [serverId]);
 
   return (
     <div className="flex max-w-[720px] flex-col gap-4">
@@ -1114,6 +1131,31 @@ function AdvancedSection({ serverId }: { serverId: string }) {
         <RuntimeRow label="Retry/fallback" value="Delegated to native SDK behavior" />
         <RuntimeRow label="OpenAI usage" value="Embeddings for memory only" />
         <RuntimeRow label="Agent tools" value="SDK-native MCP servers and tool() definitions" />
+      </div>
+      <Divider />
+      <SectionHead
+        title="Active input"
+        desc="Current SDK-native steer decision for active runs."
+      />
+      <div
+        className="flex flex-col gap-2 rounded-md border px-3.5 py-3"
+        style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
+      >
+        <RuntimeRow
+          label="Native steer"
+          value={activeInput?.nativeSteerEnabled ? "enabled" : "disabled"}
+        />
+        <RuntimeRow
+          label="SDK stream input"
+          value={activeInput?.streamInputAvailable ? "available" : "unavailable"}
+        />
+        <RuntimeRow
+          label="Fallback mode"
+          value={activeInput?.fallbackMode ?? "interrupt_and_restart"}
+        />
+        <div className="pt-1 text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+          {activeInput?.reason ?? "Active input status is unavailable from this gateway."}
+        </div>
       </div>
       <Divider />
       <SectionHead
