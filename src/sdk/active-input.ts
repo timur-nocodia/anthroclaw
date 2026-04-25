@@ -16,6 +16,10 @@ export interface SdkActiveInputStatus {
 }
 
 export function getSdkActiveInputStatus(featureFlagEnabled = false): SdkActiveInputStatus {
+  const reason = featureFlagEnabled
+    ? 'features.sdk_active_input is enabled, but native active-run steer remains disabled: AnthroClaw does not keep a tested writable SDK Query handle for active runs. Supported delivery is interrupt-and-restart.'
+    : 'SDK streamInput is present, but native active-run steer is disabled until a dedicated SDK proof keeps a tested writable Query handle. Supported delivery is interrupt-and-restart.';
+
   return {
     streamInputAvailable: true,
     unstableSessionApiAvailable: true,
@@ -24,9 +28,7 @@ export function getSdkActiveInputStatus(featureFlagEnabled = false): SdkActiveIn
     fallbackMode: 'interrupt_and_restart',
     steerDeliveryState: 'fallback_interrupt_restart',
     uiDeliveryStates: ['fallback_interrupt_restart', 'unsupported'],
-    reason: featureFlagEnabled
-      ? 'features.sdk_active_input is enabled, but AnthroClaw has not promoted a tested writable active-input handle. queue_mode=steer still falls back to interrupt-and-restart.'
-      : 'SDK streamInput and unstable session APIs exist, but features.sdk_active_input is disabled and AnthroClaw does not yet keep a tested writable active-input handle. queue_mode=steer falls back to interrupt-and-restart.',
+    reason,
   };
 }
 

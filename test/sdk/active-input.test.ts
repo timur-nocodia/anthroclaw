@@ -28,7 +28,8 @@ describe('sdk active input', () => {
       fallbackMode: 'interrupt_and_restart',
       steerDeliveryState: 'fallback_interrupt_restart',
     });
-    expect(status.reason).toContain('still falls back to interrupt-and-restart');
+    expect(status.reason).toContain('native active-run steer remains disabled');
+    expect(status.reason).toContain('Supported delivery is interrupt-and-restart');
   });
 
   it('returns interrupt-and-restart delivery from the fallback controller', async () => {
