@@ -3312,13 +3312,16 @@ export class Gateway {
         }),
         emitter.subscribe('on_tool_use', (payload) => {
           this.recordIntegrationAuditPayload(agent.id, 'started', payload);
+          this.recordSubagentToolEventPayload(agent.id, 'started', payload);
         }),
         emitter.subscribe('on_tool_result', (payload) => {
           this.recordIntegrationAuditPayload(agent.id, 'completed', payload);
+          this.recordSubagentToolEventPayload(agent.id, 'completed', payload);
           this.recordMemorySearchInfluencePayload(agent.id, payload);
         }),
         emitter.subscribe('on_tool_error', (payload) => {
           this.recordIntegrationAuditPayload(agent.id, 'failed', payload);
+          this.recordSubagentToolEventPayload(agent.id, 'failed', payload);
         }),
       ];
 
@@ -3423,6 +3426,25 @@ export class Gateway {
       capabilityId: classification.capabilityId,
       status,
       reason: typeof payload.error === 'string' ? payload.error : undefined,
+    });
+  }
+
+  private recordSubagentToolEventPayload(
+    agentId: string,
+    status: 'started' | 'completed' | 'failed',
+    payload: Record<string, unknown>,
+  ): void {
+    const parentSessionId = typeof payload.sdkSessionId === 'string' ? payload.sdkSessionId : undefined;
+    const subagentId = typeof payload.sdkAgentId === 'string' ? payload.sdkAgentId : undefined;
+    const toolName = typeof payload.toolName === 'string' ? payload.toolName : undefined;
+    if (!parentSessionId || !subagentId || !toolName || subagentId === agentId) return;
+
+    this.subagentRegistry.recordToolEvent({
+      agentId,
+      parentSessionId,
+      subagentId,
+      toolName,
+      status,
     });
   }
 

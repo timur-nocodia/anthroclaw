@@ -167,6 +167,15 @@ interface SubagentRun {
     conflictMode: "soft" | "strict";
     description?: string;
   };
+  toolSummary?: {
+    started: number;
+    completed: number;
+    failed: number;
+    toolNames: string[];
+    lastToolName?: string;
+    lastStatus?: "started" | "completed" | "failed";
+    lastAt?: number;
+  };
 }
 
 interface HookEventView {
@@ -2285,6 +2294,9 @@ function SubagentRunCard({
   const isRunning = run.status === "running";
   const elapsedMs = (run.finishedAt ?? Date.now()) - run.startedAt;
   const canInterrupt = Boolean(run.interruptSupported && isRunning);
+  const observedTools = run.toolSummary
+    ? run.toolSummary.started + run.toolSummary.completed + run.toolSummary.failed
+    : 0;
 
   return (
     <div
@@ -2349,7 +2361,34 @@ function SubagentRunCard({
         {run.policy && (
           <SubagentMeta label="conflict" value={run.policy.conflictMode} />
         )}
+        {run.toolSummary && observedTools > 0 && (
+          <>
+            <SubagentMeta
+              label="tools"
+              value={`${run.toolSummary.started}/${run.toolSummary.completed}/${run.toolSummary.failed}`}
+              title="started/completed/failed"
+            />
+            {run.toolSummary.lastToolName && (
+              <SubagentMeta
+                label="last tool"
+                value={shortId(run.toolSummary.lastToolName, 18)}
+                title={`${run.toolSummary.lastStatus ?? "observed"} ${run.toolSummary.lastToolName}${run.toolSummary.lastAt ? ` at ${formatTime(run.toolSummary.lastAt)}` : ""}`}
+              />
+            )}
+          </>
+        )}
       </div>
+
+      {run.toolSummary && run.toolSummary.toolNames.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {run.toolSummary.toolNames.slice(0, 6).map((toolName) => (
+            <SubagentPill key={toolName} title={toolName}>{shortId(toolName, 18)}</SubagentPill>
+          ))}
+          {run.toolSummary.toolNames.length > 6 && (
+            <SubagentPill>+{run.toolSummary.toolNames.length - 6} tools</SubagentPill>
+          )}
+        </div>
+      )}
 
       {run.policy?.description && (
         <p className="mt-2 line-clamp-2 text-[10.5px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>

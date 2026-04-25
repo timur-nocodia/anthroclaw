@@ -540,6 +540,23 @@ routes:
       subagentType: 'research',
     });
 
+    await emitter!.emit('on_tool_use', {
+      sdkSessionId: 'sdk-session-1',
+      sdkAgentId: 'helper',
+      toolName: 'Read',
+    });
+    await emitter!.emit('on_tool_result', {
+      sdkSessionId: 'sdk-session-1',
+      sdkAgentId: 'helper',
+      toolName: 'Read',
+    });
+    await emitter!.emit('on_tool_error', {
+      sdkSessionId: 'sdk-session-1',
+      sdkAgentId: 'helper',
+      toolName: 'Bash',
+      error: 'failed',
+    });
+
     await emitter!.emit('on_subagent_stop', {
       source: 'claude-agent-sdk',
       agentId: 'main-agent',
@@ -564,6 +581,14 @@ routes:
       parentTranscriptPath: '/tmp/parent.jsonl',
       subagentTranscriptPath: '/tmp/subagent.jsonl',
       lastAssistantMessage: 'Finished task',
+      toolSummary: {
+        started: 1,
+        completed: 1,
+        failed: 1,
+        toolNames: ['Bash', 'Read'],
+        lastToolName: 'Bash',
+        lastStatus: 'failed',
+      },
     });
 
     const detail = gw.getAgentSubagentRun('main-agent', runs[0].runId);
