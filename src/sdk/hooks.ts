@@ -4,6 +4,8 @@ import type {
   HookEvent as SdkHookEvent,
   HookInput,
   Options,
+  ElicitationHookInput,
+  ElicitationResultHookInput,
   PermissionRequestHookInput,
   PostToolUseFailureHookInput,
   PostToolUseHookInput,
@@ -137,6 +139,33 @@ function createBridgeHook(agentId: string, emitter: HookEmitter): HookCallback {
         break;
       }
 
+      case 'Elicitation': {
+        const elicitationInput = input as ElicitationHookInput;
+        await emitHook(emitter, 'on_elicitation', {
+          ...base,
+          mcpServerName: elicitationInput.mcp_server_name,
+          message: truncateString(elicitationInput.message),
+          mode: elicitationInput.mode,
+          url: elicitationInput.url ? truncateString(elicitationInput.url) : undefined,
+          elicitationId: elicitationInput.elicitation_id,
+          requestedSchema: toHookSafeValue(elicitationInput.requested_schema),
+        });
+        break;
+      }
+
+      case 'ElicitationResult': {
+        const elicitationInput = input as ElicitationResultHookInput;
+        await emitHook(emitter, 'on_elicitation_result', {
+          ...base,
+          mcpServerName: elicitationInput.mcp_server_name,
+          elicitationId: elicitationInput.elicitation_id,
+          mode: elicitationInput.mode,
+          action: elicitationInput.action,
+          content: toHookSafeValue(elicitationInput.content),
+        });
+        break;
+      }
+
       case 'Notification':
         await emitHook(emitter, 'on_sdk_notification', {
           ...base,
@@ -187,6 +216,8 @@ export function buildSdkHookBridge(params: SdkHookBridgeParams): SdkHooks | unde
     PostToolUse: [matcher],
     PostToolUseFailure: [matcher],
     PermissionRequest: [matcher],
+    Elicitation: [matcher],
+    ElicitationResult: [matcher],
     Notification: [matcher],
     SubagentStart: [matcher],
     SubagentStop: [matcher],

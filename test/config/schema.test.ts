@@ -441,16 +441,16 @@ describe('AgentYmlSchema', () => {
           timeout_ms: 1000,
         },
         {
-          event: 'on_subagent_stop',
+          event: 'on_elicitation',
           action: 'script',
-          command: 'echo "$HOOK_SUBAGENTID"',
+          command: 'echo "$HOOK_MCPSERVERNAME"',
           timeout_ms: 1000,
         },
       ],
     });
 
     expect(result.hooks![0].event).toBe('on_memory_write');
-    expect(result.hooks![1].event).toBe('on_subagent_stop');
+    expect(result.hooks![1].event).toBe('on_elicitation');
   });
 
   it('rejects invalid session_policy', () => {

@@ -97,6 +97,49 @@ describe('SDK hook bridge', () => {
     }));
   });
 
+  it('emits MCP elicitation events for OAuth and form requests', async () => {
+    const emitter = makeEmitter();
+    const hooks = buildSdkHookBridge({ agentId: 'bot-a', emitter })!;
+
+    await hooks.Elicitation![0].hooks[0]({
+      hook_event_name: 'Elicitation',
+      session_id: 'session-1',
+      transcript_path: '/tmp/transcript.jsonl',
+      cwd: '/tmp/workspace',
+      mcp_server_name: 'calendar',
+      message: 'Open this URL to authorize Google Calendar.',
+      mode: 'url',
+      url: 'https://accounts.google.com/oauth',
+      elicitation_id: 'elicit-1',
+    }, undefined, hookOptions);
+
+    await hooks.ElicitationResult![0].hooks[0]({
+      hook_event_name: 'ElicitationResult',
+      session_id: 'session-1',
+      transcript_path: '/tmp/transcript.jsonl',
+      cwd: '/tmp/workspace',
+      mcp_server_name: 'calendar',
+      mode: 'url',
+      elicitation_id: 'elicit-1',
+      action: 'accept',
+      content: { code: 'redacted' },
+    }, undefined, hookOptions);
+
+    expect(emitter.emit).toHaveBeenNthCalledWith(1, 'on_elicitation', expect.objectContaining({
+      mcpServerName: 'calendar',
+      message: 'Open this URL to authorize Google Calendar.',
+      mode: 'url',
+      url: 'https://accounts.google.com/oauth',
+      elicitationId: 'elicit-1',
+    }));
+    expect(emitter.emit).toHaveBeenNthCalledWith(2, 'on_elicitation_result', expect.objectContaining({
+      mcpServerName: 'calendar',
+      elicitationId: 'elicit-1',
+      action: 'accept',
+      content: { code: 'redacted' },
+    }));
+  });
+
   it('merges SDK hook sets by event', () => {
     const firstHook = vi.fn(async () => ({}));
     const secondHook = vi.fn(async () => ({}));

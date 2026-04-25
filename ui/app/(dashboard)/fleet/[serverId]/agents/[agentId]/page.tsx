@@ -225,6 +225,8 @@ const HOOK_EVENTS = [
   "on_tool_result",
   "on_tool_error",
   "on_permission_request",
+  "on_elicitation",
+  "on_elicitation_result",
   "on_sdk_notification",
   "on_subagent_start",
   "on_subagent_stop",
