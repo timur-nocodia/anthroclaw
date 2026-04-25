@@ -125,6 +125,15 @@ describe('Gateway session mailbox filters', () => {
     ]);
   });
 
+  it('filters by modification range', async () => {
+    await expect(gw.listAgentSessions('agent', { modifiedAfter: 1_500 })).resolves.toMatchObject([
+      { sessionId: 's1' },
+    ]);
+    await expect(gw.listAgentSessions('agent', { modifiedBefore: 1_500 })).resolves.toMatchObject([
+      { sessionId: 's2' },
+    ]);
+  });
+
   it('updates session labels through sidecar metadata', async () => {
     await expect(gw.setAgentSessionLabels('agent', 's1', ['prod', 'release'])).resolves.toEqual({
       sessionId: 's1',

@@ -273,6 +273,9 @@ export default function ChatPage() {
   const [sessionActiveFilter, setSessionActiveFilter] = useState<"all" | "active" | "inactive">("all");
   const [sessionChannelFilter, setSessionChannelFilter] = useState("");
   const [sessionErrorsOnly, setSessionErrorsOnly] = useState(false);
+  const [sessionRouteDecisionOnly, setSessionRouteDecisionOnly] = useState(false);
+  const [sessionModifiedAfterFilter, setSessionModifiedAfterFilter] = useState("");
+  const [sessionModifiedBeforeFilter, setSessionModifiedBeforeFilter] = useState("");
   const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
   const [sessionDetailsLoading, setSessionDetailsLoading] = useState(false);
   const [routeDecision, setRouteDecision] = useState<RouteDecision | null>(null);
@@ -352,6 +355,15 @@ export default function ChatPage() {
       if (sessionActiveFilter !== "all") query.set("active", sessionActiveFilter);
       if (channelFilter) query.set("channel", channelFilter);
       if (sessionErrorsOnly) query.set("hasErrors", "true");
+      if (sessionRouteDecisionOnly) query.set("hasRouteDecision", "true");
+      if (sessionModifiedAfterFilter) {
+        const modifiedAfter = new Date(`${sessionModifiedAfterFilter}T00:00:00`).getTime();
+        if (Number.isFinite(modifiedAfter)) query.set("modifiedAfter", String(modifiedAfter));
+      }
+      if (sessionModifiedBeforeFilter) {
+        const modifiedBefore = new Date(`${sessionModifiedBeforeFilter}T23:59:59.999`).getTime();
+        if (Number.isFinite(modifiedBefore)) query.set("modifiedBefore", String(modifiedBefore));
+      }
       const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/sessions?${query.toString()}`);
       if (!res.ok) return;
       const data = await res.json();
@@ -366,6 +378,9 @@ export default function ChatPage() {
     sessionChannelFilter,
     sessionErrorsOnly,
     sessionLabelFilter,
+    sessionModifiedAfterFilter,
+    sessionModifiedBeforeFilter,
+    sessionRouteDecisionOnly,
     sessionSearchFilter,
     sessionSourceFilter,
     sessionStatusFilter,
@@ -883,6 +898,9 @@ export default function ChatPage() {
     setSessionActiveFilter("all");
     setSessionChannelFilter("");
     setSessionErrorsOnly(false);
+    setSessionRouteDecisionOnly(false);
+    setSessionModifiedAfterFilter("");
+    setSessionModifiedBeforeFilter("");
   };
 
   const interruptSubagentRun = async (runId: string) => {
@@ -1173,6 +1191,46 @@ export default function ChatPage() {
               />
               errors
             </label>
+            <label
+              className="flex h-7 items-center gap-1 rounded border px-1.5 text-[11px]"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={sessionRouteDecisionOnly}
+                onChange={(e) => setSessionRouteDecisionOnly(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              routed
+            </label>
+            <input
+              type="date"
+              value={sessionModifiedAfterFilter}
+              onChange={(e) => setSessionModifiedAfterFilter(e.target.value)}
+              className="h-7 w-[118px] rounded border px-1.5 text-[11px] outline-none"
+              title="Modified after"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            />
+            <input
+              type="date"
+              value={sessionModifiedBeforeFilter}
+              onChange={(e) => setSessionModifiedBeforeFilter(e.target.value)}
+              className="h-7 w-[118px] rounded border px-1.5 text-[11px] outline-none"
+              title="Modified before"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            />
           </div>
           <Button variant="outline" size="sm" onClick={loadSessions} disabled={sessionsLoading}>
             <History className="h-3.5 w-3.5" />
