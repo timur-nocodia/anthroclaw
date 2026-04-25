@@ -92,6 +92,19 @@ const TOOL_DEFINITIONS: CapabilityDefinition[] = [
     },
   },
   {
+    id: 'notes.proposals',
+    kind: 'mcp_tool',
+    provider: 'anthroclaw-notes',
+    toolNames: ['local_note_propose'],
+    risk: 'medium',
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      allowMcp: true,
+      allowedMcpTools: ['local_note_propose'],
+      notes: ['Writes proposed notes under notes/review/ and keeps them pending until operator approval.'],
+    },
+  },
+  {
     id: 'channels.messaging',
     kind: 'mcp_tool',
     provider: 'anthroclaw-channels',

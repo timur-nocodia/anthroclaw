@@ -122,6 +122,34 @@ describe('integration capability matrix', () => {
     });
   });
 
+  it('reports local note proposals as a review-gated write integration', () => {
+    const matrix = buildIntegrationCapabilityMatrix(
+      baseConfig(),
+      [{
+        id: 'researcher',
+        config: {
+          routes: [{ channel: 'telegram', scope: 'dm' }],
+          timezone: 'UTC',
+          mcp_tools: ['local_note_propose'],
+        },
+      }],
+      {},
+    );
+
+    expect(matrix.capabilities.find((capability) => capability.id === 'notes.proposals')).toMatchObject({
+      provider: 'anthroclaw-notes',
+      status: 'available',
+      risk: 'medium',
+      toolNames: ['local_note_propose'],
+      enabledForAgents: ['researcher'],
+      permissionDefaults: {
+        defaultBehavior: 'deny',
+        allowMcp: true,
+        allowedMcpTools: ['local_note_propose'],
+      },
+    });
+  });
+
   it('shows calendar and gmail MCP presets before they are configured', () => {
     const matrix = buildIntegrationCapabilityMatrix(baseConfig(), [], {});
 

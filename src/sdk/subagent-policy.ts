@@ -8,7 +8,7 @@ const WRITE_CAPABLE_TOOLS = new Set([
   'Bash',
 ]);
 
-const WRITE_CAPABLE_MCP_NAME = /(^|_)(write|edit|delete|remove|create|update|upload|send|manage|mutate)(_|$)/i;
+const WRITE_CAPABLE_MCP_NAME = /(^|_)(write|edit|delete|remove|create|update|upload|send|manage|mutate|propose)(_|$)/i;
 
 export interface ResolvedSubagentPolicy {
   subagentId: string;

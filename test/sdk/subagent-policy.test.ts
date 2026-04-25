@@ -37,6 +37,7 @@ describe('subagent policy', () => {
       'Bash',
       'mcp__helper-subagent-tools__memory_search',
       'mcp__helper-subagent-tools__memory_write',
+      'mcp__helper-subagent-tools__local_note_propose',
     ];
 
     expect(filterSubagentTools(tools, { writePolicy: 'deny' })).toEqual([

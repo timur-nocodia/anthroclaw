@@ -18,6 +18,11 @@ describe('integration audit classification', () => {
       provider: 'anthroclaw-notes',
       localToolName: 'local_note_search',
     });
+    expect(classifyIntegrationToolName('mcp__helper-tools__local_note_propose')).toEqual({
+      capabilityId: 'notes.proposals',
+      provider: 'anthroclaw-notes',
+      localToolName: 'local_note_propose',
+    });
   });
 
   it('ignores non-integration SDK tools', () => {

@@ -26,7 +26,7 @@ export interface SearchResult {
 export type MemoryReviewStatus = 'pending' | 'approved' | 'rejected';
 
 export interface MemoryProvenance {
-  source?: 'memory_write' | 'memory_wiki' | 'dreaming' | 'index' | 'import' | 'post_run_candidate';
+  source?: 'memory_write' | 'memory_wiki' | 'dreaming' | 'index' | 'import' | 'post_run_candidate' | 'local_note_proposal';
   reviewStatus?: MemoryReviewStatus;
   runId?: string;
   traceId?: string;
@@ -162,9 +162,6 @@ export class MemoryStore implements MemoryProvider {
         indexed_at INTEGER NOT NULL
       );
 
-      CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);
-      CREATE INDEX IF NOT EXISTS idx_chunks_entry ON chunks(entry_id);
-
       CREATE TABLE IF NOT EXISTS memory_entries (
         id TEXT PRIMARY KEY,
         path TEXT NOT NULL UNIQUE,
@@ -176,10 +173,6 @@ export class MemoryStore implements MemoryProvider {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
-
-      CREATE INDEX IF NOT EXISTS idx_memory_entries_path ON memory_entries(path);
-      CREATE INDEX IF NOT EXISTS idx_memory_entries_source_updated ON memory_entries(source, updated_at);
-      CREATE INDEX IF NOT EXISTS idx_memory_entries_review_updated ON memory_entries(review_status, updated_at);
 
       CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
         text,
@@ -202,7 +195,18 @@ export class MemoryStore implements MemoryProvider {
       END;
     `);
 
+    // Legacy-column migration must run before index creation so indexes that
+    // reference columns added later (chunks.entry_id) don't fail on old DBs.
     this.ensureColumn('chunks', 'entry_id', 'TEXT');
+
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);
+      CREATE INDEX IF NOT EXISTS idx_chunks_entry ON chunks(entry_id);
+      CREATE INDEX IF NOT EXISTS idx_memory_entries_path ON memory_entries(path);
+      CREATE INDEX IF NOT EXISTS idx_memory_entries_source_updated ON memory_entries(source, updated_at);
+      CREATE INDEX IF NOT EXISTS idx_memory_entries_review_updated ON memory_entries(review_status, updated_at);
+    `);
+
     this.stmtDeleteByPath = this.db.prepare('DELETE FROM chunks WHERE path = ?');
     this.stmtInsertChunk = this.db.prepare(`
       INSERT INTO chunks (id, entry_id, path, start_line, end_line, text, content_hash, indexed_at)

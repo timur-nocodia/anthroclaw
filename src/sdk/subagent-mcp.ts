@@ -11,6 +11,7 @@ import { createMemoryWikiTool } from '../agent/tools/memory-wiki.js';
 import { createMemoryWriteTool } from '../agent/tools/memory-write.js';
 import { createSessionSearchTool } from '../agent/tools/session-search.js';
 import { createLocalNoteSearchTool } from '../agent/tools/local-note-search.js';
+import { createLocalNoteProposeTool } from '../agent/tools/local-note-propose.js';
 import type { ToolDefinition } from '../agent/tools/types.js';
 import { createBraveSearchTool, createExaSearchTool } from '../agent/tools/web-search.js';
 import type { GlobalConfig } from '../config/schema.js';
@@ -23,6 +24,7 @@ const PORTABLE_SUBAGENT_MCP_TOOLS = new Set([
   'memory_search',
   'session_search',
   'local_note_search',
+  'local_note_propose',
   'memory_write',
   'memory_wiki',
   'list_skills',
@@ -205,6 +207,9 @@ export function createPortableSubagentTools(runtime: PortableSubagentMcpRuntime)
         break;
       case 'local_note_search':
         tools.push(createLocalNoteSearchTool(runtime.workspacePath));
+        break;
+      case 'local_note_propose':
+        tools.push(createLocalNoteProposeTool(runtime.workspacePath, getMemoryStore()));
         break;
       case 'memory_write':
         tools.push(createMemoryWriteTool(runtime.workspacePath, getMemoryStore(), runtime.timezone));
