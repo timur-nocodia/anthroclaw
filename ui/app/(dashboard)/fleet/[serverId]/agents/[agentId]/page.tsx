@@ -915,7 +915,21 @@ function ConfigTab({
   const enableMcpTools = (tools: string[]) => {
     const current = new Set(cfg.mcp_tools);
     for (const tool of tools) current.add(tool);
-    update({ mcp_tools: [...current] });
+
+    const patch: Partial<typeof cfg> = { mcp_tools: [...current] };
+    if (cfg.sdk.permissions.allowed_mcp_tools.length > 0) {
+      const allowed = new Set(cfg.sdk.permissions.allowed_mcp_tools);
+      for (const tool of tools) allowed.add(tool);
+      patch.sdk = {
+        ...cfg.sdk,
+        permissions: {
+          ...cfg.sdk.permissions,
+          allowed_mcp_tools: [...allowed],
+        },
+      };
+    }
+
+    update(patch);
   };
 
   const nextExternalMcpName = (base: string) => {
