@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
     const gw = await getGateway();
     const bundle = gw.exportDiagnostics({
       includeLogs: url.searchParams.get('includeLogs') !== 'false',
+      runId: url.searchParams.get('runId') ?? undefined,
       logLimit: optionalNumber(url.searchParams.get('logLimit')),
       runLimit: optionalNumber(url.searchParams.get('runLimit')),
       routeDecisionLimit: optionalNumber(url.searchParams.get('routeDecisionLimit')),

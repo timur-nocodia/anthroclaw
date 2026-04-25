@@ -77,4 +77,69 @@ describe('diagnostics bundle', () => {
     ]);
     expect(bundle.logs).toEqual([]);
   });
+
+  it('can scope diagnostics to one run', () => {
+    const now = Date.now();
+    metrics.recordAgentRunStart({
+      runId: 'run-1',
+      traceId: 'trace-1',
+      startedAt: now,
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      source: 'web',
+      channel: 'web',
+      status: 'running',
+    });
+    metrics.recordAgentRunStart({
+      runId: 'run-2',
+      traceId: 'trace-2',
+      startedAt: now + 1,
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-2',
+      source: 'web',
+      channel: 'web',
+      status: 'running',
+    });
+    metrics.recordRouteDecision({
+      id: 'route-1',
+      timestamp: now,
+      messageId: 'message-1',
+      channel: 'web',
+      accountId: 'web',
+      chatType: 'dm',
+      peerId: 'peer-1',
+      senderId: 'sender-1',
+      candidates: [],
+      winnerAgentId: 'agent',
+      accessAllowed: true,
+      sessionKey: 'web:agent:session-1',
+      outcome: 'dispatched',
+    });
+    metrics.recordRouteDecision({
+      id: 'route-2',
+      timestamp: now + 1,
+      messageId: 'message-2',
+      channel: 'web',
+      accountId: 'web',
+      chatType: 'dm',
+      peerId: 'peer-2',
+      senderId: 'sender-2',
+      candidates: [],
+      winnerAgentId: 'agent',
+      accessAllowed: true,
+      sessionKey: 'web:agent:session-2',
+      outcome: 'dispatched',
+    });
+
+    const bundle = buildDiagnosticsBundle({
+      status: {},
+      includeLogs: false,
+      runId: 'run-1',
+    });
+
+    expect(bundle.manifest.filters).toEqual({ runId: 'run-1' });
+    expect(bundle.runs.map((run: any) => run.runId)).toEqual(['run-1']);
+    expect(bundle.routeDecisions.map((decision: any) => decision.id)).toEqual(['route-1']);
+    expect(bundle.diagnosticEvents.every((event: any) => event.runId === 'run-1')).toBe(true);
+  });
 });

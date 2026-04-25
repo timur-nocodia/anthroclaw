@@ -6,6 +6,7 @@ import { redactSecrets } from '../security/redact.js';
 export interface DiagnosticsBundleOptions {
   status: Record<string, unknown>;
   includeLogs?: boolean;
+  runId?: string;
   logLimit?: number;
   runLimit?: number;
   routeDecisionLimit?: number;
@@ -17,6 +18,9 @@ export interface DiagnosticsBundle {
     generatedAt: string;
     version: 1;
     contentPolicy: 'metadata-only';
+    filters?: {
+      runId?: string;
+    };
   };
   status: unknown;
   metrics: unknown;
@@ -89,18 +93,26 @@ export function buildDiagnosticsBundle(options: DiagnosticsBundleOptions): Diagn
   const routeDecisionLimit = Math.max(1, Math.min(options.routeDecisionLimit ?? 100, 500));
   const diagnosticEventLimit = Math.max(1, Math.min(options.diagnosticEventLimit ?? 500, 2_000));
   const logLimit = Math.max(0, Math.min(options.logLimit ?? 200, 500));
+  const run = options.runId ? metrics.getAgentRun(options.runId) : undefined;
+  const routeDecisionFilter = options.runId
+    ? { sessionKey: run?.sessionKey ?? '__missing_run__', limit: routeDecisionLimit }
+    : { limit: routeDecisionLimit };
 
   return sanitizeForDiagnostics({
     manifest: {
       generatedAt: new Date().toISOString(),
       version: 1,
       contentPolicy: 'metadata-only',
+      filters: options.runId ? { runId: options.runId } : undefined,
     },
     status: options.status,
     metrics: metrics.snapshot(),
-    runs: metrics.listAgentRuns({ limit: runLimit }),
-    routeDecisions: metrics.listRouteDecisions({ limit: routeDecisionLimit }),
-    diagnosticEvents: metrics.listDiagnosticEvents({ limit: diagnosticEventLimit }),
+    runs: options.runId ? (run ? [run] : []) : metrics.listAgentRuns({ limit: runLimit }),
+    routeDecisions: metrics.listRouteDecisions(routeDecisionFilter),
+    diagnosticEvents: metrics.listDiagnosticEvents({
+      runId: options.runId,
+      limit: diagnosticEventLimit,
+    }),
     logs: options.includeLogs === false ? [] : getRecentLogs(logLimit),
     environment: {
       nodeVersion: process.version,

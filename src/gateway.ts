@@ -985,6 +985,7 @@ export class Gateway {
 
   exportDiagnostics(options: {
     includeLogs?: boolean;
+    runId?: string;
     logLimit?: number;
     runLimit?: number;
     routeDecisionLimit?: number;
