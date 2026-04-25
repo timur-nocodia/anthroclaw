@@ -72,6 +72,12 @@ routes:
 subagents:
   allow:
     - helper
+  conflict_mode: strict
+  roles:
+    helper:
+      kind: worker
+      write_policy: claim_required
+      description: Implements scoped code changes.
 `);
 
     const helperDir = join(agentsDir, 'helper');
@@ -260,6 +266,12 @@ routes:
 subagents:
   allow:
     - helper
+  conflict_mode: strict
+  roles:
+    helper:
+      kind: worker
+      write_policy: claim_required
+      description: Implements scoped code changes.
 `);
 
     const helperDir = join(agentsDir, 'helper');
@@ -575,6 +587,12 @@ routes:
 subagents:
   allow:
     - helper
+  conflict_mode: strict
+  roles:
+    helper:
+      kind: worker
+      write_policy: claim_required
+      description: Implements scoped code changes.
 `);
 
     const helperDir = join(agentsDir, 'helper');
@@ -641,6 +659,12 @@ routes:
       path: '/tmp/workspace/src/app.ts',
       mode: 'write',
     }]);
+    expect(enrichedRuns[0].policy).toMatchObject({
+      kind: 'worker',
+      writePolicy: 'claim_required',
+      conflictMode: 'strict',
+      description: 'Implements scoped code changes.',
+    });
     expect(enrichedRuns[0].ownership.conflicts).toHaveLength(1);
     expect(enrichedRuns[0].ownership.events).toMatchObject([{
       eventType: 'conflict',

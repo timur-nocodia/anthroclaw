@@ -88,6 +88,7 @@ import {
   describeSubagentPolicy,
   filterSubagentTools,
   resolveSubagentPolicy,
+  type ResolvedSubagentPolicy,
   shouldExposeDirectSubagents,
   shouldExposeNestedSubagents,
 } from './sdk/subagent-policy.js';
@@ -196,6 +197,7 @@ export type AgentSubagentOwnershipView = AgentFileOwnershipView;
 
 export interface AgentSubagentRunView extends SubagentRunRecord {
   ownership: AgentSubagentOwnershipView;
+  policy: ResolvedSubagentPolicy;
 }
 
 export interface AgentSubagentRunDetail extends AgentSubagentRunView {
@@ -1411,8 +1413,10 @@ export class Gateway {
   }
 
   private withSubagentRunOwnership(agentId: string, run: SubagentRunRecord): AgentSubagentRunView {
+    const agent = this.agents.get(agentId);
     return {
       ...run,
+      policy: resolveSubagentPolicy(agent?.config.subagents, run.subagentId),
       ownership: {
         claims: this.fileOwnershipRegistry.listClaims({ runId: run.runId }),
         conflicts: this.fileOwnershipRegistry.listConflicts({ runId: run.runId }),

@@ -161,6 +161,12 @@ interface SubagentRun {
   interruptSupported?: boolean;
   interruptScope?: "parent_session";
   interruptReason?: string;
+  policy?: {
+    kind: "explorer" | "worker" | "custom";
+    writePolicy: "allow" | "deny" | "claim_required";
+    conflictMode: "soft" | "strict";
+    description?: string;
+  };
 }
 
 interface HookEventView {
@@ -2308,6 +2314,14 @@ function SubagentRunCard({
           </div>
           <div className="mt-1 flex flex-wrap gap-1.5">
             <SubagentPill>{run.subagentType ?? "subagent"}</SubagentPill>
+            {run.policy && (
+              <>
+                <SubagentPill>{run.policy.kind}</SubagentPill>
+                <SubagentPill tone={run.policy.writePolicy === "deny" ? "error" : run.policy.writePolicy === "claim_required" ? "running" : "default"}>
+                  {run.policy.writePolicy}
+                </SubagentPill>
+              </>
+            )}
             <SubagentPill tone={isRunning ? "running" : "done"}>{run.status}</SubagentPill>
           </div>
         </div>
@@ -2332,7 +2346,16 @@ function SubagentRunCard({
         {run.permissionMode && (
           <SubagentMeta label="mode" value={run.permissionMode} />
         )}
+        {run.policy && (
+          <SubagentMeta label="conflict" value={run.policy.conflictMode} />
+        )}
       </div>
+
+      {run.policy?.description && (
+        <p className="mt-2 line-clamp-2 text-[10.5px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+          {run.policy.description}
+        </p>
+      )}
 
       {(run.parentTranscriptPath || run.subagentTranscriptPath) && (
         <div className="mt-2 flex flex-wrap gap-1">
