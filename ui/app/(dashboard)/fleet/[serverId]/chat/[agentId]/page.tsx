@@ -9,6 +9,7 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
+  Download,
   FileText,
   GitFork,
   History,
@@ -1454,6 +1455,7 @@ export default function ChatPage() {
           </div>
         </div>
         <SubagentRunsPanel
+          serverId={serverId}
           selectedSession={selectedSession}
           session={sessionDetails}
           sessionLoading={sessionDetailsLoading}
@@ -1592,6 +1594,7 @@ export default function ChatPage() {
 /* ------------------------------------------------------------------ */
 
 function SubagentRunsPanel({
+  serverId,
   selectedSession,
   session,
   sessionLoading,
@@ -1610,6 +1613,7 @@ function SubagentRunsPanel({
   onInterrupt,
   onMutateFileOwnership,
 }: {
+  serverId: string;
   selectedSession?: AgentSession;
   session: SessionDetails | null;
   sessionLoading: boolean;
@@ -1677,7 +1681,12 @@ function SubagentRunsPanel({
           loading={sessionLoading}
           labels={selectedSession?.labels ?? []}
         />
-        <ActiveRunsCard runs={activeRuns} loading={activeRunsLoading} activeTaskCount={activeTaskCount} />
+        <ActiveRunsCard
+          serverId={serverId}
+          runs={activeRuns}
+          loading={activeRunsLoading}
+          activeTaskCount={activeTaskCount}
+        />
         <InterruptsCard interrupts={interrupts} loading={interruptsLoading} />
         <FileOwnershipCard
           view={fileOwnership}
@@ -1685,6 +1694,7 @@ function SubagentRunsPanel({
           onMutate={onMutateFileOwnership}
         />
         <RouteDecisionCard
+          serverId={serverId}
           selectedSession={selectedSession}
           decision={routeDecision}
           loading={routeDecisionLoading}
@@ -1722,10 +1732,12 @@ function SubagentRunsPanel({
 }
 
 function ActiveRunsCard({
+  serverId,
   runs,
   loading,
   activeTaskCount,
 }: {
+  serverId: string;
   runs: ActiveRunView[];
   loading: boolean;
   activeTaskCount: number;
@@ -1771,13 +1783,16 @@ function ActiveRunsCard({
                 }}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span
-                    className="truncate text-[10.5px]"
-                    style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                    title={run.runId ?? run.sessionKey}
-                  >
-                    {shortId(run.runId ?? run.sessionKey, 16)}
-                  </span>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span
+                      className="truncate text-[10.5px]"
+                      style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                      title={run.runId ?? run.sessionKey}
+                    >
+                      {shortId(run.runId ?? run.sessionKey, 16)}
+                    </span>
+                    {run.runId && <RunDiagnosticsLink serverId={serverId} runId={run.runId} />}
+                  </div>
                   <SubagentPill tone="running">{run.lastEventType}</SubagentPill>
                 </div>
                 <div className="mt-1 grid grid-cols-2 gap-1.5 text-[10.5px]">
@@ -2105,10 +2120,12 @@ function SessionDebugCard({
 }
 
 function RouteDecisionCard({
+  serverId,
   selectedSession,
   decision,
   loading,
 }: {
+  serverId: string;
   selectedSession?: AgentSession;
   decision: RouteDecision | null;
   loading: boolean;
@@ -2138,7 +2155,12 @@ function RouteDecisionCard({
 
       {provenance ? (
         <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
-          <SubagentMeta label="run" value={shortId(provenance.runId, 12)} title={provenance.runId} />
+          <div className="flex min-w-0 items-end gap-1.5">
+            <div className="min-w-0 flex-1">
+              <SubagentMeta label="run" value={shortId(provenance.runId, 12)} title={provenance.runId} />
+            </div>
+            <RunDiagnosticsLink serverId={serverId} runId={provenance.runId} />
+          </div>
           <SubagentMeta label="status" value={provenance.status} />
           <SubagentMeta label="source" value={`${provenance.source}/${provenance.channel}`} />
           <SubagentMeta label="started" value={formatTime(provenance.startedAt)} />
@@ -2483,6 +2505,40 @@ function SubagentMeta({
         {value}
       </div>
     </div>
+  );
+}
+
+function diagnosticsRunUrl(serverId: string, runId: string): string {
+  const params = new URLSearchParams({
+    includeLogs: "true",
+    runId,
+    diagnosticEventLimit: "300",
+    routeDecisionLimit: "25",
+  });
+  return `/api/fleet/${serverId}/diagnostics/export?${params.toString()}`;
+}
+
+function RunDiagnosticsLink({
+  serverId,
+  runId,
+}: {
+  serverId: string;
+  runId: string;
+}) {
+  return (
+    <a
+      href={diagnosticsRunUrl(serverId, runId)}
+      download={`anthroclaw-run-${runId}-diagnostics.json`}
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border"
+      style={{
+        borderColor: "var(--oc-border)",
+        color: "var(--oc-text-muted)",
+        background: "var(--oc-bg2)",
+      }}
+      title="Download diagnostics for this run"
+    >
+      <Download className="h-3 w-3" />
+    </a>
   );
 }
 
