@@ -227,6 +227,48 @@ const STT_DEFINITIONS: CapabilityDefinition[] = [
   },
 ];
 
+interface ExternalMcpPresetDefinition {
+  id: string;
+  provider: string;
+  serverName: string;
+  command: string;
+  args: string[];
+  toolNames: string[];
+  requiredEnv: string[];
+  risk: IntegrationCapabilityRisk;
+  notes: string[];
+}
+
+const EXTERNAL_MCP_PRESETS: ExternalMcpPresetDefinition[] = [
+  {
+    id: 'google.calendar',
+    provider: 'google-calendar',
+    serverName: 'calendar',
+    command: 'npx',
+    args: ['google-calendar-mcp'],
+    toolNames: [
+      'calendar_daily_brief',
+      'calendar_availability',
+      'calendar_event_lookup',
+      'calendar_meeting_prep',
+    ],
+    requiredEnv: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN'],
+    risk: 'medium',
+    notes: ['Personal calendar access; use exact tool allowlists and keep Google OAuth credentials in env/config secrets.'],
+  },
+  {
+    id: 'google.gmail',
+    provider: 'gmail',
+    serverName: 'gmail',
+    command: 'npx',
+    args: ['gmail-mcp'],
+    toolNames: ['gmail_search', 'gmail_thread_summary', 'gmail_draft_reply'],
+    requiredEnv: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN'],
+    risk: 'high',
+    notes: ['Mailbox access and draft creation; prefer read-only tools unless the agent explicitly drafts replies.'],
+  },
+];
+
 export function buildIntegrationCapabilityMatrix(
   config: GlobalConfig,
   agents: AgentConfigCarrier[] = [],
@@ -265,8 +307,73 @@ export function buildIntegrationCapabilityMatrix(
 
   return {
     generatedAt: now,
-    capabilities: [...builtinCapabilities, ...buildExternalMcpCapabilities(agents)],
+    capabilities: [
+      ...builtinCapabilities,
+      ...buildExternalMcpPresetCapabilities(agents),
+      ...buildExternalMcpCapabilities(agents),
+    ],
   };
+}
+
+function buildExternalMcpPresetCapabilities(agents: AgentConfigCarrier[]): IntegrationCapability[] {
+  return EXTERNAL_MCP_PRESETS.map((preset) => {
+    const matches = agents.flatMap((agent) => findExternalPresetMatches(agent, preset));
+    const enabledForAgents = [...new Set(matches.map((match) => match.agentId))].sort();
+    const configuredToolNames = [...new Set(matches.flatMap((match) => match.toolNames))].sort();
+    const missingEnv = [...new Set(matches.flatMap((match) => match.missingEnv))].sort();
+    const configured = matches.length > 0;
+    const status: IntegrationCapabilityStatus = !configured
+      ? 'disabled'
+      : missingEnv.length > 0
+        ? 'missing_config'
+        : 'available';
+
+    return {
+      id: preset.id,
+      kind: 'mcp_tool',
+      provider: preset.provider,
+      toolNames: configuredToolNames.length > 0 ? configuredToolNames : [...preset.toolNames],
+      status,
+      risk: preset.risk,
+      costModel: 'external_mcp',
+      requiredConfig: preset.requiredEnv.map((key) => `external_mcp_servers.${preset.serverName}.env.${key}`),
+      permissionDefaults: {
+        defaultBehavior: 'deny',
+        allowMcp: true,
+        allowedMcpTools: configuredToolNames,
+        notes: [...preset.notes],
+      },
+      enabledForAgents,
+      configSnippet: buildExternalPresetConfigSnippet(preset, configuredToolNames),
+      reason: externalPresetReason(preset, status, missingEnv),
+    };
+  });
+}
+
+function findExternalPresetMatches(
+  agent: AgentConfigCarrier,
+  preset: ExternalMcpPresetDefinition,
+): Array<{ agentId: string; toolNames: string[]; missingEnv: string[] }> {
+  const out: Array<{ agentId: string; toolNames: string[]; missingEnv: string[] }> = [];
+  const presetTools = new Set(preset.toolNames);
+
+  for (const [serverName, server] of Object.entries(agent.config.external_mcp_servers ?? {})) {
+    const allowedTools = server.allowed_tools ?? [];
+    const matchedTools = allowedTools.filter((toolName) => presetTools.has(toolName));
+    const nameMatches = serverName === preset.serverName || serverName.startsWith(`${preset.serverName}-`);
+    if (matchedTools.length === 0 && !nameMatches) continue;
+
+    const env = 'env' in server ? server.env : undefined;
+    const missingEnv = preset.requiredEnv.filter((key) => !env?.[key]?.trim());
+    const selectedTools = matchedTools.length > 0 ? matchedTools : preset.toolNames;
+    out.push({
+      agentId: agent.id,
+      toolNames: selectedTools.map((toolName) => `mcp__${serverName}__${toolName}`),
+      missingEnv,
+    });
+  }
+
+  return out;
 }
 
 function buildExternalMcpCapabilities(agents: AgentConfigCarrier[]): IntegrationCapability[] {
@@ -355,6 +462,48 @@ function buildCapabilityConfigSnippet(
       ? allowedTools.map((toolName) => `      - ${toolName}`)
       : ['      # operator review required before enabling this capability']),
   ].join('\n');
+}
+
+function buildExternalPresetConfigSnippet(
+  preset: ExternalMcpPresetDefinition,
+  configuredToolNames: readonly string[],
+): string {
+  const allowedTools = configuredToolNames.length > 0
+    ? [...configuredToolNames].sort()
+    : preset.toolNames.map((toolName) => `mcp__${preset.serverName}__${toolName}`);
+
+  return [
+    'external_mcp_servers:',
+    `  ${preset.serverName}:`,
+    '    type: stdio',
+    `    command: ${preset.command}`,
+    '    args:',
+    ...preset.args.map((arg) => `      - ${arg}`),
+    '    env:',
+    ...preset.requiredEnv.map((key) => `      ${key}: ""`),
+    '    allowed_tools:',
+    ...preset.toolNames.map((toolName) => `      - ${toolName}`),
+    'sdk:',
+    '  permissions:',
+    '    default_behavior: deny',
+    '    allow_mcp: true',
+    '    allowed_mcp_tools:',
+    ...allowedTools.map((toolName) => `      - ${toolName}`),
+  ].join('\n');
+}
+
+function externalPresetReason(
+  preset: ExternalMcpPresetDefinition,
+  status: IntegrationCapabilityStatus,
+  missingEnv: readonly string[],
+): string {
+  if (status === 'disabled') {
+    return `${preset.provider} preset is not configured on any loaded agent yet.`;
+  }
+  if (status === 'missing_config') {
+    return `Configured preset is missing required env: ${missingEnv.join(', ')}`;
+  }
+  return `${preset.provider} MCP preset is configured and exposed through Claude Agent SDK mcpServers.`;
 }
 
 function clonePermissionDefaults(

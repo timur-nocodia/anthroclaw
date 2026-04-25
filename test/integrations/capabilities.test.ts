@@ -122,6 +122,75 @@ describe('integration capability matrix', () => {
     });
   });
 
+  it('shows calendar and gmail MCP presets before they are configured', () => {
+    const matrix = buildIntegrationCapabilityMatrix(baseConfig(), [], {});
+
+    expect(matrix.capabilities.find((capability) => capability.id === 'google.calendar')).toMatchObject({
+      provider: 'google-calendar',
+      status: 'disabled',
+      toolNames: [
+        'calendar_daily_brief',
+        'calendar_availability',
+        'calendar_event_lookup',
+        'calendar_meeting_prep',
+      ],
+      enabledForAgents: [],
+      reason: 'google-calendar preset is not configured on any loaded agent yet.',
+    });
+    expect(matrix.capabilities.find((capability) => capability.id === 'google.gmail')).toMatchObject({
+      provider: 'gmail',
+      status: 'disabled',
+      risk: 'high',
+      toolNames: ['gmail_search', 'gmail_thread_summary', 'gmail_draft_reply'],
+      enabledForAgents: [],
+    });
+  });
+
+  it('marks configured external MCP presets with missing env and SDK permission snippets', () => {
+    const matrix = buildIntegrationCapabilityMatrix(
+      baseConfig(),
+      [{
+        id: 'assistant',
+        config: {
+          routes: [{ channel: 'telegram', scope: 'dm' }],
+          timezone: 'UTC',
+          external_mcp_servers: {
+            calendar: {
+              type: 'stdio',
+              command: 'npx',
+              args: ['google-calendar-mcp'],
+              env: {
+                GOOGLE_CLIENT_ID: 'client-id',
+                GOOGLE_CLIENT_SECRET: '',
+                GOOGLE_REFRESH_TOKEN: 'refresh-token',
+              },
+              allowed_tools: ['calendar_daily_brief', 'calendar_availability'],
+            },
+          },
+        },
+      }],
+      {},
+    );
+
+    expect(matrix.capabilities.find((capability) => capability.id === 'google.calendar')).toMatchObject({
+      status: 'missing_config',
+      enabledForAgents: ['assistant'],
+      toolNames: ['mcp__calendar__calendar_availability', 'mcp__calendar__calendar_daily_brief'],
+      permissionDefaults: {
+        defaultBehavior: 'deny',
+        allowMcp: true,
+        allowedMcpTools: ['mcp__calendar__calendar_availability', 'mcp__calendar__calendar_daily_brief'],
+      },
+      reason: 'Configured preset is missing required env: GOOGLE_CLIENT_SECRET',
+    });
+    expect(matrix.capabilities.find((capability) => capability.id === 'google.calendar')?.configSnippet)
+      .toContain('external_mcp_servers:\n  calendar:');
+    expect(matrix.capabilities.find((capability) => capability.id === 'google.calendar')?.configSnippet)
+      .toContain('      - mcp__calendar__calendar_daily_brief');
+    expect(JSON.stringify(matrix)).not.toContain('client-id');
+    expect(JSON.stringify(matrix)).not.toContain('refresh-token');
+  });
+
   it('reports STT provider availability without exposing secrets', () => {
     const matrix = buildIntegrationCapabilityMatrix(
       {
@@ -236,7 +305,7 @@ describe('integration capability matrix', () => {
               type: 'stdio',
               command: 'npx',
               args: ['google-calendar-mcp'],
-              env: { GOOGLE_CLIENT_SECRET: 'secret' },
+              env: { GOOGLE_CLIENT_SECRET: 'super-private-value' },
               allowed_tools: ['calendar_daily_brief', 'calendar_lookup'],
             },
           },
@@ -268,6 +337,6 @@ describe('integration capability matrix', () => {
         allowedMcpTools: ['mcp__calendar__calendar_daily_brief', 'mcp__calendar__calendar_lookup'],
       },
     });
-    expect(JSON.stringify(matrix)).not.toContain('secret');
+    expect(JSON.stringify(matrix)).not.toContain('super-private-value');
   });
 });
