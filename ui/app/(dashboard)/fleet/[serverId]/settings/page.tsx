@@ -43,6 +43,7 @@ interface GatewayInfo {
 interface SdkActiveInputStatus {
   streamInputAvailable: boolean;
   unstableSessionApiAvailable: boolean;
+  featureFlagEnabled: boolean;
   nativeSteerEnabled: boolean;
   fallbackMode: "interrupt_and_restart";
   reason: string;
@@ -1148,6 +1149,10 @@ function AdvancedSection({ serverId }: { serverId: string }) {
         <RuntimeRow
           label="SDK stream input"
           value={activeInput?.streamInputAvailable ? "available" : "unavailable"}
+        />
+        <RuntimeRow
+          label="Feature flag"
+          value={activeInput?.featureFlagEnabled ? "features.sdk_active_input=true" : "features.sdk_active_input=false"}
         />
         <RuntimeRow
           label="Fallback mode"

@@ -747,7 +747,7 @@ export class Gateway {
       activeSessions,
       nodeVersion: process.version,
       platform: process.platform,
-      sdkActiveInput: getSdkActiveInputStatus(),
+      sdkActiveInput: getSdkActiveInputStatus(this.globalConfig?.features?.sdk_active_input ?? false),
       channels: {
         telegram: tg instanceof TelegramChannel ? tg.getAccountInfo() : [],
         whatsapp: wa instanceof WhatsAppChannel ? wa.getAccountInfo() : [],

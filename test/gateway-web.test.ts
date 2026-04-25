@@ -89,6 +89,7 @@ pairing:
     expect(status.sdkActiveInput).toMatchObject({
       streamInputAvailable: true,
       unstableSessionApiAvailable: true,
+      featureFlagEnabled: false,
       nativeSteerEnabled: false,
       fallbackMode: 'interrupt_and_restart',
     });

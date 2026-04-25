@@ -88,6 +88,17 @@ describe('GlobalConfigSchema', () => {
     expect(result.defaults.model).toBe('claude-sonnet-4-6');
     expect(result.defaults.embedding_provider).toBe('openai');
     expect(result.defaults.embedding_model).toBe('text-embedding-3-small');
+    expect(result.features.sdk_active_input).toBe(false);
+  });
+
+  it('accepts feature flags with SDK active input defaulting off', () => {
+    const result = GlobalConfigSchema.parse({
+      features: {
+        sdk_active_input: true,
+      },
+    });
+
+    expect(result.features.sdk_active_input).toBe(true);
   });
 
   it('ignores legacy credentials.anthropic config in strict-native mode', () => {

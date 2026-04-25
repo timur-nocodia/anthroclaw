@@ -44,6 +44,12 @@ const SttConfigSchema = z.object({
   elevenlabs: SttProviderCredentialSchema.optional(),
 }).optional();
 
+const FeatureFlagsSchema = z.object({
+  sdk_active_input: z.boolean().default(false),
+}).default({
+  sdk_active_input: false,
+});
+
 // ─── GlobalConfigSchema ────────────────────────────────────────────
 
 export const GlobalConfigSchema = z.object({
@@ -86,6 +92,7 @@ export const GlobalConfigSchema = z.object({
     api_key: z.string(),
   }).optional(),
   webhooks: z.record(z.string(), DirectWebhookSchema).optional(),
+  features: FeatureFlagsSchema,
 });
 
 // ─── RouteSchema ───────────────────────────────────────────────────
