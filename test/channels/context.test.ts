@@ -64,6 +64,58 @@ describe('channel context resolver', () => {
     });
   });
 
+  it('uses whatsapp direct behavior before wildcard behavior', () => {
+    const config = AgentYmlSchema.parse({
+      routes: [{ channel: 'whatsapp' }],
+      channel_context: {
+        whatsapp: {
+          wildcard: { prompt: 'default whatsapp behavior' },
+          direct: {
+            'user@s.whatsapp.net': { prompt: 'direct behavior', reply_to_mode: 'never' },
+          },
+        },
+      },
+    }).channel_context;
+
+    const resolved = resolveChannelContext(config, {
+      channel: 'whatsapp',
+      chatType: 'dm',
+      peerId: 'user@s.whatsapp.net',
+    });
+
+    expect(resolved).toMatchObject({
+      prompt: 'direct behavior',
+      replyToMode: 'never',
+      source: 'whatsapp_direct',
+    });
+  });
+
+  it('uses telegram wildcard behavior when no peer or topic rule matches', () => {
+    const config = AgentYmlSchema.parse({
+      routes: [{ channel: 'telegram' }],
+      channel_context: {
+        telegram: {
+          wildcard: { prompt: 'default telegram behavior' },
+          peers: {
+            'chat-1': { prompt: 'peer behavior' },
+          },
+        },
+      },
+    }).channel_context;
+
+    const resolved = resolveChannelContext(config, {
+      channel: 'telegram',
+      chatType: 'group',
+      peerId: 'chat-2',
+    });
+
+    expect(resolved).toMatchObject({
+      prompt: 'default telegram behavior',
+      replyToMode: 'always',
+      source: 'telegram_wildcard',
+    });
+  });
+
   it('formats operator snippets as fenced additive context', () => {
     const formatted = formatChannelOperatorContext({
       prompt: 'Use short replies. ``` do not break fence.',

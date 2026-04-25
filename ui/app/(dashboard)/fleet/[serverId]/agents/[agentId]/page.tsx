@@ -785,6 +785,46 @@ function ConfigTab({
     });
   };
 
+  const formatChannelRuleMapText = (rules: Record<string, ChannelBehaviorRule> | undefined): string => (
+    Object.entries(rules ?? {})
+      .map(([key, rule]) => `${key}=${rule.prompt ?? ""}`)
+      .join("\n")
+  );
+
+  const parseChannelRuleMapText = (value: string): Record<string, ChannelBehaviorRule> => {
+    const rules: Record<string, ChannelBehaviorRule> = {};
+    for (const line of value.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const separator = trimmed.indexOf("=");
+      if (separator <= 0) continue;
+      const key = trimmed.slice(0, separator).trim();
+      const prompt = trimmed.slice(separator + 1).trim();
+      if (key && prompt) rules[key] = { prompt };
+    }
+    return rules;
+  };
+
+  const updateTelegramChannelRuleMap = (map: "peers" | "topics", value: string) => {
+    const current = cfg.channel_context.telegram ?? {};
+    updateChannelContext({
+      telegram: {
+        ...current,
+        [map]: parseChannelRuleMapText(value),
+      },
+    });
+  };
+
+  const updateWhatsappChannelRuleMap = (map: "direct" | "groups", value: string) => {
+    const current = cfg.channel_context.whatsapp ?? {};
+    updateChannelContext({
+      whatsapp: {
+        ...current,
+        [map]: parseChannelRuleMapText(value),
+      },
+    });
+  };
+
   const buildChannelRule = (rule: ChannelBehaviorRule | undefined): ChannelBehaviorRule | undefined => {
     if (!rule) return undefined;
     const prompt = rule.prompt?.trim();
@@ -1538,12 +1578,68 @@ function ConfigTab({
                   }}
                 />
               </Field>
+              <Field label="Telegram peers" tooltip="Per-peer Telegram context, one peer_id=prompt line. Peer rules override the Telegram wildcard.">
+                <textarea
+                  value={formatChannelRuleMapText(cfg.channel_context.telegram?.peers)}
+                  onChange={(e) => updateTelegramChannelRuleMap("peers", e.target.value)}
+                  rows={3}
+                  placeholder="123456789=Use concise replies for this chat"
+                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                />
+              </Field>
+              <Field label="Telegram topics" tooltip="Per-topic Telegram context, one topic_id=prompt line. Topic rules override peer and wildcard rules.">
+                <textarea
+                  value={formatChannelRuleMapText(cfg.channel_context.telegram?.topics)}
+                  onChange={(e) => updateTelegramChannelRuleMap("topics", e.target.value)}
+                  rows={3}
+                  placeholder="42=Use support triage format in this topic"
+                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                />
+              </Field>
               <Field label="WhatsApp wildcard" tooltip="Default WhatsApp operator context for chats without a more specific direct or group rule. Fenced as untrusted channel context.">
                 <textarea
                   value={cfg.channel_context.whatsapp?.wildcard?.prompt ?? ""}
                   onChange={(e) => updateWildcardChannelPrompt("whatsapp", e.target.value)}
                   rows={3}
                   placeholder="Operator context for WhatsApp chats"
+                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                />
+              </Field>
+              <Field label="WhatsApp direct" tooltip="Per-contact WhatsApp context, one jid=prompt line. Direct rules override the WhatsApp wildcard.">
+                <textarea
+                  value={formatChannelRuleMapText(cfg.channel_context.whatsapp?.direct)}
+                  onChange={(e) => updateWhatsappChannelRuleMap("direct", e.target.value)}
+                  rows={3}
+                  placeholder="77001234567@s.whatsapp.net=Use customer support tone"
+                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                />
+              </Field>
+              <Field label="WhatsApp groups" tooltip="Per-group WhatsApp context, one group_jid=prompt line. Group rules override the WhatsApp wildcard.">
+                <textarea
+                  value={formatChannelRuleMapText(cfg.channel_context.whatsapp?.groups)}
+                  onChange={(e) => updateWhatsappChannelRuleMap("groups", e.target.value)}
+                  rows={3}
+                  placeholder="120363000000000000@g.us=Summarize decisions at the end"
                   className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
                   style={{
                     background: "var(--oc-bg3)",
