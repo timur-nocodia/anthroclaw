@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
+  Copy,
   Database,
   Download,
   Key,
@@ -1034,6 +1036,14 @@ function AuditEventRow({ event }: { event: IntegrationAuditEvent }) {
 }
 
 function CapabilityRow({ capability }: { capability: IntegrationCapability }) {
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
+  const copyConfigSnippet = async () => {
+    if (!capability.configSnippet) return;
+    await navigator.clipboard.writeText(capability.configSnippet);
+    setCopiedSnippet(true);
+    window.setTimeout(() => setCopiedSnippet(false), 1200);
+  };
+
   return (
     <div className="grid gap-3 px-3.5 py-3 md:grid-cols-[minmax(190px,0.9fr)_minmax(180px,1fr)_minmax(210px,1fr)]" style={{ background: "var(--oc-bg1)" }}>
       <div className="min-w-0">
@@ -1074,17 +1084,31 @@ function CapabilityRow({ capability }: { capability: IntegrationCapability }) {
           </div>
         )}
         {capability.configSnippet && (
-          <pre
-            className="mt-2 max-h-[120px] overflow-auto rounded border p-2 text-[10.5px] leading-relaxed"
-            style={{
-              background: "var(--oc-bg2)",
-              borderColor: "var(--oc-border)",
-              color: "var(--oc-text-dim)",
-              fontFamily: "var(--oc-mono)",
-            }}
-          >
-            {capability.configSnippet}
-          </pre>
+          <div className="mt-2">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <MetaLabel>Config snippet</MetaLabel>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void copyConfigSnippet()}
+                className="h-6 px-2 text-[10px]"
+              >
+                {copiedSnippet ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                {copiedSnippet ? "Copied" : "Copy"}
+              </Button>
+            </div>
+            <pre
+              className="max-h-[120px] overflow-auto rounded border p-2 text-[10.5px] leading-relaxed"
+              style={{
+                background: "var(--oc-bg2)",
+                borderColor: "var(--oc-border)",
+                color: "var(--oc-text-dim)",
+                fontFamily: "var(--oc-mono)",
+              }}
+            >
+              {capability.configSnippet}
+            </pre>
+          </div>
         )}
       </div>
     </div>
