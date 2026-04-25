@@ -787,7 +787,7 @@ function ConfigTab({
 
   const formatChannelRuleMapText = (rules: Record<string, ChannelBehaviorRule> | undefined): string => (
     Object.entries(rules ?? {})
-      .map(([key, rule]) => `${key}=${rule.prompt ?? ""}`)
+      .map(([key, rule]) => `${key}=${rule.prompt ?? ""}${rule.reply_to_mode ? ` | ${rule.reply_to_mode}` : ""}`)
       .join("\n")
   );
 
@@ -799,8 +799,14 @@ function ConfigTab({
       const separator = trimmed.indexOf("=");
       if (separator <= 0) continue;
       const key = trimmed.slice(0, separator).trim();
-      const prompt = trimmed.slice(separator + 1).trim();
-      if (key && prompt) rules[key] = { prompt };
+      const rawValue = trimmed.slice(separator + 1).trim();
+      const [promptPart, modePart] = rawValue.split("|").map((part) => part.trim());
+      const rule: ChannelBehaviorRule = {};
+      if (promptPart) rule.prompt = promptPart;
+      if (modePart === "always" || modePart === "incoming_reply_only" || modePart === "never") {
+        rule.reply_to_mode = modePart;
+      }
+      if (key && Object.keys(rule).length > 0) rules[key] = rule;
     }
     return rules;
   };
@@ -1578,12 +1584,12 @@ function ConfigTab({
                   }}
                 />
               </Field>
-              <Field label="Telegram peers" tooltip="Per-peer Telegram context, one peer_id=prompt line. Peer rules override the Telegram wildcard.">
+              <Field label="Telegram peers" tooltip="Per-peer Telegram context, one peer_id=prompt line. Add | never, | always, or | incoming_reply_only to override reply target. Peer rules override the Telegram wildcard.">
                 <textarea
                   value={formatChannelRuleMapText(cfg.channel_context.telegram?.peers)}
                   onChange={(e) => updateTelegramChannelRuleMap("peers", e.target.value)}
                   rows={3}
-                  placeholder="123456789=Use concise replies for this chat"
+                  placeholder="123456789=Use concise replies for this chat | incoming_reply_only"
                   className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
                   style={{
                     background: "var(--oc-bg3)",
@@ -1592,12 +1598,12 @@ function ConfigTab({
                   }}
                 />
               </Field>
-              <Field label="Telegram topics" tooltip="Per-topic Telegram context, one topic_id=prompt line. Topic rules override peer and wildcard rules.">
+              <Field label="Telegram topics" tooltip="Per-topic Telegram context, one topic_id=prompt line. Add | never, | always, or | incoming_reply_only to override reply target. Topic rules override peer and wildcard rules.">
                 <textarea
                   value={formatChannelRuleMapText(cfg.channel_context.telegram?.topics)}
                   onChange={(e) => updateTelegramChannelRuleMap("topics", e.target.value)}
                   rows={3}
-                  placeholder="42=Use support triage format in this topic"
+                  placeholder="42=Use support triage format in this topic | never"
                   className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
                   style={{
                     background: "var(--oc-bg3)",
@@ -1620,12 +1626,12 @@ function ConfigTab({
                   }}
                 />
               </Field>
-              <Field label="WhatsApp direct" tooltip="Per-contact WhatsApp context, one jid=prompt line. Direct rules override the WhatsApp wildcard.">
+              <Field label="WhatsApp direct" tooltip="Per-contact WhatsApp context, one jid=prompt line. Add | never, | always, or | incoming_reply_only to override reply target. Direct rules override the WhatsApp wildcard.">
                 <textarea
                   value={formatChannelRuleMapText(cfg.channel_context.whatsapp?.direct)}
                   onChange={(e) => updateWhatsappChannelRuleMap("direct", e.target.value)}
                   rows={3}
-                  placeholder="77001234567@s.whatsapp.net=Use customer support tone"
+                  placeholder="77001234567@s.whatsapp.net=Use customer support tone | always"
                   className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
                   style={{
                     background: "var(--oc-bg3)",
@@ -1634,12 +1640,12 @@ function ConfigTab({
                   }}
                 />
               </Field>
-              <Field label="WhatsApp groups" tooltip="Per-group WhatsApp context, one group_jid=prompt line. Group rules override the WhatsApp wildcard.">
+              <Field label="WhatsApp groups" tooltip="Per-group WhatsApp context, one group_jid=prompt line. Add | never, | always, or | incoming_reply_only to override reply target. Group rules override the WhatsApp wildcard.">
                 <textarea
                   value={formatChannelRuleMapText(cfg.channel_context.whatsapp?.groups)}
                   onChange={(e) => updateWhatsappChannelRuleMap("groups", e.target.value)}
                   rows={3}
-                  placeholder="120363000000000000@g.us=Summarize decisions at the end"
+                  placeholder="120363000000000000@g.us=Summarize decisions at the end | incoming_reply_only"
                   className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
                   style={{
                     background: "var(--oc-bg3)",
