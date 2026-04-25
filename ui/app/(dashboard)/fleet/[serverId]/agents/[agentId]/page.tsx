@@ -912,6 +912,12 @@ function ConfigTab({
     });
   };
 
+  const enableMcpTools = (tools: string[]) => {
+    const current = new Set(cfg.mcp_tools);
+    for (const tool of tools) current.add(tool);
+    update({ mcp_tools: [...current] });
+  };
+
   const nextExternalMcpName = (base: string) => {
     if (!cfg.external_mcp_servers[base]) return base;
     for (let index = 2; index < 20; index += 1) {
@@ -1921,7 +1927,17 @@ function ConfigTab({
           {/* MCP tools */}
           <Section title="MCP tools" subtitle={`${cfg.mcp_tools.length} enabled`}
             tooltip="External tools the agent can use via the Model Context Protocol. These extend what the agent can do beyond just text responses."
-            icon={<List className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
+            icon={<List className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+            action={
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => enableMcpTools(["local_note_search"])}>
+                  Notes search
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => enableMcpTools(["local_note_propose"])}>
+                  Note proposals
+                </Button>
+              </div>
+            }>
             <Field label="Tools" tooltip="External tools (MCP) available to this agent: search, memory, messaging, etc. Comma-separated list of tool names.">
               <input value={cfg.mcp_tools.join(", ")}
                 onChange={(e) => update({ mcp_tools: e.target.value ? e.target.value.split(",").map(s => s.trim()).filter(Boolean) : [] })}
