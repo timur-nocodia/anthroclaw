@@ -2851,6 +2851,7 @@ function RoutesTable({
 
 function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: string }) {
   const [status, setStatus] = useState<MemoryReviewStatus | "all">("pending");
+  const [source, setSource] = useState("all");
   const [entries, setEntries] = useState<MemoryEntryRecord[]>([]);
   const [doctor, setDoctor] = useState<MemoryDoctorReport | null>(null);
   const [influence, setInfluence] = useState<MemoryInfluenceEvent[]>([]);
@@ -2862,9 +2863,11 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
     setLoading(true);
     setError(null);
     try {
-      const reviewQuery = status === "all" ? "" : `&reviewStatus=${status}`;
+      const params = new URLSearchParams({ limit: "80" });
+      if (status !== "all") params.set("reviewStatus", status);
+      if (source !== "all") params.set("source", source);
       const [entriesRes, doctorRes, influenceRes] = await Promise.all([
-        fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory?limit=80${reviewQuery}`),
+        fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory?${params.toString()}`),
         fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory/doctor?limit=1000`),
         fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory/influence?limit=12`),
       ]);
@@ -2882,7 +2885,7 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
     } finally {
       setLoading(false);
     }
-  }, [agentId, serverId, status]);
+  }, [agentId, serverId, source, status]);
 
   useEffect(() => {
     void loadMemory();
@@ -2918,6 +2921,24 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <select
+            value={source}
+            onChange={(event) => setSource(event.target.value)}
+            className="h-8 cursor-pointer rounded-[5px] border px-2 text-xs"
+            style={{
+              background: "var(--oc-bg2)",
+              borderColor: "var(--oc-border)",
+              color: "var(--color-foreground)",
+            }}
+          >
+            <option value="all">All sources</option>
+            <option value="post_run_candidate">Post-run candidates</option>
+            <option value="local_note_proposal">Local note proposals</option>
+            <option value="memory_write">Memory writes</option>
+            <option value="memory_wiki">Memory wiki</option>
+            <option value="dreaming">Dreaming</option>
+            <option value="index">Indexed files</option>
+          </select>
           <select
             value={status}
             onChange={(event) => setStatus(event.target.value as MemoryReviewStatus | "all")}
