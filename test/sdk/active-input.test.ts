@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   createFallbackActiveInputController,
@@ -46,5 +47,15 @@ describe('sdk active input', () => {
       shouldStartReplacementRun: false,
       reason: 'Active input controller is closed.',
     });
+  });
+
+  it('keeps the fallback layer away from SDK transcript and streaming write APIs', () => {
+    const source = readFileSync(new URL('../../src/sdk/active-input.ts', import.meta.url), 'utf-8');
+
+    expect(source).not.toMatch(/from ['"]node:fs/);
+    expect(source).not.toMatch(/from ['"]fs/);
+    expect(source).not.toMatch(/\bappendFile\b|\bwriteFile\b|\bSessionStore\b/);
+    expect(source).not.toMatch(/\btranscript_path\b|\bSDKSession\.send\b|\bunstable_v2_/);
+    expect(source).not.toMatch(/\bstreamInput\(/);
   });
 });
