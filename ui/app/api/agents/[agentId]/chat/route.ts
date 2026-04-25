@@ -61,6 +61,9 @@ export async function POST(
         onHookEvent(event) {
           send({ type: event.subtype, ...event });
         },
+        onElicitation(request) {
+          send({ type: 'elicitation', ...request });
+        },
         onDone(sid: string, totalTokens: number) {
           send({ type: 'done', sessionId: sid, totalTokens });
           close();

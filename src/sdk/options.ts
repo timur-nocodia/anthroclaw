@@ -1,4 +1,4 @@
-import type { AgentDefinition, Options } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentDefinition, OnElicitation, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionStore } from '@anthropic-ai/claude-agent-sdk';
 import type { Agent } from '../agent/agent.js';
 import type { HookEmitter } from '../hooks/emitter.js';
@@ -22,6 +22,7 @@ export interface BuildSdkOptionsParams {
   sessionStore?: SessionStore;
   loadTimeoutMs?: number;
   fileOwnership?: FileOwnershipPermissionHooks;
+  onElicitation?: OnElicitation;
 }
 
 export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
@@ -50,6 +51,7 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
     },
     sessionStore: params.sessionStore,
     loadTimeoutMs: params.loadTimeoutMs,
+    onElicitation: params.onElicitation,
   };
 
   if (includeMcpServer) {

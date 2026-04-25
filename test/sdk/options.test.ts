@@ -93,6 +93,14 @@ describe('buildSdkOptions', () => {
     expect(options.mcpServers).toBeUndefined();
   });
 
+  it('passes SDK elicitation handler through to query options', () => {
+    const agent = makeAgent();
+    const onElicitation = vi.fn();
+    const options = buildSdkOptions({ agent, onElicitation });
+
+    expect(options.onElicitation).toBe(onElicitation);
+  });
+
   it('respects explicit permission mode and disallowed tools', () => {
     const agent = makeAgent({
       sdk: {

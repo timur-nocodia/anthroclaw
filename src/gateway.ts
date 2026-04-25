@@ -2,7 +2,7 @@ import { readdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { query, startup } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentDefinition, AgentMcpServerSpec, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent/agent.js';
 import { RouteTable, type RouteEntry } from './routing/table.js';
 import { AccessControl } from './routing/access.js';
@@ -650,6 +650,7 @@ export class Gateway {
   private buildUserQueryOptions(
     agent: Agent,
     resume?: string,
+    onElicitation?: (request: ElicitationRequest) => void,
   ) {
     return buildSdkOptions({
       agent,
@@ -681,6 +682,12 @@ export class Gateway {
           agentId: agent.id,
         }),
       },
+      onElicitation: onElicitation
+        ? async (request) => {
+            onElicitation(request);
+            return { action: 'cancel' } as ElicitationResult;
+          }
+        : undefined,
       ...this.sdkSessionService?.getQueryOptions(),
     });
   }
@@ -1624,6 +1631,7 @@ export class Gateway {
       onTaskProgress?: (progress: SdkTaskProgress) => void;
       onTaskNotification?: (notification: SdkTaskNotification) => void;
       onHookEvent?: (event: SdkHookLifecycleEvent) => void;
+      onElicitation?: (request: ElicitationRequest) => void;
       onDone: (sessionId: string, totalTokens: number) => void;
       onError: (err: Error) => void;
     },
@@ -1688,7 +1696,7 @@ export class Gateway {
     };
 
     try {
-      const options = this.buildUserQueryOptions(agent, existingSessionId);
+      const options = this.buildUserQueryOptions(agent, existingSessionId, callbacks.onElicitation);
       runId = randomUUID();
       metrics.recordAgentRunStart({
         runId,

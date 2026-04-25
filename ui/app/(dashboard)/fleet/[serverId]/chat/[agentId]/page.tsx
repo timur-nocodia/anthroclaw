@@ -632,6 +632,16 @@ export default function ChatPage() {
                     taskProgress: `${status}: ${summary}`,
                   };
                 }
+                if (ev.type === "elicitation") {
+                  const serverName = typeof ev.serverName === "string" ? ev.serverName : "MCP";
+                  const mode = typeof ev.mode === "string" ? ev.mode : "form";
+                  const url = typeof ev.url === "string" ? ` ${ev.url}` : "";
+                  const detail = typeof ev.message === "string" ? ev.message : "User input requested";
+                  return {
+                    ...x,
+                    taskProgress: `${serverName} ${mode} elicitation: ${detail}${url}`,
+                  };
+                }
                 if (ev.type === "tool_call" || ev.type === "tool_use") {
                   return {
                     ...x,
