@@ -132,7 +132,7 @@ describe('GlobalConfigSchema', () => {
   it('accepts STT provider configuration', () => {
     const result = GlobalConfigSchema.parse({
       stt: {
-        provider: 'openai',
+        provider: 'auto',
         openai: {
           api_key: 'openai-key',
           model: 'gpt-4o-mini-transcribe',
@@ -144,7 +144,7 @@ describe('GlobalConfigSchema', () => {
       },
     });
 
-    expect(result.stt!.provider).toBe('openai');
+    expect(result.stt!.provider).toBe('auto');
     expect(result.stt!.openai!.model).toBe('gpt-4o-mini-transcribe');
     expect(result.stt!.elevenlabs!.model).toBe('scribe_v2');
   });

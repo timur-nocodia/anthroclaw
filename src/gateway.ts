@@ -24,7 +24,7 @@ import {
 import { runMemoryDoctor, type MemoryDoctorOptions, type MemoryDoctorReport } from './memory/doctor.js';
 import { PrefetchCache } from './memory/prefetch.js';
 import type { MemoryEntryRecord, MemoryReviewStatus, SearchResult } from './memory/store.js';
-import { transcribeAudioWithProvider, type SttTranscriptionConfig } from './media/transcribe.js';
+import { resolveSttTranscriptionConfig, transcribeAudioWithProvider } from './media/transcribe.js';
 import { extractPdfText } from './media/pdf.js';
 import { metrics } from './metrics/collector.js';
 import { MetricsStore } from './metrics/store.js';
@@ -3138,7 +3138,7 @@ export class Gateway {
     if (!msg.media) return;
 
     // Audio/voice transcription runs before SDK query execution.
-    const stt = this.resolveSttTranscriptionConfig();
+    const stt = resolveSttTranscriptionConfig(this.globalConfig ?? undefined);
     if ((msg.media.type === 'voice' || msg.media.type === 'audio') && stt) {
       const transcript = await transcribeAudioWithProvider(msg.media.path, stt);
       if (transcript) {
@@ -3155,24 +3155,6 @@ export class Gateway {
         logger.info({ chars: text.length }, 'PDF text extracted');
       }
     }
-  }
-
-  private resolveSttTranscriptionConfig(): SttTranscriptionConfig | null {
-    const stt = this.globalConfig?.stt;
-    const provider = stt?.provider ?? 'assemblyai';
-
-    if (provider === 'assemblyai') {
-      const apiKey = stt?.assemblyai?.api_key ?? this.globalConfig?.assemblyai?.api_key;
-      return apiKey ? { provider, apiKey, model: stt?.assemblyai?.model } : null;
-    }
-
-    if (provider === 'openai') {
-      const apiKey = stt?.openai?.api_key ?? process.env.OPENAI_API_KEY;
-      return apiKey ? { provider, apiKey, model: stt?.openai?.model } : null;
-    }
-
-    const apiKey = stt?.elevenlabs?.api_key ?? process.env.ELEVENLABS_API_KEY;
-    return apiKey ? { provider, apiKey, model: stt?.elevenlabs?.model } : null;
   }
 
   // ─── Internal helpers ──────────────────────────────────────────────

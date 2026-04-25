@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { transcribeAudioWithProvider } from '../../src/media/transcribe.js';
+import { resolveSttTranscriptionConfig, transcribeAudioWithProvider } from '../../src/media/transcribe.js';
 
 describe('STT transcription providers', () => {
   let tmpDir: string;
@@ -94,5 +94,49 @@ describe('STT transcription providers', () => {
     });
 
     expect(transcript).toBeNull();
+  });
+
+  it('resolves STT provider auto mode by configured provider priority', () => {
+    expect(resolveSttTranscriptionConfig({
+      stt: {
+        provider: 'auto',
+        openai: { api_key: 'openai-key', model: 'gpt-4o-mini-transcribe' },
+        elevenlabs: { api_key: 'eleven-key' },
+      },
+    }, {})).toEqual({
+      provider: 'openai',
+      apiKey: 'openai-key',
+      model: 'gpt-4o-mini-transcribe',
+    });
+
+    expect(resolveSttTranscriptionConfig({
+      assemblyai: { api_key: 'legacy-assembly-key' },
+      stt: { provider: 'auto' },
+    }, {
+      OPENAI_API_KEY: 'openai-key',
+    })).toEqual({
+      provider: 'assemblyai',
+      apiKey: 'legacy-assembly-key',
+      model: undefined,
+    });
+  });
+
+  it('respects explicit STT provider selection', () => {
+    expect(resolveSttTranscriptionConfig({
+      assemblyai: { api_key: 'assembly-key' },
+      stt: {
+        provider: 'elevenlabs',
+        elevenlabs: { api_key: 'eleven-key', model: 'scribe_v2' },
+      },
+    }, {})).toEqual({
+      provider: 'elevenlabs',
+      apiKey: 'eleven-key',
+      model: 'scribe_v2',
+    });
+
+    expect(resolveSttTranscriptionConfig({
+      assemblyai: { api_key: 'assembly-key' },
+      stt: { provider: 'openai' },
+    }, {})).toBeNull();
   });
 });

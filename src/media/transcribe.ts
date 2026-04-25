@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { logger } from '../logger.js';
+import type { GlobalConfig } from '../config/schema.js';
 
 const ASSEMBLYAI_BASE = 'https://api.assemblyai.com/v2';
 const OPENAI_TRANSCRIPTIONS_URL = 'https://api.openai.com/v1/audio/transcriptions';
@@ -14,6 +15,7 @@ export async function transcribeAudio(filePath: string, apiKey: string): Promise
 }
 
 export type SttProviderName = 'assemblyai' | 'openai' | 'elevenlabs';
+export type SttProviderSelection = 'auto' | SttProviderName;
 
 export interface SttTranscriptionConfig {
   provider: SttProviderName;
@@ -22,6 +24,45 @@ export interface SttTranscriptionConfig {
   fetchImpl?: typeof fetch;
   pollIntervalMs?: number;
   maxPollAttempts?: number;
+}
+
+export function resolveSttTranscriptionConfig(
+  config: Pick<GlobalConfig, 'assemblyai' | 'stt'> | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): SttTranscriptionConfig | null {
+  const stt = config?.stt;
+  const selection: SttProviderSelection = stt?.provider ?? 'auto';
+  const candidates: SttProviderName[] = selection === 'auto'
+    ? ['assemblyai', 'openai', 'elevenlabs']
+    : [selection];
+
+  for (const provider of candidates) {
+    const resolved = resolveSingleSttProvider(provider, config, env);
+    if (resolved) return resolved;
+  }
+
+  return null;
+}
+
+function resolveSingleSttProvider(
+  provider: SttProviderName,
+  config: Pick<GlobalConfig, 'assemblyai' | 'stt'> | undefined,
+  env: NodeJS.ProcessEnv,
+): SttTranscriptionConfig | null {
+  const stt = config?.stt;
+
+  if (provider === 'assemblyai') {
+    const apiKey = stt?.assemblyai?.api_key ?? config?.assemblyai?.api_key;
+    return apiKey ? { provider, apiKey, model: stt?.assemblyai?.model } : null;
+  }
+
+  if (provider === 'openai') {
+    const apiKey = stt?.openai?.api_key ?? env.OPENAI_API_KEY;
+    return apiKey ? { provider, apiKey, model: stt?.openai?.model } : null;
+  }
+
+  const apiKey = stt?.elevenlabs?.api_key ?? env.ELEVENLABS_API_KEY;
+  return apiKey ? { provider, apiKey, model: stt?.elevenlabs?.model } : null;
 }
 
 export async function transcribeAudioWithProvider(
