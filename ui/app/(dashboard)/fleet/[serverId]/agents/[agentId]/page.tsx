@@ -864,6 +864,57 @@ function ConfigTab({
     });
   };
 
+  const nextExternalMcpName = (base: string) => {
+    if (!cfg.external_mcp_servers[base]) return base;
+    for (let index = 2; index < 20; index += 1) {
+      const name = `${base}-${index}`;
+      if (!cfg.external_mcp_servers[name]) return name;
+    }
+    return `${base}-${Date.now()}`;
+  };
+
+  const addExternalMcpPreset = (preset: "calendar" | "gmail") => {
+    const name = nextExternalMcpName(preset);
+    const server = preset === "calendar"
+      ? {
+          type: "stdio" as const,
+          command: "npx",
+          args: ["google-calendar-mcp"],
+          env: {
+            GOOGLE_CLIENT_ID: "",
+            GOOGLE_CLIENT_SECRET: "",
+            GOOGLE_REFRESH_TOKEN: "",
+          },
+          allowed_tools: [
+            "calendar_daily_brief",
+            "calendar_availability",
+            "calendar_event_lookup",
+            "calendar_meeting_prep",
+          ],
+        }
+      : {
+          type: "stdio" as const,
+          command: "npx",
+          args: ["gmail-mcp"],
+          env: {
+            GOOGLE_CLIENT_ID: "",
+            GOOGLE_CLIENT_SECRET: "",
+            GOOGLE_REFRESH_TOKEN: "",
+          },
+          allowed_tools: [
+            "gmail_search",
+            "gmail_thread_summary",
+            "gmail_draft_reply",
+          ],
+        };
+    update({
+      external_mcp_servers: {
+        ...cfg.external_mcp_servers,
+        [name]: server,
+      },
+    });
+  };
+
   const removeExternalMcpServer = (serverName: string) => {
     const { [serverName]: _removed, ...rest } = cfg.external_mcp_servers;
     update({ external_mcp_servers: rest });
@@ -1836,10 +1887,18 @@ function ConfigTab({
             tooltip="SDK-native external MCP servers for pilot integrations. These are passed into Claude Agent SDK mcpServers, not executed through a custom harness runtime."
             icon={<Plug className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
             action={
-              <Button variant="outline" size="sm" onClick={addExternalMcpServer}>
-                <Plus className="h-3 w-3" />
-                Add server
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => addExternalMcpPreset("calendar")}>
+                  Calendar
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => addExternalMcpPreset("gmail")}>
+                  Gmail
+                </Button>
+                <Button variant="outline" size="sm" onClick={addExternalMcpServer}>
+                  <Plus className="h-3 w-3" />
+                  Add server
+                </Button>
+              </div>
             }
           >
             {Object.keys(cfg.external_mcp_servers).length === 0 ? (
