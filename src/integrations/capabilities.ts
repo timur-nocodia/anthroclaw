@@ -79,6 +79,19 @@ const TOOL_DEFINITIONS: CapabilityDefinition[] = [
     },
   },
   {
+    id: 'notes.local',
+    kind: 'mcp_tool',
+    provider: 'anthroclaw-notes',
+    toolNames: ['local_note_search'],
+    risk: 'low',
+    permissionDefaults: {
+      defaultBehavior: 'deny',
+      allowMcp: true,
+      allowedMcpTools: ['local_note_search'],
+      notes: ['Read-only search over workspace notes directories; does not expose arbitrary filesystem reads.'],
+    },
+  },
+  {
     id: 'channels.messaging',
     kind: 'mcp_tool',
     provider: 'anthroclaw-channels',

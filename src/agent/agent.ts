@@ -14,6 +14,7 @@ import { createListSkillsTool } from './tools/list-skills.js';
 import { createManageSkillsTool } from './tools/manage-skills.js';
 import { createManageCronTool } from './tools/manage-cron.js';
 import { createSessionSearchTool } from './tools/session-search.js';
+import { createLocalNoteSearchTool } from './tools/local-note-search.js';
 import type { DynamicCronStore } from '../cron/dynamic-store.js';
 import { createSdkMcpServer, query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpSdkServerConfigWithInstance, Options } from '@anthropic-ai/claude-agent-sdk';
@@ -218,6 +219,9 @@ export class Agent {
           break;
         case 'session_search':
           tools.push(createSessionSearchTool(sessionSearch));
+          break;
+        case 'local_note_search':
+          tools.push(createLocalNoteSearchTool(agentDir));
           break;
       }
     }

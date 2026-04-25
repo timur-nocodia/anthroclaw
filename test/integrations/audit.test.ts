@@ -13,6 +13,11 @@ describe('integration audit classification', () => {
       provider: 'anthroclaw-memory',
       localToolName: 'memory_write',
     });
+    expect(classifyIntegrationToolName('mcp__helper-tools__local_note_search')).toEqual({
+      capabilityId: 'notes.local',
+      provider: 'anthroclaw-notes',
+      localToolName: 'local_note_search',
+    });
   });
 
   it('ignores non-integration SDK tools', () => {

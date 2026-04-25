@@ -84,6 +84,44 @@ describe('integration capability matrix', () => {
     });
   });
 
+  it('reports local notes as a read-only pilot integration', () => {
+    const matrix = buildIntegrationCapabilityMatrix(
+      baseConfig(),
+      [{
+        id: 'researcher',
+        config: {
+          routes: [{ channel: 'telegram', scope: 'dm' }],
+          timezone: 'UTC',
+          mcp_tools: ['local_note_search'],
+        },
+      }],
+      {},
+    );
+
+    expect(matrix.capabilities.find((capability) => capability.id === 'notes.local')).toMatchObject({
+      provider: 'anthroclaw-notes',
+      status: 'available',
+      risk: 'low',
+      toolNames: ['local_note_search'],
+      enabledForAgents: ['researcher'],
+      permissionDefaults: {
+        defaultBehavior: 'deny',
+        allowMcp: true,
+        allowedMcpTools: ['local_note_search'],
+      },
+      configSnippet: [
+        'mcp_tools:',
+        '  - local_note_search',
+        'sdk:',
+        '  permissions:',
+        '    default_behavior: deny',
+        '    allow_mcp: true',
+        '    allowed_mcp_tools:',
+        '      - local_note_search',
+      ].join('\n'),
+    });
+  });
+
   it('reports STT provider availability without exposing secrets', () => {
     const matrix = buildIntegrationCapabilityMatrix(
       {

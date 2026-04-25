@@ -64,7 +64,7 @@ describe('Agent', () => {
 
   // ─── 4. creates MCP server with requested tools ─────────────────
   it('creates MCP server with requested tools', async () => {
-    writeMinimalAgentYml(agentDir, ['memory_search', 'session_search', 'memory_write', 'manage_skills']);
+    writeMinimalAgentYml(agentDir, ['memory_search', 'session_search', 'local_note_search', 'memory_write', 'manage_skills']);
     const agent = await Agent.load(agentDir, dataDir);
 
     expect(agent.mcpServer).toBeDefined();
@@ -73,6 +73,7 @@ describe('Agent', () => {
     const toolNames = agent.tools.map((t) => t.name);
     expect(toolNames).toContain('memory_search');
     expect(toolNames).toContain('session_search');
+    expect(toolNames).toContain('local_note_search');
     expect(toolNames).toContain('memory_write');
     expect(toolNames).toContain('manage_skills');
     expect(toolNames).not.toContain('send_message');

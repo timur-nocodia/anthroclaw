@@ -33,13 +33,14 @@ describe('portable subagent MCP', () => {
         id: 'helper',
         workspacePath: '/tmp/helper',
         config: { timezone: 'Asia/Almaty' } as any,
-        tools: [fakeTool('memory_search'), fakeTool('session_search'), fakeTool('manage_cron')],
+        tools: [fakeTool('memory_search'), fakeTool('session_search'), fakeTool('local_note_search'), fakeTool('manage_cron')],
         mcpServer: { name: 'helper-tools' } as any,
       },
       allowedTools: [
         'Read',
         'mcp__helper-tools__memory_search',
         'mcp__helper-tools__session_search',
+        'mcp__helper-tools__local_note_search',
         'mcp__helper-tools__manage_cron',
       ],
       dataDir: '/tmp/data',
@@ -47,11 +48,12 @@ describe('portable subagent MCP', () => {
     });
 
     expect(result).not.toBeNull();
-    expect(result?.sourceToolNames).toEqual(['memory_search', 'session_search']);
+    expect(result?.sourceToolNames).toEqual(['memory_search', 'session_search', 'local_note_search']);
     expect(result?.skippedToolNames).toEqual(['manage_cron']);
     expect(result?.toolNames).toEqual([
       'mcp__helper-subagent-tools__memory_search',
       'mcp__helper-subagent-tools__session_search',
+      'mcp__helper-subagent-tools__local_note_search',
     ]);
     expect(result?.spec).toEqual({
       'helper-subagent-tools': expect.objectContaining({
@@ -59,7 +61,7 @@ describe('portable subagent MCP', () => {
         command: process.execPath,
         env: expect.objectContaining({
           OPENCLAW_SUBAGENT_MCP_AGENT_ID: 'helper',
-          OPENCLAW_SUBAGENT_MCP_TOOLS: JSON.stringify(['memory_search', 'session_search']),
+          OPENCLAW_SUBAGENT_MCP_TOOLS: JSON.stringify(['memory_search', 'session_search', 'local_note_search']),
         }),
       }),
     });
@@ -80,10 +82,10 @@ describe('portable subagent MCP', () => {
       OPENCLAW_SUBAGENT_MCP_WORKSPACE: workspacePath,
       OPENCLAW_SUBAGENT_MCP_DATA_DIR: dataDir,
       OPENCLAW_SUBAGENT_MCP_TIMEZONE: 'Asia/Almaty',
-      OPENCLAW_SUBAGENT_MCP_TOOLS: JSON.stringify(['memory_write', 'session_search', 'list_skills']),
+      OPENCLAW_SUBAGENT_MCP_TOOLS: JSON.stringify(['memory_write', 'session_search', 'local_note_search', 'list_skills']),
     });
 
     const tools = createPortableSubagentTools(runtime);
-    expect(tools.map((tool) => tool.name)).toEqual(['memory_write', 'session_search', 'list_skills']);
+    expect(tools.map((tool) => tool.name)).toEqual(['memory_write', 'session_search', 'local_note_search', 'list_skills']);
   });
 });

@@ -9,6 +9,7 @@ const TOOL_CAPABILITIES: Record<string, { capabilityId: string; provider: string
   memory_write: { capabilityId: 'memory.core', provider: 'anthroclaw-memory' },
   memory_wiki: { capabilityId: 'memory.core', provider: 'anthroclaw-memory' },
   session_search: { capabilityId: 'sessions.search', provider: 'anthroclaw-sessions' },
+  local_note_search: { capabilityId: 'notes.local', provider: 'anthroclaw-notes' },
   send_message: { capabilityId: 'channels.messaging', provider: 'anthroclaw-channels' },
   send_media: { capabilityId: 'channels.messaging', provider: 'anthroclaw-channels' },
   web_search_brave: { capabilityId: 'web.brave', provider: 'brave' },
