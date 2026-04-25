@@ -1317,6 +1317,44 @@ export default function ChatPage() {
         </div>
       </div>
 
+      {selectedSession && (
+        <div
+          className="border-b px-5 py-2"
+          style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
+        >
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <span
+              className="max-w-[240px] truncate text-[12px] font-medium"
+              style={{ color: "var(--color-foreground)" }}
+              title={selectedSession.customTitle || selectedSession.summary || selectedSession.sessionId}
+            >
+              {selectedSession.customTitle || selectedSession.summary || selectedSession.sessionId}
+            </span>
+            {selectedSession.provenance && (
+              <>
+                <SubagentPill tone={selectedSession.provenance.status === "failed" ? "error" : selectedSession.provenance.status === "running" ? "running" : "done"}>
+                  {selectedSession.provenance.status}
+                </SubagentPill>
+                <SubagentPill>
+                  {selectedSession.provenance.source}/{selectedSession.provenance.channel}
+                </SubagentPill>
+              </>
+            )}
+            <SubagentPill>{selectedSession.messageCount ?? 0} msgs</SubagentPill>
+            {selectedSession.lastModified && (
+              <SubagentPill title={String(selectedSession.lastModified)}>
+                {formatTime(selectedSession.lastModified)}
+              </SubagentPill>
+            )}
+            {selectedSession.lastMessage?.text && (
+              <span className="min-w-[160px] flex-1 truncate" style={{ color: "var(--oc-text-muted)" }}>
+                {selectedSession.lastMessage.text}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div

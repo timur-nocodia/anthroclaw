@@ -109,6 +109,29 @@ describe('Gateway session mailbox filters', () => {
     ]);
   });
 
+  it('returns compact summary row fields for mailbox display', async () => {
+    await expect(gw.listAgentSessions('agent', { search: 'alpha' })).resolves.toMatchObject([
+      {
+        sessionId: 's1',
+        summary: 'Deploy Alpha',
+        messageCount: 3,
+        provenance: {
+          source: 'web',
+          channel: 'web',
+          status: 'running',
+        },
+        firstMessage: {
+          type: 'user',
+          text: 'please deploy alpha',
+        },
+        lastMessage: {
+          type: 'assistant',
+          text: 'alpha deployed',
+        },
+      },
+    ]);
+  });
+
   it('filters by source, channel, status, active state, and errors', async () => {
     await expect(gw.listAgentSessions('agent', { source: 'web' })).resolves.toMatchObject([
       { sessionId: 's1' },
