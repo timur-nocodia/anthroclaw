@@ -156,7 +156,7 @@ describe('MetricsCollector', () => {
     expect(snap.gauges).toHaveProperty('memory_store_bytes');
     expect(snap.gauges).toHaveProperty('media_store_bytes');
     expect(snap.insights_30d).toMatchObject({ periodDays: 30, topTools: [], topModels: [] });
-    expect(snap.events_30d).toEqual({ tools: {}, sessions: {}, subagents: {} });
+    expect(snap.events_30d).toEqual({ tools: {}, sessions: {}, subagents: {}, fileOwnership: {} });
   });
 
   it('snapshot() reads persisted metrics when a store is attached', () => {
@@ -189,6 +189,15 @@ describe('MetricsCollector', () => {
       eventType: 'started',
       status: 'running',
     });
+    metrics.recordFileOwnershipEvent({
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      subagentId: 'researcher',
+      path: '/repo/src/app.ts',
+      eventType: 'denied_write',
+      action: 'deny',
+    });
 
     const snap = metrics.snapshot();
     expect(snap.counters.messages_received).toBe(1);
@@ -201,7 +210,12 @@ describe('MetricsCollector', () => {
       tools: { started: 1 },
       sessions: { created: 1 },
       subagents: { started: 1 },
+      fileOwnership: { denied_write: 1 },
     });
+    expect(metrics.listFileOwnershipEvents({ action: 'deny' })).toMatchObject([{
+      eventType: 'denied_write',
+      path: '/repo/src/app.ts',
+    }]);
   });
 
   // ─── gauge providers ────────────────────────────────────────────

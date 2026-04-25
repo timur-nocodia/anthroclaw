@@ -11,6 +11,13 @@ import type {
   PermissionResult,
   PreToolUseHookInput,
 } from '@anthropic-ai/claude-agent-sdk';
+import {
+  evaluateFileOwnershipToolUse,
+  type FileOwnershipToolUseContext,
+} from './file-ownership-permissions.js';
+import type { FileOwnershipRegistry } from './file-ownership.js';
+import type { StoredFileOwnershipEvent } from '../metrics/store.js';
+import { buildExternalMcpToolNames } from './external-mcp.js';
 
 const DEFAULT_ALLOWED_TOOLS = [
   'Read',
@@ -115,6 +122,12 @@ function allow(input: Record<string, unknown>): PermissionResult {
   return { behavior: 'allow', updatedInput: input };
 }
 
+export interface FileOwnershipPermissionHooks {
+  registry: FileOwnershipRegistry;
+  resolveContext(input: PreToolUseHookInput): FileOwnershipToolUseContext | undefined;
+  onEvent?: (event: StoredFileOwnershipEvent) => void;
+}
+
 export function getAgentMcpToolNames(agent: Pick<Agent, 'mcpServer' | 'tools'>): string[] {
   return agent.tools.map((tool: ToolDefinition) => `mcp__${agent.mcpServer.name}__${tool.name}`);
 }
@@ -141,6 +154,11 @@ export function buildAllowedTools(
 
   if (cfg?.permissions?.allow_mcp !== false) {
     for (const toolName of getAgentMcpToolNames(agent)) {
+      if (isLocalMcpToolApproved(cfg?.permissions?.allowed_mcp_tools, toolName)) {
+        out.add(toolName);
+      }
+    }
+    for (const toolName of buildExternalMcpToolNames(agent.config.external_mcp_servers)) {
       if (isLocalMcpToolApproved(cfg?.permissions?.allowed_mcp_tools, toolName)) {
         out.add(toolName);
       }
@@ -263,9 +281,66 @@ function createDenyDangerousOperationsHook(
   };
 }
 
-export function buildPermissionHooks(agent: Pick<Agent, 'config'>): NonNullable<Options['hooks']> {
+function createFileOwnershipHook(options: FileOwnershipPermissionHooks): HookCallback {
+  return async (input): Promise<HookJSONOutput> => {
+    if (input.hook_event_name !== 'PreToolUse') {
+      return {};
+    }
+
+    const preToolInput = input as PreToolUseHookInput;
+    const resolved = options.resolveContext(preToolInput);
+    if (!resolved) return {};
+
+    const decision = evaluateFileOwnershipToolUse(options.registry, {
+      ...resolved,
+      toolName: preToolInput.tool_name,
+      toolInput: preToolInput.tool_input,
+      cwd: preToolInput.cwd ?? resolved.cwd,
+    });
+
+    for (const conflict of decision.conflicts) {
+      options.onEvent?.({
+        sessionKey: conflict.sessionKey,
+        runId: conflict.requested.runId,
+        subagentId: conflict.requested.subagentId,
+        path: conflict.path,
+        eventType: 'conflict',
+        action: conflict.action,
+        reason: conflict.reason,
+      });
+    }
+
+    if (decision.applies && !decision.allowed) {
+      options.onEvent?.({
+        sessionKey: resolved.sessionKey,
+        runId: resolved.runId,
+        subagentId: resolved.subagentId,
+        path: decision.path ?? 'unknown',
+        eventType: 'denied_write',
+        action: 'deny',
+        reason: decision.message,
+      });
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: decision.message ?? 'File ownership denied this write.',
+        },
+      };
+    }
+
+    return {};
+  };
+}
+
+export function buildPermissionHooks(
+  agent: Pick<Agent, 'config'>,
+  fileOwnership?: FileOwnershipPermissionHooks,
+): NonNullable<Options['hooks']> {
+  const hooks = [createDenyDangerousOperationsHook(agent)];
+  if (fileOwnership) hooks.push(createFileOwnershipHook(fileOwnership));
   const matcher: HookCallbackMatcher = {
-    hooks: [createDenyDangerousOperationsHook(agent)],
+    hooks,
   };
   return { PreToolUse: [matcher] };
 }

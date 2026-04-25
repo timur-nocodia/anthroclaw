@@ -9,6 +9,7 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
+  Download,
   FileText,
   GitFork,
   History,
@@ -16,6 +17,8 @@ import {
   RefreshCw,
   RotateCcw,
   Send,
+  Search,
+  Tags,
   Trash2,
   Workflow,
   Zap,
@@ -56,6 +59,7 @@ interface AgentSession {
   summary: string;
   tag?: string;
   customTitle?: string;
+  labels?: string[];
   lastModified: number;
   activeKeys?: string[];
   messageCount?: number;
@@ -158,6 +162,21 @@ interface SubagentRun {
   interruptSupported?: boolean;
   interruptScope?: "parent_session";
   interruptReason?: string;
+  policy?: {
+    kind: "explorer" | "worker" | "custom";
+    writePolicy: "allow" | "deny" | "claim_required";
+    conflictMode: "soft" | "strict";
+    description?: string;
+  };
+  toolSummary?: {
+    started: number;
+    completed: number;
+    failed: number;
+    toolNames: string[];
+    lastToolName?: string;
+    lastStatus?: "started" | "completed" | "failed";
+    lastAt?: number;
+  };
 }
 
 interface HookEventView {
@@ -171,6 +190,64 @@ interface HookEventView {
   stderr?: string;
   outcome?: string;
   ts: Date;
+}
+
+interface ActiveRunView {
+  sessionKey: string;
+  registeredAt: number;
+  lastActivityAt: number;
+  lastEventType: string;
+  activeTaskIds: string[];
+  traceId?: string;
+  agentId?: string;
+  runId?: string;
+  sdkSessionId?: string;
+  channelDeliveryTarget?: {
+    channel: string;
+    peerId: string;
+    accountId?: string;
+    threadId?: string;
+  };
+}
+
+interface InterruptRecord {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  runId?: string;
+  sessionKey?: string;
+  sdkSessionId?: string;
+  targetId: string;
+  requestedBy?: string;
+  result: "interrupted" | "failed";
+  reason?: string;
+}
+
+interface FileOwnershipClaim {
+  claimId: string;
+  sessionKey: string;
+  runId: string;
+  subagentId: string;
+  path: string;
+  mode: "read" | "write";
+  claimedAt: number;
+  expiresAt: number;
+}
+
+interface FileOwnershipConflict {
+  conflictId: string;
+  sessionKey: string;
+  path: string;
+  requested: FileOwnershipClaim;
+  existing: FileOwnershipClaim;
+  action: "allow" | "deny";
+  reason: string;
+  createdAt: number;
+}
+
+interface FileOwnershipView {
+  claims: FileOwnershipClaim[];
+  conflicts: FileOwnershipConflict[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -205,12 +282,28 @@ export default function ChatPage() {
   const [promptSuggestion, setPromptSuggestion] = useState<string | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionSearchFilter, setSessionSearchFilter] = useState("");
+  const [sessionLabelFilter, setSessionLabelFilter] = useState("");
+  const [sessionSourceFilter, setSessionSourceFilter] = useState<"all" | "web" | "channel" | "cron">("all");
+  const [sessionStatusFilter, setSessionStatusFilter] = useState<"all" | "running" | "succeeded" | "failed" | "interrupted">("all");
+  const [sessionActiveFilter, setSessionActiveFilter] = useState<"all" | "active" | "inactive">("all");
+  const [sessionChannelFilter, setSessionChannelFilter] = useState("");
+  const [sessionErrorsOnly, setSessionErrorsOnly] = useState(false);
+  const [sessionRouteDecisionOnly, setSessionRouteDecisionOnly] = useState(false);
+  const [sessionModifiedAfterFilter, setSessionModifiedAfterFilter] = useState("");
+  const [sessionModifiedBeforeFilter, setSessionModifiedBeforeFilter] = useState("");
   const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
   const [sessionDetailsLoading, setSessionDetailsLoading] = useState(false);
   const [routeDecision, setRouteDecision] = useState<RouteDecision | null>(null);
   const [routeDecisionLoading, setRouteDecisionLoading] = useState(false);
   const [subagentRuns, setSubagentRuns] = useState<SubagentRun[]>([]);
   const [subagentsLoading, setSubagentsLoading] = useState(false);
+  const [activeRuns, setActiveRuns] = useState<ActiveRunView[]>([]);
+  const [activeRunsLoading, setActiveRunsLoading] = useState(false);
+  const [interrupts, setInterrupts] = useState<InterruptRecord[]>([]);
+  const [interruptsLoading, setInterruptsLoading] = useState(false);
+  const [fileOwnership, setFileOwnership] = useState<FileOwnershipView>({ claims: [], conflicts: [] });
+  const [fileOwnershipLoading, setFileOwnershipLoading] = useState(false);
   const [hookEvents, setHookEvents] = useState<HookEventView[]>([]);
   const [rewindNotice, setRewindNotice] = useState<string | null>(null);
   const [channel, setChannel] = useState("web");
@@ -267,14 +360,47 @@ export default function ChatPage() {
   const loadSessions = useCallback(async () => {
     setSessionsLoading(true);
     try {
-      const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/sessions?limit=25`);
+      const query = new URLSearchParams({ limit: "25" });
+      const search = sessionSearchFilter.trim();
+      const label = sessionLabelFilter.trim();
+      const channelFilter = sessionChannelFilter.trim();
+      if (search) query.set("search", search);
+      if (label) query.set("label", label);
+      if (sessionSourceFilter !== "all") query.set("source", sessionSourceFilter);
+      if (sessionStatusFilter !== "all") query.set("status", sessionStatusFilter);
+      if (sessionActiveFilter !== "all") query.set("active", sessionActiveFilter);
+      if (channelFilter) query.set("channel", channelFilter);
+      if (sessionErrorsOnly) query.set("hasErrors", "true");
+      if (sessionRouteDecisionOnly) query.set("hasRouteDecision", "true");
+      if (sessionModifiedAfterFilter) {
+        const modifiedAfter = new Date(`${sessionModifiedAfterFilter}T00:00:00`).getTime();
+        if (Number.isFinite(modifiedAfter)) query.set("modifiedAfter", String(modifiedAfter));
+      }
+      if (sessionModifiedBeforeFilter) {
+        const modifiedBefore = new Date(`${sessionModifiedBeforeFilter}T23:59:59.999`).getTime();
+        if (Number.isFinite(modifiedBefore)) query.set("modifiedBefore", String(modifiedBefore));
+      }
+      const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/sessions?${query.toString()}`);
       if (!res.ok) return;
       const data = await res.json();
       setSessions(Array.isArray(data.sessions) ? data.sessions : []);
     } finally {
       setSessionsLoading(false);
     }
-  }, [selected, serverId]);
+  }, [
+    selected,
+    serverId,
+    sessionActiveFilter,
+    sessionChannelFilter,
+    sessionErrorsOnly,
+    sessionLabelFilter,
+    sessionModifiedAfterFilter,
+    sessionModifiedBeforeFilter,
+    sessionRouteDecisionOnly,
+    sessionSearchFilter,
+    sessionSourceFilter,
+    sessionStatusFilter,
+  ]);
 
   useEffect(() => {
     void loadSessions();
@@ -372,15 +498,79 @@ export default function ChatPage() {
     void loadSubagentRuns();
   }, [loadSubagentRuns]);
 
+  const loadActiveRuns = useCallback(async () => {
+    setActiveRunsLoading(true);
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/runs/active`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setActiveRuns(Array.isArray(data.activeRuns) ? data.activeRuns as ActiveRunView[] : []);
+    } finally {
+      setActiveRunsLoading(false);
+    }
+  }, [selected, serverId]);
+
+  useEffect(() => {
+    void loadActiveRuns();
+  }, [loadActiveRuns]);
+
+  const loadInterrupts = useCallback(async () => {
+    setInterruptsLoading(true);
+    try {
+      const query = new URLSearchParams({ limit: "8" });
+      const runId = selectedSession?.provenance?.runId;
+      if (runId) {
+        query.set("runId", runId);
+      } else if (sessionId) {
+        query.set("targetId", sessionId);
+      }
+      const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/interrupts?${query.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setInterrupts(Array.isArray(data.interrupts) ? data.interrupts as InterruptRecord[] : []);
+    } finally {
+      setInterruptsLoading(false);
+    }
+  }, [selected, selectedSession?.provenance?.runId, serverId, sessionId]);
+
+  useEffect(() => {
+    void loadInterrupts();
+  }, [loadInterrupts]);
+
+  const loadFileOwnership = useCallback(async () => {
+    setFileOwnershipLoading(true);
+    try {
+      const query = new URLSearchParams({ limit: "20" });
+      const sessionKey = selectedSession?.provenance?.sessionKey;
+      if (sessionKey) query.set("sessionKey", sessionKey);
+      const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/file-ownership?${query.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setFileOwnership({
+        claims: Array.isArray(data.claims) ? data.claims as FileOwnershipClaim[] : [],
+        conflicts: Array.isArray(data.conflicts) ? data.conflicts as FileOwnershipConflict[] : [],
+      });
+    } finally {
+      setFileOwnershipLoading(false);
+    }
+  }, [selected, selectedSession?.provenance?.sessionKey, serverId]);
+
+  useEffect(() => {
+    void loadFileOwnership();
+  }, [loadFileOwnership]);
+
   useEffect(() => {
     if (!streaming) return;
     const id = window.setInterval(() => {
       void loadSubagentRuns();
+      void loadActiveRuns();
+      void loadFileOwnership();
+      void loadInterrupts();
       void loadSessionDetails();
       void loadRouteDecision();
     }, 1500);
     return () => window.clearInterval(id);
-  }, [loadRouteDecision, loadSessionDetails, loadSubagentRuns, streaming]);
+  }, [loadActiveRuns, loadFileOwnership, loadInterrupts, loadRouteDecision, loadSessionDetails, loadSubagentRuns, streaming]);
 
   // Auto-scroll
   useEffect(() => {
@@ -483,6 +673,8 @@ export default function ChatPage() {
               if (ev.totalTokens) setTotalTokens((t) => t + ev.totalTokens);
               void loadSessions();
               void loadSubagentRuns();
+              void loadActiveRuns();
+              void loadFileOwnership();
               void loadSessionDetails();
               void loadRouteDecision();
               continue;
@@ -525,6 +717,24 @@ export default function ChatPage() {
                   return {
                     ...x,
                     taskProgress: ev.summary ?? ev.description ?? "Subagent is working...",
+                  };
+                }
+                if (ev.type === "task_notification") {
+                  const status = typeof ev.status === "string" ? ev.status : "completed";
+                  const summary = typeof ev.summary === "string" && ev.summary.length > 0 ? ev.summary : "Task finished";
+                  return {
+                    ...x,
+                    taskProgress: `${status}: ${summary}`,
+                  };
+                }
+                if (ev.type === "elicitation") {
+                  const serverName = typeof ev.serverName === "string" ? ev.serverName : "MCP";
+                  const mode = typeof ev.mode === "string" ? ev.mode : "form";
+                  const url = typeof ev.url === "string" ? ` ${ev.url}` : "";
+                  const detail = typeof ev.message === "string" ? ev.message : "User input requested";
+                  return {
+                    ...x,
+                    taskProgress: `${serverName} ${mode} elicitation: ${detail}${url}`,
                   };
                 }
                 if (ev.type === "tool_call" || ev.type === "tool_use") {
@@ -591,6 +801,7 @@ export default function ChatPage() {
     setRewindNotice(null);
     setSessionDetails(null);
     setSubagentRuns([]);
+    setActiveRuns([]);
     setHookEvents([]);
     setSessionId("sess_" + Math.random().toString(36).slice(2, 10));
     setStreaming(false);
@@ -644,6 +855,7 @@ export default function ChatPage() {
       setSessionId(data.sessionId);
       setSessionDetails(null);
       setSubagentRuns([]);
+      setActiveRuns([]);
       setHookEvents([]);
       setPromptSuggestion(null);
       setRewindNotice(null);
@@ -662,6 +874,77 @@ export default function ChatPage() {
     await loadSessions();
   };
 
+  const renameCurrentSession = async () => {
+    if (!sessionId || streaming) return;
+    const current = selectedSession?.summary ?? selectedSession?.customTitle ?? "";
+    const title = window.prompt("Session title", current);
+    if (title === null) return;
+
+    const res = await fetch(
+      `/api/fleet/${serverId}/agents/${selected}/sessions/${encodeURIComponent(sessionId)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      },
+    );
+    if (!res.ok) return;
+
+    const data = await res.json();
+    const savedTitle = typeof data.title === "string" ? data.title : title.trim();
+    setSessions((items) => items.map((item) => (
+      item.sessionId === (data.sessionId ?? sessionId)
+        ? { ...item, summary: savedTitle, customTitle: savedTitle }
+        : item
+    )));
+    await loadSessions();
+  };
+
+  const updateCurrentSessionLabels = async () => {
+    if (!sessionId || streaming) return;
+    const current = selectedSession?.labels ?? [];
+    const next = window.prompt("Session labels, comma-separated", current.join(", "));
+    if (next === null) return;
+
+    const labels = next
+      .split(",")
+      .map((label) => label.trim())
+      .filter(Boolean);
+    const res = await fetch(
+      `/api/fleet/${serverId}/agents/${selected}/sessions/${encodeURIComponent(sessionId)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labels }),
+      },
+    );
+    if (!res.ok) return;
+
+    const data = await res.json();
+    const savedLabels = Array.isArray(data.labels)
+      ? data.labels.filter((label: unknown): label is string => typeof label === "string")
+      : labels;
+    setSessions((items) => items.map((item) => (
+      item.sessionId === (data.sessionId ?? sessionId)
+        ? { ...item, labels: savedLabels }
+        : item
+    )));
+    await loadSessions();
+  };
+
+  const clearSessionFilters = () => {
+    setSessionSearchFilter("");
+    setSessionLabelFilter("");
+    setSessionSourceFilter("all");
+    setSessionStatusFilter("all");
+    setSessionActiveFilter("all");
+    setSessionChannelFilter("");
+    setSessionErrorsOnly(false);
+    setSessionRouteDecisionOnly(false);
+    setSessionModifiedAfterFilter("");
+    setSessionModifiedBeforeFilter("");
+  };
+
   const interruptSubagentRun = async (runId: string) => {
     const res = await fetch(
       `/api/fleet/${serverId}/agents/${selected}/subagents/${encodeURIComponent(runId)}`,
@@ -670,6 +953,33 @@ export default function ChatPage() {
     if (res.ok || res.status === 409) {
       await loadSubagentRuns();
     }
+  };
+
+  const mutateFileOwnershipClaim = async (claimId: string, action: "release" | "override") => {
+    const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/file-ownership`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claimId, action }),
+    });
+    if (res.ok || res.status === 404) {
+      await loadFileOwnership();
+    }
+  };
+
+  const stopCurrentRun = async () => {
+    const active = activeRuns.find((run) => run.runId);
+    if (active?.runId) {
+      await fetch(
+        `/api/fleet/${serverId}/agents/${selected}/runs/${encodeURIComponent(active.runId)}/interrupt`,
+        { method: "POST" },
+      ).catch(() => {});
+      void loadActiveRuns();
+      void loadInterrupts();
+    }
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    setStreaming(false);
   };
 
   const rewindCurrentSession = async () => {
@@ -808,12 +1118,175 @@ export default function ChatPage() {
                 {session.tag ? `[${session.tag}] ` : ""}
                 {session.provenance ? `${session.provenance.source}/${session.provenance.channel} · ` : ""}
                 {session.provenance?.routeOutcome ? `${session.provenance.routeOutcome} · ` : ""}
+                {session.labels?.length ? `#${session.labels.join(" #")} · ` : ""}
                 {session.customTitle || session.summary || session.sessionId}
               </option>
             ))}
           </select>
+          <div className="flex max-w-full flex-wrap items-center gap-1">
+            <div className="flex items-center gap-1">
+              <Search className="h-3.5 w-3.5" style={{ color: "var(--oc-text-muted)" }} />
+              <input
+                value={sessionSearchFilter}
+                onChange={(e) => setSessionSearchFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void loadSessions();
+                }}
+                placeholder="search"
+                className="h-7 w-[120px] rounded border px-1.5 text-[11px] outline-none"
+                style={{
+                  background: "var(--oc-bg3)",
+                  borderColor: "var(--oc-border)",
+                  color: "var(--color-foreground)",
+                }}
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              <Tags className="h-3.5 w-3.5" style={{ color: "var(--oc-text-muted)" }} />
+              <input
+                value={sessionLabelFilter}
+                onChange={(e) => setSessionLabelFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void loadSessions();
+                }}
+                placeholder="label"
+                className="h-7 w-[92px] rounded border px-1.5 text-[11px] outline-none"
+                style={{
+                  background: "var(--oc-bg3)",
+                  borderColor: "var(--oc-border)",
+                  color: "var(--color-foreground)",
+                }}
+              />
+            </div>
+            <select
+              value={sessionSourceFilter}
+              onChange={(e) => setSessionSourceFilter(e.target.value as typeof sessionSourceFilter)}
+              className="h-7 cursor-pointer rounded border px-1.5 text-[11px]"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            >
+              <option value="all">source</option>
+              <option value="web">web</option>
+              <option value="channel">channel</option>
+              <option value="cron">cron</option>
+            </select>
+            <select
+              value={sessionStatusFilter}
+              onChange={(e) => setSessionStatusFilter(e.target.value as typeof sessionStatusFilter)}
+              className="h-7 cursor-pointer rounded border px-1.5 text-[11px]"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            >
+              <option value="all">status</option>
+              <option value="running">running</option>
+              <option value="succeeded">succeeded</option>
+              <option value="failed">failed</option>
+              <option value="interrupted">interrupted</option>
+            </select>
+            <select
+              value={sessionActiveFilter}
+              onChange={(e) => setSessionActiveFilter(e.target.value as typeof sessionActiveFilter)}
+              className="h-7 cursor-pointer rounded border px-1.5 text-[11px]"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            >
+              <option value="all">activity</option>
+              <option value="active">active</option>
+              <option value="inactive">inactive</option>
+            </select>
+            <input
+              value={sessionChannelFilter}
+              onChange={(e) => setSessionChannelFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void loadSessions();
+              }}
+              placeholder="channel"
+              className="h-7 w-[88px] rounded border px-1.5 text-[11px] outline-none"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            />
+            <label
+              className="flex h-7 items-center gap-1 rounded border px-1.5 text-[11px]"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={sessionErrorsOnly}
+                onChange={(e) => setSessionErrorsOnly(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              errors
+            </label>
+            <label
+              className="flex h-7 items-center gap-1 rounded border px-1.5 text-[11px]"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={sessionRouteDecisionOnly}
+                onChange={(e) => setSessionRouteDecisionOnly(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              routed
+            </label>
+            <input
+              type="date"
+              value={sessionModifiedAfterFilter}
+              onChange={(e) => setSessionModifiedAfterFilter(e.target.value)}
+              className="h-7 w-[118px] rounded border px-1.5 text-[11px] outline-none"
+              title="Modified after"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            />
+            <input
+              type="date"
+              value={sessionModifiedBeforeFilter}
+              onChange={(e) => setSessionModifiedBeforeFilter(e.target.value)}
+              className="h-7 w-[118px] rounded border px-1.5 text-[11px] outline-none"
+              title="Modified before"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            />
+          </div>
           <Button variant="outline" size="sm" onClick={loadSessions} disabled={sessionsLoading}>
             <History className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={clearSessionFilters} disabled={sessionsLoading}>
+            Clear
+          </Button>
+          <Button variant="outline" size="sm" onClick={renameCurrentSession} disabled={streaming || !sessionId}>
+            <FileText className="h-3.5 w-3.5" />
+            Rename
+          </Button>
+          <Button variant="outline" size="sm" onClick={updateCurrentSessionLabels} disabled={streaming || !sessionId}>
+            <Tags className="h-3.5 w-3.5" />
+            Labels
           </Button>
           <Button variant="outline" size="sm" onClick={forkCurrentSession} disabled={streaming || !sessionId}>
             <GitFork className="h-3.5 w-3.5" />
@@ -859,6 +1332,44 @@ export default function ChatPage() {
           </Button>
         </div>
       </div>
+
+      {selectedSession && (
+        <div
+          className="border-b px-5 py-2"
+          style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
+        >
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <span
+              className="max-w-[240px] truncate text-[12px] font-medium"
+              style={{ color: "var(--color-foreground)" }}
+              title={selectedSession.customTitle || selectedSession.summary || selectedSession.sessionId}
+            >
+              {selectedSession.customTitle || selectedSession.summary || selectedSession.sessionId}
+            </span>
+            {selectedSession.provenance && (
+              <>
+                <SubagentPill tone={selectedSession.provenance.status === "failed" ? "error" : selectedSession.provenance.status === "running" ? "running" : "done"}>
+                  {selectedSession.provenance.status}
+                </SubagentPill>
+                <SubagentPill>
+                  {selectedSession.provenance.source}/{selectedSession.provenance.channel}
+                </SubagentPill>
+              </>
+            )}
+            <SubagentPill>{selectedSession.messageCount ?? 0} msgs</SubagentPill>
+            {selectedSession.lastModified && (
+              <SubagentPill title={String(selectedSession.lastModified)}>
+                {formatTime(selectedSession.lastModified)}
+              </SubagentPill>
+            )}
+            {selectedSession.lastMessage?.text && (
+              <span className="min-w-[160px] flex-1 truncate" style={{ color: "var(--oc-text-muted)" }}>
+                {selectedSession.lastMessage.text}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -944,6 +1455,7 @@ export default function ChatPage() {
           </div>
         </div>
         <SubagentRunsPanel
+          serverId={serverId}
           selectedSession={selectedSession}
           session={sessionDetails}
           sessionLoading={sessionDetailsLoading}
@@ -951,13 +1463,23 @@ export default function ChatPage() {
           routeDecisionLoading={routeDecisionLoading}
           hookEvents={hookEvents}
           runs={subagentRuns}
+          activeRuns={activeRuns}
+          interrupts={interrupts}
+          fileOwnership={fileOwnership}
           loading={subagentsLoading}
+          activeRunsLoading={activeRunsLoading}
+          interruptsLoading={interruptsLoading}
+          fileOwnershipLoading={fileOwnershipLoading}
           onRefresh={() => {
             void loadSessionDetails();
             void loadRouteDecision();
             void loadSubagentRuns();
+            void loadActiveRuns();
+            void loadInterrupts();
+            void loadFileOwnership();
           }}
           onInterrupt={interruptSubagentRun}
+          onMutateFileOwnership={mutateFileOwnershipClaim}
         />
       </div>
 
@@ -1041,9 +1563,8 @@ export default function ChatPage() {
               size="sm"
               disabled={!streaming && !input.trim()}
               onClick={() => {
-                if (streaming && abortRef.current) {
-                  abortRef.current.abort();
-                  setStreaming(false);
+                if (streaming) {
+                  void stopCurrentRun();
                 } else {
                   send(input);
                 }
@@ -1073,6 +1594,7 @@ export default function ChatPage() {
 /* ------------------------------------------------------------------ */
 
 function SubagentRunsPanel({
+  serverId,
   selectedSession,
   session,
   sessionLoading,
@@ -1080,10 +1602,18 @@ function SubagentRunsPanel({
   routeDecisionLoading,
   hookEvents,
   runs,
+  activeRuns,
+  interrupts,
+  fileOwnership,
   loading,
+  activeRunsLoading,
+  interruptsLoading,
+  fileOwnershipLoading,
   onRefresh,
   onInterrupt,
+  onMutateFileOwnership,
 }: {
+  serverId: string;
   selectedSession?: AgentSession;
   session: SessionDetails | null;
   sessionLoading: boolean;
@@ -1091,11 +1621,19 @@ function SubagentRunsPanel({
   routeDecisionLoading: boolean;
   hookEvents: HookEventView[];
   runs: SubagentRun[];
+  activeRuns: ActiveRunView[];
+  interrupts: InterruptRecord[];
+  fileOwnership: FileOwnershipView;
   loading: boolean;
+  activeRunsLoading: boolean;
+  interruptsLoading: boolean;
+  fileOwnershipLoading: boolean;
   onRefresh: () => void | Promise<void>;
   onInterrupt: (runId: string) => void | Promise<void>;
+  onMutateFileOwnership: (claimId: string, action: "release" | "override") => void | Promise<void>;
 }) {
   const running = runs.filter((run) => run.status === "running").length;
+  const activeTaskCount = activeRuns.reduce((sum, run) => sum + run.activeTaskIds.length, 0);
 
   return (
     <aside
@@ -1138,8 +1676,25 @@ function SubagentRunsPanel({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-3">
-        <SessionDebugCard session={session} loading={sessionLoading} />
+        <SessionDebugCard
+          session={session}
+          loading={sessionLoading}
+          labels={selectedSession?.labels ?? []}
+        />
+        <ActiveRunsCard
+          serverId={serverId}
+          runs={activeRuns}
+          loading={activeRunsLoading}
+          activeTaskCount={activeTaskCount}
+        />
+        <InterruptsCard interrupts={interrupts} loading={interruptsLoading} />
+        <FileOwnershipCard
+          view={fileOwnership}
+          loading={fileOwnershipLoading}
+          onMutate={onMutateFileOwnership}
+        />
         <RouteDecisionCard
+          serverId={serverId}
           selectedSession={selectedSession}
           decision={routeDecision}
           loading={routeDecisionLoading}
@@ -1176,12 +1731,311 @@ function SubagentRunsPanel({
   );
 }
 
+function ActiveRunsCard({
+  serverId,
+  runs,
+  loading,
+  activeTaskCount,
+}: {
+  serverId: string;
+  runs: ActiveRunView[];
+  loading: boolean;
+  activeTaskCount: number;
+}) {
+  return (
+    <section
+      className="rounded-lg border p-2.5"
+      style={{
+        background: "var(--oc-bg2)",
+        borderColor: runs.length > 0 ? "var(--oc-accent-ring)" : "var(--oc-border)",
+      }}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Activity className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--oc-accent)" }} />
+          <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>
+            Active SDK runs
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <SubagentPill tone={loading ? "running" : runs.length > 0 ? "running" : "default"}>
+            {loading ? "loading" : `${runs.length} runs`}
+          </SubagentPill>
+          {activeTaskCount > 0 && <SubagentPill tone="running">{activeTaskCount} tasks</SubagentPill>}
+        </div>
+      </div>
+
+      {runs.length === 0 ? (
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+          No active SDK run is registered for this agent.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {runs.slice(0, 4).map((run) => {
+            const idleMs = Date.now() - run.lastActivityAt;
+            return (
+              <div
+                key={run.runId ?? run.sessionKey}
+                className="rounded border px-2 py-1.5"
+                style={{
+                  background: "var(--oc-bg1)",
+                  borderColor: "var(--oc-border)",
+                }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span
+                      className="truncate text-[10.5px]"
+                      style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                      title={run.runId ?? run.sessionKey}
+                    >
+                      {shortId(run.runId ?? run.sessionKey, 16)}
+                    </span>
+                    {run.runId && <RunDiagnosticsLink serverId={serverId} runId={run.runId} />}
+                  </div>
+                  <SubagentPill tone="running">{run.lastEventType}</SubagentPill>
+                </div>
+                <div className="mt-1 grid grid-cols-2 gap-1.5 text-[10.5px]">
+                  <SubagentMeta label="idle" value={formatDuration(idleMs)} />
+                  <SubagentMeta label="registered" value={formatTime(run.registeredAt)} />
+                  {run.sdkSessionId && (
+                    <SubagentMeta label="sdk" value={shortId(run.sdkSessionId, 12)} title={run.sdkSessionId} />
+                  )}
+                  {run.channelDeliveryTarget && (
+                    <SubagentMeta
+                      label="channel"
+                      value={run.channelDeliveryTarget.channel}
+                      title={run.channelDeliveryTarget.peerId}
+                    />
+                  )}
+                </div>
+                {run.activeTaskIds.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {run.activeTaskIds.slice(0, 4).map((taskId) => (
+                      <SubagentPill key={taskId} tone="running" title={taskId}>
+                        {shortId(taskId, 12)}
+                      </SubagentPill>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function InterruptsCard({
+  interrupts,
+  loading,
+}: {
+  interrupts: InterruptRecord[];
+  loading: boolean;
+}) {
+  return (
+    <section
+      className="rounded-lg border p-2.5"
+      style={{
+        background: "var(--oc-bg2)",
+        borderColor: interrupts.some((item) => item.result === "failed") ? "var(--oc-red)" : "var(--oc-border)",
+      }}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Pause className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--oc-accent)" }} />
+          <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>
+            Interrupt requests
+          </span>
+        </div>
+        <SubagentPill tone={loading ? "running" : interrupts.length > 0 ? "running" : "default"}>
+          {loading ? "loading" : `${interrupts.length} recent`}
+        </SubagentPill>
+      </div>
+
+      {interrupts.length === 0 ? (
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+          No interrupt request is recorded for this selected run.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {interrupts.slice(0, 5).map((item) => (
+            <div
+              key={`${item.id ?? item.timestamp}:${item.targetId}`}
+              className="rounded border px-2 py-1.5"
+              style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className="truncate text-[10.5px]"
+                  style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  title={item.targetId}
+                >
+                  {shortId(item.targetId, 18)}
+                </span>
+                <SubagentPill tone={item.result === "interrupted" ? "done" : "error"}>
+                  {item.result}
+                </SubagentPill>
+              </div>
+              <div className="mt-1 grid grid-cols-2 gap-1.5 text-[10.5px]">
+                <SubagentMeta label="by" value={item.requestedBy ?? "unknown"} />
+                <SubagentMeta label="time" value={item.timestamp ? formatTime(item.timestamp) : "unknown"} />
+                {item.runId && <SubagentMeta label="run" value={shortId(item.runId, 10)} title={item.runId} />}
+                {item.sdkSessionId && (
+                  <SubagentMeta label="sdk" value={shortId(item.sdkSessionId, 10)} title={item.sdkSessionId} />
+                )}
+              </div>
+              {item.reason && (
+                <p className="mt-1 line-clamp-2 text-[10.5px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+                  {item.reason}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function FileOwnershipCard({
+  view,
+  loading,
+  onMutate,
+}: {
+  view: FileOwnershipView;
+  loading: boolean;
+  onMutate: (claimId: string, action: "release" | "override") => void | Promise<void>;
+}) {
+  const conflicts = view.conflicts;
+  const claims = view.claims;
+
+  return (
+    <section
+      className="rounded-lg border p-2.5"
+      style={{
+        background: "var(--oc-bg2)",
+        borderColor: conflicts.length > 0 ? "rgba(250,204,21,0.35)" : "var(--oc-border)",
+      }}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <FileText className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--oc-accent)" }} />
+          <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>
+            File ownership
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <SubagentPill tone={conflicts.length > 0 ? "running" : "default"}>
+            {loading ? "loading" : `${claims.length} claims`}
+          </SubagentPill>
+          {conflicts.length > 0 && <SubagentPill tone="running">{conflicts.length} conflicts</SubagentPill>}
+        </div>
+      </div>
+
+      {claims.length === 0 && conflicts.length === 0 ? (
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+          No active file claims or subagent write conflicts for this agent.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {conflicts.slice(0, 3).map((conflict) => (
+            <div
+              key={conflict.conflictId}
+              className="rounded border px-2 py-1.5"
+              style={{ background: "var(--oc-bg1)", borderColor: "rgba(250,204,21,0.28)" }}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div
+                    className="truncate text-[10.5px]"
+                    style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                    title={conflict.path}
+                  >
+                    {shortId(conflict.path, 28)}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    <SubagentPill tone={conflict.action === "deny" ? "running" : "default"}>
+                      {conflict.action}
+                    </SubagentPill>
+                    <SubagentPill title={conflict.requested.subagentId}>
+                      req {shortId(conflict.requested.subagentId, 10)}
+                    </SubagentPill>
+                    <SubagentPill title={conflict.existing.subagentId}>
+                      owner {shortId(conflict.existing.subagentId, 10)}
+                    </SubagentPill>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 shrink-0 px-2 text-[11px]"
+                  onClick={() => void onMutate(conflict.existing.claimId, "override")}
+                  title="Release the existing owner claim so the requesting subagent can retry."
+                >
+                  Override
+                </Button>
+              </div>
+              <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+                {conflict.reason}
+              </p>
+            </div>
+          ))}
+
+          {claims.slice(0, 4).map((claim) => (
+            <div
+              key={claim.claimId}
+              className="rounded border px-2 py-1.5"
+              style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div
+                    className="truncate text-[10.5px]"
+                    style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                    title={claim.path}
+                  >
+                    {shortId(claim.path, 28)}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    <SubagentPill tone={claim.mode === "write" ? "running" : "default"}>
+                      {claim.mode}
+                    </SubagentPill>
+                    <SubagentPill title={claim.subagentId}>{shortId(claim.subagentId, 12)}</SubagentPill>
+                    <SubagentPill title={claim.runId}>{shortId(claim.runId, 10)}</SubagentPill>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 shrink-0 px-2 text-[11px]"
+                  onClick={() => void onMutate(claim.claimId, "release")}
+                  title="Release this active file ownership claim."
+                >
+                  Release
+                </Button>
+              </div>
+              <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-[10.5px]">
+                <SubagentMeta label="claimed" value={formatTime(claim.claimedAt)} />
+                <SubagentMeta label="expires" value={formatTime(claim.expiresAt)} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SessionDebugCard({
   session,
   loading,
+  labels,
 }: {
   session: SessionDetails | null;
   loading: boolean;
+  labels: string[];
 }) {
   const messages = session?.messages ?? [];
   const userMessages = messages.filter((message) => message.type === "user").length;
@@ -1226,6 +2080,16 @@ function SessionDebugCard({
             </p>
           )}
 
+          {labels.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {labels.slice(0, 6).map((label) => (
+                <SubagentPill key={label} title={label}>
+                  #{label}
+                </SubagentPill>
+              ))}
+            </div>
+          )}
+
           {last && (
             <div
               className="mt-2 rounded border px-2 py-1.5"
@@ -1256,10 +2120,12 @@ function SessionDebugCard({
 }
 
 function RouteDecisionCard({
+  serverId,
   selectedSession,
   decision,
   loading,
 }: {
+  serverId: string;
   selectedSession?: AgentSession;
   decision: RouteDecision | null;
   loading: boolean;
@@ -1289,7 +2155,12 @@ function RouteDecisionCard({
 
       {provenance ? (
         <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
-          <SubagentMeta label="run" value={shortId(provenance.runId, 12)} title={provenance.runId} />
+          <div className="flex min-w-0 items-end gap-1.5">
+            <div className="min-w-0 flex-1">
+              <SubagentMeta label="run" value={shortId(provenance.runId, 12)} title={provenance.runId} />
+            </div>
+            <RunDiagnosticsLink serverId={serverId} runId={provenance.runId} />
+          </div>
           <SubagentMeta label="status" value={provenance.status} />
           <SubagentMeta label="source" value={`${provenance.source}/${provenance.channel}`} />
           <SubagentMeta label="started" value={formatTime(provenance.startedAt)} />
@@ -1445,6 +2316,9 @@ function SubagentRunCard({
   const isRunning = run.status === "running";
   const elapsedMs = (run.finishedAt ?? Date.now()) - run.startedAt;
   const canInterrupt = Boolean(run.interruptSupported && isRunning);
+  const observedTools = run.toolSummary
+    ? run.toolSummary.started + run.toolSummary.completed + run.toolSummary.failed
+    : 0;
 
   return (
     <div
@@ -1474,6 +2348,14 @@ function SubagentRunCard({
           </div>
           <div className="mt-1 flex flex-wrap gap-1.5">
             <SubagentPill>{run.subagentType ?? "subagent"}</SubagentPill>
+            {run.policy && (
+              <>
+                <SubagentPill>{run.policy.kind}</SubagentPill>
+                <SubagentPill tone={run.policy.writePolicy === "deny" ? "error" : run.policy.writePolicy === "claim_required" ? "running" : "default"}>
+                  {run.policy.writePolicy}
+                </SubagentPill>
+              </>
+            )}
             <SubagentPill tone={isRunning ? "running" : "done"}>{run.status}</SubagentPill>
           </div>
         </div>
@@ -1498,7 +2380,43 @@ function SubagentRunCard({
         {run.permissionMode && (
           <SubagentMeta label="mode" value={run.permissionMode} />
         )}
+        {run.policy && (
+          <SubagentMeta label="conflict" value={run.policy.conflictMode} />
+        )}
+        {run.toolSummary && observedTools > 0 && (
+          <>
+            <SubagentMeta
+              label="tools"
+              value={`${run.toolSummary.started}/${run.toolSummary.completed}/${run.toolSummary.failed}`}
+              title="started/completed/failed"
+            />
+            {run.toolSummary.lastToolName && (
+              <SubagentMeta
+                label="last tool"
+                value={shortId(run.toolSummary.lastToolName, 18)}
+                title={`${run.toolSummary.lastStatus ?? "observed"} ${run.toolSummary.lastToolName}${run.toolSummary.lastAt ? ` at ${formatTime(run.toolSummary.lastAt)}` : ""}`}
+              />
+            )}
+          </>
+        )}
       </div>
+
+      {run.toolSummary && run.toolSummary.toolNames.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {run.toolSummary.toolNames.slice(0, 6).map((toolName) => (
+            <SubagentPill key={toolName} title={toolName}>{shortId(toolName, 18)}</SubagentPill>
+          ))}
+          {run.toolSummary.toolNames.length > 6 && (
+            <SubagentPill>+{run.toolSummary.toolNames.length - 6} tools</SubagentPill>
+          )}
+        </div>
+      )}
+
+      {run.policy?.description && (
+        <p className="mt-2 line-clamp-2 text-[10.5px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+          {run.policy.description}
+        </p>
+      )}
 
       {(run.parentTranscriptPath || run.subagentTranscriptPath) && (
         <div className="mt-2 flex flex-wrap gap-1">
@@ -1540,12 +2458,14 @@ function SubagentPill({
 }: {
   children: ReactNode;
   title?: string;
-  tone?: "default" | "running" | "done";
+  tone?: "default" | "running" | "done" | "error";
 }) {
   const color = tone === "running"
     ? "var(--oc-yellow)"
     : tone === "done"
       ? "var(--oc-green)"
+      : tone === "error"
+        ? "var(--oc-red)"
       : "var(--oc-text-muted)";
 
   return (
@@ -1585,6 +2505,40 @@ function SubagentMeta({
         {value}
       </div>
     </div>
+  );
+}
+
+function diagnosticsRunUrl(serverId: string, runId: string): string {
+  const params = new URLSearchParams({
+    includeLogs: "true",
+    runId,
+    diagnosticEventLimit: "300",
+    routeDecisionLimit: "25",
+  });
+  return `/api/fleet/${serverId}/diagnostics/export?${params.toString()}`;
+}
+
+function RunDiagnosticsLink({
+  serverId,
+  runId,
+}: {
+  serverId: string;
+  runId: string;
+}) {
+  return (
+    <a
+      href={diagnosticsRunUrl(serverId, runId)}
+      download={`anthroclaw-run-${runId}-diagnostics.json`}
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border"
+      style={{
+        borderColor: "var(--oc-border)",
+        color: "var(--oc-text-muted)",
+        background: "var(--oc-bg2)",
+      }}
+      title="Download diagnostics for this run"
+    >
+      <Download className="h-3 w-3" />
+    </a>
   );
 }
 

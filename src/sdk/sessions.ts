@@ -50,7 +50,14 @@ interface SessionTitleEntry {
   title: string;
 }
 
+interface SessionLabelsEntry {
+  type: 'session_labels';
+  timestamp: string;
+  labels: string[];
+}
+
 const SESSION_TITLE_SUBPATH = '__session_title';
+const SESSION_LABELS_SUBPATH = '__session_labels';
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {};
@@ -188,6 +195,42 @@ export class SdkSessionService {
     } as unknown as SessionStoreEntry]);
   }
 
+  async getAgentSessionLabels(agent: Agent, sessionId: string): Promise<string[]> {
+    const entries = await this.sessionStore.load({
+      projectKey: agent.workspacePath,
+      sessionId,
+      subpath: SESSION_LABELS_SUBPATH,
+    }) as Array<Partial<SessionLabelsEntry>> | null;
+
+    if (!entries || entries.length === 0) return [];
+    const latest = entries.at(-1);
+    return normalizeLabels(latest?.labels);
+  }
+
+  async setAgentSessionLabels(agent: Agent, sessionId: string, labels: string[]): Promise<string[]> {
+    const normalized = normalizeLabels(labels);
+
+    if (typeof this.sessionStore.delete === 'function') {
+      await this.sessionStore.delete({
+        projectKey: agent.workspacePath,
+        sessionId,
+        subpath: SESSION_LABELS_SUBPATH,
+      }).catch(() => {});
+    }
+
+    await this.sessionStore.append({
+      projectKey: agent.workspacePath,
+      sessionId,
+      subpath: SESSION_LABELS_SUBPATH,
+    }, [{
+      type: 'session_labels',
+      timestamp: new Date().toISOString(),
+      labels: normalized,
+    } as unknown as SessionStoreEntry]);
+
+    return normalized;
+  }
+
   async getAgentSessionMessages(
     agent: Agent,
     sessionId: string,
@@ -224,4 +267,14 @@ export class SdkSessionService {
       sessionStore: this.sessionStore,
     });
   }
+}
+
+function normalizeLabels(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value
+    .filter((label): label is string => typeof label === 'string')
+    .map((label) => label.trim())
+    .filter(Boolean)
+    .map((label) => label.slice(0, 64))))
+    .slice(0, 10);
 }

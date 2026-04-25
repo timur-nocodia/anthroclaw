@@ -35,3 +35,31 @@ export async function DELETE(
     return NextResponse.json({ ok: true });
   });
 }
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ agentId: string; sessionId: string }> },
+) {
+  return withAuth(async () => {
+    const { agentId, sessionId } = await params;
+    const body = await req.json().catch(() => ({}));
+    const gw = await getGateway();
+    const decodedSessionId = decodeURIComponent(sessionId);
+    const result: { sessionId: string; labels?: string[]; title?: string } = { sessionId: decodedSessionId };
+
+    if (Array.isArray(body.labels)) {
+      const labels = body.labels.filter((label: unknown): label is string => typeof label === 'string');
+      const labelsResult = await gw.setAgentSessionLabels(agentId, decodedSessionId, labels);
+      result.sessionId = labelsResult.sessionId;
+      result.labels = labelsResult.labels;
+    }
+
+    if (typeof body.title === 'string') {
+      const titleResult = await gw.setAgentSessionTitle(agentId, decodedSessionId, body.title);
+      result.sessionId = titleResult.sessionId;
+      result.title = titleResult.title;
+    }
+
+    return NextResponse.json(result);
+  });
+}

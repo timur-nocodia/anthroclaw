@@ -12,6 +12,56 @@ export interface StoredToolEvent {
   durationMs?: number;
 }
 
+export interface StoredIntegrationAuditEvent {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  sessionKey?: string;
+  runId?: string;
+  sdkSessionId?: string;
+  toolName: string;
+  provider: string;
+  capabilityId: string;
+  status: 'started' | 'completed' | 'failed';
+  reason?: string;
+}
+
+export interface StoredDirectWebhookDelivery {
+  id?: number;
+  timestamp?: number;
+  webhook: string;
+  status: 'delivered' | 'not_found' | 'disabled' | 'unauthorized' | 'bad_payload' | 'channel_unavailable' | 'delivery_failed';
+  delivered: boolean;
+  channel?: string;
+  accountId?: string;
+  peerId?: string;
+  threadId?: string;
+  messageId?: string;
+  error?: string;
+}
+
+export type StoredMemoryInfluenceSource = 'prefetch' | 'memory_search';
+
+export interface StoredMemoryInfluenceRef {
+  memoryEntryId?: string;
+  path: string;
+  startLine?: number;
+  endLine?: number;
+  score?: number;
+}
+
+export interface StoredMemoryInfluenceEvent {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  sessionKey?: string;
+  runId?: string;
+  sdkSessionId?: string;
+  source: StoredMemoryInfluenceSource;
+  query?: string;
+  refs: StoredMemoryInfluenceRef[];
+}
+
 export interface StoredSessionEvent {
   timestamp?: number;
   agentId: string;
@@ -45,6 +95,7 @@ export interface StoredAgentRunUsage {
 
 export interface StoredAgentRunStart {
   runId: string;
+  traceId?: string;
   startedAt?: number;
   agentId: string;
   sessionKey: string;
@@ -71,12 +122,39 @@ export interface StoredAgentRunFinish {
 }
 
 export interface StoredAgentRunRecord extends StoredAgentRunStart {
+  traceId: string;
   startedAt: number;
   updatedAt: number;
   completedAt?: number;
   status: StoredAgentRunStatus;
   usage: StoredAgentRunUsage;
   error?: string;
+}
+
+export interface StoredInterruptRecord {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  runId?: string;
+  sessionKey?: string;
+  sdkSessionId?: string;
+  targetId: string;
+  requestedBy?: string;
+  result: 'interrupted' | 'failed';
+  reason?: string;
+}
+
+export interface StoredFileOwnershipEvent {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  sessionKey: string;
+  runId?: string;
+  subagentId?: string;
+  path: string;
+  eventType: 'conflict' | 'denied_write' | 'override' | 'released';
+  action?: 'allow' | 'deny';
+  reason?: string;
 }
 
 export interface StoredRouteDecisionCandidate {
@@ -107,6 +185,31 @@ export interface StoredRouteDecision {
   queueAction?: string;
   sessionKey?: string;
   outcome: string;
+}
+
+export type StoredDiagnosticEventType =
+  | 'run.received'
+  | 'run.routed'
+  | 'run.sdk_started'
+  | 'run.first_output'
+  | 'run.tool_started'
+  | 'run.tool_completed'
+  | 'run.tool_failed'
+  | 'run.sdk_result'
+  | 'run.interrupted'
+  | 'run.failed'
+  | 'run.completed';
+
+export interface StoredDiagnosticEvent {
+  id?: number;
+  timestamp?: number;
+  traceId: string;
+  runId?: string;
+  agentId?: string;
+  sessionKey?: string;
+  sdkSessionId?: string;
+  eventType: StoredDiagnosticEventType;
+  detail?: Record<string, unknown>;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -201,6 +304,7 @@ export class MetricsStore {
 
       CREATE TABLE IF NOT EXISTS agent_runs (
         run_id TEXT PRIMARY KEY,
+        trace_id TEXT NOT NULL,
         started_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         completed_at INTEGER,
@@ -219,6 +323,18 @@ export class MetricsStore {
         budget_json TEXT NOT NULL,
         usage_json TEXT NOT NULL,
         error TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS diagnostic_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        trace_id TEXT NOT NULL,
+        run_id TEXT,
+        agent_id TEXT,
+        session_key TEXT,
+        sdk_session_id TEXT,
+        event_type TEXT NOT NULL,
+        detail_json TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS route_decisions (
@@ -240,6 +356,82 @@ export class MetricsStore {
         outcome TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS interrupt_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        agent_id TEXT,
+        run_id TEXT,
+        session_key TEXT,
+        sdk_session_id TEXT,
+        target_id TEXT NOT NULL,
+        requested_by TEXT,
+        result TEXT NOT NULL,
+        reason TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS file_ownership_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        agent_id TEXT,
+        session_key TEXT NOT NULL,
+        run_id TEXT,
+        subagent_id TEXT,
+        path TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        action TEXT,
+        reason TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS integration_audit_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        agent_id TEXT,
+        session_key TEXT,
+        run_id TEXT,
+        sdk_session_id TEXT,
+        tool_name TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        capability_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        reason TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS direct_webhook_deliveries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        webhook TEXT NOT NULL,
+        status TEXT NOT NULL,
+        delivered INTEGER NOT NULL,
+        channel TEXT,
+        account_id TEXT,
+        peer_id TEXT,
+        thread_id TEXT,
+        message_id TEXT,
+        error TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS memory_influence_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        agent_id TEXT,
+        session_key TEXT,
+        run_id TEXT,
+        sdk_session_id TEXT,
+        source TEXT NOT NULL,
+        query TEXT,
+        refs_json TEXT NOT NULL
+      );
+
+    `);
+
+    // Legacy-column migrations must run before index creation so that
+    // upgrading an older DB doesn't fail on indexes that reference columns
+    // added later (e.g. agent_runs.trace_id).
+    this.ensureColumn('agent_runs', 'route_decision_id', 'TEXT');
+    this.ensureColumn('agent_runs', 'trace_id', 'TEXT NOT NULL DEFAULT ""');
+    this.ensureColumn('integration_audit_events', 'run_id', 'TEXT');
+
+    this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_counter_events_name_ts ON counter_events(name, ts);
       CREATE INDEX IF NOT EXISTS idx_query_duration_events_ts ON query_duration_events(ts);
       CREATE INDEX IF NOT EXISTS idx_token_events_ts ON token_events(ts);
@@ -251,11 +443,25 @@ export class MetricsStore {
       CREATE INDEX IF NOT EXISTS idx_agent_runs_agent_started ON agent_runs(agent_id, started_at);
       CREATE INDEX IF NOT EXISTS idx_agent_runs_session ON agent_runs(sdk_session_id);
       CREATE INDEX IF NOT EXISTS idx_agent_runs_status_started ON agent_runs(status, started_at);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_trace ON agent_runs(trace_id);
+      CREATE INDEX IF NOT EXISTS idx_diagnostic_events_trace_ts ON diagnostic_events(trace_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_diagnostic_events_run_ts ON diagnostic_events(run_id, ts);
       CREATE INDEX IF NOT EXISTS idx_route_decisions_agent_ts ON route_decisions(winner_agent_id, ts);
       CREATE INDEX IF NOT EXISTS idx_route_decisions_session_ts ON route_decisions(session_key, ts);
       CREATE INDEX IF NOT EXISTS idx_route_decisions_outcome_ts ON route_decisions(outcome, ts);
+      CREATE INDEX IF NOT EXISTS idx_interrupt_events_target_ts ON interrupt_events(target_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_interrupt_events_run_ts ON interrupt_events(run_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_file_ownership_events_session_ts ON file_ownership_events(session_key, ts);
+      CREATE INDEX IF NOT EXISTS idx_file_ownership_events_path_ts ON file_ownership_events(path, ts);
+      CREATE INDEX IF NOT EXISTS idx_file_ownership_events_type_ts ON file_ownership_events(event_type, ts);
+      CREATE INDEX IF NOT EXISTS idx_integration_audit_provider_ts ON integration_audit_events(provider, ts);
+      CREATE INDEX IF NOT EXISTS idx_integration_audit_agent_ts ON integration_audit_events(agent_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_direct_webhook_deliveries_webhook_ts ON direct_webhook_deliveries(webhook, ts);
+      CREATE INDEX IF NOT EXISTS idx_direct_webhook_deliveries_status_ts ON direct_webhook_deliveries(status, ts);
+      CREATE INDEX IF NOT EXISTS idx_memory_influence_agent_ts ON memory_influence_events(agent_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_memory_influence_run_ts ON memory_influence_events(run_id, ts);
+      CREATE INDEX IF NOT EXISTS idx_memory_influence_session_ts ON memory_influence_events(session_key, ts);
     `);
-    this.ensureColumn('agent_runs', 'route_decision_id', 'TEXT');
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -321,6 +527,64 @@ export class MetricsStore {
     );
   }
 
+  recordIntegrationAuditEvent(event: StoredIntegrationAuditEvent): void {
+    this.db.prepare(`
+      INSERT INTO integration_audit_events(
+        ts, agent_id, session_key, run_id, sdk_session_id, tool_name, provider, capability_id, status, reason
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.timestamp ?? Date.now(),
+      event.agentId ?? null,
+      event.sessionKey ?? null,
+      event.runId ?? null,
+      event.sdkSessionId ?? null,
+      event.toolName,
+      event.provider,
+      event.capabilityId,
+      event.status,
+      event.reason ?? null,
+    );
+  }
+
+  recordDirectWebhookDelivery(event: StoredDirectWebhookDelivery): void {
+    this.db.prepare(`
+      INSERT INTO direct_webhook_deliveries(
+        ts, webhook, status, delivered, channel, account_id, peer_id, thread_id, message_id, error
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.timestamp ?? Date.now(),
+      event.webhook,
+      event.status,
+      event.delivered ? 1 : 0,
+      event.channel ?? null,
+      event.accountId ?? null,
+      event.peerId ?? null,
+      event.threadId ?? null,
+      event.messageId ?? null,
+      event.error ?? null,
+    );
+  }
+
+  recordMemoryInfluenceEvent(event: StoredMemoryInfluenceEvent): void {
+    this.db.prepare(`
+      INSERT INTO memory_influence_events(
+        ts, agent_id, session_key, run_id, sdk_session_id, source, query, refs_json
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.timestamp ?? Date.now(),
+      event.agentId ?? null,
+      event.sessionKey ?? null,
+      event.runId ?? null,
+      event.sdkSessionId ?? null,
+      event.source,
+      event.query ?? null,
+      JSON.stringify(event.refs),
+    );
+  }
+
   recordSessionEvent(event: StoredSessionEvent): void {
     this.db.prepare(`
       INSERT INTO session_events(ts, agent_id, session_id, session_key, event_type)
@@ -351,16 +615,18 @@ export class MetricsStore {
 
   recordAgentRunStart(run: StoredAgentRunStart): void {
     const startedAt = run.startedAt ?? Date.now();
+    const traceId = run.traceId ?? run.runId;
     this.db.prepare(`
       INSERT INTO agent_runs(
-        run_id, started_at, updated_at, completed_at,
+        run_id, trace_id, started_at, updated_at, completed_at,
         agent_id, session_key, sdk_session_id, source, channel,
         account_id, peer_id, thread_id, message_id, route_decision_id,
         status, model, budget_json, usage_json, error
       )
-      VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
       ON CONFLICT(run_id) DO UPDATE SET
         updated_at = excluded.updated_at,
+        trace_id = excluded.trace_id,
         sdk_session_id = COALESCE(excluded.sdk_session_id, agent_runs.sdk_session_id),
         route_decision_id = COALESCE(excluded.route_decision_id, agent_runs.route_decision_id),
         status = excluded.status,
@@ -368,6 +634,7 @@ export class MetricsStore {
         budget_json = excluded.budget_json
     `).run(
       run.runId,
+      traceId,
       startedAt,
       startedAt,
       run.agentId,
@@ -385,10 +652,26 @@ export class MetricsStore {
       JSON.stringify(run.budget ?? {}),
       JSON.stringify({}),
     );
+    this.recordDiagnosticEvent({
+      timestamp: startedAt,
+      traceId,
+      runId: run.runId,
+      agentId: run.agentId,
+      sessionKey: run.sessionKey,
+      sdkSessionId: run.sdkSessionId,
+      eventType: 'run.sdk_started',
+      detail: {
+        source: run.source,
+        channel: run.channel,
+        routeDecisionId: run.routeDecisionId,
+        model: run.model,
+      },
+    });
   }
 
   recordAgentRunFinish(run: StoredAgentRunFinish): void {
     const completedAt = run.completedAt ?? Date.now();
+    const existing = this.getAgentRun(run.runId);
     this.db.prepare(`
       UPDATE agent_runs
       SET
@@ -408,6 +691,79 @@ export class MetricsStore {
       run.error ?? null,
       run.runId,
     );
+    const traceId = existing?.traceId ?? run.runId;
+    this.recordDiagnosticEvent({
+      timestamp: completedAt,
+      traceId,
+      runId: run.runId,
+      agentId: existing?.agentId,
+      sessionKey: existing?.sessionKey,
+      sdkSessionId: run.sdkSessionId ?? existing?.sdkSessionId,
+      eventType: run.status === 'succeeded'
+        ? 'run.completed'
+        : run.status === 'interrupted'
+          ? 'run.interrupted'
+          : 'run.failed',
+      detail: {
+        usage: run.usage ?? {},
+        error: run.error,
+      },
+    });
+  }
+
+  recordDiagnosticEvent(event: StoredDiagnosticEvent): void {
+    this.db.prepare(`
+      INSERT INTO diagnostic_events(
+        ts, trace_id, run_id, agent_id, session_key, sdk_session_id, event_type, detail_json
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.timestamp ?? Date.now(),
+      event.traceId,
+      event.runId ?? null,
+      event.agentId ?? null,
+      event.sessionKey ?? null,
+      event.sdkSessionId ?? null,
+      event.eventType,
+      JSON.stringify(event.detail ?? {}),
+    );
+  }
+
+  listDiagnosticEvents(params: {
+    traceId?: string;
+    runId?: string;
+    agentId?: string;
+    sessionKey?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredDiagnosticEvent[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.traceId) {
+      clauses.push('trace_id = ?');
+      values.push(params.traceId);
+    }
+    if (params.runId) {
+      clauses.push('run_id = ?');
+      values.push(params.runId);
+    }
+    if (params.agentId) {
+      clauses.push('agent_id = ?');
+      values.push(params.agentId);
+    }
+    if (params.sessionKey) {
+      clauses.push('session_key = ?');
+      values.push(params.sessionKey);
+    }
+    values.push(params.limit ?? 500, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM diagnostic_events
+      ${where}
+      ORDER BY ts DESC, id DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as DiagnosticEventRow[];
+    return rows.map(parseDiagnosticEventRow);
   }
 
   recordRouteDecision(decision: StoredRouteDecision): void {
@@ -445,6 +801,44 @@ export class MetricsStore {
       decision.queueAction ?? null,
       decision.sessionKey ?? null,
       decision.outcome,
+    );
+  }
+
+  recordInterrupt(record: StoredInterruptRecord): void {
+    this.db.prepare(`
+      INSERT INTO interrupt_events(
+        ts, agent_id, run_id, session_key, sdk_session_id, target_id, requested_by, result, reason
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      record.timestamp ?? Date.now(),
+      record.agentId ?? null,
+      record.runId ?? null,
+      record.sessionKey ?? null,
+      record.sdkSessionId ?? null,
+      record.targetId,
+      record.requestedBy ?? null,
+      record.result,
+      record.reason ?? null,
+    );
+  }
+
+  recordFileOwnershipEvent(event: StoredFileOwnershipEvent): void {
+    this.db.prepare(`
+      INSERT INTO file_ownership_events(
+        ts, agent_id, session_key, run_id, subagent_id, path, event_type, action, reason
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.timestamp ?? Date.now(),
+      event.agentId ?? null,
+      event.sessionKey,
+      event.runId ?? null,
+      event.subagentId ?? null,
+      event.path,
+      event.eventType,
+      event.action ?? null,
+      event.reason ?? null,
     );
   }
 
@@ -527,6 +921,216 @@ export class MetricsStore {
     return rows.map(parseRouteDecisionRow);
   }
 
+  listInterrupts(params: {
+    agentId?: string;
+    runId?: string;
+    targetId?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredInterruptRecord[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.agentId) {
+      clauses.push('agent_id = ?');
+      values.push(params.agentId);
+    }
+    if (params.runId) {
+      clauses.push('run_id = ?');
+      values.push(params.runId);
+    }
+    if (params.targetId) {
+      clauses.push('target_id = ?');
+      values.push(params.targetId);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM interrupt_events
+      ${where}
+      ORDER BY ts DESC, id DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as InterruptEventRow[];
+    return rows.map(parseInterruptEventRow);
+  }
+
+  listFileOwnershipEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    runId?: string;
+    subagentId?: string;
+    path?: string;
+    eventType?: StoredFileOwnershipEvent['eventType'];
+    action?: StoredFileOwnershipEvent['action'];
+    limit?: number;
+    offset?: number;
+  } = {}): StoredFileOwnershipEvent[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.agentId) {
+      clauses.push('agent_id = ?');
+      values.push(params.agentId);
+    }
+    if (params.sessionKey) {
+      clauses.push('session_key = ?');
+      values.push(params.sessionKey);
+    }
+    if (params.runId) {
+      clauses.push('run_id = ?');
+      values.push(params.runId);
+    }
+    if (params.subagentId) {
+      clauses.push('subagent_id = ?');
+      values.push(params.subagentId);
+    }
+    if (params.path) {
+      clauses.push('path = ?');
+      values.push(params.path);
+    }
+    if (params.eventType) {
+      clauses.push('event_type = ?');
+      values.push(params.eventType);
+    }
+    if (params.action) {
+      clauses.push('action = ?');
+      values.push(params.action);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM file_ownership_events
+      ${where}
+      ORDER BY ts DESC, id DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as FileOwnershipEventRow[];
+    return rows.map(parseFileOwnershipEventRow);
+  }
+
+  listIntegrationAuditEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    runId?: string;
+    provider?: string;
+    capabilityId?: string;
+    toolName?: string;
+    status?: StoredIntegrationAuditEvent['status'];
+    limit?: number;
+    offset?: number;
+  } = {}): StoredIntegrationAuditEvent[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.agentId) {
+      clauses.push('agent_id = ?');
+      values.push(params.agentId);
+    }
+    if (params.sessionKey) {
+      clauses.push('session_key = ?');
+      values.push(params.sessionKey);
+    }
+    if (params.runId) {
+      clauses.push('run_id = ?');
+      values.push(params.runId);
+    }
+    if (params.provider) {
+      clauses.push('provider = ?');
+      values.push(params.provider);
+    }
+    if (params.capabilityId) {
+      clauses.push('capability_id = ?');
+      values.push(params.capabilityId);
+    }
+    if (params.toolName) {
+      clauses.push('tool_name = ?');
+      values.push(params.toolName);
+    }
+    if (params.status) {
+      clauses.push('status = ?');
+      values.push(params.status);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM integration_audit_events
+      ${where}
+      ORDER BY ts DESC, id DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as IntegrationAuditEventRow[];
+    return rows.map(parseIntegrationAuditEventRow);
+  }
+
+  listDirectWebhookDeliveries(params: {
+    webhook?: string;
+    status?: StoredDirectWebhookDelivery['status'];
+    delivered?: boolean;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredDirectWebhookDelivery[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.webhook) {
+      clauses.push('webhook = ?');
+      values.push(params.webhook);
+    }
+    if (params.status) {
+      clauses.push('status = ?');
+      values.push(params.status);
+    }
+    if (params.delivered !== undefined) {
+      clauses.push('delivered = ?');
+      values.push(params.delivered ? 1 : 0);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM direct_webhook_deliveries
+      ${where}
+      ORDER BY ts DESC, id DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as DirectWebhookDeliveryRow[];
+    return rows.map(parseDirectWebhookDeliveryRow);
+  }
+
+  listMemoryInfluenceEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    runId?: string;
+    sdkSessionId?: string;
+    source?: StoredMemoryInfluenceSource;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredMemoryInfluenceEvent[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.agentId) {
+      clauses.push('agent_id = ?');
+      values.push(params.agentId);
+    }
+    if (params.sessionKey) {
+      clauses.push('session_key = ?');
+      values.push(params.sessionKey);
+    }
+    if (params.runId) {
+      clauses.push('run_id = ?');
+      values.push(params.runId);
+    }
+    if (params.sdkSessionId) {
+      clauses.push('sdk_session_id = ?');
+      values.push(params.sdkSessionId);
+    }
+    if (params.source) {
+      clauses.push('source = ?');
+      values.push(params.source);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM memory_influence_events
+      ${where}
+      ORDER BY ts DESC, id DESC
+      LIMIT ? OFFSET ?
+    `).all(...values) as MemoryInfluenceEventRow[];
+    return rows.map(parseMemoryInfluenceEventRow);
+  }
+
   counters(): Record<string, number> {
     const rows = this.db.prepare(`
       SELECT name, SUM(value) as value
@@ -597,11 +1201,13 @@ export class MetricsStore {
     tools: Record<string, number>;
     sessions: Record<string, number>;
     subagents: Record<string, number>;
+    fileOwnership: Record<string, number>;
   } {
     const tools = this.countEventsBy('tool_events', 'status', since);
     const sessions = this.countEventsBy('session_events', 'event_type', since);
     const subagents = this.countEventsBy('subagent_events', 'event_type', since);
-    return { tools, sessions, subagents };
+    const fileOwnership = this.countEventsBy('file_ownership_events', 'event_type', since);
+    return { tools, sessions, subagents, fileOwnership };
   }
 
   private countEventsBy(table: string, column: string, since: number): Record<string, number> {
@@ -694,7 +1300,10 @@ export class MetricsStore {
       DELETE FROM session_events;
       DELETE FROM subagent_events;
       DELETE FROM agent_runs;
+      DELETE FROM diagnostic_events;
       DELETE FROM route_decisions;
+      DELETE FROM interrupt_events;
+      DELETE FROM file_ownership_events;
     `);
   }
 
@@ -705,6 +1314,7 @@ export class MetricsStore {
 
 interface AgentRunRow {
   run_id: string;
+  trace_id: string;
   started_at: number;
   updated_at: number;
   completed_at: number | null;
@@ -744,6 +1354,19 @@ interface RouteDecisionRow {
   outcome: string;
 }
 
+interface InterruptEventRow {
+  id: number;
+  ts: number;
+  agent_id: string | null;
+  run_id: string | null;
+  session_key: string | null;
+  sdk_session_id: string | null;
+  target_id: string;
+  requested_by: string | null;
+  result: 'interrupted' | 'failed';
+  reason: string | null;
+}
+
 function parseJsonObject(value: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -767,6 +1390,7 @@ function parseRouteCandidates(value: string): StoredRouteDecisionCandidate[] {
 function parseAgentRunRow(row: AgentRunRow): StoredAgentRunRecord {
   return {
     runId: row.run_id,
+    traceId: row.trace_id || row.run_id,
     startedAt: row.started_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at ?? undefined,
@@ -788,6 +1412,108 @@ function parseAgentRunRow(row: AgentRunRow): StoredAgentRunRecord {
   };
 }
 
+interface DiagnosticEventRow {
+  id: number;
+  ts: number;
+  trace_id: string;
+  run_id: string | null;
+  agent_id: string | null;
+  session_key: string | null;
+  sdk_session_id: string | null;
+  event_type: StoredDiagnosticEventType;
+  detail_json: string;
+}
+
+interface FileOwnershipEventRow {
+  id: number;
+  ts: number;
+  agent_id: string | null;
+  session_key: string;
+  run_id: string | null;
+  subagent_id: string | null;
+  path: string;
+  event_type: StoredFileOwnershipEvent['eventType'];
+  action: StoredFileOwnershipEvent['action'] | null;
+  reason: string | null;
+}
+
+interface IntegrationAuditEventRow {
+  id: number;
+  ts: number;
+  agent_id: string | null;
+  session_key: string | null;
+  run_id: string | null;
+  sdk_session_id: string | null;
+  tool_name: string;
+  provider: string;
+  capability_id: string;
+  status: StoredIntegrationAuditEvent['status'];
+  reason: string | null;
+}
+
+interface DirectWebhookDeliveryRow {
+  id: number;
+  ts: number;
+  webhook: string;
+  status: StoredDirectWebhookDelivery['status'];
+  delivered: number;
+  channel: string | null;
+  account_id: string | null;
+  peer_id: string | null;
+  thread_id: string | null;
+  message_id: string | null;
+  error: string | null;
+}
+
+interface MemoryInfluenceEventRow {
+  id: number;
+  ts: number;
+  agent_id: string | null;
+  session_key: string | null;
+  run_id: string | null;
+  sdk_session_id: string | null;
+  source: StoredMemoryInfluenceSource;
+  query: string | null;
+  refs_json: string;
+}
+
+function parseDiagnosticEventRow(row: DiagnosticEventRow): StoredDiagnosticEvent {
+  return {
+    id: row.id,
+    timestamp: row.ts,
+    traceId: row.trace_id,
+    runId: row.run_id ?? undefined,
+    agentId: row.agent_id ?? undefined,
+    sessionKey: row.session_key ?? undefined,
+    sdkSessionId: row.sdk_session_id ?? undefined,
+    eventType: row.event_type,
+    detail: parseJsonObject(row.detail_json),
+  };
+}
+
+function parseMemoryInfluenceEventRow(row: MemoryInfluenceEventRow): StoredMemoryInfluenceEvent {
+  return {
+    id: row.id,
+    timestamp: row.ts,
+    agentId: row.agent_id ?? undefined,
+    sessionKey: row.session_key ?? undefined,
+    runId: row.run_id ?? undefined,
+    sdkSessionId: row.sdk_session_id ?? undefined,
+    source: row.source,
+    query: row.query ?? undefined,
+    refs: parseMemoryInfluenceRefs(row.refs_json),
+  };
+}
+
+function parseMemoryInfluenceRefs(value: string): StoredMemoryInfluenceRef[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed as StoredMemoryInfluenceRef[] : [];
+  } catch {
+    return [];
+  }
+}
+
 function parseRouteDecisionRow(row: RouteDecisionRow): StoredRouteDecision {
   return {
     id: row.id,
@@ -806,5 +1532,67 @@ function parseRouteDecisionRow(row: RouteDecisionRow): StoredRouteDecision {
     queueAction: row.queue_action ?? undefined,
     sessionKey: row.session_key ?? undefined,
     outcome: row.outcome,
+  };
+}
+
+function parseInterruptEventRow(row: InterruptEventRow): StoredInterruptRecord {
+  return {
+    id: row.id,
+    timestamp: row.ts,
+    agentId: row.agent_id ?? undefined,
+    runId: row.run_id ?? undefined,
+    sessionKey: row.session_key ?? undefined,
+    sdkSessionId: row.sdk_session_id ?? undefined,
+    targetId: row.target_id,
+    requestedBy: row.requested_by ?? undefined,
+    result: row.result,
+    reason: row.reason ?? undefined,
+  };
+}
+
+function parseFileOwnershipEventRow(row: FileOwnershipEventRow): StoredFileOwnershipEvent {
+  return {
+    id: row.id,
+    timestamp: row.ts,
+    agentId: row.agent_id ?? undefined,
+    sessionKey: row.session_key,
+    runId: row.run_id ?? undefined,
+    subagentId: row.subagent_id ?? undefined,
+    path: row.path,
+    eventType: row.event_type,
+    action: row.action ?? undefined,
+    reason: row.reason ?? undefined,
+  };
+}
+
+function parseIntegrationAuditEventRow(row: IntegrationAuditEventRow): StoredIntegrationAuditEvent {
+  return {
+    id: row.id,
+    timestamp: row.ts,
+    agentId: row.agent_id ?? undefined,
+    sessionKey: row.session_key ?? undefined,
+    runId: row.run_id ?? undefined,
+    sdkSessionId: row.sdk_session_id ?? undefined,
+    toolName: row.tool_name,
+    provider: row.provider,
+    capabilityId: row.capability_id,
+    status: row.status,
+    reason: row.reason ?? undefined,
+  };
+}
+
+function parseDirectWebhookDeliveryRow(row: DirectWebhookDeliveryRow): StoredDirectWebhookDelivery {
+  return {
+    id: row.id,
+    timestamp: row.ts,
+    webhook: row.webhook,
+    status: row.status,
+    delivered: row.delivered === 1,
+    channel: row.channel ?? undefined,
+    accountId: row.account_id ?? undefined,
+    peerId: row.peer_id ?? undefined,
+    threadId: row.thread_id ?? undefined,
+    messageId: row.message_id ?? undefined,
+    error: row.error ?? undefined,
   };
 }

@@ -1,6 +1,6 @@
 {
   "name": "anthroclaw",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Claude Agent SDK-native control plane for personal multi-agent assistants",
   "license": "MIT",
   "private": true,

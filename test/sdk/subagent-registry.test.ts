@@ -64,6 +64,76 @@ describe('SdkSubagentRegistry', () => {
     expect(stopFirst.runId).toBe(first.runId);
   });
 
+  it('returns the active run for a subagent in LIFO order', () => {
+    const registry = new SdkSubagentRegistry();
+
+    const first = registry.recordStart({
+      agentId: 'orchestrator',
+      parentSessionId: 'session-1',
+      subagentId: 'helper',
+    }, 1_000);
+    const second = registry.recordStart({
+      agentId: 'orchestrator',
+      parentSessionId: 'session-1',
+      subagentId: 'helper',
+    }, 2_000);
+
+    expect(registry.getActiveRun('orchestrator', 'session-1', 'helper')?.runId).toBe(second.runId);
+    registry.recordStop({
+      agentId: 'orchestrator',
+      parentSessionId: 'session-1',
+      subagentId: 'helper',
+    }, 3_000);
+    expect(registry.getActiveRun('orchestrator', 'session-1', 'helper')?.runId).toBe(first.runId);
+  });
+
+  it('summarizes tool events for the active subagent run', () => {
+    const registry = new SdkSubagentRegistry();
+
+    const run = registry.recordStart({
+      agentId: 'orchestrator',
+      parentSessionId: 'session-1',
+      subagentId: 'helper',
+    }, 1_000);
+
+    registry.recordToolEvent({
+      agentId: 'orchestrator',
+      parentSessionId: 'session-1',
+      subagentId: 'helper',
+      toolName: 'Read',
+      status: 'started',
+    }, 1_100);
+    registry.recordToolEvent({
+      agentId: 'orchestrator',
+      parentSessionId: 'session-1',
+      subagentId: 'helper',
+      toolName: 'Read',
+      status: 'completed',
+    }, 1_200);
+    registry.recordToolEvent({
+      agentId: 'orchestrator',
+      parentSessionId: 'session-1',
+      subagentId: 'helper',
+      toolName: 'Bash',
+      status: 'failed',
+    }, 1_300);
+
+    const updated = registry.getRun('orchestrator', run.runId);
+    expect(updated?.toolSummary).toEqual({
+      started: 1,
+      completed: 1,
+      failed: 1,
+      toolNames: ['Bash', 'Read'],
+      byTool: {
+        Bash: { started: 0, completed: 0, failed: 1 },
+        Read: { started: 1, completed: 1, failed: 0 },
+      },
+      lastToolName: 'Bash',
+      lastStatus: 'failed',
+      lastAt: 1_300,
+    });
+  });
+
   it('creates a completed synthetic record when a stop arrives without a start', () => {
     const registry = new SdkSubagentRegistry();
 

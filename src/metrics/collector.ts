@@ -7,6 +7,13 @@ import type {
   StoredAgentRunRecord,
   StoredAgentRunStart,
   StoredAgentRunStatus,
+  StoredDiagnosticEvent,
+  StoredDirectWebhookDelivery,
+  StoredFileOwnershipEvent,
+  StoredIntegrationAuditEvent,
+  StoredMemoryInfluenceEvent,
+  StoredMemoryInfluenceSource,
+  StoredInterruptRecord,
   StoredRouteDecision,
   StoredSessionEvent,
   StoredSubagentEvent,
@@ -50,6 +57,7 @@ export interface MetricsSnapshot {
     tools: Record<string, number>;
     sessions: Record<string, number>;
     subagents: Record<string, number>;
+    fileOwnership: Record<string, number>;
   };
   system: {
     cpu_percent: number;
@@ -156,6 +164,34 @@ class MetricsCollector {
     this.store?.recordRouteDecision(decision);
   }
 
+  recordDiagnosticEvent(event: StoredDiagnosticEvent): void {
+    this.store?.recordDiagnosticEvent(event);
+  }
+
+  recordInterrupt(record: StoredInterruptRecord): void {
+    this.store?.recordInterrupt(record);
+  }
+
+  recordFileOwnershipEvent(event: StoredFileOwnershipEvent): void {
+    this.store?.recordFileOwnershipEvent(event);
+  }
+
+  recordIntegrationAuditEvent(event: StoredIntegrationAuditEvent): void {
+    this.store?.recordIntegrationAuditEvent(event);
+  }
+
+  recordDirectWebhookDelivery(event: StoredDirectWebhookDelivery): void {
+    this.store?.recordDirectWebhookDelivery(event);
+  }
+
+  recordMemoryInfluenceEvent(event: StoredMemoryInfluenceEvent): void {
+    this.store?.recordMemoryInfluenceEvent(event);
+  }
+
+  getAgentRun(runId: string): StoredAgentRunRecord | undefined {
+    return this.store?.getAgentRun(runId);
+  }
+
   listAgentRuns(params: {
     agentId?: string;
     sessionKey?: string;
@@ -176,6 +212,77 @@ class MetricsCollector {
     offset?: number;
   } = {}): StoredRouteDecision[] {
     return this.store?.listRouteDecisions(params) ?? [];
+  }
+
+  listDiagnosticEvents(params: {
+    traceId?: string;
+    runId?: string;
+    agentId?: string;
+    sessionKey?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredDiagnosticEvent[] {
+    return this.store?.listDiagnosticEvents(params) ?? [];
+  }
+
+  listInterrupts(params: {
+    agentId?: string;
+    runId?: string;
+    targetId?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredInterruptRecord[] {
+    return this.store?.listInterrupts(params) ?? [];
+  }
+
+  listFileOwnershipEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    runId?: string;
+    subagentId?: string;
+    path?: string;
+    eventType?: StoredFileOwnershipEvent['eventType'];
+    action?: StoredFileOwnershipEvent['action'];
+    limit?: number;
+    offset?: number;
+  } = {}): StoredFileOwnershipEvent[] {
+    return this.store?.listFileOwnershipEvents(params) ?? [];
+  }
+
+  listIntegrationAuditEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    runId?: string;
+    provider?: string;
+    capabilityId?: string;
+    toolName?: string;
+    status?: StoredIntegrationAuditEvent['status'];
+    limit?: number;
+    offset?: number;
+  } = {}): StoredIntegrationAuditEvent[] {
+    return this.store?.listIntegrationAuditEvents(params) ?? [];
+  }
+
+  listDirectWebhookDeliveries(params: {
+    webhook?: string;
+    status?: StoredDirectWebhookDelivery['status'];
+    delivered?: boolean;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredDirectWebhookDelivery[] {
+    return this.store?.listDirectWebhookDeliveries(params) ?? [];
+  }
+
+  listMemoryInfluenceEvents(params: {
+    agentId?: string;
+    sessionKey?: string;
+    runId?: string;
+    sdkSessionId?: string;
+    source?: StoredMemoryInfluenceSource;
+    limit?: number;
+    offset?: number;
+  } = {}): StoredMemoryInfluenceEvent[] {
+    return this.store?.listMemoryInfluenceEvents(params) ?? [];
   }
 
   setStore(store: MetricsStore | null): void {
@@ -211,7 +318,7 @@ class MetricsCollector {
       },
       events_30d: this.store
         ? this.store.eventsSince(now - 30 * TWENTY_FOUR_HOURS_MS)
-        : { tools: {}, sessions: {}, subagents: {} },
+        : { tools: {}, sessions: {}, subagents: {}, fileOwnership: {} },
       system: this.getSystemMetrics(),
     };
   }

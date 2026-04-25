@@ -3,13 +3,27 @@ import { join, dirname } from 'node:path';
 import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { nowInTimezone, formatTime, dailyMemoryPath } from '../../util/time.js';
-import type { MemoryStore } from '../../memory/store.js';
+import type { MemoryProvider } from '../../memory/provider.js';
+import type { MemoryEntryRecord } from '../../memory/store.js';
+import { logger } from '../../logger.js';
 import type { ToolDefinition } from './types.js';
+
+export interface MemoryWriteToolEvent {
+  file: string;
+  mode: 'append' | 'replace';
+  contentLength: number;
+  entry: MemoryEntryRecord;
+}
+
+export interface MemoryWriteToolOptions {
+  onMemoryWrite?: (event: MemoryWriteToolEvent) => void | Promise<void>;
+}
 
 export function createMemoryWriteTool(
   workspacePath: string,
-  store: MemoryStore,
+  store: MemoryProvider,
   timezone = 'UTC',
+  options: MemoryWriteToolOptions = {},
 ): ToolDefinition {
   const sdkTool = tool(
     'memory_write',
@@ -45,7 +59,23 @@ export function createMemoryWriteTool(
 
         writeFileSync(fullPath, fullContent, 'utf-8');
 
-        store.indexFile(file, fullContent);
+        const entry = store.indexFile(file, fullContent, {
+          source: 'memory_write',
+          reviewStatus: 'approved',
+          toolName: 'memory_write',
+          metadata: { mode },
+        });
+
+        if (options.onMemoryWrite) {
+          void Promise.resolve(options.onMemoryWrite({
+            file,
+            mode,
+            contentLength: content.length,
+            entry,
+          })).catch((err) => {
+            logger.warn({ err, file }, 'Memory write hook failed');
+          });
+        }
 
         return {
           content: [{ type: 'text', text: `Written to ${file}` }],

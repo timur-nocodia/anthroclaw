@@ -19,8 +19,28 @@ function createSdkStream(events: Array<Record<string, unknown>>) {
   };
 }
 
+const seenPrompts: unknown[] = [];
+
 function createQueryForPrompt(prompt: unknown) {
+  seenPrompts.push(prompt);
   const text = typeof prompt === 'string' ? prompt : '';
+
+  if (text.includes('Extract durable memory candidates')) {
+    return createSdkStream([
+      {
+        type: 'result',
+        result: JSON.stringify({
+          candidates: [{
+            kind: 'decision',
+            text: 'The team chose SDK-native memory review.',
+            confidence: 0.91,
+            reason: 'The run discussed it.',
+          }],
+        }),
+        session_id: 'memory-extraction-session',
+      },
+    ]);
+  }
 
   if (text.includes('Generate a short, descriptive title')) {
     return createSdkStream([
@@ -48,6 +68,39 @@ function createQueryForPrompt(prompt: unknown) {
         type: 'result',
         result: 'Web SDK says hi',
         session_id: 'web-sdk-session-1',
+      },
+    ]);
+  }
+
+  if (text.includes('background task notification')) {
+    return createSdkStream([
+      { session_id: 'sdk-session-1' },
+      {
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'task-1',
+        description: 'Checking background work',
+        session_id: 'sdk-session-1',
+      },
+      {
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'task-1',
+        status: 'completed',
+        output_file: '/tmp/task-1.txt',
+        summary: 'Background work finished.',
+        session_id: 'sdk-session-1',
+      },
+      {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'text', text: 'SDK says hi' }],
+        },
+      },
+      {
+        type: 'result',
+        result: 'SDK says hi',
+        session_id: 'sdk-session-1',
       },
     ]);
   }
@@ -118,6 +171,15 @@ function makeMsg(overrides: Partial<InboundMessage> = {}): InboundMessage {
   };
 }
 
+async function waitForPendingMemory(gw: Gateway, agentId: string) {
+  for (let i = 0; i < 20; i++) {
+    const entries = gw.listAgentMemoryEntries(agentId, { reviewStatus: 'pending' });
+    if (entries.length > 0) return entries;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return gw.listAgentMemoryEntries(agentId, { reviewStatus: 'pending' });
+}
+
 describe('Gateway SDK success path', () => {
   let tmpDir: string;
   let agentsDir: string;
@@ -127,6 +189,7 @@ describe('Gateway SDK success path', () => {
     metrics._reset();
     startupMock.mockReset();
     queryMock.mockReset();
+    seenPrompts.length = 0;
 
     startupMock.mockImplementation(async (params?: { options?: unknown }) => {
       if (!params?.options) {
@@ -223,6 +286,62 @@ pairing:
     await gw.stop();
   });
 
+  it('injects per-chat operator context and honors reply_to_mode', async () => {
+    const botDir = join(agentsDir, 'context-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: group
+    topics: ['topic-42']
+pairing:
+  mode: open
+channel_context:
+  reply_to_mode: incoming_reply_only
+  telegram:
+    topics:
+      topic-42:
+        prompt: Keep replies concise for the support topic.
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const sent: Array<{ text: string; replyToId?: string }> = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text, opts) {
+        sent.push({ text, replyToId: opts?.replyToId });
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg({
+      chatType: 'group',
+      peerId: 'group-123',
+      threadId: 'topic-42',
+      replyToId: 'parent-message',
+    }));
+
+    const sdkPrompt = seenPrompts.find((prompt): prompt is string =>
+      typeof prompt === 'string' && prompt.includes('[Test User]: hello sdk'),
+    );
+    expect(sdkPrompt).toContain('<channel-operator-context>');
+    expect(sdkPrompt).toContain('Keep replies concise for the support topic.');
+    expect(sdkPrompt).toContain('additive to CLAUDE.md');
+    expect(sent).toEqual([{ text: 'SDK says hi', replyToId: 'mid-1' }]);
+
+    await gw.stop();
+  });
+
   it('dispatchWebUI streams native SDK text instead of fallback output', async () => {
     const botDir = join(agentsDir, 'web-sdk-bot');
     mkdirSync(botDir);
@@ -253,6 +372,120 @@ routes:
 
     expect(textParts.join('')).toBe('Web SDK says hi');
     expect(doneSessionId).toBe('web-sdk-session-1');
+
+    await gw.stop();
+  });
+
+  it('proposes post-run memory candidates for review without making them searchable before approval', async () => {
+    const botDir = join(agentsDir, 'memory-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+memory_extraction:
+  enabled: true
+  max_candidates: 2
+  max_input_chars: 2000
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg({ text: 'remember that we chose SDK-native memory review' }));
+
+    expect(sent).toEqual(['SDK says hi']);
+    const pending = await waitForPendingMemory(gw, 'memory-bot');
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({
+      source: 'post_run_candidate',
+      reviewStatus: 'pending',
+      provenance: {
+        source: 'post_run_candidate',
+        reviewStatus: 'pending',
+        runId: expect.any(String),
+        sessionKey: 'memory-bot:telegram:dm:peer-123',
+        agentId: 'memory-bot',
+        sdkSessionId: 'sdk-session-1',
+        sourceChannel: 'telegram',
+        sourcePeerHash: expect.any(String),
+        metadata: {
+          kind: 'decision',
+          confidence: 0.91,
+          reason: 'The run discussed it.',
+        },
+      },
+    });
+    expect(pending[0].path).toContain('memory/candidates/');
+    expect(metrics.snapshot().counters.memory_candidates_proposed).toBe(1);
+
+    const store = gw.getAgent('memory-bot')!.memoryStore;
+    expect(store.textSearch('review', 10)).toEqual([]);
+
+    const updated = gw.updateAgentMemoryEntryReview('memory-bot', pending[0].id, 'approved');
+    expect(updated.updated).toBe(true);
+    expect(store.textSearch('review', 10).map((result) => result.path)).toEqual([pending[0].path]);
+
+    await gw.stop();
+  });
+
+  it('routes terminal task notifications to the originating channel', async () => {
+    const botDir = join(agentsDir, 'task-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return `msg-${sent.length}`;
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg({ text: 'please run background task notification' }));
+
+    expect(sent).toEqual([
+      'Task completed: Background work finished.',
+      'SDK says hi',
+    ]);
+    expect(metrics.snapshot().counters.task_notifications_delivered).toBe(1);
 
     await gw.stop();
   });
