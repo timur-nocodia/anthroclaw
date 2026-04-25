@@ -41,6 +41,16 @@ describe('integration capability matrix', () => {
       status: 'available',
       requiredConfig: ['brave.api_key'],
       enabledForAgents: ['researcher'],
+      configSnippet: [
+        'mcp_tools:',
+        '  - web_search_brave',
+        'sdk:',
+        '  permissions:',
+        '    default_behavior: deny',
+        '    allow_mcp: true',
+        '    allowed_mcp_tools:',
+        '      - web_search_brave',
+      ].join('\n'),
       permissionDefaults: {
         defaultBehavior: 'deny',
         allowMcp: true,
@@ -158,6 +168,16 @@ describe('integration capability matrix', () => {
     });
     expect(matrix.capabilities.find((capability) => capability.id === 'cron.manage')).toMatchObject({
       status: 'available',
+      configSnippet: [
+        'mcp_tools:',
+        '  - manage_cron',
+        'sdk:',
+        '  permissions:',
+        '    default_behavior: deny',
+        '    allow_mcp: true',
+        '    allowed_mcp_tools:',
+        '      # operator review required before enabling this capability',
+      ].join('\n'),
       permissionDefaults: {
         defaultBehavior: 'deny',
         allowedMcpTools: [],
@@ -194,6 +214,16 @@ describe('integration capability matrix', () => {
       risk: 'high',
       toolNames: ['mcp__calendar__calendar_daily_brief', 'mcp__calendar__calendar_lookup'],
       enabledForAgents: ['ops'],
+      configSnippet: [
+        '# external_mcp_servers already defines the MCP server and allowed tools',
+        'sdk:',
+        '  permissions:',
+        '    default_behavior: deny',
+        '    allow_mcp: true',
+        '    allowed_mcp_tools:',
+        '      - mcp__calendar__calendar_daily_brief',
+        '      - mcp__calendar__calendar_lookup',
+      ].join('\n'),
       permissionDefaults: {
         defaultBehavior: 'deny',
         allowMcp: true,

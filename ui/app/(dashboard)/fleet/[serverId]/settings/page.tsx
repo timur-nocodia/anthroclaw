@@ -106,6 +106,7 @@ interface IntegrationCapability {
   };
   enabledForAgents: string[];
   selected?: boolean;
+  configSnippet?: string;
   reason?: string;
 }
 
@@ -1031,6 +1032,19 @@ function CapabilityRow({ capability }: { capability: IntegrationCapability }) {
           <div className="mt-2 text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
             {capability.reason ?? `Requires ${capability.requiredConfig?.join(", ")}`}
           </div>
+        )}
+        {capability.configSnippet && (
+          <pre
+            className="mt-2 max-h-[120px] overflow-auto rounded border p-2 text-[10.5px] leading-relaxed"
+            style={{
+              background: "var(--oc-bg2)",
+              borderColor: "var(--oc-border)",
+              color: "var(--oc-text-dim)",
+              fontFamily: "var(--oc-mono)",
+            }}
+          >
+            {capability.configSnippet}
+          </pre>
         )}
       </div>
     </div>

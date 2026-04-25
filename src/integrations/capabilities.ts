@@ -18,6 +18,7 @@ export interface IntegrationCapability {
   permissionDefaults?: IntegrationPermissionDefaults;
   enabledForAgents: string[];
   selected?: boolean;
+  configSnippet?: string;
   reason?: string;
 }
 
@@ -244,6 +245,7 @@ export function buildIntegrationCapabilityMatrix(
       permissionDefaults: clonePermissionDefaults(definition.permissionDefaults),
       enabledForAgents,
       selected,
+      configSnippet: buildCapabilityConfigSnippet(definition.toolNames, definition.permissionDefaults, true),
       reason: capabilityReason(definition, status, requested, selected),
     };
   });
@@ -299,8 +301,47 @@ function buildExternalMcpCapabilities(agents: AgentConfigCarrier[]): Integration
         notes: ['External MCP server configured on one or more agents; review MCP preflight before enabling in production.'],
       },
       enabledForAgents: [...entry.enabledForAgents].sort(),
+      configSnippet: buildCapabilityConfigSnippet(
+        [...entry.toolNames].sort(),
+        {
+          defaultBehavior: 'deny',
+          allowMcp: true,
+          allowedMcpTools: [...entry.toolNames].sort(),
+          notes: [],
+        },
+        false,
+      ),
       reason: 'External MCP server is configured in agent.yml and passed through Claude Agent SDK mcpServers.',
     }));
+}
+
+function buildCapabilityConfigSnippet(
+  toolNames: readonly string[],
+  defaults: IntegrationPermissionDefaults | undefined,
+  includeMcpTools: boolean,
+): string | undefined {
+  if (!defaults?.allowMcp || toolNames.length === 0) return undefined;
+
+  const localTools = toolNames.map((toolName) => toolName.split('__').at(-1) ?? toolName).sort();
+  const allowedTools = (defaults.allowedMcpTools ?? [])
+    .sort();
+
+  return [
+    ...(includeMcpTools
+      ? [
+          'mcp_tools:',
+          ...localTools.map((toolName) => `  - ${toolName}`),
+        ]
+      : ['# external_mcp_servers already defines the MCP server and allowed tools']),
+    'sdk:',
+    '  permissions:',
+    `    default_behavior: ${defaults.defaultBehavior}`,
+    '    allow_mcp: true',
+    '    allowed_mcp_tools:',
+    ...(allowedTools.length > 0
+      ? allowedTools.map((toolName) => `      - ${toolName}`)
+      : ['      # operator review required before enabling this capability']),
+  ].join('\n');
 }
 
 function clonePermissionDefaults(
