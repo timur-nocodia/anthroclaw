@@ -16,6 +16,7 @@ import {
   RefreshCw,
   RotateCcw,
   Send,
+  Search,
   Tags,
   Trash2,
   Workflow,
@@ -252,7 +253,13 @@ export default function ChatPage() {
   const [promptSuggestion, setPromptSuggestion] = useState<string | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionSearchFilter, setSessionSearchFilter] = useState("");
   const [sessionLabelFilter, setSessionLabelFilter] = useState("");
+  const [sessionSourceFilter, setSessionSourceFilter] = useState<"all" | "web" | "channel" | "cron">("all");
+  const [sessionStatusFilter, setSessionStatusFilter] = useState<"all" | "running" | "succeeded" | "failed" | "interrupted">("all");
+  const [sessionActiveFilter, setSessionActiveFilter] = useState<"all" | "active" | "inactive">("all");
+  const [sessionChannelFilter, setSessionChannelFilter] = useState("");
+  const [sessionErrorsOnly, setSessionErrorsOnly] = useState(false);
   const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
   const [sessionDetailsLoading, setSessionDetailsLoading] = useState(false);
   const [routeDecision, setRouteDecision] = useState<RouteDecision | null>(null);
@@ -320,8 +327,16 @@ export default function ChatPage() {
     setSessionsLoading(true);
     try {
       const query = new URLSearchParams({ limit: "25" });
+      const search = sessionSearchFilter.trim();
       const label = sessionLabelFilter.trim();
+      const channelFilter = sessionChannelFilter.trim();
+      if (search) query.set("search", search);
       if (label) query.set("label", label);
+      if (sessionSourceFilter !== "all") query.set("source", sessionSourceFilter);
+      if (sessionStatusFilter !== "all") query.set("status", sessionStatusFilter);
+      if (sessionActiveFilter !== "all") query.set("active", sessionActiveFilter);
+      if (channelFilter) query.set("channel", channelFilter);
+      if (sessionErrorsOnly) query.set("hasErrors", "true");
       const res = await fetch(`/api/fleet/${serverId}/agents/${selected}/sessions?${query.toString()}`);
       if (!res.ok) return;
       const data = await res.json();
@@ -329,7 +344,17 @@ export default function ChatPage() {
     } finally {
       setSessionsLoading(false);
     }
-  }, [selected, serverId, sessionLabelFilter]);
+  }, [
+    selected,
+    serverId,
+    sessionActiveFilter,
+    sessionChannelFilter,
+    sessionErrorsOnly,
+    sessionLabelFilter,
+    sessionSearchFilter,
+    sessionSourceFilter,
+    sessionStatusFilter,
+  ]);
 
   useEffect(() => {
     void loadSessions();
@@ -811,6 +836,16 @@ export default function ChatPage() {
     await loadSessions();
   };
 
+  const clearSessionFilters = () => {
+    setSessionSearchFilter("");
+    setSessionLabelFilter("");
+    setSessionSourceFilter("all");
+    setSessionStatusFilter("all");
+    setSessionActiveFilter("all");
+    setSessionChannelFilter("");
+    setSessionErrorsOnly(false);
+  };
+
   const interruptSubagentRun = async (runId: string) => {
     const res = await fetch(
       `/api/fleet/${serverId}/agents/${selected}/subagents/${encodeURIComponent(runId)}`,
@@ -988,22 +1023,122 @@ export default function ChatPage() {
               </option>
             ))}
           </select>
-          <div className="flex items-center gap-1">
-            <Tags className="h-3.5 w-3.5" style={{ color: "var(--oc-text-muted)" }} />
+          <div className="flex max-w-full flex-wrap items-center gap-1">
+            <div className="flex items-center gap-1">
+              <Search className="h-3.5 w-3.5" style={{ color: "var(--oc-text-muted)" }} />
+              <input
+                value={sessionSearchFilter}
+                onChange={(e) => setSessionSearchFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void loadSessions();
+                }}
+                placeholder="search"
+                className="h-7 w-[120px] rounded border px-1.5 text-[11px] outline-none"
+                style={{
+                  background: "var(--oc-bg3)",
+                  borderColor: "var(--oc-border)",
+                  color: "var(--color-foreground)",
+                }}
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              <Tags className="h-3.5 w-3.5" style={{ color: "var(--oc-text-muted)" }} />
+              <input
+                value={sessionLabelFilter}
+                onChange={(e) => setSessionLabelFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void loadSessions();
+                }}
+                placeholder="label"
+                className="h-7 w-[92px] rounded border px-1.5 text-[11px] outline-none"
+                style={{
+                  background: "var(--oc-bg3)",
+                  borderColor: "var(--oc-border)",
+                  color: "var(--color-foreground)",
+                }}
+              />
+            </div>
+            <select
+              value={sessionSourceFilter}
+              onChange={(e) => setSessionSourceFilter(e.target.value as typeof sessionSourceFilter)}
+              className="h-7 cursor-pointer rounded border px-1.5 text-[11px]"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            >
+              <option value="all">source</option>
+              <option value="web">web</option>
+              <option value="channel">channel</option>
+              <option value="cron">cron</option>
+            </select>
+            <select
+              value={sessionStatusFilter}
+              onChange={(e) => setSessionStatusFilter(e.target.value as typeof sessionStatusFilter)}
+              className="h-7 cursor-pointer rounded border px-1.5 text-[11px]"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            >
+              <option value="all">status</option>
+              <option value="running">running</option>
+              <option value="succeeded">succeeded</option>
+              <option value="failed">failed</option>
+              <option value="interrupted">interrupted</option>
+            </select>
+            <select
+              value={sessionActiveFilter}
+              onChange={(e) => setSessionActiveFilter(e.target.value as typeof sessionActiveFilter)}
+              className="h-7 cursor-pointer rounded border px-1.5 text-[11px]"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            >
+              <option value="all">activity</option>
+              <option value="active">active</option>
+              <option value="inactive">inactive</option>
+            </select>
             <input
-              value={sessionLabelFilter}
-              onChange={(e) => setSessionLabelFilter(e.target.value)}
-              placeholder="label"
-              className="h-7 w-[92px] rounded border px-1.5 text-[11px] outline-none"
+              value={sessionChannelFilter}
+              onChange={(e) => setSessionChannelFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void loadSessions();
+              }}
+              placeholder="channel"
+              className="h-7 w-[88px] rounded border px-1.5 text-[11px] outline-none"
               style={{
                 background: "var(--oc-bg3)",
                 borderColor: "var(--oc-border)",
                 color: "var(--color-foreground)",
               }}
             />
+            <label
+              className="flex h-7 items-center gap-1 rounded border px-1.5 text-[11px]"
+              style={{
+                background: "var(--oc-bg3)",
+                borderColor: "var(--oc-border)",
+                color: "var(--color-foreground)",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={sessionErrorsOnly}
+                onChange={(e) => setSessionErrorsOnly(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              errors
+            </label>
           </div>
           <Button variant="outline" size="sm" onClick={loadSessions} disabled={sessionsLoading}>
             <History className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={clearSessionFilters} disabled={sessionsLoading}>
+            Clear
           </Button>
           <Button variant="outline" size="sm" onClick={updateCurrentSessionLabels} disabled={streaming || !sessionId}>
             <Tags className="h-3.5 w-3.5" />
