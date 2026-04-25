@@ -27,6 +27,9 @@ export interface DiagnosticsBundle {
   runs: unknown[];
   routeDecisions: unknown[];
   diagnosticEvents: unknown[];
+  interrupts: unknown[];
+  integrationAuditEvents: unknown[];
+  memoryInfluenceEvents: unknown[];
   logs: unknown[];
   environment: {
     nodeVersion: string;
@@ -110,6 +113,18 @@ export function buildDiagnosticsBundle(options: DiagnosticsBundleOptions): Diagn
     runs: options.runId ? (run ? [run] : []) : metrics.listAgentRuns({ limit: runLimit }),
     routeDecisions: metrics.listRouteDecisions(routeDecisionFilter),
     diagnosticEvents: metrics.listDiagnosticEvents({
+      runId: options.runId,
+      limit: diagnosticEventLimit,
+    }),
+    interrupts: metrics.listInterrupts({
+      runId: options.runId,
+      limit: diagnosticEventLimit,
+    }),
+    integrationAuditEvents: metrics.listIntegrationAuditEvents({
+      runId: options.runId,
+      limit: diagnosticEventLimit,
+    }),
+    memoryInfluenceEvents: metrics.listMemoryInfluenceEvents({
       runId: options.runId,
       limit: diagnosticEventLimit,
     }),

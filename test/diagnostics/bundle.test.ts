@@ -130,6 +130,37 @@ describe('diagnostics bundle', () => {
       sessionKey: 'web:agent:session-2',
       outcome: 'dispatched',
     });
+    metrics.recordInterrupt({
+      timestamp: now + 2,
+      agentId: 'agent',
+      runId: 'run-1',
+      sessionKey: 'web:agent:session-1',
+      targetId: 'run-1',
+      requestedBy: 'web',
+      result: 'interrupted',
+    });
+    metrics.recordIntegrationAuditEvent({
+      timestamp: now + 3,
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      toolName: 'mcp__agent-tools__local_note_search',
+      provider: 'anthroclaw-notes',
+      capabilityId: 'notes.local',
+      status: 'completed',
+    });
+    metrics.recordMemoryInfluenceEvent({
+      timestamp: now + 4,
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      source: 'prefetch',
+      query: 'project owner',
+      refs: [{
+        path: 'memory/profile.md',
+        score: 0.75,
+      }],
+    });
 
     const bundle = buildDiagnosticsBundle({
       status: {},
@@ -141,5 +172,10 @@ describe('diagnostics bundle', () => {
     expect(bundle.runs.map((run: any) => run.runId)).toEqual(['run-1']);
     expect(bundle.routeDecisions.map((decision: any) => decision.id)).toEqual(['route-1']);
     expect(bundle.diagnosticEvents.every((event: any) => event.runId === 'run-1')).toBe(true);
+    expect(bundle.interrupts.map((event: any) => event.runId)).toEqual(['run-1']);
+    expect(bundle.integrationAuditEvents.map((event: any) => event.toolName)).toEqual([
+      'mcp__agent-tools__local_note_search',
+    ]);
+    expect(bundle.memoryInfluenceEvents.map((event: any) => event.query)).toEqual(['project owner']);
   });
 });
