@@ -703,6 +703,7 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
   const [auditProviderFilter, setAuditProviderFilter] = useState("all");
   const [auditCapabilityFilter, setAuditCapabilityFilter] = useState("all");
   const [auditStatusFilter, setAuditStatusFilter] = useState<"all" | "started" | "completed" | "failed">("all");
+  const [auditRunFilter, setAuditRunFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -717,6 +718,7 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
         if (auditProviderFilter !== "all") auditParams.set("provider", auditProviderFilter);
         if (auditCapabilityFilter !== "all") auditParams.set("capabilityId", auditCapabilityFilter);
         if (auditStatusFilter !== "all") auditParams.set("status", auditStatusFilter);
+        if (auditRunFilter.trim()) auditParams.set("runId", auditRunFilter.trim());
 
         const [capabilityRes, preflightRes, auditRes, webhookRes] = await Promise.all([
           fetch(`/api/fleet/${serverId}/integrations/capabilities`),
@@ -748,7 +750,7 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
 
     void load();
     return () => { cancelled = true; };
-  }, [serverId, auditProviderFilter, auditCapabilityFilter, auditStatusFilter]);
+  }, [serverId, auditProviderFilter, auditCapabilityFilter, auditStatusFilter, auditRunFilter]);
 
   const caps = capabilities?.capabilities ?? [];
   const servers = preflight?.servers ?? [];
@@ -833,7 +835,7 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
           <div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <SectionHead title="Recent audit" desc="SDK hook events for integration and MCP tool calls." />
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
                 <AuditSelect
                   label="Provider"
                   value={auditProviderFilter}
@@ -851,6 +853,12 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
                   value={auditStatusFilter}
                   onChange={(value) => setAuditStatusFilter(value as typeof auditStatusFilter)}
                   options={["started", "completed", "failed"]}
+                />
+                <AuditTextFilter
+                  label="Run"
+                  value={auditRunFilter}
+                  onChange={setAuditRunFilter}
+                  placeholder="run id"
                 />
               </div>
             </div>
@@ -921,6 +929,36 @@ function AuditSelect({
           <option key={option} value={option}>{option}</option>
         ))}
       </select>
+    </label>
+  );
+}
+
+function AuditTextFilter({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <label className="min-w-[130px] text-[10px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+      {label}
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="mt-1 h-8 w-full rounded-md border px-2 text-[11px] outline-none"
+        style={{
+          background: "var(--oc-bg1)",
+          borderColor: "var(--oc-border)",
+          color: "var(--color-foreground)",
+          fontFamily: "var(--oc-mono)",
+        }}
+      />
     </label>
   );
 }
