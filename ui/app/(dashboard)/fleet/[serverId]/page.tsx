@@ -406,7 +406,7 @@ export default function ServerDashboard() {
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [nowMs, setNowMs] = useState(Date.now());
-  const mountTime = useRef(Date.now());
+  const gatewayFetchedAt = useRef<number | null>(null);
 
   // Tick for uptime counter
   useEffect(() => {
@@ -423,6 +423,7 @@ export default function ServerDashboard() {
       ]);
       if (gwRes.ok) {
         const d = await gwRes.json();
+        gatewayFetchedAt.current = Date.now();
         setGateway(d);
       }
       if (agentsRes.ok) {
@@ -445,8 +446,12 @@ export default function ServerDashboard() {
     return () => clearInterval(id);
   }, [fetchData]);
 
-  // Compute metrics
-  const uptimeSec = (gateway?.uptime ?? 0) + Math.floor((nowMs - mountTime.current) / 1000);
+  // Compute metrics. gateway.uptime is reported in milliseconds by getStatus().
+  const uptimeOffsetSec =
+    gatewayFetchedAt.current !== null
+      ? Math.max(0, Math.floor((nowMs - gatewayFetchedAt.current) / 1000))
+      : 0;
+  const uptimeSec = gateway ? Math.floor((gateway.uptime ?? 0) / 1000) + uptimeOffsetSec : 0;
   const sessionCount = gateway?.sessions ?? gateway?.activeSessions ?? metrics?.gauges?.active_sessions ?? 0;
   const tokenInput = metrics?.tokens_24h?.input ?? 0;
   const tokenOutput = metrics?.tokens_24h?.output ?? 0;

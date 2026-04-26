@@ -37,8 +37,9 @@ function fmtNumber(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-function fmtUptime(seconds: number | null): string {
-  if (seconds === null || seconds <= 0) return "\u2014";
+function fmtUptime(ms: number | null): string {
+  if (ms === null || ms <= 0) return "\u2014";
+  const seconds = Math.floor(ms / 1000);
   const d = Math.floor(seconds / 86400);
   const h = Math.floor((seconds % 86400) / 3600);
   const m = Math.floor((seconds % 3600) / 60);
