@@ -418,8 +418,10 @@ The agent always knows: current date/time in its timezone, which channel it's on
 - Inline buttons
 - Forum topics (threads) — sessions isolated per thread
 - @mention detection in groups
-- Bot commands menu (/start, /newsession, etc.)
-- Continuous typing indicator (refreshes every 4s)
+- Bot commands menu (`/start`, `/newsession`, `/compact`, `/model`, `/whoami`, …)
+- Continuous typing indicator (refreshes every 4s, scoped to the topic in forum threads)
+- 👀 reaction added to every picked-up message as a visual ack
+- Per-session model override via `/model` (Opus 4.7/4.6, Sonnet 4.6, Haiku 4.5) — stored per session-key in `data/session-models/<agent>.json`, survives restarts
 - Media: photos, videos, audio, voice messages, documents, stickers
 
 **Formatting:** Messages are sent with `parse_mode: 'Markdown'`. The agent is instructed to use `*bold*`, `_italic_`, `` `code` ``, ` ```code blocks``` `. If parsing fails, the message is resent as plain text.
@@ -468,7 +470,7 @@ Incoming message (Telegram/WhatsApp)
   ↓
 Message Debouncer (merges rapid messages)
   ↓
-Bot Commands (/newsession, /whoami — handled without Claude)
+Bot Commands (/newsession, /compact, /model, /whoami — handled without Claude; group-suffixed forms like /model@botname are normalized)
   ↓
 Route Table (finds matching agent by channel + account + scope + peer + topic)
   ↓

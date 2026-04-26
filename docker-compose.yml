@@ -13,6 +13,12 @@ services:
       - ./data:/app/data
       - ./agents:/app/agents
       - ./config.yml:/app/config.yml:ro
+      # Optional: bind-mount the host's Claude credentials so the SDK reads
+      # the refresh-token-rotated access token (no expiry headaches). The
+      # node user inside the image is uid 1000 — matches the default ubuntu
+      # user on most VPSes. If you enable this, comment out
+      # CLAUDE_CODE_OAUTH_TOKEN in .env (env vars take precedence).
+      # - /home/ubuntu/.claude:/home/node/.claude
     ports:
       # Bind to loopback only — put nginx/caddy in front for TLS + auth.
       - "127.0.0.1:${UI_PORT:-3000}:3000"

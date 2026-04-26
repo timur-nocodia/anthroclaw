@@ -135,14 +135,26 @@ network for native compilation. If you're behind a corporate proxy, set
 
 ## Notes on auth methods
 
-This setup uses the SDK-native `CLAUDE_CODE_OAUTH_TOKEN` path. Two
-alternatives exist but aren't recommended for Docker:
+The default compose file ships with `CLAUDE_CODE_OAUTH_TOKEN` from `.env`
+because that's the path Anthropic ships for CI / GitHub Actions / Docker.
+You can also bind-mount the host's credentials:
 
-1. **Bind-mount `~/.claude`** — works but requires the `claude` CLI inside
-   the image to refresh the short-lived (~8h) session token, plus UID
-   alignment. More moving parts.
-2. **`ANTHROPIC_API_KEY`** — separate billing from your Claude
+1. **Bind-mount `~/.claude`** (recommended if `claude` is installed on the
+   host) — Claude Code on the host already refreshes the access token via
+   the long-lived refresh token, so the SDK inside the container always
+   reads fresh credentials with zero token-rotation work on your part.
+   Requires UID alignment (the `node` user in `node:22-bookworm-slim` is
+   uid 1000, which matches the default `ubuntu` user on most VPSes).
+   ```yaml
+   volumes:
+     - /home/ubuntu/.claude:/home/node/.claude
+   ```
+   When you mount `.claude`, comment out `CLAUDE_CODE_OAUTH_TOKEN` in
+   `.env` — env-var takes precedence over the file and would override the
+   refreshed credentials.
+2. **`CLAUDE_CODE_OAUTH_TOKEN` env var** — single secret, no host
+   dependency on `claude` CLI. Token from `claude setup-token` lasts a
+   year; token from a host's `~/.claude/.credentials.json` only lasts
+   ~8h. Refresh annually with `setup-token`.
+3. **`ANTHROPIC_API_KEY`** — separate billing from your Claude
    subscription, no Opus access on Max plan tier.
-
-`setup-token` is the path Anthropic ships for CI / GitHub Actions / Docker
-and is read by the Agent SDK with no extra wiring.
