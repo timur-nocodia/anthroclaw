@@ -2705,6 +2705,10 @@ export class Gateway {
       runId = undefined;
     };
 
+    // Hoisted so the catch block can detect "steered by another message"
+    // (queueManager aborts this controller during conflict resolution).
+    const abort = new AbortController();
+
     try {
       const options = this.buildUserQueryOptions(agent, existingSessionId, undefined, sessionKey);
       runId = randomUUID();
@@ -2736,7 +2740,6 @@ export class Gateway {
         });
       }
       const result = this.startQuery(agent, prompt, options, existingSessionId);
-      const abort = new AbortController();
       this.queueManager.register(sessionKey, result, abort, {
         traceId: runId,
         channelDeliveryTarget: {
@@ -2921,6 +2924,13 @@ export class Gateway {
 
         const responseText = textParts.join('').trim();
 
+        // Steered/cancelled by another inbound message — exit silently so the
+        // follow-up run delivers the reply instead of leaking a stub message.
+        if (abort.signal.aborted && !budgetInterrupted) {
+          finishRun('interrupted');
+          return '';
+        }
+
         if (budgetInterrupted && budget?.graceMessage) {
           const stats = budget.stats;
           const suffix = `\n\n⚠️ Agent reached processing limit (${stats.toolCalls} tool calls, ${Math.round(stats.elapsedMs / 1000)}s). Partial work may have been completed.`;
@@ -2954,6 +2964,12 @@ export class Gateway {
         metrics.recordQueryDuration(Date.now() - queryStartMs);
       }
     } catch (err) {
+      // Steered/cancelled by another inbound message — abort signal threw out
+      // of the for-await loop. Exit silently; the follow-up run replies.
+      if (abort.signal.aborted) {
+        finishRun('interrupted', err);
+        return '';
+      }
       metrics.increment('query_errors');
       finishRun('failed', err);
       logger.error(
