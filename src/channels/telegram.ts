@@ -51,6 +51,7 @@ export class TelegramChannel implements ChannelAdapter {
 
   private bots = new Map<string, Bot>();
   private handler: ((msg: InboundMessage) => Promise<void>) | null = null;
+  private callbackHandler: ((cb: import('./types.js').CallbackEvent) => Promise<void>) | null = null;
   private config: TelegramConfig;
   private log = logger.child({ channel: 'telegram' });
   private botUsernames = new Map<string, string>();
@@ -88,6 +89,36 @@ export class TelegramChannel implements ChannelAdapter {
         }
       });
 
+      // Register callback_query handler (inline button clicks)
+      bot.on('callback_query:data', async (ctx) => {
+        if (!this.callbackHandler) {
+          await ctx.answerCallbackQuery().catch(() => {});
+          return;
+        }
+        try {
+          const cq = ctx.callbackQuery;
+          const chat = cq.message?.chat;
+          if (!chat) {
+            await ctx.answerCallbackQuery({ text: 'Чат не найден' }).catch(() => {});
+            return;
+          }
+          await this.callbackHandler({
+            channel: 'telegram',
+            accountId,
+            peerId: String(chat.id),
+            senderId: String(cq.from.id),
+            senderName: cq.from.first_name ?? cq.from.username,
+            threadId: cq.message?.message_thread_id !== undefined ? String(cq.message.message_thread_id) : undefined,
+            messageId: cq.message?.message_id !== undefined ? String(cq.message.message_id) : undefined,
+            data: cq.data,
+            callbackQueryId: cq.id,
+          });
+        } catch (err) {
+          this.log.error({ err, accountId }, 'Error handling Telegram callback_query');
+          await ctx.answerCallbackQuery({ text: 'Ошибка обработки' }).catch(() => {});
+        }
+      });
+
       bot.catch((err) => {
         this.log.error({ err: err.error, accountId }, 'grammy bot error');
       });
@@ -98,6 +129,15 @@ export class TelegramChannel implements ChannelAdapter {
 
   onMessage(handler: (msg: InboundMessage) => Promise<void>): void {
     this.handler = handler;
+  }
+
+  onCallbackQuery(handler: (cb: import('./types.js').CallbackEvent) => Promise<void>): void {
+    this.callbackHandler = handler;
+  }
+
+  async answerCallbackQuery(callbackQueryId: string, text?: string, accountId?: string): Promise<void> {
+    const bot = this.resolveBot(accountId);
+    await bot.api.answerCallbackQuery(callbackQueryId, text ? { text } : undefined);
   }
 
   async start(): Promise<void> {
@@ -116,6 +156,8 @@ export class TelegramChannel implements ChannelAdapter {
       await bot.api.setMyCommands([
         { command: 'start', description: 'Начать разговор' },
         { command: 'newsession', description: 'Новая сессия (сбросить контекст)' },
+        { command: 'compact', description: 'Сжать контекст (саммари + продолжить)' },
+        { command: 'model', description: 'Выбрать модель для текущей сессии' },
         { command: 'skills', description: 'Список доступных скиллов' },
         { command: 'pending', description: 'Показать pending запросы доступа' },
         { command: 'whoami', description: 'Показать мой ID и статус' },
@@ -270,9 +312,16 @@ export class TelegramChannel implements ChannelAdapter {
   /*  sendTyping                                                      */
   /* ---------------------------------------------------------------- */
 
-  async sendTyping(peerId: string, accountId?: string): Promise<void> {
+  async sendTyping(peerId: string, accountId?: string, threadId?: string): Promise<void> {
     const bot = this.resolveBot(accountId);
-    await bot.api.sendChatAction(peerId, 'typing');
+    const opts = threadId ? { message_thread_id: Number(threadId) } : undefined;
+    await bot.api.sendChatAction(peerId, 'typing', opts);
+  }
+
+  async setReaction(peerId: string, messageId: string, emoji: string, accountId?: string): Promise<void> {
+    const bot = this.resolveBot(accountId);
+    // grammy types the emoji as a literal union; cast at the boundary.
+    await bot.api.setMessageReaction(peerId, Number(messageId), [{ type: 'emoji', emoji } as never]);
   }
 
   /* ---------------------------------------------------------------- */

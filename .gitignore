@@ -12,8 +12,10 @@ data/
 .agents/
 .int-docs/
 
-# Personal agents (keep only example)
-# agents/my-agent/
+# Personal agents — only the example template ships with the repo
+agents/*
+!agents/example/
+!agents/example/**
 
 # Reference projects (local only)
 reference-projects/

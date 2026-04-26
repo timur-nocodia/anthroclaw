@@ -23,14 +23,15 @@ export interface BuildSdkOptionsParams {
   loadTimeoutMs?: number;
   fileOwnership?: FileOwnershipPermissionHooks;
   onElicitation?: OnElicitation;
+  modelOverride?: string;
 }
 
 export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
-  const { agent, resume, subagents, trustedBypass = false, includeMcpServer = true } = params;
+  const { agent, resume, subagents, trustedBypass = false, includeMcpServer = true, modelOverride } = params;
   const cfg = agent.config.sdk;
   const hasSubagents = Boolean(subagents && Object.keys(subagents).length > 0);
   const options: Options = {
-    model: agent.config.model ?? 'claude-sonnet-4-6',
+    model: modelOverride ?? agent.config.model ?? 'claude-sonnet-4-6',
     cwd: agent.workspacePath,
     thinking: agent.config.thinking,
     effort: agent.config.effort,

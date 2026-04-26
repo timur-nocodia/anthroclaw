@@ -532,6 +532,7 @@ export class Gateway {
         mediaDir: join(dataDir, 'media', 'telegram'),
       });
       tg.onMessage(onInbound);
+      tg.onCallbackQuery((cb) => this.handleCallbackQuery(cb));
       this.channels.set('telegram', tg);
       await tg.start();
       logger.info('Telegram channel started');
@@ -654,11 +655,13 @@ export class Gateway {
     agent: Agent,
     resume?: string,
     onElicitation?: (request: ElicitationRequest) => void,
+    sessionKey?: string,
   ) {
     return buildSdkOptions({
       agent,
       subagents: this.buildSubagents(agent),
       resume,
+      modelOverride: sessionKey ? agent.getSessionModel(sessionKey) : undefined,
       hookEmitter: this.hookEmitters.get(agent.id),
       fileOwnership: {
         registry: this.fileOwnershipRegistry,
@@ -1727,7 +1730,7 @@ export class Gateway {
     };
 
     try {
-      const options = this.buildUserQueryOptions(agent, existingSessionId, callbacks.onElicitation);
+      const options = this.buildUserQueryOptions(agent, existingSessionId, callbacks.onElicitation, sessionKey);
       runId = randomUUID();
       metrics.recordAgentRunStart({
         runId,
@@ -2071,6 +2074,65 @@ export class Gateway {
   }
 
   /**
+   * Handle inline-button clicks (Telegram callback_query).
+   * Currently supports `model:<modelId>` payloads — sets per-session model override.
+   */
+  async handleCallbackQuery(cb: import('./channels/types.js').CallbackEvent): Promise<void> {
+    const channel = this.channels.get(cb.channel);
+    const ack = (text?: string) => channel?.answerCallbackQuery?.(cb.callbackQueryId, text, cb.accountId).catch(() => {});
+
+    if (!cb.data.startsWith('model:')) {
+      await ack();
+      return;
+    }
+    const model = cb.data.slice('model:'.length);
+    const allowed = ['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'];
+    if (!allowed.includes(model)) {
+      await ack('Неизвестная модель');
+      return;
+    }
+
+    if (!this.routeTable) {
+      await ack('Gateway не готов');
+      return;
+    }
+    const chatType: 'dm' | 'group' = cb.peerId.startsWith('-') ? 'group' : 'dm';
+    const route = this.routeTable.resolve(cb.channel, cb.accountId, chatType, cb.peerId, cb.threadId);
+    if (!route) {
+      await ack('Роут не найден');
+      return;
+    }
+    const agent = this.agents.get(route.agentId);
+    if (!agent) {
+      await ack('Агент не найден');
+      return;
+    }
+
+    let sessionKey = buildSessionKey(route.agentId, cb.channel, chatType, cb.peerId, cb.threadId);
+    if (chatType === 'group') {
+      const groupMode: GroupSessionMode = agent.config.group_sessions ?? 'shared';
+      sessionKey = buildGroupSessionKey(sessionKey, cb.senderId, groupMode);
+    }
+
+    agent.setSessionModel(sessionKey, model);
+    await ack(`Модель: ${model}`);
+
+    if (channel) {
+      const labels: Record<string, string> = {
+        'claude-opus-4-7': '🧠 Opus 4.7',
+        'claude-opus-4-6': '🧠 Opus 4.6',
+        'claude-sonnet-4-6': '⚡ Sonnet 4.6',
+        'claude-haiku-4-5': '🪶 Haiku 4.5',
+      };
+      await channel.sendText(cb.peerId, `✅ Модель сессии: *${labels[model] ?? model}* (\`${model}\`)`, {
+        accountId: cb.accountId,
+        threadId: cb.threadId,
+        parseMode: 'markdown',
+      }).catch(() => {});
+    }
+  }
+
+  /**
    * Dispatch an inbound message through routing, access control, and agent query.
    * Exposed as package-internal for testing (not part of public API contract).
    */
@@ -2280,7 +2342,12 @@ export class Gateway {
     const channel = this.channels.get(msg.channel);
 
     // ─── Handle bot commands before agent query ───────────────────
-    const cmd = msg.text.trim();
+    // In Telegram groups, slash commands include the bot username (e.g. /model@clowwy_bot).
+    // Normalize by stripping the @username suffix from the first token.
+    const rawCmd = msg.text.trim();
+    const cmd = rawCmd.startsWith('/')
+      ? rawCmd.replace(/^(\/[A-Za-z0-9_]+)@\S+/, '$1')
+      : rawCmd;
 
     if (cmd === '/newsession') {
       if (channel) {
@@ -2320,6 +2387,64 @@ export class Gateway {
       agent.clearSession(sessionKey);
       // Let the agent handle /start as a greeting prompt
       msg.text = 'Привет! Представься кратко.';
+    }
+
+    if (cmd === '/compact') {
+      if (channel) {
+        await channel.sendText(msg.peerId, 'Сжимаю контекст...', {
+          accountId: msg.accountId, threadId: msg.threadId,
+        });
+      }
+      if (this.sdkReady && agent.getSessionId(sessionKey)) {
+        await this.summarizeAndSaveSession(agent, sessionKey);
+      }
+      agent.clearSession(sessionKey);
+      if (emitter) {
+        void emitter.emit('on_session_reset', { agentId: route.agentId, sessionKey, reason: 'compact' });
+      }
+      if (channel) {
+        await channel.sendText(msg.peerId, '💾 Контекст сжат. Саммари сохранено в память, продолжаем с чистого листа.', {
+          accountId: msg.accountId, threadId: msg.threadId,
+        });
+      }
+      recordRouteDecision({
+        outcome: 'session_reset',
+        candidates: routeCandidates,
+        winnerAgentId: route.agentId,
+        accessAllowed: true,
+        sessionKey,
+      });
+      return;
+    }
+
+    if (cmd === '/model') {
+      const current = agent.getSessionModel(sessionKey) ?? agent.config.model ?? 'claude-sonnet-4-6';
+      if (channel) {
+        const text = `Текущая модель: \`${current}\`\n\nВыбери модель для этой сессии:`;
+        await channel.sendText(msg.peerId, text, {
+          accountId: msg.accountId,
+          threadId: msg.threadId,
+          parseMode: 'markdown',
+          buttons: [
+            [
+              { text: '🧠 Opus 4.7', callbackData: `model:claude-opus-4-7` },
+              { text: '🧠 Opus 4.6', callbackData: `model:claude-opus-4-6` },
+            ],
+            [
+              { text: '⚡ Sonnet 4.6', callbackData: `model:claude-sonnet-4-6` },
+              { text: '🪶 Haiku 4.5', callbackData: `model:claude-haiku-4-5` },
+            ],
+          ],
+        });
+      }
+      recordRouteDecision({
+        outcome: 'command',
+        candidates: routeCandidates,
+        winnerAgentId: route.agentId,
+        accessAllowed: true,
+        sessionKey,
+      });
+      return;
     }
 
     if (cmd === '/whoami') {
@@ -2383,12 +2508,17 @@ export class Gateway {
 
     // ─── Normal flow ──────────────────────────────────────────────
 
+    // Visual ack: 👀 reaction on the picked-up message (best-effort, no-op on adapters that don't support it)
+    if (channel?.setReaction && msg.messageId) {
+      void channel.setReaction(msg.peerId, msg.messageId, '👀', msg.accountId).catch(() => {});
+    }
+
     // Continuous typing indicator — refreshes every 4s until response is ready
     let typingInterval: ReturnType<typeof setInterval> | null = null;
     if (channel) {
-      await channel.sendTyping(msg.peerId, msg.accountId).catch(() => {});
+      await channel.sendTyping(msg.peerId, msg.accountId, msg.threadId).catch(() => {});
       typingInterval = setInterval(() => {
-        channel.sendTyping(msg.peerId, msg.accountId).catch(() => {});
+        channel.sendTyping(msg.peerId, msg.accountId, msg.threadId).catch(() => {});
       }, 4000);
     }
 
@@ -2576,7 +2706,7 @@ export class Gateway {
     };
 
     try {
-      const options = this.buildUserQueryOptions(agent, existingSessionId);
+      const options = this.buildUserQueryOptions(agent, existingSessionId, undefined, sessionKey);
       runId = randomUUID();
       metrics.recordAgentRunStart({
         runId,

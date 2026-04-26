@@ -48,13 +48,28 @@ export interface InlineButton {
   url?: string;
 }
 
+export interface CallbackEvent {
+  channel: 'telegram' | 'whatsapp';
+  accountId: string;
+  peerId: string;
+  senderId: string;
+  senderName?: string;
+  threadId?: string;
+  messageId?: string;
+  data: string;
+  callbackQueryId: string;
+}
+
 export interface ChannelAdapter {
   readonly id: 'telegram' | 'whatsapp';
   start(): Promise<void>;
   stop(): Promise<void>;
   onMessage(handler: (msg: InboundMessage) => Promise<void>): void;
+  onCallbackQuery?(handler: (cb: CallbackEvent) => Promise<void>): void;
+  answerCallbackQuery?(callbackQueryId: string, text?: string, accountId?: string): Promise<void>;
   sendText(peerId: string, text: string, opts?: SendOptions): Promise<string>;
   editText(peerId: string, messageId: string, text: string, opts?: SendOptions): Promise<void>;
   sendMedia(peerId: string, media: OutboundMedia, opts?: SendOptions): Promise<string>;
-  sendTyping(peerId: string, accountId?: string): Promise<void>;
+  sendTyping(peerId: string, accountId?: string, threadId?: string): Promise<void>;
+  setReaction?(peerId: string, messageId: string, emoji: string, accountId?: string): Promise<void>;
 }

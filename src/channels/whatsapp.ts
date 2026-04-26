@@ -164,7 +164,7 @@ export class WhatsAppChannel implements ChannelAdapter {
     logger.debug('whatsapp: editText is a no-op (not supported)');
   }
 
-  async sendTyping(peerId: string, accountId?: string): Promise<void> {
+  async sendTyping(peerId: string, accountId?: string, _threadId?: string): Promise<void> {
     const jid = toWhatsAppJid(peerId);
     const sock = this.pickSocket(accountId);
     await sock.sendPresenceUpdate('composing', jid);

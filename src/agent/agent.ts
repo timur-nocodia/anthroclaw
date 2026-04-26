@@ -1,5 +1,5 @@
 import { basename, join } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { loadAgentYml } from '../config/loader.js';
 import type { AgentYml, GlobalConfig } from '../config/schema.js';
 import { MemoryStore } from '../memory/store.js';
@@ -115,6 +115,8 @@ export class Agent {
   private sessionLastUsed: Map<string, number>;
   private sessionStarted: Map<string, number>;
   private sessionMessageCount: Map<string, number>;
+  private sessionModelOverrides: Map<string, string>;
+  private sessionModelOverridesPath: string | null;
 
   private constructor(
     id: string,
@@ -123,6 +125,7 @@ export class Agent {
     memoryStore: MemoryStore,
     mcpServer: McpSdkServerConfigWithInstance,
     tools: ToolDefinition[],
+    sessionModelOverridesPath: string | null = null,
   ) {
     this.id = id;
     this.config = config;
@@ -134,6 +137,47 @@ export class Agent {
     this.sessionLastUsed = new Map();
     this.sessionStarted = new Map();
     this.sessionMessageCount = new Map();
+    this.sessionModelOverrides = new Map();
+    this.sessionModelOverridesPath = sessionModelOverridesPath;
+    this.loadSessionModelOverrides();
+  }
+
+  private loadSessionModelOverrides(): void {
+    if (!this.sessionModelOverridesPath || !existsSync(this.sessionModelOverridesPath)) return;
+    try {
+      const raw = JSON.parse(readFileSync(this.sessionModelOverridesPath, 'utf-8')) as Record<string, string>;
+      for (const [k, v] of Object.entries(raw)) {
+        if (typeof v === 'string' && v.length > 0) this.sessionModelOverrides.set(k, v);
+      }
+    } catch {
+      // ignore corrupt file
+    }
+  }
+
+  private persistSessionModelOverrides(): void {
+    if (!this.sessionModelOverridesPath) return;
+    try {
+      const obj: Record<string, string> = {};
+      for (const [k, v] of this.sessionModelOverrides) obj[k] = v;
+      writeFileSync(this.sessionModelOverridesPath, JSON.stringify(obj, null, 2));
+    } catch {
+      // best-effort persistence
+    }
+  }
+
+  getSessionModel(sessionKey: string): string | undefined {
+    return this.sessionModelOverrides.get(sessionKey);
+  }
+
+  setSessionModel(sessionKey: string, model: string): void {
+    this.sessionModelOverrides.set(sessionKey, model);
+    this.persistSessionModelOverrides();
+  }
+
+  clearSessionModel(sessionKey: string): void {
+    if (this.sessionModelOverrides.delete(sessionKey)) {
+      this.persistSessionModelOverrides();
+    }
   }
 
   static async load(
@@ -237,7 +281,11 @@ export class Agent {
       tools: tools as any[],
     });
 
-    return new Agent(id, config, agentDir, memoryStore, mcpServer, tools);
+    const sessionModelsDir = join(dataDir, 'session-models');
+    mkdirSync(sessionModelsDir, { recursive: true });
+    const sessionModelOverridesPath = join(sessionModelsDir, `${id}.json`);
+
+    return new Agent(id, config, agentDir, memoryStore, mcpServer, tools, sessionModelOverridesPath);
   }
 
   getSessionId(sessionKey: string): string | undefined {
@@ -262,6 +310,7 @@ export class Agent {
     this.sessionLastUsed.delete(sessionKey);
     this.sessionStarted.delete(sessionKey);
     this.sessionMessageCount.delete(sessionKey);
+    // intentionally keep sessionModelOverrides — model choice persists across /newsession
   }
 
   getSessionStartTime(sessionKey: string): number | undefined {
