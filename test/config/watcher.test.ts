@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync, unlinkSync, rmdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { ConfigWatcher } from '../../src/config/watcher.js';
+
+const fsWatchAvailable = canUseFsWatch();
+const watchIt = fsWatchAvailable ? it : it.skip;
 
 describe('ConfigWatcher', () => {
   let tmpDir: string;
@@ -15,7 +19,7 @@ describe('ConfigWatcher', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('calls onReload when agent.yml is modified', async () => {
+  watchIt('calls onReload when agent.yml is modified', async () => {
     // Create initial agent directory with agent.yml
     const agentDir = join(tmpDir, 'test-agent');
     mkdirSync(agentDir, { recursive: true });
@@ -39,7 +43,7 @@ describe('ConfigWatcher', () => {
     watcher.stop();
   });
 
-  it('debounces multiple rapid changes into one callback', async () => {
+  watchIt('debounces multiple rapid changes into one callback', async () => {
     const agentDir = join(tmpDir, 'test-agent');
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(join(agentDir, 'agent.yml'), 'routes:\n  - channel: telegram\n    scope: dm\n');
@@ -66,7 +70,7 @@ describe('ConfigWatcher', () => {
     watcher.stop();
   });
 
-  it('calls onReload when a new agent directory is added', async () => {
+  watchIt('calls onReload when a new agent directory is added', async () => {
     // Start with an empty agents dir
     const onReload = vi.fn();
     const watcher = new ConfigWatcher(onReload, { debounceMs: 100 });
@@ -107,7 +111,7 @@ describe('ConfigWatcher', () => {
     expect(onReload).not.toHaveBeenCalled();
   });
 
-  it('start() is idempotent — calling twice does not create duplicate watchers', async () => {
+  watchIt('start() is idempotent — calling twice does not create duplicate watchers', async () => {
     const agentDir = join(tmpDir, 'test-agent');
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(join(agentDir, 'agent.yml'), 'routes:\n  - channel: telegram\n    scope: dm\n');
@@ -145,4 +149,42 @@ describe('ConfigWatcher', () => {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function canUseFsWatch(): boolean {
+  const probe = `
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'watcher-probe-'));
+    let watcher;
+    let closed = false;
+    const done = (code) => {
+      if (closed) return;
+      closed = true;
+      try { watcher?.close(); } catch {}
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+      process.exit(code);
+    };
+    try {
+      watcher = fs.watch(dir, () => done(0));
+      watcher.once('error', () => done(1));
+      setTimeout(() => {
+        try {
+          fs.writeFileSync(path.join(dir, 'probe.txt'), 'ok');
+        } catch {
+          done(1);
+        }
+      }, 50);
+      setTimeout(() => done(2), 1500);
+    } catch {
+      done(1);
+    }
+  `;
+  const result = spawnSync(process.execPath, ['-e', probe], {
+    stdio: 'ignore',
+    timeout: 3000,
+  });
+
+  return result.status === 0;
 }

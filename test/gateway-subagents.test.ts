@@ -19,6 +19,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
 
 import { Gateway } from '../src/gateway.js';
 import type { GlobalConfig } from '../src/config/schema.js';
+import { metrics } from '../src/metrics/collector.js';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -71,6 +72,12 @@ routes:
 subagents:
   allow:
     - helper
+  conflict_mode: strict
+  roles:
+    helper:
+      kind: worker
+      write_policy: claim_required
+      description: Implements scoped code changes.
 `);
 
     const helperDir = join(agentsDir, 'helper');
@@ -94,7 +101,7 @@ routes:
     const result = gw.buildSubagents(mainAgent);
     expect(result).toBeDefined();
     expect(result).toHaveProperty('helper');
-    expect(result!.helper.description).toBe('Delegate tasks to the helper agent');
+    expect(result!.helper.description).toContain('Delegate tasks to the helper agent');
     expect(result!.helper.model).toBe('claude-haiku-3-5');
     expect(result!.helper.prompt).toContain('helper');
     expect(result!.helper.tools).toBeDefined();
@@ -109,6 +116,99 @@ routes:
         }),
       }),
     ]);
+
+    await gw.stop();
+  });
+
+  it('buildSubagents applies role write policy without custom subagent runtime', async () => {
+    const mainDir = join(agentsDir, 'main-agent');
+    mkdirSync(mainDir);
+    writeAgentYml(mainDir, `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["peer-main"]
+subagents:
+  allow:
+    - helper
+  roles:
+    helper:
+      kind: explorer
+      write_policy: deny
+`);
+
+    const helperDir = join(agentsDir, 'helper');
+    mkdirSync(helperDir);
+    writeAgentYml(helperDir, `
+mcp_tools:
+  - memory_search
+  - memory_write
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["peer-helper"]
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const mainAgent = gw._agents.get('main-agent')!;
+    const result = gw.buildSubagents(mainAgent);
+
+    expect(result!.helper.description).toContain('role=explorer');
+    expect(result!.helper.description).toContain('write_policy=deny');
+    expect(result!.helper.tools).toContain('Read');
+    expect(result!.helper.tools).toContain('mcp__helper-subagent-tools__memory_search');
+    expect(result!.helper.tools).not.toContain('Write');
+    expect(result!.helper.tools).not.toContain('Edit');
+    expect(result!.helper.tools).not.toContain('Bash');
+    expect(result!.helper.tools).not.toContain('mcp__helper-subagent-tools__memory_write');
+
+    await gw.stop();
+  });
+
+  it('buildSubagents treats max_spawn_depth as SDK delegation-surface policy', async () => {
+    const mainDir = join(agentsDir, 'main-agent');
+    mkdirSync(mainDir);
+    writeAgentYml(mainDir, `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["peer-main"]
+subagents:
+  allow:
+    - helper
+  max_spawn_depth: 1
+`);
+
+    const helperDir = join(agentsDir, 'helper');
+    mkdirSync(helperDir);
+    writeAgentYml(helperDir, `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["peer-helper"]
+subagents:
+  allow:
+    - leaf
+`);
+
+    const leafDir = join(agentsDir, 'leaf');
+    mkdirSync(leafDir);
+    writeAgentYml(leafDir, `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["peer-leaf"]
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const mainAgent = gw._agents.get('main-agent')!;
+    const result = gw.buildSubagents(mainAgent);
+
+    expect(result!.helper.tools).not.toContain('Task');
 
     await gw.stop();
   });
@@ -166,6 +266,12 @@ routes:
 subagents:
   allow:
     - helper
+  conflict_mode: strict
+  roles:
+    helper:
+      kind: worker
+      write_policy: claim_required
+      description: Implements scoped code changes.
 `);
 
     const helperDir = join(agentsDir, 'helper');
@@ -434,6 +540,23 @@ routes:
       subagentType: 'research',
     });
 
+    await emitter!.emit('on_tool_use', {
+      sdkSessionId: 'sdk-session-1',
+      sdkAgentId: 'helper',
+      toolName: 'Read',
+    });
+    await emitter!.emit('on_tool_result', {
+      sdkSessionId: 'sdk-session-1',
+      sdkAgentId: 'helper',
+      toolName: 'Read',
+    });
+    await emitter!.emit('on_tool_error', {
+      sdkSessionId: 'sdk-session-1',
+      sdkAgentId: 'helper',
+      toolName: 'Bash',
+      error: 'failed',
+    });
+
     await emitter!.emit('on_subagent_stop', {
       source: 'claude-agent-sdk',
       agentId: 'main-agent',
@@ -458,6 +581,14 @@ routes:
       parentTranscriptPath: '/tmp/parent.jsonl',
       subagentTranscriptPath: '/tmp/subagent.jsonl',
       lastAssistantMessage: 'Finished task',
+      toolSummary: {
+        started: 1,
+        completed: 1,
+        failed: 1,
+        toolNames: ['Bash', 'Read'],
+        lastToolName: 'Bash',
+        lastStatus: 'failed',
+      },
     });
 
     const detail = gw.getAgentSubagentRun('main-agent', runs[0].runId);
@@ -481,6 +612,12 @@ routes:
 subagents:
   allow:
     - helper
+  conflict_mode: strict
+  roles:
+    helper:
+      kind: worker
+      write_policy: claim_required
+      description: Implements scoped code changes.
 `);
 
     const helperDir = join(agentsDir, 'helper');
@@ -513,6 +650,54 @@ routes:
     });
 
     const run = gw.listAgentSubagentRuns('main-agent', { status: 'running' })[0];
+    const now = Date.now();
+    gw._fileOwnershipRegistry.claim({
+      sessionKey: 'web:main-agent:web-session',
+      runId: 'other-run',
+      subagentId: 'other-helper',
+      path: '/tmp/workspace/src/app.ts',
+      mode: 'write',
+    }, 'soft', now);
+    const ownershipDecision = gw._fileOwnershipRegistry.claim({
+      sessionKey: 'web:main-agent:web-session',
+      runId: run.runId,
+      subagentId: 'helper',
+      path: '/tmp/workspace/src/app.ts',
+      mode: 'write',
+    }, 'soft', now + 1);
+    metrics.recordFileOwnershipEvent({
+      agentId: 'main-agent',
+      sessionKey: 'web:main-agent:web-session',
+      runId: run.runId,
+      subagentId: 'helper',
+      path: '/tmp/workspace/src/app.ts',
+      eventType: 'conflict',
+      action: 'allow',
+      reason: 'soft file ownership records conflict and allows the claim',
+    });
+
+    const enrichedRuns = gw.listAgentSubagentRuns('main-agent', { status: 'running' });
+    expect(enrichedRuns[0].ownership.claims).toMatchObject([{
+      claimId: ownershipDecision.claim!.claimId,
+      runId: run.runId,
+      subagentId: 'helper',
+      path: '/tmp/workspace/src/app.ts',
+      mode: 'write',
+    }]);
+    expect(enrichedRuns[0].policy).toMatchObject({
+      kind: 'worker',
+      writePolicy: 'claim_required',
+      conflictMode: 'strict',
+      description: 'Implements scoped code changes.',
+    });
+    expect(enrichedRuns[0].ownership.conflicts).toHaveLength(1);
+    expect(enrichedRuns[0].ownership.events).toMatchObject([{
+      eventType: 'conflict',
+      action: 'allow',
+      runId: run.runId,
+      path: '/tmp/workspace/src/app.ts',
+    }]);
+
     const detail = gw.getAgentSubagentRun('main-agent', run.runId);
 
     expect(detail).toMatchObject({
@@ -520,6 +705,29 @@ routes:
       status: 'running',
       interruptSupported: true,
       interruptScope: 'parent_session',
+      ownership: {
+        claims: [{
+          claimId: ownershipDecision.claim!.claimId,
+          runId: run.runId,
+          subagentId: 'helper',
+          path: '/tmp/workspace/src/app.ts',
+          mode: 'write',
+        }],
+        conflicts: [{
+          action: 'allow',
+          requested: {
+            runId: run.runId,
+          },
+          existing: {
+            runId: 'other-run',
+          },
+        }],
+        events: [{
+          eventType: 'conflict',
+          action: 'allow',
+          runId: run.runId,
+        }],
+      },
     });
     expect(detail?.interruptReason).toContain('parent agent query');
 

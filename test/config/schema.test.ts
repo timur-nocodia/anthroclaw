@@ -88,6 +88,17 @@ describe('GlobalConfigSchema', () => {
     expect(result.defaults.model).toBe('claude-sonnet-4-6');
     expect(result.defaults.embedding_provider).toBe('openai');
     expect(result.defaults.embedding_model).toBe('text-embedding-3-small');
+    expect(result.features.sdk_active_input).toBe(false);
+  });
+
+  it('accepts feature flags with SDK active input defaulting off', () => {
+    const result = GlobalConfigSchema.parse({
+      features: {
+        sdk_active_input: true,
+      },
+    });
+
+    expect(result.features.sdk_active_input).toBe(true);
   });
 
   it('ignores legacy credentials.anthropic config in strict-native mode', () => {
@@ -116,6 +127,26 @@ describe('GlobalConfigSchema', () => {
     });
     expect(result.defaults.model).toBe('claude-sonnet-4-6');
     expect(result.defaults.embedding_provider).toBe('openai');
+  });
+
+  it('accepts STT provider configuration', () => {
+    const result = GlobalConfigSchema.parse({
+      stt: {
+        provider: 'auto',
+        openai: {
+          api_key: 'openai-key',
+          model: 'gpt-4o-mini-transcribe',
+        },
+        elevenlabs: {
+          api_key: 'eleven-key',
+          model: 'scribe_v2',
+        },
+      },
+    });
+
+    expect(result.stt!.provider).toBe('auto');
+    expect(result.stt!.openai!.model).toBe('gpt-4o-mini-transcribe');
+    expect(result.stt!.elevenlabs!.model).toBe('scribe_v2');
   });
 
   it('accepts telegram webhook without secret', () => {
@@ -237,6 +268,15 @@ describe('AgentYmlSchema', () => {
         whatsapp: ['number1'],
       },
       mcp_tools: ['web-search', 'calculator'],
+      external_mcp_servers: {
+        calendar: {
+          type: 'stdio' as const,
+          command: 'npx',
+          args: ['google-calendar-mcp'],
+          env: { GOOGLE_CLIENT_ID: 'id' },
+          allowed_tools: ['calendar_daily_brief'],
+        },
+      },
       subagents: { allow: ['researcher', 'coder'] },
     };
     const result = AgentYmlSchema.parse(input);
@@ -246,6 +286,7 @@ describe('AgentYmlSchema', () => {
     expect(result.pairing!.code).toBe('SECRET');
     expect(result.allowlist!.telegram).toEqual(['user1', 'user2']);
     expect(result.mcp_tools).toEqual(['web-search', 'calculator']);
+    expect(result.external_mcp_servers!.calendar.allowed_tools).toEqual(['calendar_daily_brief']);
     expect(result.subagents!.allow).toEqual(['researcher', 'coder']);
   });
 
@@ -274,6 +315,31 @@ describe('AgentYmlSchema', () => {
     expect(result.session_policy).toBe('daily');
   });
 
+  it('accepts subagent role policy fields', () => {
+    const result = AgentYmlSchema.parse({
+      routes: [{ channel: 'telegram' }],
+      subagents: {
+        allow: ['researcher', 'coder'],
+        max_spawn_depth: 1,
+        conflict_mode: 'soft',
+        roles: {
+          researcher: {
+            kind: 'explorer',
+            write_policy: 'deny',
+          },
+          coder: {
+            kind: 'worker',
+            write_policy: 'claim_required',
+          },
+        },
+      },
+    });
+
+    expect(result.subagents!.max_spawn_depth).toBe(1);
+    expect(result.subagents!.roles!.researcher.kind).toBe('explorer');
+    expect(result.subagents!.roles!.coder.write_policy).toBe('claim_required');
+  });
+
   it('defaults session_policy to never', () => {
     const result = AgentYmlSchema.parse({
       routes: [{ channel: 'telegram' }],
@@ -298,6 +364,18 @@ describe('AgentYmlSchema', () => {
     expect(result.iteration_budget!.max_tool_calls).toBe(50);
     expect(result.iteration_budget!.timeout_ms).toBe(60000);
     expect(result.iteration_budget!.grace_message).toBe(false);
+  });
+
+  it('accepts post-run memory extraction config with defaults', () => {
+    const result = AgentYmlSchema.parse({
+      routes: [{ channel: 'telegram' }],
+      memory_extraction: { enabled: true },
+    });
+    expect(result.memory_extraction).toEqual({
+      enabled: true,
+      max_candidates: 5,
+      max_input_chars: 6000,
+    });
   });
 
   it('ignores legacy skills config in strict-native mode', () => {
@@ -368,22 +446,22 @@ describe('AgentYmlSchema', () => {
       routes: [{ channel: 'telegram' }],
       hooks: [
         {
-          event: 'on_tool_use',
+          event: 'on_memory_write',
           action: 'webhook',
           url: 'https://example.com/tool-hook',
           timeout_ms: 1000,
         },
         {
-          event: 'on_subagent_stop',
+          event: 'on_elicitation',
           action: 'script',
-          command: 'echo "$HOOK_SUBAGENTID"',
+          command: 'echo "$HOOK_MCPSERVERNAME"',
           timeout_ms: 1000,
         },
       ],
     });
 
-    expect(result.hooks![0].event).toBe('on_tool_use');
-    expect(result.hooks![1].event).toBe('on_subagent_stop');
+    expect(result.hooks![0].event).toBe('on_memory_write');
+    expect(result.hooks![1].event).toBe('on_elicitation');
   });
 
   it('rejects invalid session_policy', () => {

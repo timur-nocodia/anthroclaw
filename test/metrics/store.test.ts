@@ -64,8 +64,47 @@ describe('MetricsStore', () => {
       eventType: 'started',
       status: 'running',
     });
+    store.recordFileOwnershipEvent({
+      timestamp: now + 25,
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      subagentId: 'researcher',
+      path: '/repo/src/app.ts',
+      eventType: 'conflict',
+      action: 'allow',
+      reason: 'soft file ownership records conflict and allows the claim',
+    });
+    store.recordMemoryInfluenceEvent({
+      timestamp: now + 30,
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      sdkSessionId: 'session-1',
+      source: 'prefetch',
+      query: 'project owner',
+      refs: [{
+        memoryEntryId: 'entry-1',
+        path: 'memory/profile.md',
+        startLine: 1,
+        endLine: 3,
+        score: 0.75,
+      }],
+    });
+    store.recordDirectWebhookDelivery({
+      timestamp: now + 35,
+      webhook: 'ci',
+      status: 'delivered',
+      delivered: true,
+      channel: 'telegram',
+      accountId: 'default',
+      peerId: 'peer-1',
+      threadId: 'topic-1',
+      messageId: 'msg-1',
+    });
     store.recordAgentRunStart({
       runId: 'run-1',
+      traceId: 'trace-1',
       startedAt: now,
       agentId: 'agent',
       sessionKey: 'web:agent:session-1',
@@ -90,6 +129,17 @@ describe('MetricsStore', () => {
         durationMs: 123,
       },
     });
+    store.recordIntegrationAuditEvent({
+      timestamp: now + 124,
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      sdkSessionId: 'session-1',
+      toolName: 'mcp__agent-tools__local_note_search',
+      provider: 'anthroclaw-notes',
+      capabilityId: 'notes.local',
+      status: 'completed',
+    });
     store.recordRouteDecision({
       id: 'route-1',
       timestamp: now,
@@ -112,6 +162,17 @@ describe('MetricsStore', () => {
       sessionKey: 'web:agent:session-1',
       outcome: 'dispatched',
     });
+    store.recordInterrupt({
+      timestamp: now + 50,
+      agentId: 'agent',
+      runId: 'run-1',
+      sessionKey: 'web:agent:session-1',
+      sdkSessionId: 'session-1',
+      targetId: 'run-1',
+      requestedBy: 'web',
+      result: 'interrupted',
+      reason: 'Active query interrupt requested successfully.',
+    });
     store.close();
     store = null;
 
@@ -132,9 +193,11 @@ describe('MetricsStore', () => {
       tools: { started: 1 },
       sessions: { created: 1 },
       subagents: { started: 1 },
+      fileOwnership: { conflict: 1 },
     });
     expect(store.getAgentRun('run-1')).toMatchObject({
       runId: 'run-1',
+      traceId: 'trace-1',
       agentId: 'agent',
       sessionKey: 'web:agent:session-1',
       sdkSessionId: 'session-1',
@@ -153,6 +216,16 @@ describe('MetricsStore', () => {
       },
     });
     expect(store.listAgentRuns({ agentId: 'agent' }).map((run) => run.runId)).toEqual(['run-1']);
+    expect(store.listDiagnosticEvents({ runId: 'run-1' }).map((event) => event.eventType)).toEqual([
+      'run.completed',
+      'run.sdk_started',
+    ]);
+    expect(store.listDiagnosticEvents({ traceId: 'trace-1' })[0]).toMatchObject({
+      traceId: 'trace-1',
+      runId: 'run-1',
+      agentId: 'agent',
+      eventType: 'run.completed',
+    });
     expect(store.listAgentRuns({ agentId: 'agent', sdkSessionId: 'session-1' }).map((run) => run.runId)).toEqual(['run-1']);
     expect(store.listAgentRuns({ agentId: 'agent', sdkSessionId: 'missing' })).toEqual([]);
     expect(store.listRouteDecisions({ agentId: 'agent' })).toMatchObject([{
@@ -166,6 +239,60 @@ describe('MetricsStore', () => {
     }]);
     expect(store.listRouteDecisions({ sessionKey: 'web:agent:session-1' }).map((decision) => decision.id)).toEqual(['route-1']);
     expect(store.listRouteDecisions({ outcome: 'no_route' })).toEqual([]);
+    expect(store.listInterrupts({ runId: 'run-1' })).toMatchObject([{
+      agentId: 'agent',
+      runId: 'run-1',
+      sessionKey: 'web:agent:session-1',
+      sdkSessionId: 'session-1',
+      targetId: 'run-1',
+      requestedBy: 'web',
+      result: 'interrupted',
+      reason: 'Active query interrupt requested successfully.',
+    }]);
+    expect(store.listFileOwnershipEvents({ sessionKey: 'web:agent:session-1' })).toMatchObject([{
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      subagentId: 'researcher',
+      path: '/repo/src/app.ts',
+      eventType: 'conflict',
+      action: 'allow',
+    }]);
+    expect(store.listMemoryInfluenceEvents({ runId: 'run-1' })).toMatchObject([{
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      sdkSessionId: 'session-1',
+      source: 'prefetch',
+      query: 'project owner',
+      refs: [{
+        memoryEntryId: 'entry-1',
+        path: 'memory/profile.md',
+        startLine: 1,
+        endLine: 3,
+        score: 0.75,
+      }],
+    }]);
+    expect(store.listDirectWebhookDeliveries({ webhook: 'ci' })).toMatchObject([{
+      webhook: 'ci',
+      status: 'delivered',
+      delivered: true,
+      channel: 'telegram',
+      accountId: 'default',
+      peerId: 'peer-1',
+      threadId: 'topic-1',
+      messageId: 'msg-1',
+    }]);
+    expect(store.listIntegrationAuditEvents({ runId: 'run-1' })).toMatchObject([{
+      agentId: 'agent',
+      sessionKey: 'web:agent:session-1',
+      runId: 'run-1',
+      sdkSessionId: 'session-1',
+      toolName: 'mcp__agent-tools__local_note_search',
+      provider: 'anthroclaw-notes',
+      capabilityId: 'notes.local',
+      status: 'completed',
+    }]);
 
     const report = store.usageReport(30);
     expect(report.totalSessions).toBe(1);

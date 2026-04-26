@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { QueueManager } from '../../src/routing/queue-manager.js';
 
 /** Create a mock Query object with an interrupt() method */
@@ -13,6 +13,10 @@ function mockQuery(interruptFn?: () => Promise<void>) {
 }
 
 describe('QueueManager', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('register / unregister / isActive basic operations', () => {
     const qm = new QueueManager();
     const q = mockQuery();
@@ -25,6 +29,64 @@ describe('QueueManager', () => {
 
     qm.unregister('session-1');
     expect(qm.isActive('session-1')).toBe(false);
+  });
+
+  it('tracks active run metadata and activity', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const qm = new QueueManager();
+    const abort = new AbortController();
+
+    qm.register('session-1', mockQuery(), abort, {
+      traceId: 'trace-1',
+      channelDeliveryTarget: {
+        channel: 'telegram',
+        peerId: 'peer-1',
+        accountId: 'default',
+        threadId: 'topic-1',
+      },
+    });
+
+    expect(qm.getActive('session-1')).toMatchObject({
+      sessionKey: 'session-1',
+      registeredAt: 1_000,
+      lastActivityAt: 1_000,
+      lastEventType: 'registered',
+      activeTaskIds: [],
+      traceId: 'trace-1',
+      channelDeliveryTarget: {
+        channel: 'telegram',
+        peerId: 'peer-1',
+      },
+    });
+
+    vi.setSystemTime(2_000);
+    qm.markActivity('session-1', 'task_progress', 'task-1');
+    qm.markActivity('session-1', 'task_progress', 'task-1');
+    expect(qm.getActive('session-1')).toMatchObject({
+      lastActivityAt: 2_000,
+      lastEventType: 'task_progress',
+      activeTaskIds: ['task-1'],
+    });
+
+    vi.setSystemTime(3_000);
+    qm.markTaskFinished('session-1', 'task-1', 'task_completed');
+    expect(qm.getActive('session-1')).toMatchObject({
+      lastActivityAt: 3_000,
+      lastEventType: 'task_completed',
+      activeTaskIds: [],
+    });
+  });
+
+  it('lists active sessions as immutable views', () => {
+    const qm = new QueueManager();
+    qm.register('session-1', mockQuery(), new AbortController(), { traceId: 'trace-1' });
+    qm.markActivity('session-1', 'task_progress', 'task-1');
+
+    const [view] = qm.listActive();
+    view.activeTaskIds.push('mutated');
+
+    expect(qm.getActive('session-1')?.activeTaskIds).toEqual(['task-1']);
   });
 
   it('handleConflict returns "proceed" when no active query', async () => {

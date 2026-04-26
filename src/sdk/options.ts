@@ -1,9 +1,15 @@
-import type { AgentDefinition, Options } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentDefinition, OnElicitation, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionStore } from '@anthropic-ai/claude-agent-sdk';
 import type { Agent } from '../agent/agent.js';
 import type { HookEmitter } from '../hooks/emitter.js';
 import { buildSdkHookBridge, mergeSdkHooks } from './hooks.js';
-import { buildAllowedTools, buildPermissionHooks, createCanUseTool } from './permissions.js';
+import {
+  buildAllowedTools,
+  buildPermissionHooks,
+  createCanUseTool,
+  type FileOwnershipPermissionHooks,
+} from './permissions.js';
+import { buildExternalMcpServerSpec } from './external-mcp.js';
 import { normalizeSandboxSettings } from './sandbox.js';
 
 export interface BuildSdkOptionsParams {
@@ -15,6 +21,8 @@ export interface BuildSdkOptionsParams {
   hookEmitter?: HookEmitter;
   sessionStore?: SessionStore;
   loadTimeoutMs?: number;
+  fileOwnership?: FileOwnershipPermissionHooks;
+  onElicitation?: OnElicitation;
 }
 
 export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
@@ -43,10 +51,14 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
     },
     sessionStore: params.sessionStore,
     loadTimeoutMs: params.loadTimeoutMs,
+    onElicitation: params.onElicitation,
   };
 
   if (includeMcpServer) {
-    options.mcpServers = { [agent.mcpServer.name]: agent.mcpServer };
+    options.mcpServers = {
+      [agent.mcpServer.name]: agent.mcpServer,
+      ...buildExternalMcpServerSpec(agent.config.external_mcp_servers),
+    };
   }
 
   if (subagents) {
@@ -71,7 +83,7 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
   options.allowedTools = allowedTools;
   options.permissionMode = cfg?.permissions?.mode ?? 'default';
   options.hooks = mergeSdkHooks(
-    buildPermissionHooks(agent),
+    buildPermissionHooks(agent, params.fileOwnership),
     buildSdkHookBridge({ agentId: agent.id, emitter: params.hookEmitter }),
   );
   options.canUseTool = createCanUseTool(agent, new Set(allowedTools));

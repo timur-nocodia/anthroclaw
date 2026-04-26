@@ -4,7 +4,7 @@ import { loadAgentYml } from '../config/loader.js';
 import type { AgentYml, GlobalConfig } from '../config/schema.js';
 import { MemoryStore } from '../memory/store.js';
 import { createMemorySearchTool } from './tools/memory-search.js';
-import { createMemoryWriteTool } from './tools/memory-write.js';
+import { createMemoryWriteTool, type MemoryWriteToolEvent } from './tools/memory-write.js';
 import { createMemoryWikiTool } from './tools/memory-wiki.js';
 import { createSendMessageTool } from './tools/send-message.js';
 import { createSendMediaTool } from './tools/send-media.js';
@@ -14,6 +14,8 @@ import { createListSkillsTool } from './tools/list-skills.js';
 import { createManageSkillsTool } from './tools/manage-skills.js';
 import { createManageCronTool } from './tools/manage-cron.js';
 import { createSessionSearchTool } from './tools/session-search.js';
+import { createLocalNoteSearchTool } from './tools/local-note-search.js';
+import { createLocalNoteProposeTool } from './tools/local-note-propose.js';
 import type { DynamicCronStore } from '../cron/dynamic-store.js';
 import { createSdkMcpServer, query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpSdkServerConfigWithInstance, Options } from '@anthropic-ai/claude-agent-sdk';
@@ -143,6 +145,7 @@ export class Agent {
     accessControl?: AccessControl,
     dynamicCronStore?: DynamicCronStore,
     onCronUpdate?: () => void,
+    onMemoryWrite?: (event: MemoryWriteToolEvent & { agentId: string }) => void | Promise<void>,
   ): Promise<Agent> {
     const id = basename(agentDir);
     const config = loadAgentYml(agentDir);
@@ -170,7 +173,11 @@ export class Agent {
           tools.push(createMemorySearchTool(memoryStore, embedFn));
           break;
         case 'memory_write':
-          tools.push(createMemoryWriteTool(agentDir, memoryStore, config.timezone));
+          tools.push(createMemoryWriteTool(agentDir, memoryStore, config.timezone, {
+            onMemoryWrite: onMemoryWrite
+              ? (event) => onMemoryWrite({ ...event, agentId: id })
+              : undefined,
+          }));
           break;
         case 'memory_wiki':
           tools.push(createMemoryWikiTool(agentDir, memoryStore));
@@ -213,6 +220,12 @@ export class Agent {
           break;
         case 'session_search':
           tools.push(createSessionSearchTool(sessionSearch));
+          break;
+        case 'local_note_search':
+          tools.push(createLocalNoteSearchTool(agentDir));
+          break;
+        case 'local_note_propose':
+          tools.push(createLocalNoteProposeTool(agentDir, memoryStore));
           break;
       }
     }

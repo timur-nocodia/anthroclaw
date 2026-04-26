@@ -1,6 +1,24 @@
 import { randomUUID } from 'node:crypto';
 
 export type SubagentRunStatus = 'running' | 'completed';
+export type SubagentToolEventStatus = 'started' | 'completed' | 'failed';
+
+export interface SubagentToolCount {
+  started: number;
+  completed: number;
+  failed: number;
+}
+
+export interface SubagentToolSummary {
+  started: number;
+  completed: number;
+  failed: number;
+  toolNames: string[];
+  byTool: Record<string, SubagentToolCount>;
+  lastToolName?: string;
+  lastStatus?: SubagentToolEventStatus;
+  lastAt?: number;
+}
 
 export interface SubagentRunRecord {
   runId: string;
@@ -17,6 +35,7 @@ export interface SubagentRunRecord {
   parentTranscriptPath?: string;
   subagentTranscriptPath?: string;
   lastAssistantMessage?: string;
+  toolSummary: SubagentToolSummary;
 }
 
 export interface SubagentRunEvent {
@@ -40,6 +59,14 @@ export interface ListSubagentRunsParams {
   offset?: number;
 }
 
+export interface SubagentToolEvent {
+  agentId: string;
+  parentSessionId: string;
+  subagentId: string;
+  toolName: string;
+  status: SubagentToolEventStatus;
+}
+
 function activeKey(agentId: string, parentSessionId: string, subagentId: string): string {
   return `${agentId}\u0000${parentSessionId}\u0000${subagentId}`;
 }
@@ -61,6 +88,7 @@ export class SdkSubagentRegistry {
       cwd: event.cwd,
       permissionMode: event.permissionMode,
       parentTranscriptPath: event.parentTranscriptPath,
+      toolSummary: emptyToolSummary(),
     };
 
     this.runs.set(run.runId, run);
@@ -69,7 +97,7 @@ export class SdkSubagentRegistry {
     stack.push(run.runId);
     this.activeRuns.set(key, stack);
 
-    return { ...run, parentSessionKeys: [...run.parentSessionKeys] };
+    return this.cloneRun(run);
   }
 
   recordStop(event: SubagentRunEvent, now = Date.now()): SubagentRunRecord {
@@ -94,7 +122,7 @@ export class SdkSubagentRegistry {
       run.parentTranscriptPath = event.parentTranscriptPath ?? run.parentTranscriptPath;
       run.subagentTranscriptPath = event.subagentTranscriptPath ?? run.subagentTranscriptPath;
       run.lastAssistantMessage = event.lastAssistantMessage ?? run.lastAssistantMessage;
-      return { ...run, parentSessionKeys: [...run.parentSessionKeys] };
+      return this.cloneRun(run);
     }
 
     const synthetic: SubagentRunRecord = {
@@ -112,9 +140,33 @@ export class SdkSubagentRegistry {
       parentTranscriptPath: event.parentTranscriptPath,
       subagentTranscriptPath: event.subagentTranscriptPath,
       lastAssistantMessage: event.lastAssistantMessage,
+      toolSummary: emptyToolSummary(),
     };
     this.runs.set(synthetic.runId, synthetic);
-    return { ...synthetic, parentSessionKeys: [...synthetic.parentSessionKeys] };
+    return this.cloneRun(synthetic);
+  }
+
+  recordToolEvent(event: SubagentToolEvent, now = Date.now()): SubagentRunRecord | undefined {
+    const stack = this.activeRuns.get(activeKey(event.agentId, event.parentSessionId, event.subagentId));
+    const runId = stack?.at(-1);
+    if (!runId) return undefined;
+
+    const run = this.runs.get(runId);
+    if (!run) return undefined;
+
+    const toolName = event.toolName.trim();
+    if (!toolName) return { ...run, parentSessionKeys: [...run.parentSessionKeys], toolSummary: cloneToolSummary(run.toolSummary) };
+
+    const current = run.toolSummary.byTool[toolName] ?? { started: 0, completed: 0, failed: 0 };
+    current[event.status] += 1;
+    run.toolSummary.byTool[toolName] = current;
+    run.toolSummary[event.status] += 1;
+    run.toolSummary.toolNames = Object.keys(run.toolSummary.byTool).sort();
+    run.toolSummary.lastToolName = toolName;
+    run.toolSummary.lastStatus = event.status;
+    run.toolSummary.lastAt = now;
+
+    return { ...run, parentSessionKeys: [...run.parentSessionKeys], toolSummary: cloneToolSummary(run.toolSummary) };
   }
 
   listRuns(params: ListSubagentRunsParams = {}): SubagentRunRecord[] {
@@ -134,13 +186,25 @@ export class SdkSubagentRegistry {
       });
 
     const sliced = limit !== undefined ? rows.slice(offset, offset + limit) : rows.slice(offset);
-    return sliced.map((run) => ({ ...run, parentSessionKeys: [...run.parentSessionKeys] }));
+    return sliced.map((run) => this.cloneRun(run));
   }
 
   getRun(agentId: string, runId: string): SubagentRunRecord | undefined {
     const run = this.runs.get(runId);
     if (!run || run.agentId !== agentId) return undefined;
-    return { ...run, parentSessionKeys: [...run.parentSessionKeys] };
+    return this.cloneRun(run);
+  }
+
+  getActiveRun(
+    agentId: string,
+    parentSessionId: string,
+    subagentId: string,
+  ): SubagentRunRecord | undefined {
+    const stack = this.activeRuns.get(activeKey(agentId, parentSessionId, subagentId));
+    const runId = stack?.at(-1);
+    if (!runId) return undefined;
+    const run = this.runs.get(runId);
+    return run ? this.cloneRun(run) : undefined;
   }
 
   deleteSession(agentId: string, parentSessionId: string): number {
@@ -189,4 +253,37 @@ export class SdkSubagentRegistry {
 
     this.activeRuns.set(key, next);
   }
+
+  private cloneRun(run: SubagentRunRecord): SubagentRunRecord {
+    return {
+      ...run,
+      parentSessionKeys: [...run.parentSessionKeys],
+      toolSummary: cloneToolSummary(run.toolSummary),
+    };
+  }
+}
+
+function emptyToolSummary(): SubagentToolSummary {
+  return {
+    started: 0,
+    completed: 0,
+    failed: 0,
+    toolNames: [],
+    byTool: {},
+  };
+}
+
+function cloneToolSummary(summary: SubagentToolSummary): SubagentToolSummary {
+  return {
+    started: summary.started,
+    completed: summary.completed,
+    failed: summary.failed,
+    toolNames: [...summary.toolNames],
+    byTool: Object.fromEntries(
+      Object.entries(summary.byTool).map(([toolName, count]) => [toolName, { ...count }]),
+    ),
+    lastToolName: summary.lastToolName,
+    lastStatus: summary.lastStatus,
+    lastAt: summary.lastAt,
+  };
 }

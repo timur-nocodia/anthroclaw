@@ -16,6 +16,40 @@ const WhatsappAccountSchema = z.object({
   auth_dir: z.string(),
 });
 
+const DirectWebhookSchema = z.object({
+  secret: z.string().min(1),
+  enabled: z.boolean().default(false),
+  deliver_to: z.object({
+    channel: z.enum(['telegram', 'whatsapp']),
+    peer_id: z.string(),
+    account_id: z.string().optional(),
+    thread_id: z.string().optional(),
+  }),
+  template: z.string().min(1),
+  fields: z.array(z.string()).optional(),
+  max_payload_bytes: z.number().int().min(1).max(131_072).default(32_768),
+});
+
+const SttProviderSchema = z.enum(['auto', 'assemblyai', 'openai', 'elevenlabs']);
+
+const SttProviderCredentialSchema = z.object({
+  api_key: z.string().optional(),
+  model: z.string().optional(),
+});
+
+const SttConfigSchema = z.object({
+  provider: SttProviderSchema.default('auto'),
+  assemblyai: SttProviderCredentialSchema.optional(),
+  openai: SttProviderCredentialSchema.optional(),
+  elevenlabs: SttProviderCredentialSchema.optional(),
+}).optional();
+
+const FeatureFlagsSchema = z.object({
+  sdk_active_input: z.boolean().default(false),
+}).default({
+  sdk_active_input: false,
+});
+
 // ─── GlobalConfigSchema ────────────────────────────────────────────
 
 export const GlobalConfigSchema = z.object({
@@ -50,12 +84,15 @@ export const GlobalConfigSchema = z.object({
   assemblyai: z.object({
     api_key: z.string(),
   }).optional(),
+  stt: SttConfigSchema,
   brave: z.object({
     api_key: z.string(),
   }).optional(),
   exa: z.object({
     api_key: z.string(),
   }).optional(),
+  webhooks: z.record(z.string(), DirectWebhookSchema).optional(),
+  features: FeatureFlagsSchema,
 });
 
 // ─── RouteSchema ───────────────────────────────────────────────────
@@ -93,10 +130,13 @@ export const HookConfigSchema = z.object({
     'on_after_query',
     'on_session_reset',
     'on_cron_fire',
+    'on_memory_write',
     'on_tool_use',
     'on_tool_result',
     'on_tool_error',
     'on_permission_request',
+    'on_elicitation',
+    'on_elicitation_result',
     'on_sdk_notification',
     'on_subagent_start',
     'on_subagent_stop',
@@ -186,6 +226,68 @@ const SdkAgentConfigSchema = z.object({
   fallbackModel: z.string().optional(),
 }).optional();
 
+const ExternalMcpServerSchema = z.union([
+  z.object({
+    type: z.literal('stdio').default('stdio').optional(),
+    command: z.string().min(1),
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    allowed_tools: z.array(z.string()).optional(),
+  }),
+  z.object({
+    type: z.literal('sse'),
+    url: z.string().url(),
+    headers: z.record(z.string(), z.string()).optional(),
+    allowed_tools: z.array(z.string()).optional(),
+  }),
+  z.object({
+    type: z.literal('http'),
+    url: z.string().url(),
+    headers: z.record(z.string(), z.string()).optional(),
+    allowed_tools: z.array(z.string()).optional(),
+  }),
+]);
+
+const ReplyToModeSchema = z.enum(['always', 'incoming_reply_only', 'never']);
+
+const ChannelBehaviorRuleSchema = z.object({
+  prompt: z.string().min(1).max(8000).optional(),
+  reply_to_mode: ReplyToModeSchema.optional(),
+});
+
+const ChannelContextSchema = z.object({
+  reply_to_mode: ReplyToModeSchema.default('always').optional(),
+  telegram: z.object({
+    wildcard: ChannelBehaviorRuleSchema.optional(),
+    peers: z.record(z.string(), ChannelBehaviorRuleSchema).optional(),
+    topics: z.record(z.string(), ChannelBehaviorRuleSchema).optional(),
+  }).optional(),
+  whatsapp: z.object({
+    wildcard: ChannelBehaviorRuleSchema.optional(),
+    direct: z.record(z.string(), ChannelBehaviorRuleSchema).optional(),
+    groups: z.record(z.string(), ChannelBehaviorRuleSchema).optional(),
+  }).optional(),
+}).optional();
+
+const SubagentRolePolicySchema = z.object({
+  kind: z.enum(['explorer', 'worker', 'custom']).default('custom').optional(),
+  write_policy: z.enum(['allow', 'deny', 'claim_required']).default('allow').optional(),
+  description: z.string().max(1000).optional(),
+});
+
+const SubagentPolicySchema = z.object({
+  allow: z.array(z.string()).default([]),
+  max_spawn_depth: z.number().int().min(0).default(1).optional(),
+  conflict_mode: z.enum(['soft', 'strict']).default('soft').optional(),
+  roles: z.record(z.string(), SubagentRolePolicySchema).optional(),
+}).optional();
+
+const MemoryExtractionSchema = z.object({
+  enabled: z.boolean().default(false),
+  max_candidates: z.number().int().min(1).max(10).default(5),
+  max_input_chars: z.number().int().min(500).max(20_000).default(6000),
+}).optional();
+
 export const AgentYmlSchema = z.object({
   model: z.string().optional(),
   thinking: ThinkingConfigSchema.optional(),
@@ -197,12 +299,15 @@ export const AgentYmlSchema = z.object({
   pairing: PairingSchema.optional(),
   allowlist: z.record(z.string(), z.array(z.string())).optional(),
   mcp_tools: z.array(z.string()).optional(),
-  subagents: z.object({ allow: z.array(z.string()) }).optional(),
+  external_mcp_servers: z.record(z.string(), ExternalMcpServerSchema).optional(),
+  memory_extraction: MemoryExtractionSchema,
+  subagents: SubagentPolicySchema,
   cron: z.array(CronJobSchema).optional(),
   hooks: z.array(HookConfigSchema).optional(),
   maxSessions: z.number().int().min(1).default(100).describe('Maximum number of cached sessions before LRU eviction'),
   queue_mode: z.enum(['collect', 'steer', 'interrupt']).default('collect'),
   session_policy: z.enum(['never', 'hourly', 'daily', 'weekly']).default('never'),
+  channel_context: ChannelContextSchema,
   auto_compress: z.object({
     enabled: z.boolean().default(true),
     threshold_messages: z.number().int().min(5).default(30),
@@ -210,6 +315,7 @@ export const AgentYmlSchema = z.object({
   iteration_budget: z.object({
     max_tool_calls: z.number().int().min(1).default(30),
     timeout_ms: z.number().int().min(5000).default(120_000),
+    absolute_timeout_ms: z.number().int().min(5000).optional(),
     grace_message: z.boolean().default(true),
   }).optional(),
   quick_commands: z.record(z.string(), z.object({
@@ -234,6 +340,11 @@ export type Route = z.infer<typeof RouteSchema>;
 export type Pairing = z.infer<typeof PairingSchema>;
 export type CronJob = z.infer<typeof CronJobSchema>;
 export type HookConfig = z.infer<typeof HookConfigSchema>;
+export type ReplyToMode = z.infer<typeof ReplyToModeSchema>;
+export type ChannelContextConfig = NonNullable<z.infer<typeof ChannelContextSchema>>;
+export type SubagentRolePolicy = z.infer<typeof SubagentRolePolicySchema>;
+export type SubagentPolicy = NonNullable<z.infer<typeof SubagentPolicySchema>>;
 export type SdkPermissionPolicy = z.infer<typeof SdkPermissionPolicySchema>;
 export type SdkSandboxConfig = z.infer<typeof SdkSandboxSchema>;
 export type SdkAgentConfig = z.infer<typeof SdkAgentConfigSchema>;
+export type MemoryExtractionConfig = z.infer<typeof MemoryExtractionSchema>;

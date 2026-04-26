@@ -4,10 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  AlertTriangle,
   Brain,
   ChevronLeft,
+  CheckCircle2,
   Clock,
   Copy,
+  Database,
+  Download,
   DollarSign,
   FileText,
   GitBranch,
@@ -18,6 +22,7 @@ import {
   MessageSquare,
   Monitor,
   Plus,
+  Plug,
   RefreshCw,
   Save,
   Settings2,
@@ -26,6 +31,7 @@ import {
   Terminal,
   Trash2,
   Upload,
+  XCircle,
   Zap,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -65,7 +71,12 @@ interface AgentConfig {
   queue_mode?: string;
   session_policy?: string;
   auto_compress?: number;
-  iteration_budget?: { tool_call_limit?: number; timeout_ms?: number };
+  iteration_budget?: {
+    tool_call_limit?: number;
+    max_tool_calls?: number;
+    timeout_ms?: number;
+    absolute_timeout_ms?: number;
+  };
   pairing?: { mode?: string; code?: string };
   routes?: Array<{
     channel: string;
@@ -76,7 +87,14 @@ interface AgentConfig {
     mentionOnly?: boolean;
   }>;
   raw?: string;
+  channel_context?: ChannelContextConfig;
   mcp_tools?: string[];
+  memory_extraction?: {
+    enabled?: boolean;
+    max_candidates?: number;
+    max_input_chars?: number;
+  };
+  external_mcp_servers?: Record<string, ExternalMcpServerConfig>;
   allowlist?: Record<string, string[]>;
   quick_commands?: Record<string, { command: string; timeout: number }>;
   group_sessions?: string;
@@ -101,7 +119,16 @@ interface AgentConfig {
     enabled: boolean;
   }>;
   maxSessions?: number;
-  subagents?: { allow: string[] };
+  subagents?: {
+    allow: string[];
+    max_spawn_depth?: number;
+    conflict_mode?: "soft" | "strict";
+    roles?: Record<string, {
+      kind?: "explorer" | "worker" | "custom";
+      write_policy?: "allow" | "deny" | "claim_required";
+      description?: string;
+    }>;
+  };
   sdk?: {
     allowedTools?: string[];
     disallowedTools?: string[];
@@ -142,16 +169,65 @@ interface AgentConfig {
   };
 }
 
+type ReplyToMode = "always" | "incoming_reply_only" | "never";
+
+interface ChannelBehaviorRule {
+  prompt?: string;
+  reply_to_mode?: ReplyToMode;
+}
+
+interface ChannelContextConfig {
+  reply_to_mode?: ReplyToMode;
+  telegram?: {
+    wildcard?: ChannelBehaviorRule;
+    peers?: Record<string, ChannelBehaviorRule>;
+    topics?: Record<string, ChannelBehaviorRule>;
+  };
+  whatsapp?: {
+    wildcard?: ChannelBehaviorRule;
+    direct?: Record<string, ChannelBehaviorRule>;
+    groups?: Record<string, ChannelBehaviorRule>;
+  };
+}
+
+interface ExternalMcpServerConfig {
+  type?: "stdio" | "sse" | "http";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  allowed_tools?: string[];
+}
+
+interface ExternalMcpPreflightServer {
+  serverName: string;
+  approvalStatus: "approved" | "review_required" | "blocked";
+  networkRisk: "low" | "medium" | "high";
+  filesystemRisk: "low" | "medium" | "high";
+  packageSource: string;
+  reasons: string[];
+}
+
+interface ExternalMcpPreflightState {
+  loading?: boolean;
+  error?: string;
+  server?: ExternalMcpPreflightServer;
+}
+
 const HOOK_EVENTS = [
   "on_message_received",
   "on_before_query",
   "on_after_query",
   "on_session_reset",
   "on_cron_fire",
+  "on_memory_write",
   "on_tool_use",
   "on_tool_result",
   "on_tool_error",
   "on_permission_request",
+  "on_elicitation",
+  "on_elicitation_result",
   "on_sdk_notification",
   "on_subagent_start",
   "on_subagent_stop",
@@ -235,6 +311,69 @@ interface RouteDecisionRecord {
   outcome: string;
 }
 
+type MemoryReviewStatus = "pending" | "approved" | "rejected";
+
+interface MemoryEntryRecord {
+  id: string;
+  path: string;
+  contentHash: string;
+  source: string;
+  reviewStatus: MemoryReviewStatus;
+  reviewNote?: string;
+  provenance: {
+    runId?: string;
+    traceId?: string;
+    sessionKey?: string;
+    sdkSessionId?: string;
+    toolName?: string;
+    metadata?: Record<string, unknown>;
+  };
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface MemoryDoctorIssue {
+  kind: "duplicate_content" | "stale_entry" | "oversized_file" | "conflicting_fact";
+  severity: "info" | "warn" | "error";
+  message: string;
+  paths: string[];
+  entryIds: string[];
+  evidence?: Record<string, unknown>;
+}
+
+interface MemoryDoctorReport {
+  checkedAt: number;
+  entriesChecked: number;
+  chunksChecked: number;
+  issues: MemoryDoctorIssue[];
+  summary: {
+    duplicateContent: number;
+    staleEntries: number;
+    oversizedFiles: number;
+    conflictingFacts: number;
+  };
+}
+
+interface MemoryInfluenceRef {
+  memoryEntryId?: string;
+  path: string;
+  startLine?: number;
+  endLine?: number;
+  score?: number;
+}
+
+interface MemoryInfluenceEvent {
+  id?: number;
+  timestamp?: number;
+  agentId?: string;
+  sessionKey?: string;
+  runId?: string;
+  sdkSessionId?: string;
+  source: "prefetch" | "memory_search";
+  query?: string;
+  refs: MemoryInfluenceRef[];
+}
+
 const MODELS = [
   "claude-sonnet-4-6",
   "claude-opus-4-6",
@@ -269,6 +408,25 @@ function csvToArray(value: string): string[] {
 
 function arrayToCsv(value?: string[]): string {
   return value?.join(", ") ?? "";
+}
+
+function mapToEnvText(value?: Record<string, string>): string {
+  return Object.entries(value ?? {}).map(([key, entry]) => `${key}=${entry}`).join("\n");
+}
+
+function envTextToMap(value: string): Record<string, string> | undefined {
+  const entries = value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const index = line.indexOf("=");
+      return index === -1
+        ? [line, ""] as const
+        : [line.slice(0, index).trim(), line.slice(index + 1).trim()] as const;
+    })
+    .filter(([key]) => key.length > 0);
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 const TIMEZONES = [
@@ -452,6 +610,13 @@ export default function AgentEditorPage() {
             Runs
           </TabsTrigger>
           <TabsTrigger
+            value="memory"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <Database className="mr-1.5 h-3.5 w-3.5" />
+            Memory
+          </TabsTrigger>
+          <TabsTrigger
             value="skills"
             className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
           >
@@ -468,6 +633,9 @@ export default function AgentEditorPage() {
         </TabsContent>
         <TabsContent value="runs" className="mt-0 flex-1 overflow-auto">
           <RunsTab serverId={serverId} agentId={agentId} />
+        </TabsContent>
+        <TabsContent value="memory" className="mt-0 flex-1 overflow-auto">
+          <MemoryReviewTab serverId={serverId} agentId={agentId} />
         </TabsContent>
         <TabsContent value="skills" className="mt-0 flex-1 overflow-auto">
           <SkillsTab serverId={serverId} agentId={agentId} />
@@ -504,15 +672,23 @@ function ConfigTab({
     session_policy: agent.session_policy ?? "daily",
     auto_compress: agent.auto_compress ?? 0,
     iteration_budget: {
-      tool_call_limit: agent.iteration_budget?.tool_call_limit ?? 20,
+      tool_call_limit: agent.iteration_budget?.tool_call_limit ?? agent.iteration_budget?.max_tool_calls ?? 20,
       timeout_ms: agent.iteration_budget?.timeout_ms ?? 120000,
+      absolute_timeout_ms: agent.iteration_budget?.absolute_timeout_ms ?? 0,
     },
     pairing: {
       mode: agent.pairing?.mode ?? "open",
       code: agent.pairing?.code ?? "",
     },
     routes: agent.routes ?? [],
+    channel_context: agent.channel_context ?? { reply_to_mode: "always" as ReplyToMode },
     mcp_tools: agent.mcp_tools ?? [],
+    memory_extraction: {
+      enabled: agent.memory_extraction?.enabled ?? false,
+      max_candidates: agent.memory_extraction?.max_candidates ?? 5,
+      max_input_chars: agent.memory_extraction?.max_input_chars ?? 6000,
+    },
+    external_mcp_servers: agent.external_mcp_servers ?? {},
     allowlist: agent.allowlist ?? {},
     quick_commands: agent.quick_commands ?? {},
     group_sessions: agent.group_sessions ?? 'shared',
@@ -520,7 +696,12 @@ function ConfigTab({
     hooks: agent.hooks ?? [],
     cron: agent.cron ?? [],
     maxSessions: agent.maxSessions ?? 100,
-    subagents: agent.subagents ?? { allow: [] },
+    subagents: {
+      allow: agent.subagents?.allow ?? [],
+      max_spawn_depth: agent.subagents?.max_spawn_depth ?? 1,
+      conflict_mode: agent.subagents?.conflict_mode ?? "soft" as const,
+      roles: agent.subagents?.roles ?? {},
+    },
     sdk: {
       allowedTools: agent.sdk?.allowedTools ?? [],
       disallowedTools: agent.sdk?.disallowedTools ?? [],
@@ -561,6 +742,7 @@ function ConfigTab({
     },
   });
   const [rawYaml, setRawYaml] = useState(agent.raw ?? "");
+  const [externalMcpPreflight, setExternalMcpPreflight] = useState<Record<string, ExternalMcpPreflightState>>({});
 
   const update = (patch: Partial<typeof cfg>) => {
     setCfg((c) => ({ ...c, ...patch }));
@@ -585,6 +767,314 @@ function ConfigTab({
 
   const updateSdkSandboxFilesystem = (patch: Partial<typeof cfg.sdk.sandbox.filesystem>) => {
     updateSdkSandbox({ filesystem: { ...cfg.sdk.sandbox.filesystem, ...patch } });
+  };
+
+  const updateChannelContext = (patch: Partial<ChannelContextConfig>) => {
+    update({ channel_context: { ...cfg.channel_context, ...patch } });
+  };
+
+  const updateWildcardChannelPrompt = (channel: "telegram" | "whatsapp", prompt: string) => {
+    const current = cfg.channel_context[channel] ?? {};
+    updateChannelContext({
+      [channel]: {
+        ...current,
+        wildcard: {
+          ...current.wildcard,
+          prompt,
+        },
+      },
+    });
+  };
+
+  const formatChannelRuleMapText = (rules: Record<string, ChannelBehaviorRule> | undefined): string => (
+    Object.entries(rules ?? {})
+      .map(([key, rule]) => `${key}=${rule.prompt ?? ""}${rule.reply_to_mode ? ` | ${rule.reply_to_mode}` : ""}`)
+      .join("\n")
+  );
+
+  const parseChannelRuleMapText = (value: string): Record<string, ChannelBehaviorRule> => {
+    const rules: Record<string, ChannelBehaviorRule> = {};
+    for (const line of value.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const separator = trimmed.indexOf("=");
+      if (separator <= 0) continue;
+      const key = trimmed.slice(0, separator).trim();
+      const rawValue = trimmed.slice(separator + 1).trim();
+      const [promptPart, modePart] = rawValue.split("|").map((part) => part.trim());
+      const rule: ChannelBehaviorRule = {};
+      if (promptPart) rule.prompt = promptPart;
+      if (modePart === "always" || modePart === "incoming_reply_only" || modePart === "never") {
+        rule.reply_to_mode = modePart;
+      }
+      if (key && Object.keys(rule).length > 0) rules[key] = rule;
+    }
+    return rules;
+  };
+
+  const updateTelegramChannelRuleMap = (map: "peers" | "topics", value: string) => {
+    const current = cfg.channel_context.telegram ?? {};
+    updateChannelContext({
+      telegram: {
+        ...current,
+        [map]: parseChannelRuleMapText(value),
+      },
+    });
+  };
+
+  const updateWhatsappChannelRuleMap = (map: "direct" | "groups", value: string) => {
+    const current = cfg.channel_context.whatsapp ?? {};
+    updateChannelContext({
+      whatsapp: {
+        ...current,
+        [map]: parseChannelRuleMapText(value),
+      },
+    });
+  };
+
+  const buildChannelRule = (rule: ChannelBehaviorRule | undefined): ChannelBehaviorRule | undefined => {
+    if (!rule) return undefined;
+    const prompt = rule.prompt?.trim();
+    const clean: ChannelBehaviorRule = {};
+    if (prompt) clean.prompt = prompt;
+    if (rule.reply_to_mode) clean.reply_to_mode = rule.reply_to_mode;
+    return Object.keys(clean).length > 0 ? clean : undefined;
+  };
+
+  const buildChannelRuleMap = (
+    rules: Record<string, ChannelBehaviorRule> | undefined,
+  ): Record<string, ChannelBehaviorRule> | undefined => {
+    if (!rules) return undefined;
+    const clean = Object.fromEntries(
+      Object.entries(rules)
+        .map(([key, rule]) => [key, buildChannelRule(rule)] as const)
+        .filter((entry): entry is readonly [string, ChannelBehaviorRule] => Boolean(entry[1])),
+    );
+    return Object.keys(clean).length > 0 ? clean : undefined;
+  };
+
+  const buildChannelContextPayload = (): ChannelContextConfig | undefined => {
+    const clean: ChannelContextConfig = {};
+    if (cfg.channel_context.reply_to_mode && cfg.channel_context.reply_to_mode !== "always") {
+      clean.reply_to_mode = cfg.channel_context.reply_to_mode;
+    }
+
+    const telegramWildcard = buildChannelRule(cfg.channel_context.telegram?.wildcard);
+    const telegramPeers = buildChannelRuleMap(cfg.channel_context.telegram?.peers);
+    const telegramTopics = buildChannelRuleMap(cfg.channel_context.telegram?.topics);
+    if (telegramWildcard || telegramPeers || telegramTopics) {
+      clean.telegram = {
+        ...(telegramWildcard ? { wildcard: telegramWildcard } : {}),
+        ...(telegramPeers ? { peers: telegramPeers } : {}),
+        ...(telegramTopics ? { topics: telegramTopics } : {}),
+      };
+    }
+
+    const whatsappWildcard = buildChannelRule(cfg.channel_context.whatsapp?.wildcard);
+    const whatsappDirect = buildChannelRuleMap(cfg.channel_context.whatsapp?.direct);
+    const whatsappGroups = buildChannelRuleMap(cfg.channel_context.whatsapp?.groups);
+    if (whatsappWildcard || whatsappDirect || whatsappGroups) {
+      clean.whatsapp = {
+        ...(whatsappWildcard ? { wildcard: whatsappWildcard } : {}),
+        ...(whatsappDirect ? { direct: whatsappDirect } : {}),
+        ...(whatsappGroups ? { groups: whatsappGroups } : {}),
+      };
+    }
+
+    return Object.keys(clean).length > 0 ? clean : undefined;
+  };
+
+  const updateExternalMcpServer = (serverName: string, patch: Partial<ExternalMcpServerConfig>) => {
+    update({
+      external_mcp_servers: {
+        ...cfg.external_mcp_servers,
+        [serverName]: {
+          ...cfg.external_mcp_servers[serverName],
+          ...patch,
+        },
+      },
+    });
+  };
+
+  const addExternalMcpServer = () => {
+    const serverName = window.prompt("MCP server name");
+    const name = serverName?.trim();
+    if (!name) return;
+    update({
+      external_mcp_servers: {
+        ...cfg.external_mcp_servers,
+        [name]: {
+          type: "stdio",
+          command: "npx",
+          args: [],
+          allowed_tools: [],
+        },
+      },
+    });
+  };
+
+  const enableMcpTools = (tools: string[]) => {
+    const current = new Set(cfg.mcp_tools);
+    for (const tool of tools) current.add(tool);
+
+    const patch: Partial<typeof cfg> = { mcp_tools: [...current] };
+    if (cfg.sdk.permissions.allowed_mcp_tools.length > 0) {
+      const allowed = new Set(cfg.sdk.permissions.allowed_mcp_tools);
+      for (const tool of tools) allowed.add(tool);
+      patch.sdk = {
+        ...cfg.sdk,
+        permissions: {
+          ...cfg.sdk.permissions,
+          allowed_mcp_tools: [...allowed],
+        },
+      };
+    }
+
+    update(patch);
+  };
+
+  const nextExternalMcpName = (base: string) => {
+    if (!cfg.external_mcp_servers[base]) return base;
+    for (let index = 2; index < 20; index += 1) {
+      const name = `${base}-${index}`;
+      if (!cfg.external_mcp_servers[name]) return name;
+    }
+    return `${base}-${Date.now()}`;
+  };
+
+  const addExternalMcpPreset = (preset: "calendar" | "gmail") => {
+    const name = nextExternalMcpName(preset);
+    const server = preset === "calendar"
+      ? {
+          type: "stdio" as const,
+          command: "npx",
+          args: ["google-calendar-mcp"],
+          env: {
+            GOOGLE_CLIENT_ID: "",
+            GOOGLE_CLIENT_SECRET: "",
+            GOOGLE_REFRESH_TOKEN: "",
+          },
+          allowed_tools: [
+            "calendar_daily_brief",
+            "calendar_availability",
+            "calendar_event_lookup",
+            "calendar_meeting_prep",
+          ],
+        }
+      : {
+          type: "stdio" as const,
+          command: "npx",
+          args: ["gmail-mcp"],
+          env: {
+            GOOGLE_CLIENT_ID: "",
+            GOOGLE_CLIENT_SECRET: "",
+            GOOGLE_REFRESH_TOKEN: "",
+          },
+          allowed_tools: [
+            "gmail_search",
+            "gmail_thread_summary",
+            "gmail_draft_reply",
+          ],
+        };
+    update({
+      external_mcp_servers: {
+        ...cfg.external_mcp_servers,
+        [name]: server,
+      },
+    });
+  };
+
+  const removeExternalMcpServer = (serverName: string) => {
+    const { [serverName]: _removed, ...rest } = cfg.external_mcp_servers;
+    update({ external_mcp_servers: rest });
+  };
+
+  const buildExternalMcpPayload = (): Record<string, ExternalMcpServerConfig> | undefined => {
+    const entries = Object.entries(cfg.external_mcp_servers).flatMap(([serverName, server]) => {
+      const name = serverName.trim();
+      if (!name) return [];
+      const type = server.type ?? "stdio";
+      const clean: ExternalMcpServerConfig = { type };
+      if (type === "stdio") {
+        const command = server.command?.trim();
+        if (!command) return [];
+        clean.command = command;
+        if (server.args?.length) clean.args = server.args;
+        if (server.env && Object.keys(server.env).length > 0) clean.env = server.env;
+      } else {
+        const url = server.url?.trim();
+        if (!url) return [];
+        clean.url = url;
+        if (server.headers && Object.keys(server.headers).length > 0) clean.headers = server.headers;
+      }
+      if (server.allowed_tools?.length) clean.allowed_tools = server.allowed_tools;
+      return [[name, clean]] as Array<[string, ExternalMcpServerConfig]>;
+    });
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  };
+
+  const buildExternalMcpSpecEntry = (server: ExternalMcpServerConfig): Record<string, unknown> | null => {
+    const type = server.type ?? "stdio";
+    if (type === "stdio") {
+      const command = server.command?.trim();
+      if (!command) return null;
+      return {
+        type: "stdio",
+        command,
+        ...(server.args?.length ? { args: server.args } : {}),
+        ...(server.env && Object.keys(server.env).length > 0 ? { env: server.env } : {}),
+      };
+    }
+    const url = server.url?.trim();
+    if (!url) return null;
+    return {
+      type,
+      url,
+      ...(server.headers && Object.keys(server.headers).length > 0 ? { headers: server.headers } : {}),
+    };
+  };
+
+  const preflightExternalMcpServer = async (serverName: string) => {
+    const server = cfg.external_mcp_servers[serverName];
+    const specEntry = buildExternalMcpSpecEntry(server);
+    if (!specEntry) {
+      setExternalMcpPreflight((state) => ({
+        ...state,
+        [serverName]: { error: "Set a command or URL before running preflight." },
+      }));
+      return;
+    }
+
+    setExternalMcpPreflight((state) => ({
+      ...state,
+      [serverName]: { loading: true },
+    }));
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/integrations/mcp-preflight`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ownerAgentId: agentId,
+          source: "external",
+          spec: { [serverName]: specEntry },
+          toolNamesByServer: {
+            [serverName]: server.allowed_tools ?? [],
+          },
+        }),
+      });
+      if (!res.ok) throw new Error(`preflight ${res.status}`);
+      const data = await res.json();
+      const preflightServer = Array.isArray(data.servers) ? data.servers[0] as ExternalMcpPreflightServer | undefined : undefined;
+      setExternalMcpPreflight((state) => ({
+        ...state,
+        [serverName]: preflightServer ? { server: preflightServer } : { error: "No preflight result returned." },
+      }));
+    } catch (err) {
+      setExternalMcpPreflight((state) => ({
+        ...state,
+        [serverName]: { error: err instanceof Error ? err.message : "Preflight failed." },
+      }));
+    }
   };
 
   const buildSdkPayload = () => {
@@ -640,12 +1130,34 @@ function ConfigTab({
       if (mode === "raw") {
         payload = { yaml: rawYaml };
       } else {
-        const { thinking, effort, maxTurns, maxBudgetUsd, sdk: _sdk, ...rest } = cfg;
+        const {
+          thinking,
+          effort,
+          maxTurns,
+          maxBudgetUsd,
+          sdk: _sdk,
+          channel_context: _channelContext,
+          external_mcp_servers: _externalMcpServers,
+          iteration_budget: _iterationBudget,
+          ...rest
+        } = cfg;
         const clean: Record<string, unknown> = { ...rest };
         if (thinking.type !== "disabled") clean.thinking = thinking;
         if (effort && effort !== "high") clean.effort = effort;
         if (maxTurns > 0) clean.maxTurns = maxTurns;
         if (maxBudgetUsd > 0) clean.maxBudgetUsd = maxBudgetUsd;
+        const channelContextPayload = buildChannelContextPayload();
+        if (channelContextPayload) clean.channel_context = channelContextPayload;
+        const externalMcpPayload = buildExternalMcpPayload();
+        if (externalMcpPayload) clean.external_mcp_servers = externalMcpPayload;
+        const iterationBudget: Record<string, unknown> = {
+          max_tool_calls: cfg.iteration_budget.tool_call_limit,
+          timeout_ms: cfg.iteration_budget.timeout_ms,
+        };
+        if (cfg.iteration_budget.absolute_timeout_ms > 0) {
+          iterationBudget.absolute_timeout_ms = cfg.iteration_budget.absolute_timeout_ms;
+        }
+        clean.iteration_budget = iterationBudget;
         const sdkPayload = buildSdkPayload();
         if (sdkPayload) clean.sdk = sdkPayload;
         payload = clean;
@@ -751,7 +1263,7 @@ function ConfigTab({
                   ))}
                 </select>
               </Field>
-              <Field label="Queue mode" tooltip="What happens to new messages while the agent is still responding. Collect — queues and batches them. Steer — appends to the current response. Interrupt — cancels and restarts.">
+              <Field label="Queue mode" tooltip="What happens to new messages while the agent is still responding. Collect queues and batches them. Steer is SDK-safe interrupt-and-restart until active input is promoted. Interrupt cancels and drops the new message.">
                 <select
                   value={cfg.queue_mode}
                   onChange={(e) => update({ queue_mode: e.target.value })}
@@ -763,7 +1275,7 @@ function ConfigTab({
                   }}
                 >
                   <option value="collect">collect -- buffer and batch</option>
-                  <option value="steer">steer -- append context mid-turn</option>
+                  <option value="steer">steer -- interrupt and restart</option>
                   <option value="interrupt">interrupt -- cancel and restart</option>
                 </select>
               </Field>
@@ -947,6 +1459,27 @@ function ConfigTab({
                   }}
                 />
               </Field>
+              <Field label="Absolute timeout (ms)" tooltip="Hard cap for one iteration even if tool activity continues. Set 0 to disable.">
+                <input
+                  type="number"
+                  value={cfg.iteration_budget.absolute_timeout_ms}
+                  onChange={(e) =>
+                    update({
+                      iteration_budget: {
+                        ...cfg.iteration_budget,
+                        absolute_timeout_ms: +e.target.value || 0,
+                      },
+                    })
+                  }
+                  className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                    fontFamily: "var(--oc-mono)",
+                  }}
+                />
+              </Field>
             </FormGrid>
           </Section>
 
@@ -1033,6 +1566,116 @@ function ConfigTab({
               onChange={(rs) => update({ routes: rs })}
               onAllowlistChange={(al) => update({ allowlist: al })}
             />
+          </Section>
+
+          {/* Channel behavior */}
+          <Section
+            title="Channel behavior"
+            tooltip="Operator-configured channel context is injected as fenced, untrusted context. It adds behavior hints without replacing CLAUDE.md or mutating SDK sessions."
+            icon={<MessageSquare className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+          >
+            <FormGrid>
+              <Field label="Reply target" tooltip="Controls reply threading for channel deliveries. Incoming reply only keeps replies scoped when the user replied to an existing message.">
+                <select
+                  value={cfg.channel_context.reply_to_mode ?? "always"}
+                  onChange={(e) => updateChannelContext({ reply_to_mode: e.target.value as ReplyToMode })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                >
+                  <option value="always">always</option>
+                  <option value="incoming_reply_only">incoming_reply_only</option>
+                  <option value="never">never</option>
+                </select>
+              </Field>
+              <Field label="Telegram wildcard" tooltip="Default Telegram operator context for chats without a more specific peer or topic rule. Fenced as untrusted channel context.">
+                <textarea
+                  value={cfg.channel_context.telegram?.wildcard?.prompt ?? ""}
+                  onChange={(e) => updateWildcardChannelPrompt("telegram", e.target.value)}
+                  rows={3}
+                  placeholder="Operator context for Telegram chats"
+                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                />
+              </Field>
+              <Field label="Telegram peers" tooltip="Per-peer Telegram context, one peer_id=prompt line. Add | never, | always, or | incoming_reply_only to override reply target. Peer rules override the Telegram wildcard.">
+                <textarea
+                  value={formatChannelRuleMapText(cfg.channel_context.telegram?.peers)}
+                  onChange={(e) => updateTelegramChannelRuleMap("peers", e.target.value)}
+                  rows={3}
+                  placeholder="123456789=Use concise replies for this chat | incoming_reply_only"
+                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                />
+              </Field>
+              <Field label="Telegram topics" tooltip="Per-topic Telegram context, one topic_id=prompt line. Add | never, | always, or | incoming_reply_only to override reply target. Topic rules override peer and wildcard rules.">
+                <textarea
+                  value={formatChannelRuleMapText(cfg.channel_context.telegram?.topics)}
+                  onChange={(e) => updateTelegramChannelRuleMap("topics", e.target.value)}
+                  rows={3}
+                  placeholder="42=Use support triage format in this topic | never"
+                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                />
+              </Field>
+              <Field label="WhatsApp wildcard" tooltip="Default WhatsApp operator context for chats without a more specific direct or group rule. Fenced as untrusted channel context.">
+                <textarea
+                  value={cfg.channel_context.whatsapp?.wildcard?.prompt ?? ""}
+                  onChange={(e) => updateWildcardChannelPrompt("whatsapp", e.target.value)}
+                  rows={3}
+                  placeholder="Operator context for WhatsApp chats"
+                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                />
+              </Field>
+              <Field label="WhatsApp direct" tooltip="Per-contact WhatsApp context, one jid=prompt line. Add | never, | always, or | incoming_reply_only to override reply target. Direct rules override the WhatsApp wildcard.">
+                <textarea
+                  value={formatChannelRuleMapText(cfg.channel_context.whatsapp?.direct)}
+                  onChange={(e) => updateWhatsappChannelRuleMap("direct", e.target.value)}
+                  rows={3}
+                  placeholder="77001234567@s.whatsapp.net=Use customer support tone | always"
+                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                />
+              </Field>
+              <Field label="WhatsApp groups" tooltip="Per-group WhatsApp context, one group_jid=prompt line. Add | never, | always, or | incoming_reply_only to override reply target. Group rules override the WhatsApp wildcard.">
+                <textarea
+                  value={formatChannelRuleMapText(cfg.channel_context.whatsapp?.groups)}
+                  onChange={(e) => updateWhatsappChannelRuleMap("groups", e.target.value)}
+                  rows={3}
+                  placeholder="120363000000000000@g.us=Summarize decisions at the end | incoming_reply_only"
+                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                />
+              </Field>
+            </FormGrid>
           </Section>
 
           {/* Quick commands */}
@@ -1299,7 +1942,17 @@ function ConfigTab({
           {/* MCP tools */}
           <Section title="MCP tools" subtitle={`${cfg.mcp_tools.length} enabled`}
             tooltip="External tools the agent can use via the Model Context Protocol. These extend what the agent can do beyond just text responses."
-            icon={<List className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
+            icon={<List className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+            action={
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => enableMcpTools(["local_note_search"])}>
+                  Notes search
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => enableMcpTools(["local_note_propose"])}>
+                  Note proposals
+                </Button>
+              </div>
+            }>
             <Field label="Tools" tooltip="External tools (MCP) available to this agent: search, memory, messaging, etc. Comma-separated list of tool names.">
               <input value={cfg.mcp_tools.join(", ")}
                 onChange={(e) => update({ mcp_tools: e.target.value ? e.target.value.split(",").map(s => s.trim()).filter(Boolean) : [] })}
@@ -1307,6 +1960,215 @@ function ConfigTab({
                 className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
                 style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} />
             </Field>
+          </Section>
+
+          <Section
+            title="Memory extraction"
+            tooltip="Post-run memory candidates are proposed for review after successful runs. They are not searchable until an operator approves them."
+            icon={<Brain className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+          >
+            <div className="flex flex-col gap-3.5">
+              <ToggleField
+                label="Propose post-run candidates"
+                tooltip="Run a bounded, tools-disabled extraction pass after selected successful runs. Candidates land in the pending memory review queue."
+                checked={cfg.memory_extraction.enabled}
+                onChange={(enabled) => update({
+                  memory_extraction: {
+                    ...cfg.memory_extraction,
+                    enabled,
+                  },
+                })}
+              />
+              <FormGrid>
+                <Field label="Max candidates" tooltip="Maximum memory candidates to propose from one completed run. Backend accepts 1-10.">
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={cfg.memory_extraction.max_candidates}
+                    onChange={(e) => update({
+                      memory_extraction: {
+                        ...cfg.memory_extraction,
+                        max_candidates: Math.min(10, Math.max(1, +e.target.value || 1)),
+                      },
+                    })}
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+                <Field label="Max input chars" tooltip="Maximum response text passed into the extraction prompt. Backend accepts 500-20000.">
+                  <input
+                    type="number"
+                    min={500}
+                    max={20000}
+                    value={cfg.memory_extraction.max_input_chars}
+                    onChange={(e) => update({
+                      memory_extraction: {
+                        ...cfg.memory_extraction,
+                        max_input_chars: Math.min(20000, Math.max(500, +e.target.value || 500)),
+                      },
+                    })}
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+              </FormGrid>
+            </div>
+          </Section>
+
+          <Section
+            title="External MCP servers"
+            subtitle={`${Object.keys(cfg.external_mcp_servers).length} configured`}
+            tooltip="SDK-native external MCP servers for pilot integrations. These are passed into Claude Agent SDK mcpServers, not executed through a custom harness runtime."
+            icon={<Plug className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+            action={
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => addExternalMcpPreset("calendar")}>
+                  Calendar
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => addExternalMcpPreset("gmail")}>
+                  Gmail
+                </Button>
+                <Button variant="outline" size="sm" onClick={addExternalMcpServer}>
+                  <Plus className="h-3 w-3" />
+                  Add server
+                </Button>
+              </div>
+            }
+          >
+            {Object.keys(cfg.external_mcp_servers).length === 0 ? (
+              <div className="p-5 text-center text-xs" style={{ color: "var(--oc-text-muted)" }}>
+                No external MCP servers. Add one for a Google Calendar, Gmail, or other stdio/http MCP pilot.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {Object.entries(cfg.external_mcp_servers).map(([serverName, server]) => {
+                  const type = server.type ?? "stdio";
+                  const preflight = externalMcpPreflight[serverName];
+                  return (
+                    <div
+                      key={serverName}
+                      className="rounded-[5px] border p-3"
+                      style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}
+                    >
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+                            {serverName}
+                          </div>
+                          <div className="mt-0.5 text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+                            {type} / {(server.allowed_tools ?? []).length} allowed tools
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void preflightExternalMcpServer(serverName)}
+                            disabled={preflight?.loading}
+                            className="h-7 px-2"
+                          >
+                            <Shield className="h-3.5 w-3.5" />
+                            {preflight?.loading ? "Checking" : "Preflight"}
+                          </Button>
+                          <button
+                            onClick={() => removeExternalMcpServer(serverName)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-[var(--oc-bg3)]"
+                            style={{ color: "var(--oc-text-dim)" }}
+                            title="Remove external MCP server"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-[120px_minmax(0,1fr)]">
+                        <Field label="Transport" tooltip="SDK MCP transport for this external server. stdio is the common local MCP shape; sse/http are remote transports.">
+                          <select
+                            value={type}
+                            onChange={(e) => updateExternalMcpServer(serverName, { type: e.target.value as ExternalMcpServerConfig["type"] })}
+                            className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                            style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                          >
+                            <option value="stdio">stdio</option>
+                            <option value="sse">sse</option>
+                            <option value="http">http</option>
+                          </select>
+                        </Field>
+                        {type === "stdio" ? (
+                          <Field label="Command" tooltip="Executable command passed to the SDK MCP server config.">
+                            <input
+                              value={server.command ?? ""}
+                              onChange={(e) => updateExternalMcpServer(serverName, { command: e.target.value })}
+                              placeholder="npx"
+                              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                            />
+                          </Field>
+                        ) : (
+                          <Field label="URL" tooltip="Remote MCP endpoint URL.">
+                            <input
+                              value={server.url ?? ""}
+                              onChange={(e) => updateExternalMcpServer(serverName, { url: e.target.value })}
+                              placeholder="https://mcp.example.com"
+                              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                            />
+                          </Field>
+                        )}
+                      </div>
+                      <FormGrid>
+                        {type === "stdio" ? (
+                          <>
+                            <Field label="Args" tooltip="Arguments passed to the MCP process. Comma-separated.">
+                              <input
+                                value={arrayToCsv(server.args)}
+                                onChange={(e) => updateExternalMcpServer(serverName, { args: csvToArray(e.target.value) })}
+                                placeholder="google-calendar-mcp"
+                                className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                                style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                              />
+                            </Field>
+                            <Field label="Env" tooltip="Environment passed to the MCP process. One KEY=value per line. Values are redacted in preflight responses.">
+                              <textarea
+                                value={mapToEnvText(server.env)}
+                                onChange={(e) => updateExternalMcpServer(serverName, { env: envTextToMap(e.target.value) })}
+                                rows={3}
+                                placeholder="GOOGLE_CLIENT_ID=..."
+                                className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                                style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                              />
+                            </Field>
+                          </>
+                        ) : (
+                          <Field label="Headers" tooltip="Optional request headers for remote MCP. One KEY=value per line.">
+                            <textarea
+                              value={mapToEnvText(server.headers)}
+                              onChange={(e) => updateExternalMcpServer(serverName, { headers: envTextToMap(e.target.value) })}
+                              rows={3}
+                              placeholder="Authorization=Bearer ..."
+                              className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                            />
+                          </Field>
+                        )}
+                        <Field label="Allowed tools" tooltip="Explicit tool names allowed from this server. These become mcp__server__tool entries in SDK allowedTools.">
+                          <input
+                            value={arrayToCsv(server.allowed_tools)}
+                            onChange={(e) => updateExternalMcpServer(serverName, { allowed_tools: csvToArray(e.target.value) })}
+                            placeholder="calendar_daily_brief, calendar_lookup"
+                            className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                            style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                          />
+                        </Field>
+                      </FormGrid>
+                      {preflight && (
+                        <ExternalMcpPreflightResult state={preflight} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </Section>
 
           {/* Display & sessions */}
@@ -1561,11 +2423,108 @@ function ConfigTab({
             <div className="flex flex-col gap-3.5">
               <Field label="Subagents" tooltip="Other agents this one can delegate subtasks to. For example, one agent talks to the user while another does research.">
                 <input value={cfg.subagents.allow.join(", ")}
-                  onChange={(e) => update({ subagents: { allow: e.target.value ? e.target.value.split(",").map(s => s.trim()).filter(Boolean) : [] } })}
+                  onChange={(e) => update({ subagents: { ...cfg.subagents, allow: csvToArray(e.target.value) } })}
                   placeholder="research-agent, code-agent"
                   className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
                   style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} />
               </Field>
+              <FormGrid>
+                <Field label="Max spawn depth" tooltip="SDK delegation surface policy. 0 disables direct subagent exposure, 1 allows direct subagents, 2 allows nested subagents.">
+                  <input
+                    type="number"
+                    value={cfg.subagents.max_spawn_depth}
+                    onChange={(e) => update({
+                      subagents: {
+                        ...cfg.subagents,
+                        max_spawn_depth: Math.max(0, +e.target.value || 0),
+                      },
+                    })}
+                    className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  />
+                </Field>
+                <Field label="Conflict mode" tooltip="Soft records sibling file ownership conflicts and allows them. Strict denies conflicting writes through SDK permission hooks.">
+                  <select
+                    value={cfg.subagents.conflict_mode}
+                    onChange={(e) => update({
+                      subagents: {
+                        ...cfg.subagents,
+                        conflict_mode: e.target.value as "soft" | "strict",
+                      },
+                    })}
+                    className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                    style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                  >
+                    <option value="soft">soft -- record conflicts</option>
+                    <option value="strict">strict -- deny conflicts</option>
+                  </select>
+                </Field>
+              </FormGrid>
+              {cfg.subagents.allow.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {cfg.subagents.allow.map((subagentId) => {
+                    const role = cfg.subagents.roles?.[subagentId] ?? {};
+                    const updateRole = (patch: Partial<typeof role>) => update({
+                      subagents: {
+                        ...cfg.subagents,
+                        roles: {
+                          ...cfg.subagents.roles,
+                          [subagentId]: {
+                            ...role,
+                            ...patch,
+                          },
+                        },
+                      },
+                    });
+                    return (
+                      <div
+                        key={subagentId}
+                        className="rounded-[5px] border p-3"
+                        style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)" }}
+                      >
+                        <div className="mb-2 text-[11px] font-semibold" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
+                          {subagentId}
+                        </div>
+                        <FormGrid>
+                          <Field label="Role kind" tooltip="Policy label used in the SDK Agent tool description. Explorer and worker are AnthroClaw policy hints, not custom runtimes.">
+                            <select
+                              value={role.kind ?? "custom"}
+                              onChange={(e) => updateRole({ kind: e.target.value as "explorer" | "worker" | "custom" })}
+                              className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                            >
+                              <option value="custom">custom</option>
+                              <option value="explorer">explorer</option>
+                              <option value="worker">worker</option>
+                            </select>
+                          </Field>
+                          <Field label="Write policy" tooltip="Allow keeps all delegated tools, deny removes write-capable tools, claim_required keeps writes behind file ownership permission checks.">
+                            <select
+                              value={role.write_policy ?? "allow"}
+                              onChange={(e) => updateRole({ write_policy: e.target.value as "allow" | "deny" | "claim_required" })}
+                              className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                            >
+                              <option value="allow">allow</option>
+                              <option value="deny">deny</option>
+                              <option value="claim_required">claim_required</option>
+                            </select>
+                          </Field>
+                          <Field label="Description" tooltip="Optional role note stored in config for operators and future policy UI.">
+                            <input
+                              value={role.description ?? ""}
+                              onChange={(e) => updateRole({ description: e.target.value })}
+                              placeholder="Role-specific operating note"
+                              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                            />
+                          </Field>
+                        </FormGrid>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </Section>
         </>
@@ -1754,6 +2713,54 @@ function ToggleField({
   );
 }
 
+function ExternalMcpPreflightResult({ state }: { state: ExternalMcpPreflightState }) {
+  if (state.loading) {
+    return (
+      <div className="mt-3 rounded-[5px] border px-3 py-2 text-[11.5px]" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)", color: "var(--oc-text-muted)" }}>
+        Checking MCP command, env, tools, and transport risk...
+      </div>
+    );
+  }
+
+  if (state.error) {
+    return (
+      <div className="mt-3 rounded-[5px] border px-3 py-2 text-[11.5px]" style={{ borderColor: "rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.08)", color: "var(--oc-red)" }}>
+        {state.error}
+      </div>
+    );
+  }
+
+  const server = state.server;
+  if (!server) return null;
+  const approvalColor = server.approvalStatus === "approved"
+    ? "var(--oc-green)"
+    : server.approvalStatus === "blocked"
+      ? "var(--oc-red)"
+      : "var(--oc-yellow)";
+
+  return (
+    <div className="mt-3 rounded-[5px] border px-3 py-2.5" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)" }}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.4px]" style={{ color: approvalColor, background: "var(--oc-bg2)" }}>
+          {server.approvalStatus.replace("_", " ")}
+        </span>
+        <span className="text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+          network:{server.networkRisk} / fs:{server.filesystemRisk} / {server.packageSource}
+        </span>
+      </div>
+      {server.reasons.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {server.reasons.slice(0, 3).map((reason) => (
+            <div key={reason} className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+              {reason}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RoutesTable({
   routes,
   allowlist,
@@ -1867,6 +2874,422 @@ function RoutesTable({
       )}
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Memory Tab                                                        */
+/* ------------------------------------------------------------------ */
+
+function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: string }) {
+  const [status, setStatus] = useState<MemoryReviewStatus | "all">("pending");
+  const [source, setSource] = useState("all");
+  const [entries, setEntries] = useState<MemoryEntryRecord[]>([]);
+  const [doctor, setDoctor] = useState<MemoryDoctorReport | null>(null);
+  const [influence, setInfluence] = useState<MemoryInfluenceEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadMemory = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ limit: "80" });
+      if (status !== "all") params.set("reviewStatus", status);
+      if (source !== "all") params.set("source", source);
+      const [entriesRes, doctorRes, influenceRes] = await Promise.all([
+        fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory?${params.toString()}`),
+        fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory/doctor?limit=1000`),
+        fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory/influence?limit=12`),
+      ]);
+      if (!entriesRes.ok) throw new Error(`entries ${entriesRes.status}`);
+      if (!doctorRes.ok) throw new Error(`doctor ${doctorRes.status}`);
+      if (!influenceRes.ok) throw new Error(`influence ${influenceRes.status}`);
+      const entriesJson = await entriesRes.json() as { entries?: MemoryEntryRecord[] };
+      const doctorJson = await doctorRes.json() as MemoryDoctorReport;
+      const influenceJson = await influenceRes.json() as { events?: MemoryInfluenceEvent[] };
+      setEntries(entriesJson.entries ?? []);
+      setDoctor(doctorJson);
+      setInfluence(influenceJson.events ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load memory review");
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId, serverId, source, status]);
+
+  useEffect(() => {
+    void loadMemory();
+  }, [loadMemory]);
+
+  const updateReview = async (entryId: string, reviewStatus: MemoryReviewStatus, reviewNote?: string) => {
+    setSavingId(entryId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/memory`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId, reviewStatus, reviewNote }),
+      });
+      if (!res.ok) throw new Error(`review ${res.status}`);
+      await loadMemory();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update memory review");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const reviewEntry = (entryId: string, reviewStatus: MemoryReviewStatus) => {
+    const note = window.prompt(
+      reviewStatus === "approved" ? "Approval note (optional)" : "Rejection reason (optional)",
+    );
+    if (note === null) return;
+    void updateReview(entryId, reviewStatus, note?.trim() || undefined);
+  };
+
+  return (
+    <div className="flex flex-col gap-4 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[15px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+            Memory review
+          </h2>
+          <p className="mt-1 text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
+            Provenance, review status, and doctor findings for this agent&apos;s long-term memory.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={source}
+            onChange={(event) => setSource(event.target.value)}
+            className="h-8 cursor-pointer rounded-[5px] border px-2 text-xs"
+            style={{
+              background: "var(--oc-bg2)",
+              borderColor: "var(--oc-border)",
+              color: "var(--color-foreground)",
+            }}
+          >
+            <option value="all">All sources</option>
+            <option value="post_run_candidate">Post-run candidates</option>
+            <option value="local_note_proposal">Local note proposals</option>
+            <option value="memory_write">Memory writes</option>
+            <option value="memory_wiki">Memory wiki</option>
+            <option value="dreaming">Dreaming</option>
+            <option value="index">Indexed files</option>
+          </select>
+          <select
+            value={status}
+            onChange={(event) => setStatus(event.target.value as MemoryReviewStatus | "all")}
+            className="h-8 cursor-pointer rounded-[5px] border px-2 text-xs"
+            style={{
+              background: "var(--oc-bg2)",
+              borderColor: "var(--oc-border)",
+              color: "var(--color-foreground)",
+            }}
+          >
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="all">All</option>
+          </select>
+          <Button variant="outline" size="sm" onClick={loadMemory} disabled={loading}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {error && (
+        <div
+          className="rounded-md border px-3 py-2 text-[12px]"
+          style={{
+            background: "rgba(248,113,113,0.1)",
+            borderColor: "rgba(248,113,113,0.35)",
+            color: "var(--oc-red)",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-[1.35fr_1fr]">
+        <div className="rounded-md border" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}>
+          <div className="flex items-center justify-between gap-2 border-b px-3.5 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
+            <div className="flex items-center gap-2">
+              <Database className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />
+              <span className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+                Entries
+              </span>
+            </div>
+            <span className="text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+              {entries.length} shown
+            </span>
+          </div>
+          <div className="divide-y" style={{ borderColor: "var(--oc-border)" }}>
+            {loading ? (
+              <MemorySkeletonRows />
+            ) : entries.length === 0 ? (
+              <div className="p-6 text-center text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
+                No memory entries match this filter.
+              </div>
+            ) : entries.map((entry) => (
+              <MemoryEntryRow
+                key={entry.id}
+                serverId={serverId}
+                entry={entry}
+                saving={savingId === entry.id}
+                onApprove={() => reviewEntry(entry.id, "approved")}
+                onReject={() => reviewEntry(entry.id, "rejected")}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div className="rounded-md border" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}>
+            <div className="flex items-center gap-2 border-b px-3.5 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
+              <AlertTriangle className="h-3.5 w-3.5" style={{ color: "var(--oc-yellow)" }} />
+              <span className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+                Doctor
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 p-3">
+              <MemoryDoctorMetric label="Entries" value={doctor?.entriesChecked ?? 0} />
+              <MemoryDoctorMetric label="Chunks" value={doctor?.chunksChecked ?? 0} />
+              <MemoryDoctorMetric label="Duplicates" value={doctor?.summary.duplicateContent ?? 0} />
+              <MemoryDoctorMetric label="Conflicts" value={doctor?.summary.conflictingFacts ?? 0} />
+            </div>
+          </div>
+
+          <div className="rounded-md border" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}>
+            <div className="border-b px-3.5 py-2.5 text-[13px] font-semibold" style={{ borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+              Recent findings
+            </div>
+            <div className="divide-y" style={{ borderColor: "var(--oc-border)" }}>
+              {!doctor || doctor.issues.length === 0 ? (
+                <div className="p-5 text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
+                  No doctor findings for the current memory set.
+                </div>
+              ) : doctor.issues.slice(0, 8).map((issue, index) => (
+                <div key={`${issue.kind}-${index}`} className="px-3.5 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12px] font-medium" style={{ color: "var(--color-foreground)" }}>
+                      {memoryIssueLabel(issue.kind)}
+                    </span>
+                    <span className="rounded px-1.5 py-px text-[10px]" style={memoryIssueStyle(issue.severity)}>
+                      {issue.severity}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11.5px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+                    {issue.message}
+                  </p>
+                  <div className="mt-2 truncate text-[10.5px]" style={{ color: "var(--oc-text-dim)", fontFamily: "var(--oc-mono)" }}>
+                    {issue.paths.join(", ")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-md border" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}>
+            <div className="border-b px-3.5 py-2.5 text-[13px] font-semibold" style={{ borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+              Recent influence
+            </div>
+            <div className="divide-y" style={{ borderColor: "var(--oc-border)" }}>
+              {influence.length === 0 ? (
+                <div className="p-5 text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
+                  No recorded memory influence yet.
+                </div>
+              ) : influence.map((event) => (
+                <MemoryInfluenceRow
+                  key={event.id ?? `${event.source}-${event.timestamp}`}
+                  serverId={serverId}
+                  event={event}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MemoryEntryRow({
+  serverId,
+  entry,
+  saving,
+  onApprove,
+  onReject,
+}: {
+  serverId: string;
+  entry: MemoryEntryRecord;
+  saving: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div className="px-3.5 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-[12.5px] font-medium" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
+              {entry.path}
+            </span>
+            <span className="shrink-0 rounded px-1.5 py-px text-[10px]" style={memoryStatusStyle(entry.reviewStatus)}>
+              {entry.reviewStatus}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+            <span>{entry.source}</span>
+            <span>{formatRuntimeTime(entry.updatedAt)}</span>
+            {entry.provenance.runId && (
+              <span className="inline-flex items-center gap-1">
+                run {shortRuntimeId(entry.provenance.runId, 10)}
+                <RuntimeDiagnosticsLink serverId={serverId} runId={entry.provenance.runId} />
+              </span>
+            )}
+            {entry.provenance.sessionKey && <span>{shortRuntimeId(entry.provenance.sessionKey, 28)}</span>}
+          </div>
+          {entry.reviewNote && (
+            <p className="mt-1 text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
+              {entry.reviewNote}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={saving || entry.reviewStatus === "approved"}
+            onClick={onApprove}
+            title="Approve memory entry"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Approve
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={saving || entry.reviewStatus === "rejected"}
+            onClick={onReject}
+            title="Reject memory entry"
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            Reject
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MemoryDoctorMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[5px] border px-2.5 py-2" style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)" }}>
+      <div className="text-[10px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+        {label}
+      </div>
+      <div className="mt-1 text-[18px] font-semibold" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function MemoryInfluenceRow({ serverId, event }: { serverId: string; event: MemoryInfluenceEvent }) {
+  const firstRef = event.refs[0];
+  return (
+    <div className="px-3.5 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="rounded px-1.5 py-px text-[10px]" style={memoryInfluenceStyle(event.source)}>
+          {event.source}
+        </span>
+        <div className="flex items-center gap-1.5">
+          {event.runId && <RuntimeDiagnosticsLink serverId={serverId} runId={event.runId} />}
+          {event.timestamp && (
+            <span className="text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+              {formatRuntimeTime(event.timestamp)}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="mt-2 truncate text-[11.5px]" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
+        {firstRef ? `${firstRef.path}${firstRef.startLine !== undefined ? `#L${firstRef.startLine}` : ""}` : "No refs"}
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+        {event.query && <span>query {shortRuntimeId(event.query, 22)}</span>}
+        {event.runId && <span>run {shortRuntimeId(event.runId, 10)}</span>}
+        <span>{event.refs.length} refs</span>
+      </div>
+    </div>
+  );
+}
+
+function MemorySkeletonRows() {
+  return (
+    <>
+      {[0, 1, 2].map((item) => (
+        <div key={item} className="px-3.5 py-3">
+          <div className="h-3.5 w-2/3 animate-pulse rounded" style={{ background: "var(--oc-bg3)" }} />
+          <div className="mt-2 h-2.5 w-1/2 animate-pulse rounded" style={{ background: "var(--oc-bg3)" }} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function memoryStatusStyle(status: MemoryReviewStatus): React.CSSProperties {
+  if (status === "approved") {
+    return {
+      background: "rgba(74,222,128,0.13)",
+      border: "1px solid rgba(74,222,128,0.32)",
+      color: "var(--oc-green)",
+    };
+  }
+  if (status === "rejected") {
+    return {
+      background: "rgba(248,113,113,0.12)",
+      border: "1px solid rgba(248,113,113,0.32)",
+      color: "var(--oc-red)",
+    };
+  }
+  return {
+    background: "rgba(250,204,21,0.12)",
+    border: "1px solid rgba(250,204,21,0.32)",
+    color: "var(--oc-yellow)",
+  };
+}
+
+function memoryIssueStyle(severity: MemoryDoctorIssue["severity"]): React.CSSProperties {
+  if (severity === "error") {
+    return { background: "rgba(248,113,113,0.12)", color: "var(--oc-red)" };
+  }
+  if (severity === "warn") {
+    return { background: "rgba(250,204,21,0.12)", color: "var(--oc-yellow)" };
+  }
+  return { background: "var(--oc-bg3)", color: "var(--oc-text-muted)" };
+}
+
+function memoryIssueLabel(kind: MemoryDoctorIssue["kind"]): string {
+  switch (kind) {
+    case "duplicate_content":
+      return "Duplicate content";
+    case "stale_entry":
+      return "Stale entry";
+    case "oversized_file":
+      return "Oversized file";
+    case "conflicting_fact":
+      return "Conflicting fact";
+  }
+}
+
+function memoryInfluenceStyle(source: MemoryInfluenceEvent["source"]): React.CSSProperties {
+  if (source === "memory_search") {
+    return { background: "var(--oc-accent-soft)", color: "var(--oc-accent)" };
+  }
+  return { background: "var(--oc-bg3)", color: "var(--oc-text-muted)" };
 }
 
 /* ------------------------------------------------------------------ */
@@ -2062,12 +3485,15 @@ function RunRow({
             {decision && <RuntimePill tone="done">{decision.outcome}</RuntimePill>}
           </div>
         </div>
-        <Link href={`/fleet/${serverId}/chat/${agentId}`} className="shrink-0">
-          <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
-            <MessageSquare className="h-3 w-3" />
-            Chat
-          </Button>
-        </Link>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <RuntimeDiagnosticsLink serverId={serverId} runId={run.runId} />
+          <Link href={`/fleet/${serverId}/chat/${agentId}`} className="shrink-0">
+            <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
+              <MessageSquare className="h-3 w-3" />
+              Chat
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-2 text-[10.5px] sm:grid-cols-4">
@@ -2193,6 +3619,34 @@ function RuntimeMeta({ label, value, title }: { label: string; value: string; ti
         {value}
       </div>
     </div>
+  );
+}
+
+function runtimeDiagnosticsUrl(serverId: string, runId: string): string {
+  const params = new URLSearchParams({
+    includeLogs: "true",
+    runId,
+    diagnosticEventLimit: "300",
+    routeDecisionLimit: "25",
+  });
+  return `/api/fleet/${serverId}/diagnostics/export?${params.toString()}`;
+}
+
+function RuntimeDiagnosticsLink({ serverId, runId }: { serverId: string; runId: string }) {
+  return (
+    <a
+      href={runtimeDiagnosticsUrl(serverId, runId)}
+      download={`anthroclaw-run-${runId}-diagnostics.json`}
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] border"
+      style={{
+        borderColor: "var(--oc-border)",
+        color: "var(--oc-text-muted)",
+        background: "var(--oc-bg2)",
+      }}
+      title="Download diagnostics for this run"
+    >
+      <Download className="h-3.5 w-3.5" />
+    </a>
   );
 }
 

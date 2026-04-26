@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
+import { spawnSync } from 'node:child_process';
 import { HookEmitter, type HookConfig } from '../../src/hooks/emitter.js';
 
 // ─── Test helpers ─────────────────────────────────────────────────
@@ -8,7 +9,7 @@ function makeWebhookHook(overrides: Partial<HookConfig> = {}): HookConfig {
   return {
     event: 'on_message_received',
     action: 'webhook',
-    url: 'http://localhost:19876/hook',
+    url: 'http://127.0.0.1:19876/hook',
     timeout_ms: 5000,
     ...overrides,
   };
@@ -26,7 +27,9 @@ function makeScriptHook(overrides: Partial<HookConfig> = {}): HookConfig {
 
 // ─── Webhook hooks ────────────────────────────────────────────────
 
-describe('HookEmitter — webhook', () => {
+const webhookDescribe = canBindLocalHttpServer() ? describe : describe.skip;
+
+webhookDescribe('HookEmitter — webhook', () => {
   let server: Server;
   let receivedBodies: string[];
   let serverPort: number;
@@ -45,8 +48,10 @@ describe('HookEmitter — webhook', () => {
       });
     });
 
-    await new Promise<void>((resolve) => {
-      server.listen(0, () => {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        server.off('error', reject);
         const addr = server.address();
         serverPort = typeof addr === 'object' && addr ? addr.port : 19876;
         resolve();
@@ -59,7 +64,7 @@ describe('HookEmitter — webhook', () => {
   });
 
   it('fires a POST request to the webhook URL', async () => {
-    const hook = makeWebhookHook({ url: `http://localhost:${serverPort}/hook` });
+    const hook = makeWebhookHook({ url: `http://127.0.0.1:${serverPort}/hook` });
     const emitter = new HookEmitter([hook]);
 
     await emitter.emit('on_message_received', { agentId: 'bot-a', text: 'hello' });
@@ -76,7 +81,7 @@ describe('HookEmitter — webhook', () => {
   it('does not fire webhook for non-matching event', async () => {
     const hook = makeWebhookHook({
       event: 'on_after_query',
-      url: `http://localhost:${serverPort}/hook`,
+      url: `http://127.0.0.1:${serverPort}/hook`,
     });
     const emitter = new HookEmitter([hook]);
 
@@ -91,13 +96,17 @@ describe('HookEmitter — webhook', () => {
     const slowServer = createServer(() => {
       // intentionally never respond
     });
-    await new Promise<void>((resolve) => {
-      slowServer.listen(0, () => resolve());
+    await new Promise<void>((resolve, reject) => {
+      slowServer.once('error', reject);
+      slowServer.listen(0, '127.0.0.1', () => {
+        slowServer.off('error', reject);
+        resolve();
+      });
     });
     const slowPort = (slowServer.address() as { port: number }).port;
 
     const hook = makeWebhookHook({
-      url: `http://localhost:${slowPort}/hook`,
+      url: `http://127.0.0.1:${slowPort}/hook`,
       timeout_ms: 200,
     });
     const emitter = new HookEmitter([hook]);
@@ -113,7 +122,7 @@ describe('HookEmitter — webhook', () => {
   it('handles webhook connection error without throwing', async () => {
     // Use a port that nothing is listening on
     const hook = makeWebhookHook({
-      url: 'http://localhost:19999/nonexistent',
+      url: 'http://127.0.0.1:19999/nonexistent',
       timeout_ms: 1000,
     });
     const emitter = new HookEmitter([hook]);
@@ -221,3 +230,27 @@ describe('HookEmitter — multiple hooks', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+function canBindLocalHttpServer(): boolean {
+  const probe = `
+    const { createServer } = require('node:http');
+    const server = createServer((_req, res) => res.end('ok'));
+    const timeout = setTimeout(() => process.exit(2), 3000);
+    server.once('error', () => {
+      clearTimeout(timeout);
+      process.exit(1);
+    });
+    server.listen(0, '127.0.0.1', () => {
+      server.close(() => {
+        clearTimeout(timeout);
+        process.exit(0);
+      });
+    });
+  `;
+  const result = spawnSync(process.execPath, ['-e', probe], {
+    stdio: 'ignore',
+    timeout: 5000,
+  });
+
+  return result.status === 0;
+}

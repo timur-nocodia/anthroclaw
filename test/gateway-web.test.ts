@@ -86,6 +86,15 @@ pairing:
     expect(status.activeSessions).toBe(0);
     expect(status.nodeVersion).toMatch(/^v\d+/);
     expect(typeof status.platform).toBe('string');
+    expect(status.sdkActiveInput).toMatchObject({
+      streamInputAvailable: true,
+      unstableSessionApiAvailable: true,
+      featureFlagEnabled: false,
+      nativeSteerEnabled: false,
+      fallbackMode: 'interrupt_and_restart',
+      steerDeliveryState: 'fallback_interrupt_restart',
+      uiDeliveryStates: ['fallback_interrupt_restart', 'unsupported'],
+    });
     expect(status.channels).toHaveProperty('telegram');
     expect(status.channels).toHaveProperty('whatsapp');
     expect(Array.isArray(status.channels.telegram)).toBe(true);

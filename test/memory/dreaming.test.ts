@@ -79,6 +79,14 @@ describe('runDreaming', () => {
     expect(indexFile).toHaveBeenCalledWith(
       'memory/summaries/2024-01.md',
       expect.stringContaining('Summary of January'),
+      expect.objectContaining({
+        source: 'dreaming',
+        reviewStatus: 'approved',
+        metadata: {
+          month: '2024-01',
+          filesConsolidated: 3,
+        },
+      }),
     );
   });
 
