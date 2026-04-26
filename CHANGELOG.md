@@ -4,6 +4,16 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-26
+
+### Changed
+- docs: document new bot commands, in-thread typing, eye reaction, .claude bind-mount (995576b)
+- feat(telegram): bot UX upgrades — eye reaction, in-thread typing, /compact, /model (f74331d)
+- merge: bring in v0.2.0 from origin/main (1c497e8)
+- fix: chat header layout and gateway uptime drift (aba7b61)
+- feat: add Docker deployment for Linux servers (8f8b12a)
+
+
 ## [0.2.0] - 2026-04-25
 
 ### Added
