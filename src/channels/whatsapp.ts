@@ -3,6 +3,7 @@ import makeWASocket, {
   fetchLatestWaWebVersion,
   makeCacheableSignalKeyStore,
   downloadMediaMessage,
+  jidNormalizedUser,
   type WASocket,
   type BaileysEventMap,
   DisconnectReason,
@@ -47,6 +48,37 @@ export interface WhatsAppConfig {
 export function toWhatsAppJid(id: string): string {
   if (id.includes('@')) return id;
   return `${id}@s.whatsapp.net`;
+}
+
+/**
+ * Resolve `@lid` JIDs to their phone-number form before sending.
+ *
+ * Baileys 7.x has a known bug in `generateWAMessageFromContent` that throws
+ * `Cannot read properties of undefined (reading 'undefined')` when sending
+ * to bare `@lid` JIDs whose participant device list is in a partially
+ * resolved state. The `LIDMappingStore` is populated during inbound
+ * `messages.upsert` (the sender's PN ↔ LID mapping is recorded), so by the
+ * time we reply we can substitute the standard `<phone>@s.whatsapp.net`
+ * JID and avoid the bug entirely. Falls back to the original LID if no
+ * mapping exists yet (rare; only a no-op resolution attempt).
+ */
+async function resolveSendableJid(sock: WASocket, jid: string): Promise<string> {
+  if (!jid.endsWith('@lid')) return jid;
+  try {
+    const lidStore = (sock as any).signalRepository?.lidMapping;
+    const pn: string | null | undefined = await lidStore?.getPNForLID?.(jid);
+    if (pn && typeof pn === 'string') {
+      // Strip device id (`<phone>:<n>@s.whatsapp.net` → `<phone>@s.whatsapp.net`).
+      // Baileys' `generateWAMessageFromContent` chokes on device-tagged JIDs the
+      // same way it does on bare `@lid` — we want the bare user JID for outbound.
+      const normalized = jidNormalizedUser(pn);
+      logger.debug({ lid: jid, pn, normalized }, 'whatsapp: resolved @lid → phone-number JID for outbound');
+      return normalized;
+    }
+  } catch (err) {
+    logger.debug({ err, jid }, 'whatsapp: PN resolution failed; sending to @lid as-is');
+  }
+  return jid;
 }
 
 /* ------------------------------------------------------------------ */
@@ -96,8 +128,8 @@ export class WhatsAppChannel implements ChannelAdapter {
     text: string,
     opts?: SendOptions,
   ): Promise<string> {
-    const jid = toWhatsAppJid(peerId);
     const sock = this.pickSocket(opts?.accountId);
+    const jid = await resolveSendableJid(sock, toWhatsAppJid(peerId));
     let lastId = '';
 
     // Best-effort typing indicator — Baileys 7.x can throw on @lid JIDs with
@@ -110,12 +142,29 @@ export class WhatsAppChannel implements ChannelAdapter {
 
     const chunks = chunkText(text);
     for (const chunk of chunks) {
-      const sent = await sock.sendMessage(
-        jid,
-        { text: chunk },
-        opts?.replyToId ? { quoted: { key: { id: opts.replyToId, remoteJid: jid } } as any } : undefined,
-      );
-      lastId = sent?.key?.id ?? '';
+      try {
+        // NOTE: replyToId is intentionally ignored. Baileys' quoted-message
+        // rendering requires `quoted.message` (the original message body), and
+        // synthesizing one from just the message id breaks `generateWAMessageFromContent`
+        // with `Cannot read properties of undefined (reading 'undefined')`. WhatsApp
+        // bots also don't typically use reply-quotes — the next message lands
+        // adjacent to the user's question anyway, so quoting only adds clutter.
+        const sent = await sock.sendMessage(jid, { text: chunk });
+        lastId = sent?.key?.id ?? '';
+      } catch (err) {
+        // Baileys 7.x throws "Cannot read properties of undefined (reading
+        // 'undefined')" on @lid JIDs whose participant device list is in a
+        // bad state — same root cause as the typing-presence catch above,
+        // but on the actual message send. Without this guard the error
+        // bubbles up as an unhandledRejection and silently breaks the user
+        // conversation with no log of what happened.
+        logger.warn(
+          { err, jid, accountId: opts?.accountId, chunkIndex: chunks.indexOf(chunk) },
+          'whatsapp: sendMessage failed (likely @lid device-list issue); skipping chunk',
+        );
+        // Re-throw on non-@lid JIDs so genuine failures still surface.
+        if (!jid.endsWith('@lid')) throw err;
+      }
     }
 
     return lastId;
@@ -126,8 +175,8 @@ export class WhatsAppChannel implements ChannelAdapter {
     media: OutboundMedia,
     opts?: SendOptions,
   ): Promise<string> {
-    const jid = toWhatsAppJid(peerId);
     const sock = this.pickSocket(opts?.accountId);
+    const jid = await resolveSendableJid(sock, toWhatsAppJid(peerId));
 
     const buffer = media.buffer ?? fs.readFileSync(media.path!);
 
@@ -156,11 +205,8 @@ export class WhatsAppChannel implements ChannelAdapter {
         throw new Error(`Unsupported media type: ${media.type}`);
     }
 
-    const sent = await sock.sendMessage(
-      jid,
-      content as any,
-      opts?.replyToId ? { quoted: { key: { id: opts.replyToId, remoteJid: jid } } as any } : undefined,
-    );
+    // See sendText for why replyToId is ignored.
+    const sent = await sock.sendMessage(jid, content as any);
 
     return sent?.key?.id ?? '';
   }
@@ -171,8 +217,8 @@ export class WhatsAppChannel implements ChannelAdapter {
   }
 
   async sendTyping(peerId: string, accountId?: string, _threadId?: string): Promise<void> {
-    const jid = toWhatsAppJid(peerId);
     const sock = this.pickSocket(accountId);
+    const jid = await resolveSendableJid(sock, toWhatsAppJid(peerId));
     await sock.sendPresenceUpdate('composing', jid).catch((err) => {
       logger.debug({ err, jid }, 'whatsapp: typing indicator failed (non-fatal)');
     });
@@ -314,6 +360,14 @@ export class WhatsAppChannel implements ChannelAdapter {
           const senderId = isGroup
             ? msg.key.participant ?? ''
             : jid;
+
+          // Diagnostic: dump the full message key for @lid contacts so we can
+          // see if Baileys exposes a phone JID alternative (senderPn, etc.)
+          // that would let us route around the device-list-resolution bug
+          // that breaks sendMessage on bare @lid JIDs.
+          if (jid.endsWith('@lid') || msg.key.participant?.endsWith('@lid')) {
+            logger.debug({ accountId, key: msg.key }, 'whatsapp: received message from @lid contact');
+          }
 
           // Extract text
           const msgContent = msg.message;
