@@ -100,7 +100,13 @@ export class WhatsAppChannel implements ChannelAdapter {
     const sock = this.pickSocket(opts?.accountId);
     let lastId = '';
 
-    await sock.sendPresenceUpdate('composing', jid);
+    // Best-effort typing indicator — Baileys 7.x can throw on @lid JIDs with
+    // "Cannot read properties of undefined (reading 'undefined')" depending on
+    // the participant device list state. Failing here would block the actual
+    // message send, so swallow.
+    await sock.sendPresenceUpdate('composing', jid).catch((err) => {
+      logger.debug({ err, jid }, 'whatsapp: composing presence update failed (non-fatal)');
+    });
 
     const chunks = chunkText(text);
     for (const chunk of chunks) {
@@ -167,7 +173,9 @@ export class WhatsAppChannel implements ChannelAdapter {
   async sendTyping(peerId: string, accountId?: string, _threadId?: string): Promise<void> {
     const jid = toWhatsAppJid(peerId);
     const sock = this.pickSocket(accountId);
-    await sock.sendPresenceUpdate('composing', jid);
+    await sock.sendPresenceUpdate('composing', jid).catch((err) => {
+      logger.debug({ err, jid }, 'whatsapp: typing indicator failed (non-fatal)');
+    });
   }
 
   /* ---------- Account info (for web UI) ---------- */

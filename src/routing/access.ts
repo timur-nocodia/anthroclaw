@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { logger } from '../logger.js';
 
 export interface AccessResult {
   allowed: boolean;
@@ -20,6 +21,7 @@ interface AccessData {
 export class AccessControl {
   private dataPath: string;
   private data: AccessData;
+  private warnedAboutOff = new Set<string>();
 
   constructor(dataDir: string) {
     this.dataPath = path.join(dataDir, 'access.json');
@@ -141,11 +143,23 @@ export class AccessControl {
         };
 
       case 'off':
-      default:
+      default: {
+        // Warn once per agent: 'off' with no allowlist silently denies everyone,
+        // which is a common footgun (people read it as "no gating, just talk").
+        // Use 'open' to auto-approve any sender, or add an allowlist.
+        const warnKey = `${agentId}:${channel}`;
+        if (!this.warnedAboutOff.has(warnKey)) {
+          this.warnedAboutOff.add(warnKey);
+          logger.warn(
+            { agentId, channel, senderId },
+            'access: denying sender — pairing.mode="off" with no allowlist denies everyone. Use pairing.mode="open" to auto-approve, or add an allowlist entry.',
+          );
+        }
         return {
           allowed: false,
           reason: 'Access denied',
         };
+      }
     }
   }
 
