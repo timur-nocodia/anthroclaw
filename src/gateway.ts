@@ -2627,6 +2627,17 @@ export class Gateway {
       // Without this, both modes would silently drop follow-up messages.
       const queued = this.queueManager.drainPending(sessionKey);
       if (queued.length > 0) {
+        const onDrainError = (err: unknown) => {
+          // The drained dispatch runs detached from the original promise chain
+          // (the original dispatch is already returning to its caller). If
+          // anything inside throws — channel send failures, route changes
+          // mid-flight, etc. — swallow it here so it does not become an
+          // unhandledRejection that crashes the Next.js worker.
+          logger.error(
+            { err: redactSecrets(String(err)), sessionKey, queueMode },
+            'Queue drain dispatch failed',
+          );
+        };
         if (queueMode === 'serial') {
           const [head, ...tail] = queued;
           for (const m of tail) this.queueManager.enqueue(sessionKey, m);
@@ -2634,14 +2645,14 @@ export class Gateway {
             { sessionKey, remaining: tail.length },
             'Queue: serial drain — dispatching next buffered message',
           );
-          void this.dispatch(head);
+          this.dispatch(head).catch(onDrainError);
         } else {
           const merged = mergeInboundMessages(queued);
           logger.info(
             { sessionKey, count: queued.length },
             'Queue: collect drain — merging buffered messages into one turn',
           );
-          void this.dispatch(merged);
+          this.dispatch(merged).catch(onDrainError);
         }
       }
     }
