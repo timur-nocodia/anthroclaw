@@ -87,16 +87,20 @@ export default function PairWhatsAppPage() {
 
             try {
               const ev = JSON.parse(raw);
-              if (ev.type === "qr" && ev.data) {
-                setQrData(ev.data);
+              const qrPayload = ev.code ?? ev.data;
+              if (ev.type === "qr" && qrPayload) {
+                setQrData(qrPayload);
                 setStatusText("Waiting for scan...");
               }
               if (ev.type === "status") {
                 setStatusText(ev.message ?? ev.status ?? "");
               }
-              if (ev.type === "connected" || ev.type === "success") {
-                setPhone(ev.phone ?? "+7 900 555 0182");
+              if (ev.type === "paired" || ev.type === "connected" || ev.type === "success") {
+                setPhone(ev.phone ?? "");
                 setStep(3);
+              }
+              if (ev.type === "error") {
+                setStatusText(ev.message ?? "Pairing failed.");
               }
             } catch {
               // skip invalid JSON

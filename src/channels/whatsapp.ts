@@ -239,7 +239,7 @@ export class WhatsAppChannel implements ChannelAdapter {
       },
       logger: baileysLogger,
       printQRInTerminal: false,
-      browser: ['openclaw-replica', 'cli', '0.1.0'],
+      browser: ['openclaw-replica', 'web-ui', '0.1.0'],
       syncFullHistory: false,
       markOnlineOnConnect: false,
       generateHighQualityLinkPreview: true,
