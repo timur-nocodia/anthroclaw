@@ -1,7 +1,7 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type { InboundMessage } from '../channels/types.js';
 
-type QueueMode = 'collect' | 'steer' | 'interrupt';
+type QueueMode = 'collect' | 'serial' | 'steer' | 'interrupt';
 
 export interface ChannelDeliveryTarget {
   channel: string;
@@ -134,7 +134,13 @@ export class QueueManager {
 
     switch (mode) {
       case 'collect':
-        // Debouncer handles this upstream — if we get here, just queue/skip
+      case 'serial':
+        // Buffer the message; the dispatch loop's finally drains the buffer
+        // when the active query completes. The difference between the two:
+        //   collect — merges the entire buffer into one follow-up turn.
+        //   serial  — runs each buffered message as its own turn, in order.
+        // Both decisions are made by the gateway at drain time; here we just
+        // signal the caller to stop processing this dispatch.
         return 'queued';
 
       case 'steer':

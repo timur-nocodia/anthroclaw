@@ -305,7 +305,7 @@ export const AgentYmlSchema = z.object({
   cron: z.array(CronJobSchema).optional(),
   hooks: z.array(HookConfigSchema).optional(),
   maxSessions: z.number().int().min(1).default(100).describe('Maximum number of cached sessions before LRU eviction'),
-  queue_mode: z.enum(['collect', 'steer', 'interrupt']).default('collect'),
+  queue_mode: z.enum(['collect', 'serial', 'steer', 'interrupt']).default('collect'),
   session_policy: z.enum(['never', 'hourly', 'daily', 'weekly']).default('never'),
   channel_context: ChannelContextSchema,
   auto_compress: z.object({

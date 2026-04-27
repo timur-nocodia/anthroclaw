@@ -2619,17 +2619,30 @@ export class Gateway {
       }
     } finally {
       if (typingInterval) clearInterval(typingInterval);
-      // Drain any messages that arrived during this query in collect mode and
-      // re-dispatch them as one merged turn — without this, "collect" silently
-      // drops follow-up messages instead of folding them into the next turn.
+      // Drain any messages that arrived during this query while it was active.
+      //   collect — fold the entire buffer into one merged follow-up turn.
+      //   serial  — run each buffered message as its own turn, in arrival order
+      //             (we re-enqueue the tail, then dispatch the head; the next
+      //              dispatch's finally picks up where we left off).
+      // Without this, both modes would silently drop follow-up messages.
       const queued = this.queueManager.drainPending(sessionKey);
       if (queued.length > 0) {
-        const merged = mergeInboundMessages(queued);
-        logger.info(
-          { sessionKey, count: queued.length },
-          'Queue: draining buffered messages into a follow-up dispatch',
-        );
-        void this.dispatch(merged);
+        if (queueMode === 'serial') {
+          const [head, ...tail] = queued;
+          for (const m of tail) this.queueManager.enqueue(sessionKey, m);
+          logger.info(
+            { sessionKey, remaining: tail.length },
+            'Queue: serial drain — dispatching next buffered message',
+          );
+          void this.dispatch(head);
+        } else {
+          const merged = mergeInboundMessages(queued);
+          logger.info(
+            { sessionKey, count: queued.length },
+            'Queue: collect drain — merging buffered messages into one turn',
+          );
+          void this.dispatch(merged);
+        }
       }
     }
   }

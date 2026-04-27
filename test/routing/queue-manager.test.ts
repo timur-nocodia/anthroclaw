@@ -121,6 +121,22 @@ describe('QueueManager', () => {
     expect(qm.isActive('session-1')).toBe(true);
   });
 
+  it('handleConflict with "serial" mode also returns "queued" without canceling', async () => {
+    const qm = new QueueManager();
+    const interruptFn = vi.fn().mockResolvedValue(undefined);
+    const q = mockQuery(interruptFn);
+    const abort = new AbortController();
+    qm.register('session-1', q, abort);
+
+    const result = await qm.handleConflict('session-1', 'serial');
+    expect(result).toBe('queued');
+    // Serial must NOT interrupt — ordering depends on the active query
+    // running to completion before the next buffered message starts.
+    expect(interruptFn).not.toHaveBeenCalled();
+    expect(abort.signal.aborted).toBe(false);
+    expect(qm.isActive('session-1')).toBe(true);
+  });
+
   it('handleConflict with "steer" mode calls interrupt() and returns "proceed"', async () => {
     const qm = new QueueManager();
     const interruptFn = vi.fn().mockResolvedValue(undefined);

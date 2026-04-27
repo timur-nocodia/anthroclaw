@@ -1243,7 +1243,7 @@ function ConfigTab({
                   ))}
                 </select>
               </Field>
-              <Field label="Queue mode" tooltip="What happens to new messages while the agent is still responding. Collect queues and batches them. Steer is SDK-safe interrupt-and-restart until active input is promoted. Interrupt cancels and drops the new message.">
+              <Field label="Queue mode" tooltip="What happens to new messages while the agent is still responding. Collect buffers and merges them into one follow-up turn. Serial buffers and runs each as its own turn, in order. Steer is SDK-safe interrupt-and-restart until active input is promoted. Interrupt cancels and drops the new message.">
                 <select
                   value={cfg.queue_mode}
                   onChange={(e) => update({ queue_mode: e.target.value })}
@@ -1254,9 +1254,10 @@ function ConfigTab({
                     color: "var(--color-foreground)",
                   }}
                 >
-                  <option value="collect">collect -- buffer and batch</option>
+                  <option value="collect">collect -- buffer and merge into one turn</option>
+                  <option value="serial">serial -- buffer and run each as its own turn</option>
                   <option value="steer">steer -- interrupt and restart</option>
-                  <option value="interrupt">interrupt -- cancel and restart</option>
+                  <option value="interrupt">interrupt -- cancel and drop</option>
                 </select>
               </Field>
               <Field label="Session policy" tooltip="How often to reset conversation memory. Daily — fresh context each day. Never — the agent remembers everything. Weekly/Hourly — in between.">
