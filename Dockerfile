@@ -49,8 +49,17 @@ FROM ${NODE_IMAGE}
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates tini \
+    ca-certificates tini curl \
+    python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
+
+# Common Python deps used by agent helper scripts (Google APIs, HTTP, sheets).
+# Agent /scripts/*.py can `import` these without each agent shipping its own venv.
+# --break-system-packages: Debian's PEP 668 guard — fine inside an isolated container image.
+RUN pip3 install --no-cache-dir --break-system-packages \
+    google-auth==2.* \
+    google-api-python-client==2.* \
+    requests==2.*
 
 ENV NODE_ENV=production \
     HOME=/home/node
