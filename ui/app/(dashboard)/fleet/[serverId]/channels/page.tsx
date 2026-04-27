@@ -9,6 +9,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { StatusIndicator, type ConnectionStatus } from "@/components/status-indicator";
 import { Button } from "@/components/ui/button";
 
@@ -119,6 +120,29 @@ export default function ChannelsPage() {
       setLoading(false);
     }
   }, [serverId]);
+
+  const handleDeleteWhatsApp = useCallback(
+    async (accountId: string) => {
+      if (!window.confirm(`Disconnect WhatsApp account "${accountId}"? This wipes saved auth — you'll need to scan a new QR to reconnect.`)) {
+        return;
+      }
+      try {
+        const res = await fetch(
+          `/api/fleet/${serverId}/channels/whatsapp/${encodeURIComponent(accountId)}`,
+          { method: "DELETE" },
+        );
+        if (!res.ok) {
+          const msg = await res.text().catch(() => "");
+          throw new Error(msg || `HTTP ${res.status}`);
+        }
+        toast.success(`Disconnected ${accountId}`);
+        await fetchChannels();
+      } catch (err) {
+        toast.error(`Failed to disconnect: ${(err as Error).message}`);
+      }
+    },
+    [serverId, fetchChannels],
+  );
 
   useEffect(() => {
     fetchChannels();
@@ -379,6 +403,7 @@ export default function ChannelsPage() {
                     className="inline-flex h-[22px] w-[22px] items-center justify-center rounded hover:bg-[var(--oc-bg3)]"
                     style={{ color: "var(--oc-text-dim)" }}
                     title="Disconnect"
+                    onClick={() => handleDeleteWhatsApp(c.accountId)}
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>
