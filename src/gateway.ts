@@ -1130,23 +1130,55 @@ export class Gateway {
   ): Promise<{
     sessionId: string;
     summary?: string;
+    customTitle?: string;
+    labels: string[];
     lastModified?: number;
+    activeKeys: string[];
+    messageCount: number;
+    provenance?: SessionProvenanceView;
     messages: SdkSessionMessageView[];
   }> {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent "${agentId}" not found`);
-    if (!this.sdkSessionService) return { sessionId, messages: [] };
+    if (!this.sdkSessionService) {
+      return { sessionId, labels: [], activeKeys: [], messageCount: 0, messages: [] };
+    }
 
     const resolvedSessionId = this.resolveAgentSessionId(agent, agentId, sessionId) ?? sessionId;
-    const [info, messages] = await Promise.all([
+    const [info, messages, title, labels] = await Promise.all([
       this.sdkSessionService.getAgentSessionInfo(agent, resolvedSessionId).catch(() => undefined),
       this.sdkSessionService.getAgentSessionMessages(agent, resolvedSessionId, params),
+      this.sdkSessionService.getAgentSessionTitle(agent, resolvedSessionId).catch(() => undefined),
+      this.sdkSessionService.getAgentSessionLabels(agent, resolvedSessionId).catch(() => [] as string[]),
     ]);
+
+    const activeKeys = agent
+      .listSessionMappings()
+      .filter((mapping) => mapping.sessionId === resolvedSessionId)
+      .map((mapping) => mapping.sessionKey);
+    const activeMessageCount = agent
+      .listSessionMappings()
+      .filter((mapping) => mapping.sessionId === resolvedSessionId)
+      .reduce((sum, mapping) => sum + mapping.messageCount, 0);
+
+    const latestRun = metrics.listAgentRuns({
+      agentId,
+      sdkSessionId: resolvedSessionId,
+      limit: 1,
+    })[0];
+    const latestRouteDecision = latestRun?.routeDecisionId
+      ? metrics.listRouteDecisions({ id: latestRun.routeDecisionId, limit: 1 })[0]
+      : undefined;
 
     return {
       sessionId: resolvedSessionId,
-      summary: await this.sdkSessionService.getAgentSessionTitle(agent, resolvedSessionId).catch(() => undefined) ?? info?.summary,
+      summary: title ?? info?.summary,
+      customTitle: info?.customTitle,
+      labels,
       lastModified: info?.lastModified,
+      activeKeys,
+      messageCount: Math.max(activeMessageCount, messages.length),
+      provenance: sessionProvenanceFromRun(latestRun, latestRouteDecision),
       messages,
     };
   }

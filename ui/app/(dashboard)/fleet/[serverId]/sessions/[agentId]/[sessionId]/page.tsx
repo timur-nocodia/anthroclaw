@@ -33,10 +33,25 @@ interface SessionMessageView {
   message?: unknown;
 }
 
+interface SessionProvenance {
+  source: "channel" | "web" | "cron";
+  channel: string;
+  peerId?: string;
+  threadId?: string;
+  sessionKey?: string;
+  status: "running" | "succeeded" | "failed" | "interrupted";
+  startedAt: number;
+}
+
 interface SessionDetailsResponse {
   sessionId: string;
   summary?: string;
+  customTitle?: string;
+  labels?: string[];
   lastModified?: number;
+  activeKeys?: string[];
+  messageCount?: number;
+  provenance?: SessionProvenance;
   messages: SessionMessageView[];
 }
 
@@ -46,15 +61,7 @@ interface SessionMeta {
   labels?: string[];
   activeKeys?: string[];
   messageCount?: number;
-  provenance?: {
-    source: "channel" | "web" | "cron";
-    channel: string;
-    peerId?: string;
-    threadId?: string;
-    sessionKey?: string;
-    status: "running" | "succeeded" | "failed" | "interrupted";
-    startedAt: number;
-  };
+  provenance?: SessionProvenance;
 }
 
 function statusColor(status: string | undefined): string {
@@ -140,8 +147,7 @@ export default function SessionDetailPage() {
     setError(null);
     try {
       const detailUrl = `/api/fleet/${serverId}/agents/${agentId}/sessions/${encodeURIComponent(sessionId)}?limit=500&includeSystemMessages=${showSystem}`;
-      const listUrl = `/api/fleet/${serverId}/agents/${agentId}/sessions?limit=200`;
-      const [detailRes, listRes] = await Promise.all([fetch(detailUrl), fetch(listUrl)]);
+      const detailRes = await fetch(detailUrl);
 
       if (!detailRes.ok) {
         setError(`Failed to load: HTTP ${detailRes.status}`);
@@ -150,24 +156,35 @@ export default function SessionDetailPage() {
       }
       const detailData = (await detailRes.json()) as SessionDetailsResponse;
       setDetails(detailData);
-
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        const sessions: SessionMeta[] = listData.sessions ?? [];
-        const found = sessions.find(
-          (s) => s.sessionId === sessionId || s.sessionId === detailData.sessionId,
-        );
-        setMeta(found ?? null);
-        const collected = new Set<string>();
-        for (const s of sessions) for (const l of s.labels ?? []) collected.add(l);
-        setAllLabels([...collected].sort());
-      }
+      setMeta({
+        sessionId: detailData.sessionId,
+        customTitle: detailData.customTitle,
+        labels: detailData.labels,
+        activeKeys: detailData.activeKeys,
+        messageCount: detailData.messageCount,
+        provenance: detailData.provenance,
+      });
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
   }, [agentId, serverId, sessionId, showSystem]);
+
+  const loadAllLabels = useCallback(async () => {
+    if (allLabels.length > 0) return;
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/agents/${agentId}/sessions?limit=200`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const sessions: SessionMeta[] = data.sessions ?? [];
+      const collected = new Set<string>();
+      for (const s of sessions) for (const l of s.labels ?? []) collected.add(l);
+      setAllLabels([...collected].sort());
+    } catch {
+      /* autocomplete is optional */
+    }
+  }, [agentId, serverId, allLabels.length]);
 
   useEffect(() => {
     void loadAll();
@@ -540,7 +557,10 @@ export default function SessionDetailPage() {
           </>
         ) : (
           <button
-            onClick={() => setAddingLabel(true)}
+            onClick={() => {
+              setAddingLabel(true);
+              void loadAllLabels();
+            }}
             className="flex items-center gap-1 rounded-[3px] border px-1.5 py-0.5 text-[10.5px] transition-colors hover:bg-[var(--oc-bg2)]"
             style={{
               borderColor: "var(--oc-border)",
