@@ -55,7 +55,7 @@ import { generateSessionTitle } from './session/title-generator.js';
 import { logger } from './logger.js';
 import { nowInTimezone, formatDateTime, dailyMemoryPath } from './util/time.js';
 import { redactSecrets } from './security/redact.js';
-import { isSilentResponse } from './cron/scheduler.js';
+import { isSilentResponse, processNoReplySentinel } from './cron/scheduler.js';
 import { SessionMirror } from './session/mirror.js';
 import { buildGroupSessionKey, type GroupSessionMode } from './session/group-isolation.js';
 import { matchQuickCommand, executeQuickCommand } from './commands/quick.js';
@@ -2586,7 +2586,15 @@ export class Gateway {
       }
 
       if (channel && response) {
-        await channel.sendText(msg.peerId, response, sendOpts);
+        const deliverable = processNoReplySentinel(response);
+        if (deliverable === null) {
+          logger.info(
+            { agentId: route.agentId, sessionKey, channel: msg.channel },
+            'Agent response is NO_REPLY sentinel — suppressing delivery',
+          );
+        } else {
+          await channel.sendText(msg.peerId, deliverable, sendOpts);
+        }
       }
 
       // Auto context compression check (after response delivered)

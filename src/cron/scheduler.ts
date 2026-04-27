@@ -7,6 +7,34 @@ export function isSilentResponse(response: string): boolean {
   return response.includes(SILENT_MARKER);
 }
 
+/**
+ * Sentinel for "the agent has decided not to reply this turn".
+ *
+ * Conventional pattern in conversational agents: the system prompt instructs
+ * the model to emit a marker token (e.g. `NO_REPLY`) when it judges the
+ * message doesn't warrant a response — blocked sender, off-topic spam, ack-only
+ * follow-up, etc. The gateway recognizes the marker and suppresses delivery.
+ *
+ * Two real shapes the model emits in practice:
+ *   1. Whole response is just the marker → suppress delivery entirely.
+ *   2. Marker tacked on as a trailing line after a real reply (the model
+ *      treats it as "end of turn"). Strip it; deliver the rest.
+ *
+ * `processNoReplySentinel` returns the message that should be delivered, or
+ * `null` if delivery should be suppressed.
+ */
+const NO_REPLY_TRAILING = /(?:^|\n)\s*no_reply[^\n]*\s*$/i;
+const NO_REPLY_LEADING = /^no_reply\b/i;
+
+export function processNoReplySentinel(response: string): string | null {
+  const trimmed = response.trim();
+  if (NO_REPLY_LEADING.test(trimmed)) return null;
+
+  const stripped = response.replace(NO_REPLY_TRAILING, '').trimEnd();
+  if (stripped.length === 0) return null;
+  return stripped;
+}
+
 export interface ScheduledJob {
   id: string;
   agentId: string;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { CronScheduler, SILENT_MARKER, isSilentResponse, type ScheduledJob } from '../../src/cron/scheduler.js';
+import { CronScheduler, SILENT_MARKER, isSilentResponse, processNoReplySentinel, type ScheduledJob } from '../../src/cron/scheduler.js';
 
 function makeJob(overrides: Partial<ScheduledJob> = {}): ScheduledJob {
   return {
@@ -126,5 +126,34 @@ describe('isSilentResponse', () => {
   it('returns false for partial marker', () => {
     expect(isSilentResponse('[SILEN]')).toBe(false);
     expect(isSilentResponse('SILENT')).toBe(false);
+  });
+});
+
+describe('processNoReplySentinel', () => {
+  it('returns null when response is just NO_REPLY', () => {
+    expect(processNoReplySentinel('NO_REPLY')).toBeNull();
+    expect(processNoReplySentinel('  no_reply  ')).toBeNull();
+  });
+
+  it('returns null when response starts with NO_REPLY', () => {
+    expect(processNoReplySentinel('NO_REPLY — sender blocked')).toBeNull();
+  });
+
+  it('strips trailing NO_REPLY line, keeps the actual reply', () => {
+    expect(processNoReplySentinel('Hello! How can I help?\n\nNO_REPLY')).toBe('Hello! How can I help?');
+    expect(processNoReplySentinel('Привет 😊\nNO_REPLY')).toBe('Привет 😊');
+  });
+
+  it('strips trailing NO_REPLY with extra commentary on the same line', () => {
+    expect(processNoReplySentinel('Real reply\nNO_REPLY (end of turn)')).toBe('Real reply');
+  });
+
+  it('returns the original text when NO_REPLY is absent', () => {
+    expect(processNoReplySentinel('Just a normal response.')).toBe('Just a normal response.');
+  });
+
+  it('does not match NO_REPLY embedded mid-response (only trailing line)', () => {
+    expect(processNoReplySentinel('I would say NO_REPLY but actually here is help.'))
+      .toBe('I would say NO_REPLY but actually here is help.');
   });
 });
