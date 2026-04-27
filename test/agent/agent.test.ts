@@ -127,4 +127,31 @@ describe('Agent', () => {
     agent.setSessionId('telegram:dm:123', 'sess-def');
     expect(agent.getSessionId('telegram:dm:123')).toBe('sess-def');
   });
+
+  // ─── 7. session mappings persist across restart ────────────────
+  it('persists session mappings across Agent.load() calls', async () => {
+    writeMinimalAgentYml(agentDir);
+    const first = await Agent.load(agentDir, dataDir);
+    first.setSessionId('telegram:dm:42', 'sess-xyz');
+    first.setSessionId('whatsapp:dm:99', 'sess-uvw');
+    first.incrementMessageCount('telegram:dm:42');
+    first.incrementMessageCount('telegram:dm:42');
+
+    const second = await Agent.load(agentDir, dataDir);
+    expect(second.getSessionId('telegram:dm:42')).toBe('sess-xyz');
+    expect(second.getSessionId('whatsapp:dm:99')).toBe('sess-uvw');
+    expect(second.getMessageCount('telegram:dm:42')).toBe(2);
+    expect(second.getSessionStartTime('telegram:dm:42')).toBeDefined();
+  });
+
+  // ─── 8. clearSession removes from persisted mappings ───────────
+  it('clearSession removes mapping from disk', async () => {
+    writeMinimalAgentYml(agentDir);
+    const first = await Agent.load(agentDir, dataDir);
+    first.setSessionId('telegram:dm:42', 'sess-xyz');
+    first.clearSession('telegram:dm:42');
+
+    const second = await Agent.load(agentDir, dataDir);
+    expect(second.getSessionId('telegram:dm:42')).toBeUndefined();
+  });
 });

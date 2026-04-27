@@ -117,6 +117,7 @@ export class Agent {
   private sessionMessageCount: Map<string, number>;
   private sessionModelOverrides: Map<string, string>;
   private sessionModelOverridesPath: string | null;
+  private sessionMappingsPath: string | null;
 
   private constructor(
     id: string,
@@ -126,6 +127,7 @@ export class Agent {
     mcpServer: McpSdkServerConfigWithInstance,
     tools: ToolDefinition[],
     sessionModelOverridesPath: string | null = null,
+    sessionMappingsPath: string | null = null,
   ) {
     this.id = id;
     this.config = config;
@@ -139,7 +141,9 @@ export class Agent {
     this.sessionMessageCount = new Map();
     this.sessionModelOverrides = new Map();
     this.sessionModelOverridesPath = sessionModelOverridesPath;
+    this.sessionMappingsPath = sessionMappingsPath;
     this.loadSessionModelOverrides();
+    this.loadSessionMappings();
   }
 
   private loadSessionModelOverrides(): void {
@@ -177,6 +181,50 @@ export class Agent {
   clearSessionModel(sessionKey: string): void {
     if (this.sessionModelOverrides.delete(sessionKey)) {
       this.persistSessionModelOverrides();
+    }
+  }
+
+  private loadSessionMappings(): void {
+    if (!this.sessionMappingsPath || !existsSync(this.sessionMappingsPath)) return;
+    try {
+      const raw = JSON.parse(readFileSync(this.sessionMappingsPath, 'utf-8')) as Record<string, {
+        sessionId?: string;
+        lastUsed?: number;
+        started?: number;
+        messageCount?: number;
+      }>;
+      for (const [k, v] of Object.entries(raw)) {
+        if (!v || typeof v.sessionId !== 'string' || v.sessionId.length === 0) continue;
+        this.sessions.set(k, v.sessionId);
+        if (typeof v.lastUsed === 'number') this.sessionLastUsed.set(k, v.lastUsed);
+        if (typeof v.started === 'number') this.sessionStarted.set(k, v.started);
+        if (typeof v.messageCount === 'number') this.sessionMessageCount.set(k, v.messageCount);
+      }
+    } catch {
+      // ignore corrupt file
+    }
+  }
+
+  private persistSessionMappings(): void {
+    if (!this.sessionMappingsPath) return;
+    try {
+      const obj: Record<string, {
+        sessionId: string;
+        lastUsed?: number;
+        started?: number;
+        messageCount?: number;
+      }> = {};
+      for (const [k, sessionId] of this.sessions) {
+        obj[k] = {
+          sessionId,
+          lastUsed: this.sessionLastUsed.get(k),
+          started: this.sessionStarted.get(k),
+          messageCount: this.sessionMessageCount.get(k),
+        };
+      }
+      writeFileSync(this.sessionMappingsPath, JSON.stringify(obj, null, 2));
+    } catch {
+      // best-effort persistence
     }
   }
 
@@ -285,7 +333,11 @@ export class Agent {
     mkdirSync(sessionModelsDir, { recursive: true });
     const sessionModelOverridesPath = join(sessionModelsDir, `${id}.json`);
 
-    return new Agent(id, config, agentDir, memoryStore, mcpServer, tools, sessionModelOverridesPath);
+    const sessionMappingsDir = join(dataDir, 'session-mappings');
+    mkdirSync(sessionMappingsDir, { recursive: true });
+    const sessionMappingsPath = join(sessionMappingsDir, `${id}.json`);
+
+    return new Agent(id, config, agentDir, memoryStore, mcpServer, tools, sessionModelOverridesPath, sessionMappingsPath);
   }
 
   getSessionId(sessionKey: string): string | undefined {
@@ -303,6 +355,7 @@ export class Agent {
       this.sessionStarted.set(sessionKey, Date.now());
     }
     this.evictIfOverLimit();
+    this.persistSessionMappings();
   }
 
   clearSession(sessionKey: string): void {
@@ -311,6 +364,7 @@ export class Agent {
     this.sessionStarted.delete(sessionKey);
     this.sessionMessageCount.delete(sessionKey);
     // intentionally keep sessionModelOverrides — model choice persists across /newsession
+    this.persistSessionMappings();
   }
 
   getSessionStartTime(sessionKey: string): number | undefined {
@@ -320,6 +374,7 @@ export class Agent {
   incrementMessageCount(sessionKey: string): number {
     const count = (this.sessionMessageCount.get(sessionKey) ?? 0) + 1;
     this.sessionMessageCount.set(sessionKey, count);
+    this.persistSessionMappings();
     return count;
   }
 
@@ -358,6 +413,7 @@ export class Agent {
         evicted++;
       }
     }
+    if (evicted > 0) this.persistSessionMappings();
     return evicted;
   }
 
@@ -430,6 +486,7 @@ export class Agent {
     this.sessionLastUsed = new Map(data.lastUsed);
     this.sessionStarted = new Map(data.started ?? []);
     this.sessionMessageCount = new Map(data.messageCounts ?? []);
+    this.persistSessionMappings();
   }
 
   private evictIfOverLimit(): void {
