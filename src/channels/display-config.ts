@@ -8,7 +8,16 @@ export interface DisplayConfig {
 }
 
 const PLATFORM_DEFAULTS: Record<string, DisplayConfig> = {
-  telegram: { toolProgress: 'all', streaming: true, toolPreviewLength: 40, showReasoning: false },
+  // Tool-progress / verbose surfacing is OFF by default on every platform.
+  // It's a debug/dev affordance — for production conversational agents it
+  // looks like log spam to the end user (especially in WhatsApp DMs and
+  // public Telegram groups). Opt in per-agent via agent.yml:
+  //   display:
+  //     toolProgress: all   # every tool call posts a status line
+  //     toolProgress: new   # only the first call of each tool name
+  // Per-platform `streaming` and `toolPreviewLength` defaults are kept since
+  // those affect rendering, not whether internal trace leaks to the user.
+  telegram: { toolProgress: 'off', streaming: true, toolPreviewLength: 40, showReasoning: false },
   whatsapp: { toolProgress: 'off', streaming: false, toolPreviewLength: 0, showReasoning: false },
 };
 

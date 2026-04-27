@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Bot,
   MessageSquare,
+  History,
   Radio,
   AlignLeft,
   Server,
@@ -45,7 +46,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: "fleet", label: "Fleet", icon: LayoutGrid, path: "/fleet", absolute: true },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "" },
   { id: "agents", label: "Agents", icon: Bot, path: "/agents" },
-  { id: "chat", label: "Chat", icon: MessageSquare, path: "/chat" },
+  { id: "chat", label: "Test Chat", icon: MessageSquare, path: "/chat" },
+  { id: "sessions", label: "Sessions", icon: History, path: "/sessions" },
   { id: "channels", label: "Channels", icon: Radio, path: "/channels" },
   { id: "logs", label: "Logs", icon: AlignLeft, path: "/logs" },
   { id: "settings", label: "Settings", icon: Settings, path: "/settings" },
@@ -101,6 +103,7 @@ export function Sidebar() {
       if (!rest || rest === "/") return "dashboard";
       if (rest.startsWith("/agents")) return "agents";
       if (rest.startsWith("/chat")) return "chat";
+      if (rest.startsWith("/sessions")) return "sessions";
       if (rest.startsWith("/channels")) return "channels";
       if (rest.startsWith("/logs")) return "logs";
       if (rest.startsWith("/settings")) return "settings";

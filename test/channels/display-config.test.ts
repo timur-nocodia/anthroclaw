@@ -3,10 +3,10 @@ import { resolveDisplayConfig } from '../../src/channels/display-config.js';
 import type { DisplayConfig } from '../../src/channels/display-config.js';
 
 describe('resolveDisplayConfig', () => {
-  it('returns Telegram defaults', () => {
+  it('returns Telegram defaults (toolProgress off — opt-in only)', () => {
     const cfg = resolveDisplayConfig('telegram');
     expect(cfg).toEqual({
-      toolProgress: 'all',
+      toolProgress: 'off',
       streaming: true,
       toolPreviewLength: 40,
       showReasoning: false,
@@ -37,11 +37,13 @@ describe('resolveDisplayConfig', () => {
     const cfg = resolveDisplayConfig('telegram', {
       streaming: false,
       showReasoning: true,
+      toolProgress: 'all',
     });
     expect(cfg.streaming).toBe(false);
     expect(cfg.showReasoning).toBe(true);
-    // Non-overridden fields keep platform defaults
+    // Override beats platform default ('off' → 'all').
     expect(cfg.toolProgress).toBe('all');
+    // Non-overridden fields keep platform defaults.
     expect(cfg.toolPreviewLength).toBe(40);
   });
 

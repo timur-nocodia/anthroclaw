@@ -25,6 +25,7 @@ import {
   Zap,
 } from "lucide-react";
 import { MessageBubble, type ChatMessage, type ToolCall } from "@/components/chat-message";
+import { storedEntriesToChatMessages } from "@/lib/normalize-session";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -833,13 +834,14 @@ export default function ChatPage() {
     setRewindNotice(null);
     setHookEvents([]);
     setTotalTokens(0);
-    setMessages(history.map((item, index) => ({
-      id: item.uuid || `${nextSessionId}-${index}`,
-      role: item.type === "user" ? "user" : "agent",
-      content: item.text || JSON.stringify(item.message ?? ""),
-      ts: new Date(),
-      streaming: false,
-    })));
+    setMessages(storedEntriesToChatMessages(
+      history.map((item, index) => ({
+        type: item.type,
+        uuid: item.uuid || `${nextSessionId}-${index}`,
+        text: item.text,
+        message: item.message,
+      })),
+    ));
   };
 
   const forkCurrentSession = async () => {

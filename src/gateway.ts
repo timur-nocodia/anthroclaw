@@ -46,6 +46,7 @@ import type {
 } from './metrics/store.js';
 import type { ScheduledJob } from './cron/scheduler.js';
 import type { ChannelAdapter, InboundMessage } from './channels/types.js';
+import { resolveDisplayConfig } from './channels/display-config.js';
 import { formatChannelOperatorContext, resolveChannelContext, resolveReplyToId } from './channels/context.js';
 import type { GlobalConfig } from './config/schema.js';
 import { HookEmitter } from './hooks/emitter.js';
@@ -59,7 +60,6 @@ import { isSilentResponse, processNoReplySentinel } from './cron/scheduler.js';
 import { SessionMirror } from './session/mirror.js';
 import { buildGroupSessionKey, type GroupSessionMode } from './session/group-isolation.js';
 import { matchQuickCommand, executeQuickCommand } from './commands/quick.js';
-import { resolveDisplayConfig } from './channels/display-config.js';
 import { InsightsEngine } from './metrics/insights.js';
 import { parseReferences, resolveReference, formatReferences } from './references/parser.js';
 import {
@@ -1338,6 +1338,15 @@ export class Gateway {
     const resolvedSessionId = this.resolveAgentSessionId(agent, agentId, sessionId) ?? sessionId;
     const saved = await this.sdkSessionService.setAgentSessionLabels(agent, resolvedSessionId, labels);
     return { sessionId: resolvedSessionId, labels: saved };
+  }
+
+  async getAgentSessionLabels(agentId: string, sessionId: string): Promise<string[]> {
+    const agent = this.agents.get(agentId);
+    if (!agent) throw new Error(`Agent "${agentId}" not found`);
+    if (!this.sdkSessionService) return [];
+
+    const resolvedSessionId = this.resolveAgentSessionId(agent, agentId, sessionId) ?? sessionId;
+    return this.sdkSessionService.getAgentSessionLabels(agent, resolvedSessionId);
   }
 
   async setAgentSessionTitle(agentId: string, sessionId: string, title: string): Promise<{ sessionId: string; title: string }> {
@@ -2855,6 +2864,40 @@ export class Gateway {
         }
       };
 
+      // Verbose-mode tool progress surfacing into the chat (e.g. "▶ Read
+      // sales/CASES.md"). Off by default for WhatsApp, on for Telegram, per
+      // the platform defaults in resolveDisplayConfig — both can be overridden
+      // via agent.yml `display.toolProgress: all|new|off`. Without this, a
+      // long query with many tool calls looks indistinguishable from a hung
+      // bot. Used together with the continuous typing indicator.
+      const displayCfg = resolveDisplayConfig(msg.channel, agent.config.display);
+      const announcedTools = new Set<string>();
+      const announceToolUse = async (toolName: string, toolInput: unknown) => {
+        if (displayCfg.toolProgress === 'off') return;
+        if (displayCfg.toolProgress === 'new' && announcedTools.has(toolName)) return;
+        announcedTools.add(toolName);
+        const ch = this.channels.get(msg.channel);
+        if (!ch) return;
+        const previewLen = displayCfg.toolPreviewLength;
+        let preview = '';
+        if (previewLen > 0 && toolInput && typeof toolInput === 'object') {
+          for (const value of Object.values(toolInput as Record<string, unknown>)) {
+            if (typeof value === 'string' && value.length > 0) {
+              preview = value.length > previewLen ? value.slice(0, previewLen) + '…' : value;
+              break;
+            }
+          }
+        }
+        const text = preview ? `▶ ${toolName}: ${preview}` : `▶ ${toolName}`;
+        await ch.sendText(msg.peerId, text, {
+          accountId: msg.accountId,
+          threadId: msg.threadId,
+          parseMode: 'plain',
+        }).catch((err: unknown) => {
+          logger.debug({ err, agentId: agent.id, toolName }, 'tool-progress send failed (non-fatal)');
+        });
+      };
+
       try {
         const textParts: string[] = [];
         let sessionId: string | undefined;
@@ -2953,13 +2996,25 @@ export class Gateway {
             runUsage = readResultUsage(evt, Date.now() - queryStartMs);
             break;
           } else if (evt.type === 'tool_use') {
+            const toolName = typeof evt.name === 'string' ? evt.name : 'unknown';
             metrics.increment('tool_calls');
             metrics.recordToolEvent({
               agentId: agent.id,
               sessionKey,
-              toolName: typeof evt.name === 'string' ? evt.name : 'unknown',
+              toolName,
               status: 'started',
             });
+            // Surface tool name in logs so operators can see what the model is
+            // doing in real time. Without this, a stuck query (long-running tool,
+            // hung subagent, model in extended thinking) is indistinguishable
+            // from a working one — the only signals are "Querying agent" at the
+            // start and "Memory prefetch completed" at the end.
+            logger.debug(
+              { agentId: agent.id, sessionKey, toolName },
+              'agent: tool_use',
+            );
+            // Verbose-mode chat surfacing (display.toolProgress).
+            void announceToolUse(toolName, (evt as Record<string, unknown>).input);
             if (budget) {
               const exceeded = budget.recordToolCall();
               const pressureWarning = budget.getPressureWarning();
