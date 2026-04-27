@@ -72,6 +72,50 @@ function statusColor(status: string | undefined): string {
   }
 }
 
+function SkeletonBar({ width, height = 12 }: { width: string | number; height?: number }) {
+  return (
+    <div
+      className="animate-pulse rounded"
+      style={{
+        width,
+        height,
+        background: "var(--oc-bg2)",
+      }}
+    />
+  );
+}
+
+function SkeletonBubble({ side, lines }: { side: "left" | "right"; lines: number }) {
+  const widths = ["86%", "72%", "94%", "60%", "80%"];
+  return (
+    <div className={cn("flex w-full", side === "right" ? "justify-end" : "justify-start")}>
+      <div
+        className="flex max-w-[78%] flex-col gap-2 rounded-[10px] px-3 py-2.5"
+        style={{
+          background: side === "right" ? "var(--oc-accent-soft)" : "var(--oc-bg1)",
+          border: "1px solid var(--oc-border)",
+          minWidth: 220,
+        }}
+      >
+        {Array.from({ length: lines }).map((_, i) => (
+          <SkeletonBar key={i} width={widths[i % widths.length]} height={10} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TranscriptSkeleton() {
+  return (
+    <div className="flex flex-col gap-3">
+      <SkeletonBubble side="right" lines={2} />
+      <SkeletonBubble side="left" lines={4} />
+      <SkeletonBubble side="right" lines={1} />
+      <SkeletonBubble side="left" lines={3} />
+    </div>
+  );
+}
+
 export default function SessionDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -259,7 +303,9 @@ export default function SessionDetailPage() {
 
         {/* Title */}
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          {editingTitle ? (
+          {loading && !details && !meta ? (
+            <SkeletonBar width={260} height={14} />
+          ) : editingTitle ? (
             <input
               autoFocus
               value={titleDraft}
@@ -511,11 +557,7 @@ export default function SessionDetailPage() {
 
       {/* Transcript */}
       <div className="flex-1 overflow-auto px-5 py-4">
-        {loading && (
-          <div className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-            Loading transcript...
-          </div>
-        )}
+        {loading && messages.length === 0 && <TranscriptSkeleton />}
         {error && (
           <div className="text-[12px]" style={{ color: "#f87171" }}>
             {error}

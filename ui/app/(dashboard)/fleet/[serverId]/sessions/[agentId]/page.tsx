@@ -115,6 +115,43 @@ function statusColor(status: string | undefined): string {
   }
 }
 
+function SessionsRowSkeleton() {
+  return (
+    <ul
+      className="divide-y"
+      style={{ borderColor: "var(--oc-border)" }}
+      aria-busy="true"
+    >
+      {Array.from({ length: 8 }).map((_, i) => (
+        <li
+          key={i}
+          className="flex items-center gap-3 px-5 py-3"
+          style={{ borderColor: "var(--oc-border)" }}
+        >
+          <div
+            className="h-4 w-4 animate-pulse rounded-sm"
+            style={{ background: "var(--oc-bg2)" }}
+          />
+          <div className="flex flex-1 flex-col gap-1.5">
+            <div
+              className="h-3 animate-pulse rounded"
+              style={{ background: "var(--oc-bg2)", width: `${50 + ((i * 7) % 35)}%` }}
+            />
+            <div
+              className="h-2.5 animate-pulse rounded"
+              style={{ background: "var(--oc-bg2)", width: `${25 + ((i * 11) % 25)}%`, opacity: 0.6 }}
+            />
+          </div>
+          <div
+            className="h-2.5 w-12 animate-pulse rounded"
+            style={{ background: "var(--oc-bg2)", opacity: 0.5 }}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function SessionsListPage() {
   const params = useParams();
   const router = useRouter();
@@ -649,6 +686,7 @@ export default function SessionsListPage() {
             {error}
           </div>
         )}
+        {loading && sessions.length === 0 && <SessionsRowSkeleton />}
         {!error && !loading && sessions.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-5 py-10 text-center">
             <Bot className="h-8 w-8" style={{ color: "var(--oc-text-muted)" }} />
