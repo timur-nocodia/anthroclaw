@@ -1074,9 +1074,10 @@ Examples:
 
 ### Session Lifecycle
 
-- Sessions are stored in memory (not persisted to disk)
-- Bot restart = new session, but memory files are preserved
-- `/newsession` → auto-summary → clear
+- SDK transcripts are persisted via `FileSessionStore` to `data/sdk-sessions/{base64url(workspacePath)}/{base64url(sessionId)}/main.jsonl` (append-only JSONL of every user/assistant/tool entry)
+- `sessionKey ↔ sessionId` mapping is persisted to `data/session-mappings/{agentId}.json` on every change and reloaded on startup, so gateway restarts (deploys, container recreate, OOM) resume the same SDK session with full transcript intact
+- Memory files (`agents/{id}/memory/...`) are preserved across restarts independently
+- `/newsession` → auto-summary → clear (drops the in-memory mapping; the JSONL stays on disk and remains visible in the Sessions UI)
 
 ### Session Pruning
 

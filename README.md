@@ -140,8 +140,9 @@ The web UI gives you an operator-grade control surface:
 
 - fleet overview
 - agent list and editor
-- chat with session controls
+- Test Chat with session controls
 - chat debug rail with SDK session, route decision, hook, and subagent runtime details
+- dedicated Sessions browser: list with search and filters (source / status / channel / labels / period), multi-select with shift-range, bulk delete and bulk tagging, per-session export (Markdown / raw JSONL), inline title and label editor with autocomplete, transcript renderer that mirrors live chat byte-for-byte (same tool-call cards), keyboard navigation with `?` cheatsheet
 - per-agent Runs tab for SDK run history and route decisions
 - subagent visibility and scoped interrupt
 - channel pairing and routing
