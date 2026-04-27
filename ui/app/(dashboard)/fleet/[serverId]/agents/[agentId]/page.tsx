@@ -438,6 +438,89 @@ const TIMEZONES = [
   "Asia/Tokyo",
 ];
 
+interface QueueModeOption {
+  value: "collect" | "serial" | "steer" | "interrupt";
+  label: string;
+  oneLiner: string;
+  behavior: string;
+  whenToUse: string;
+  caveats?: string;
+}
+
+const QUEUE_MODE_OPTIONS: QueueModeOption[] = [
+  {
+    value: "collect",
+    label: "collect — buffer and merge into one turn",
+    oneLiner: "Buffer follow-ups; reply to all of them in one merged turn after the current run finishes.",
+    behavior:
+      "While the agent is responding, every new message is buffered. When the active run completes, all buffered messages are concatenated (last messageId is used for the reply target) and dispatched as a single follow-up turn. The current run is never interrupted.",
+    whenToUse:
+      "Group chats and content workflows where multiple participants pile on context for one task. Reduces token cost (one extra turn instead of many) and lets the agent address everything together.",
+    caveats:
+      "Loss of granularity: nuance from individual messages may blur once merged. If the buffer keeps growing, the merged prompt can hit input-size limits — consider a cap or fall back to serial.",
+  },
+  {
+    value: "serial",
+    label: "serial — buffer and run each as its own turn",
+    oneLiner: "Buffer follow-ups; answer them one by one, in arrival order, after the current run finishes.",
+    behavior:
+      "Like collect, no interruption — the active run finishes first. Then the head of the buffer is dispatched as its own turn; the tail is re-enqueued. Each buffered message becomes a separate user/assistant exchange.",
+    whenToUse:
+      "Each follow-up message is a self-contained question or task that deserves its own discrete answer. Useful for support / triage flows where merging would erase the structure of the queue.",
+    caveats:
+      "Latency: if N messages were queued, the user waits for N sequential turns. Tokens scale linearly with queue depth.",
+  },
+  {
+    value: "steer",
+    label: "steer — interrupt the current run and restart",
+    oneLiner: "Cancel the in-flight reply mid-stream; start a fresh run that includes the new message.",
+    behavior:
+      "When a new message arrives during an active run, the SDK Query is interrupted (query.interrupt() + AbortController.abort()). The partial assistant output is discarded. A new run is started with the same session, picking up the latest user input.",
+    whenToUse:
+      "Live conversation where a correction or clarification matters more than the response in flight. The user expects the bot to listen and switch direction immediately.",
+    caveats:
+      "Partial output is lost — long answers may evaporate halfway. Risk of thrash if the user keeps interrupting.",
+  },
+  {
+    value: "interrupt",
+    label: "interrupt — cancel current and drop the new message",
+    oneLiner: "Cancel the in-flight reply but discard the new message too — emergency stop.",
+    behavior:
+      "Same interrupt as steer (Query.interrupt + abort), but the new message is dropped instead of restarting. The bot goes silent.",
+    whenToUse:
+      "Operator panic switch / debugging — when you want to stop the bot from continuing without it then jumping on the very message that triggered the stop.",
+  },
+];
+
+function QueueModeDetail({ mode }: { mode: string }) {
+  const opt = QUEUE_MODE_OPTIONS.find((o) => o.value === mode) ?? QUEUE_MODE_OPTIONS[0];
+  return (
+    <div
+      className="mt-1.5 flex flex-col gap-1.5 rounded-[6px] border p-2 text-[11px] leading-relaxed"
+      style={{
+        background: "var(--oc-bg2)",
+        borderColor: "var(--oc-border)",
+        color: "var(--color-foreground)",
+      }}
+    >
+      <p style={{ color: "var(--color-foreground)" }}>
+        <span className="font-mono font-medium">{opt.value}</span> — {opt.oneLiner}
+      </p>
+      <p style={{ color: "var(--oc-text-muted)" }}>
+        <span className="font-medium">Behavior.</span> {opt.behavior}
+      </p>
+      <p style={{ color: "var(--oc-text-muted)" }}>
+        <span className="font-medium">When to use.</span> {opt.whenToUse}
+      </p>
+      {opt.caveats && (
+        <p style={{ color: "var(--oc-text-muted)" }}>
+          <span className="font-medium">Caveats.</span> {opt.caveats}
+        </p>
+      )}
+    </div>
+  );
+}
+
 const SCHEDULE_PRESETS = [
   { cron: "* * * * *", label: "Every minute" },
   { cron: "*/5 * * * *", label: "Every 5 minutes" },
@@ -1243,7 +1326,7 @@ function ConfigTab({
                   ))}
                 </select>
               </Field>
-              <Field label="Queue mode" tooltip="What happens to new messages while the agent is still responding. Collect buffers and merges them into one follow-up turn. Serial buffers and runs each as its own turn, in order. Steer is SDK-safe interrupt-and-restart until active input is promoted. Interrupt cancels and drops the new message.">
+              <Field label="Queue mode" tooltip="What happens to new messages while the agent is still responding. Picker below this field shows the full behavior of the selected mode.">
                 <select
                   value={cfg.queue_mode}
                   onChange={(e) => update({ queue_mode: e.target.value })}
@@ -1254,11 +1337,11 @@ function ConfigTab({
                     color: "var(--color-foreground)",
                   }}
                 >
-                  <option value="collect">collect -- buffer and merge into one turn</option>
-                  <option value="serial">serial -- buffer and run each as its own turn</option>
-                  <option value="steer">steer -- interrupt and restart</option>
-                  <option value="interrupt">interrupt -- cancel and drop</option>
+                  {QUEUE_MODE_OPTIONS.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
                 </select>
+                <QueueModeDetail mode={cfg.queue_mode} />
               </Field>
               <Field label="Session policy" tooltip="How often to reset conversation memory. Daily — fresh context each day. Never — the agent remembers everything. Weekly/Hourly — in between.">
                 <select

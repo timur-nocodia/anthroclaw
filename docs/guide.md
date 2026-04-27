@@ -271,11 +271,13 @@ mcp_tools:
   - web_search_exa                        # Exa neural search (needs api_key)
 
 # ─── Queue Mode ───────────────────────────────────────────
-queue_mode: collect                       # What happens when new message arrives
-                                          # during active query:
-                                          # collect  — wait, merge via debouncer (default)
-                                          # steer    — interrupt current, restart with new
-                                          # interrupt — cancel current, drop new
+queue_mode: collect                       # What happens when a new message arrives
+                                          # during an active query. See the "Queue
+                                          # Modes" section below for full behavior:
+                                          #   collect   — buffer, merge into one turn (default)
+                                          #   serial    — buffer, run each as its own turn in order
+                                          #   steer     — interrupt current, restart with new
+                                          #   interrupt — cancel current, drop new
 
 # ─── Hooks ────────────────────────────────────────────────
 # Lifecycle event hooks — webhook calls or shell scripts
@@ -885,22 +887,78 @@ Registered automatically in the bot's menu on startup.
 
 ## Queue Modes
 
-Controls what happens when a new message arrives while the agent is still processing a previous one.
+Controls what the gateway does when a new message arrives **while the agent is still responding to a previous one**. Configured per agent in `agent.yml`:
 
 ```yaml
-queue_mode: collect       # default
+queue_mode: collect   # collect | serial | steer | interrupt — default: collect
 ```
 
-| Mode | Behavior |
-|------|----------|
-| `collect` | New message waits in the debouncer, merged with the previous (default) |
-| `steer` | Current query is interrupted via SDK `interrupt()`, new query starts with the new message |
-| `interrupt` | Current query is cancelled, no response sent. New message is also dropped. |
+The four modes split along two axes: do we **interrupt** the in-flight run, and do we **merge** follow-ups or run them separately?
 
-**When to use:**
-- `collect` — default, good for most cases
-- `steer` — user corrects or refines their question before getting a response
-- `interrupt` — cancel-like behavior, user sends "nevermind" or "stop"
+| Mode | Interrupts current? | Buffers new? | Drains as |
+|---|---|---|---|
+| `collect` | no | yes | one merged turn |
+| `serial` | no | yes | one turn per buffered message, in order |
+| `steer` | yes (`Query.interrupt()` + abort) | no | restarts immediately with the new message |
+| `interrupt` | yes | no | nothing — bot goes silent |
+
+### `collect` (default)
+
+Buffer follow-ups; reply to all of them in **one merged turn** after the current run finishes. The current run is never interrupted.
+
+**Behavior** — every message that arrives during an active run is appended to a per-session pending list. When the active run's `finally` hook fires, the gateway drains the buffer, concatenates the texts (newline-separated), preserves the **last** `messageId` so the reply attaches to the most recent message, and re-dispatches as a single follow-up turn.
+
+**When to use** — group chats and content workflows where multiple participants pile context onto the same task. Reduces token cost (one extra turn instead of several) and lets the agent address everything together.
+
+**Caveats** — individual nuance can blur after merging. If the buffer grows unbounded (e.g. 50 messages while the bot is stuck), the merged prompt may hit input-size limits — operationally that has not been a problem, but it is a known shape.
+
+### `serial`
+
+Buffer follow-ups; answer them **one by one, in arrival order**, after the current run finishes.
+
+**Behavior** — same buffering as `collect`. At drain time the gateway dispatches the **head** of the buffer as its own turn and **re-enqueues the tail**. When that turn's `finally` fires, the next message gets pulled the same way. Each buffered message becomes a separate user/assistant exchange.
+
+**When to use** — each follow-up is a self-contained question or task that deserves its own answer. Support / triage / Q&A flows where merging would erase the structure of the queue.
+
+**Caveats** — latency scales with queue depth. If five questions arrive during one slow turn, the user waits for five sequential answers. Tokens scale linearly with queue depth.
+
+### `steer`
+
+Cancel the in-flight reply mid-stream; **start a fresh run** that includes the new message. The partial assistant output is discarded.
+
+**Behavior** — when a new message arrives during an active run, the SDK Query is interrupted via `query.interrupt()` and the dispatch's `AbortController` is aborted. A new run starts with the same session, picking up the latest user input.
+
+**When to use** — live conversation where a correction or clarification matters more than the response in flight. The user expects the bot to listen and switch direction immediately.
+
+**Caveats** — partial output is lost. Long answers may evaporate halfway. Risk of thrash if the user keeps correcting themselves.
+
+### `interrupt`
+
+Cancel the in-flight reply, **and discard the new message too**. Emergency stop / panic switch.
+
+**Behavior** — same interrupt as `steer` (Query.interrupt + abort), but the new message is dropped instead of restarting. The bot goes silent.
+
+**When to use** — operator panic switch / debugging. When you want to stop the bot from continuing without it then jumping on the very message that triggered the stop.
+
+### Pairing with the debouncer
+
+The `debounce_ms` setting (default `1500`) operates **before** the queue. Messages arriving within the debounce window are first batched into a single inbound message; only that batched message hits queue logic. So:
+
+- Three rapid messages within 1.5s → one debounced inbound → one turn (regardless of mode).
+- Two messages with a 5-second gap → two separate inbounds. The second one hits queue logic and `queue_mode` decides what happens.
+
+### Native SDK steering vs. our implementation
+
+The Claude Agent SDK supports a native streaming-input mode where new `SDKUserMessage` objects can be pushed into an active `Query` without a restart. AnthroClaw is aware of this (`src/sdk/active-input.ts`) but currently runs in `fallback_interrupt_restart` mode — `steer` is implemented as interrupt-and-restart, not native steering. The fallback is documented and tested; the native path is gated on `features.sdk_active_input` and additional integration work.
+
+`collect` and `serial` are independent of this — they sit at the channel/transport layer (buffering inbound messages from Telegram/WhatsApp before the SDK is involved) and work the same regardless of how `steer` is wired underneath.
+
+### Quick decision
+
+- Group chat where people pile on one task → **`collect`**
+- Support flow where each message is its own ticket → **`serial`**
+- Live coding/correcting flow → **`steer`**
+- You want the bot to shut up → **`interrupt`**
 
 ---
 
