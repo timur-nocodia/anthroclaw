@@ -4,6 +4,76 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-27
+
+This release ships a dedicated **Sessions** section in the UI: full read /
+manage / export / bulk surface for stored agent sessions, with rendering
+unified across live Test Chat and saved-history views.
+
+### Added
+
+- **Sessions section** (`/fleet/[serverId]/sessions/[agentId]` and
+  `/[sessionId]`). List page with search + source/status filters, agent
+  picker, time-ago, message count, label chips, active-session indicator;
+  detail page with editable title, label editor, transcript renderer,
+  metadata strip, and action bar (Open in Test Chat / Fork / Export /
+  Delete with two-step confirm).
+- **Sidebar entries.** `Chat` renamed to `Test Chat`; new `Sessions` entry
+  with `History` icon between Test Chat and Channels.
+- **Unified message rendering for stored sessions.** New
+  `storedEntriesToChatMessages()` reconstructs `ChatMessage[]` (with
+  `toolCalls[]` and `output` paired by `tool_use_id`) from persisted
+  Anthropic content blocks, so resumed history renders identical to the
+  live SSE stream — same `MessageBubble` and `ToolCallCard` components.
+  Fixes the lossy `openSession()` path that previously stringified raw
+  `message` JSON when text was empty, dropping all tool calls.
+- **Per-session export.** `GET /api/agents/[agentId]/sessions/[sessionId]/export?format=md|jsonl`
+  with `Content-Disposition`. Markdown formatter emits role-labelled
+  sections, fenced JSON for tool inputs, fenced output blocks for tool
+  results, with dynamic-length fences so embedded triple-backticks don't
+  break the document.
+- **Bulk operations.** New `POST /api/agents/[agentId]/sessions/bulk` with
+  `{action: 'delete' | 'addLabels' | 'removeLabels', sessionIds, labels}`.
+  List-page UI supports multi-select (checkbox per row, shift-click range,
+  selection highlight), bulk-action bar with Delete (two-step confirm) and
+  Tag (add/remove labels with autocomplete from agent's known labels),
+  sonner toasts on result.
+- **Inline label editor on detail page.** Click chip's `×` to remove,
+  `+ Add label` opens an autocomplete input (datalist of existing labels).
+- **`gw.getAgentSessionLabels(agentId, sessionId)`** — public gateway
+  accessor used by the bulk endpoint to compute label diffs.
+- **Keyboard shortcuts on the list page.** `/` focuses search,
+  `j` / `k` / `↓` / `↑` move row focus (with auto-scroll and accent
+  ring), `Enter` opens, `x` toggles selection of focused row,
+  `a` selects all visible, `⌫` / `Delete` triggers bulk-delete confirm,
+  `Esc` clears selection / closes cheatsheet / blurs input,
+  `?` toggles a cheatsheet modal listing every binding. Listener is
+  inert while typing in `INPUT` / `TEXTAREA` / `SELECT` / contentEditable
+  and skips modifier-key combinations.
+
+### Changed
+
+- Test Chat's `openSession()` now delegates to the shared normalizer, so
+  the rendering of resumed history is byte-identical to the live stream.
+- **`display.toolProgress` now actually wired** to per-tool chat status
+  surfacing (was a dead config field). When set to `all` the gateway posts
+  a short `▶ <toolName>: <preview>` line per tool call (preview length
+  governed by `display.toolPreviewLength`); `new` posts only the first
+  occurrence of each tool name; `off` (default) stays silent. Default is
+  now `off` on every platform — including Telegram, where the previous
+  unwired default was `all` and would have spammed group chats once
+  surfacing landed. Opt in per-agent for dev/debug surfaces.
+
+### Fixed
+
+- **Verbose tool-call visibility in logs.** Each `tool_use` event now
+  emits a `logger.debug({ agentId, sessionKey, toolName }, 'agent: tool_use')`
+  line. Without this, a long-running query (extended thinking, slow tool,
+  hung subagent) was indistinguishable from a working one — the only
+  signals were `Querying agent` at the start and `Memory prefetch
+  completed` at the end. Run with `LOG_LEVEL=debug` to see what a stuck
+  agent is actually doing.
+
 ## [0.3.0] - 2026-04-27
 
 This release fixes the WhatsApp pair → reply path end-to-end, makes sessions
