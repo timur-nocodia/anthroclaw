@@ -2835,6 +2835,11 @@ export class Gateway {
         this.queueManager.markActivity(sessionKey, eventType, taskId);
       };
       const deliverTaskNotification = async (notification: SdkTaskNotification) => {
+        // Off by default — task lifecycle notifications are framework-internal
+        // progress events that look like debug output to a real user. Opt in
+        // via agent.yml `display.taskNotifications: true` for tooling agents
+        // where the operator wants live visibility.
+        if (!agent.config.display?.taskNotifications) return;
         const channel = this.channels.get(msg.channel);
         if (!channel) return;
         try {
@@ -3022,7 +3027,13 @@ export class Gateway {
         }
 
         finishRun(budgetInterrupted ? 'interrupted' : 'succeeded');
-        return `Agent ${agent.id} processed your message but produced no text response.`;
+        // Empty response: the model didn't emit text this turn (only tool calls,
+        // or hit iteration budget before producing output, or chose silence).
+        // Returning a synthetic "Agent X processed your message but produced no
+        // text response" placeholder used to leak to the user — internal debug
+        // text in a real chat. Just return empty; the dispatcher's `if (response)`
+        // guard then skips delivery.
+        return '';
       } finally {
         this.queueManager.unregister(sessionKey);
         this.controlRegistry.unregister(sessionKey);

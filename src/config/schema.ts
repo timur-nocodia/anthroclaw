@@ -328,6 +328,13 @@ export const AgentYmlSchema = z.object({
     streaming: z.boolean().optional(),
     toolPreviewLength: z.number().int().min(0).optional(),
     showReasoning: z.boolean().optional(),
+    /**
+     * Forward SDK task lifecycle notifications (e.g. "Task completed: …") to the
+     * end user via the channel. Off by default — these are framework-internal
+     * progress events that look like debug output in a real chat. Opt in only
+     * for tooling/dev agents where the operator wants live task visibility.
+     */
+    taskNotifications: z.boolean().default(false),
   }).optional(),
   sdk: SdkAgentConfigSchema,
 });

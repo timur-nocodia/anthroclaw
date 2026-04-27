@@ -457,6 +457,8 @@ routes:
     scope: dm
 pairing:
   mode: open
+display:
+  taskNotifications: true
 `);
 
     const gw = new Gateway();
@@ -486,6 +488,46 @@ pairing:
       'SDK says hi',
     ]);
     expect(metrics.snapshot().counters.task_notifications_delivered).toBe(1);
+
+    await gw.stop();
+  });
+
+  it('does NOT deliver task notifications when display.taskNotifications is unset (default off)', async () => {
+    const botDir = join(agentsDir, 'task-bot-silent');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return `msg-${sent.length}`;
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg({ text: 'please run background task notification' }));
+
+    // Only the agent's actual reply lands — the framework-internal
+    // "Task completed: …" event is suppressed by default.
+    expect(sent).toEqual(['SDK says hi']);
 
     await gw.stop();
   });
