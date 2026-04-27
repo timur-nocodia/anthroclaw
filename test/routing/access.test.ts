@@ -46,6 +46,24 @@ describe('AccessControl', () => {
     expect(result.reason).toBeDefined();
   });
 
+  it('allows by default when neither pairing nor allowlist is configured', () => {
+    // Out-of-the-box: drop a bot into a group with route+mention_only
+    // and it should respond without forcing operators to also configure access.
+    const ac = new AccessControl(makeTmp());
+    const result = ac.check('bot1', 'anyone', 'telegram', {});
+    expect(result).toEqual({ allowed: true });
+  });
+
+  it('still denies when pairing.mode=off is explicit even without allowlist', () => {
+    // Explicit `pairing: { mode: off }` keeps the deny-all behavior for
+    // operators who really want it.
+    const ac = new AccessControl(makeTmp());
+    const result = ac.check('bot1', 'stranger', 'telegram', {
+      pairing: { mode: 'off' },
+    });
+    expect(result.allowed).toBe(false);
+  });
+
   it('returns pairing_required for code mode', () => {
     const ac = new AccessControl(makeTmp());
     const result = ac.check('bot1', 'newuser', 'telegram', {

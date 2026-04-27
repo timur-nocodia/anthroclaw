@@ -99,6 +99,14 @@ export class AccessControl {
     channel: string,
     config: AgentAccessConfig,
   ): AccessResult {
+    // 0. If neither pairing nor allowlist is configured, treat access as open.
+    // The route layer (peers/topics/mention_only) is already gating who can reach
+    // this agent — adding implicit deny here makes "drop a bot into a group and
+    // @-mention it" silently fail out of the box.
+    if (!config.pairing && !config.allowlist) {
+      return { allowed: true };
+    }
+
     // 1. Allowlist check
     if (this.isAllowlisted(senderId, channel, config)) {
       return { allowed: true };

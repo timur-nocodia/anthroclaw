@@ -786,48 +786,28 @@ function ConfigTab({
     });
   };
 
-  const formatChannelRuleMapText = (rules: Record<string, ChannelBehaviorRule> | undefined): string => (
-    Object.entries(rules ?? {})
-      .map(([key, rule]) => `${key}=${rule.prompt ?? ""}${rule.reply_to_mode ? ` | ${rule.reply_to_mode}` : ""}`)
-      .join("\n")
-  );
-
-  const parseChannelRuleMapText = (value: string): Record<string, ChannelBehaviorRule> => {
-    const rules: Record<string, ChannelBehaviorRule> = {};
-    for (const line of value.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      const separator = trimmed.indexOf("=");
-      if (separator <= 0) continue;
-      const key = trimmed.slice(0, separator).trim();
-      const rawValue = trimmed.slice(separator + 1).trim();
-      const [promptPart, modePart] = rawValue.split("|").map((part) => part.trim());
-      const rule: ChannelBehaviorRule = {};
-      if (promptPart) rule.prompt = promptPart;
-      if (modePart === "always" || modePart === "incoming_reply_only" || modePart === "never") {
-        rule.reply_to_mode = modePart;
-      }
-      if (key && Object.keys(rule).length > 0) rules[key] = rule;
-    }
-    return rules;
-  };
-
-  const updateTelegramChannelRuleMap = (map: "peers" | "topics", value: string) => {
+  const updateTelegramChannelRuleMap = (
+    map: "peers" | "topics",
+    value: Record<string, ChannelBehaviorRule>,
+  ) => {
     const current = cfg.channel_context.telegram ?? {};
     updateChannelContext({
       telegram: {
         ...current,
-        [map]: parseChannelRuleMapText(value),
+        [map]: value,
       },
     });
   };
 
-  const updateWhatsappChannelRuleMap = (map: "direct" | "groups", value: string) => {
+  const updateWhatsappChannelRuleMap = (
+    map: "direct" | "groups",
+    value: Record<string, ChannelBehaviorRule>,
+  ) => {
     const current = cfg.channel_context.whatsapp ?? {};
     updateChannelContext({
       whatsapp: {
         ...current,
-        [map]: parseChannelRuleMapText(value),
+        [map]: value,
       },
     });
   };
@@ -1605,32 +1585,30 @@ function ConfigTab({
                   }}
                 />
               </Field>
-              <Field label="Telegram peers" tooltip="Per-peer Telegram context, one peer_id=prompt line. Add | never, | always, or | incoming_reply_only to override reply target. Peer rules override the Telegram wildcard.">
-                <textarea
-                  value={formatChannelRuleMapText(cfg.channel_context.telegram?.peers)}
-                  onChange={(e) => updateTelegramChannelRuleMap("peers", e.target.value)}
-                  rows={3}
-                  placeholder="123456789=Use concise replies for this chat | incoming_reply_only"
-                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
-                  style={{
-                    background: "var(--oc-bg3)",
-                    borderColor: "var(--oc-border)",
-                    color: "var(--color-foreground)",
-                  }}
+              <Field
+                label="Per-chat Telegram rules"
+                tooltip="Add a rule per Telegram chat ID (group or DM). The prompt is injected as untrusted operator context only when a message comes from that chat. Overrides the wildcard above. Use the optional reply-mode dropdown to override the global Reply target for this chat."
+              >
+                <ChannelRuleListEditor
+                  rules={cfg.channel_context.telegram?.peers}
+                  onChange={(value) => updateTelegramChannelRuleMap("peers", value)}
+                  idLabel="Telegram chat ID"
+                  idPlaceholder="-1003729315809"
+                  promptPlaceholder="Context for this chat (multi-line OK)"
+                  emptyHint="No per-chat rules. Add one to give the agent extra context for a specific Telegram chat."
                 />
               </Field>
-              <Field label="Telegram topics" tooltip="Per-topic Telegram context, one topic_id=prompt line. Add | never, | always, or | incoming_reply_only to override reply target. Topic rules override peer and wildcard rules.">
-                <textarea
-                  value={formatChannelRuleMapText(cfg.channel_context.telegram?.topics)}
-                  onChange={(e) => updateTelegramChannelRuleMap("topics", e.target.value)}
-                  rows={3}
-                  placeholder="42=Use support triage format in this topic | never"
-                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
-                  style={{
-                    background: "var(--oc-bg3)",
-                    borderColor: "var(--oc-border)",
-                    color: "var(--color-foreground)",
-                  }}
+              <Field
+                label="Per-topic Telegram rules"
+                tooltip="Add a rule per forum-topic ID (the part after thread_id in a Telegram forum group). Topic rules override per-chat and wildcard rules for messages posted in that topic."
+              >
+                <ChannelRuleListEditor
+                  rules={cfg.channel_context.telegram?.topics}
+                  onChange={(value) => updateTelegramChannelRuleMap("topics", value)}
+                  idLabel="Telegram topic ID"
+                  idPlaceholder="4"
+                  promptPlaceholder="Context for this topic (multi-line OK)"
+                  emptyHint="No per-topic rules. Add one to specialize behavior inside a forum topic."
                 />
               </Field>
               <Field label="WhatsApp wildcard" tooltip="Default WhatsApp operator context for chats without a more specific direct or group rule. Fenced as untrusted channel context.">
@@ -1647,32 +1625,30 @@ function ConfigTab({
                   }}
                 />
               </Field>
-              <Field label="WhatsApp direct" tooltip="Per-contact WhatsApp context, one jid=prompt line. Add | never, | always, or | incoming_reply_only to override reply target. Direct rules override the WhatsApp wildcard.">
-                <textarea
-                  value={formatChannelRuleMapText(cfg.channel_context.whatsapp?.direct)}
-                  onChange={(e) => updateWhatsappChannelRuleMap("direct", e.target.value)}
-                  rows={3}
-                  placeholder="77001234567@s.whatsapp.net=Use customer support tone | always"
-                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
-                  style={{
-                    background: "var(--oc-bg3)",
-                    borderColor: "var(--oc-border)",
-                    color: "var(--color-foreground)",
-                  }}
+              <Field
+                label="Per-contact WhatsApp rules"
+                tooltip="Add a rule per WhatsApp contact JID (e.g. 77001234567@s.whatsapp.net). Direct rules override the WhatsApp wildcard for messages from that contact."
+              >
+                <ChannelRuleListEditor
+                  rules={cfg.channel_context.whatsapp?.direct}
+                  onChange={(value) => updateWhatsappChannelRuleMap("direct", value)}
+                  idLabel="WhatsApp JID"
+                  idPlaceholder="77001234567@s.whatsapp.net"
+                  promptPlaceholder="Context for this contact (multi-line OK)"
+                  emptyHint="No per-contact rules."
                 />
               </Field>
-              <Field label="WhatsApp groups" tooltip="Per-group WhatsApp context, one group_jid=prompt line. Add | never, | always, or | incoming_reply_only to override reply target. Group rules override the WhatsApp wildcard.">
-                <textarea
-                  value={formatChannelRuleMapText(cfg.channel_context.whatsapp?.groups)}
-                  onChange={(e) => updateWhatsappChannelRuleMap("groups", e.target.value)}
-                  rows={3}
-                  placeholder="120363000000000000@g.us=Summarize decisions at the end | incoming_reply_only"
-                  className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
-                  style={{
-                    background: "var(--oc-bg3)",
-                    borderColor: "var(--oc-border)",
-                    color: "var(--color-foreground)",
-                  }}
+              <Field
+                label="Per-group WhatsApp rules"
+                tooltip="Add a rule per WhatsApp group JID (ends in @g.us). Group rules override the WhatsApp wildcard for messages posted in that group."
+              >
+                <ChannelRuleListEditor
+                  rules={cfg.channel_context.whatsapp?.groups}
+                  onChange={(value) => updateWhatsappChannelRuleMap("groups", value)}
+                  idLabel="WhatsApp group JID"
+                  idPlaceholder="120363000000000000@g.us"
+                  promptPlaceholder="Context for this group (multi-line OK)"
+                  emptyHint="No per-group rules."
                 />
               </Field>
             </FormGrid>
@@ -2675,6 +2651,181 @@ function Field({
           {hint}
         </p>
       )}
+    </div>
+  );
+}
+
+function ChannelRuleListEditor({
+  rules,
+  onChange,
+  idLabel,
+  idPlaceholder,
+  promptPlaceholder,
+  emptyHint,
+}: {
+  rules: Record<string, ChannelBehaviorRule> | undefined;
+  onChange: (next: Record<string, ChannelBehaviorRule>) => void;
+  idLabel: string;
+  idPlaceholder: string;
+  promptPlaceholder: string;
+  emptyHint: string;
+}) {
+  const entries = Object.entries(rules ?? {});
+
+  const renameRule = (oldKey: string, newKey: string) => {
+    if (oldKey === newKey) return;
+    const next: Record<string, ChannelBehaviorRule> = {};
+    for (const [k, v] of Object.entries(rules ?? {})) {
+      next[k === oldKey ? newKey : k] = v;
+    }
+    onChange(next);
+  };
+
+  const updateRule = (key: string, rule: ChannelBehaviorRule) => {
+    onChange({ ...(rules ?? {}), [key]: rule });
+  };
+
+  const removeRule = (key: string) => {
+    const next = { ...(rules ?? {}) };
+    delete next[key];
+    onChange(next);
+  };
+
+  const addRule = () => {
+    if ("" in (rules ?? {})) return;
+    onChange({ ...(rules ?? {}), "": { prompt: "" } });
+  };
+
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      {entries.length === 0 && (
+        <p className="text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
+          {emptyHint}
+        </p>
+      )}
+      {entries.map(([key, rule], idx) => (
+        <ChannelRuleRow
+          key={`${idx}-${key}`}
+          ruleKey={key}
+          rule={rule}
+          idLabel={idLabel}
+          idPlaceholder={idPlaceholder}
+          promptPlaceholder={promptPlaceholder}
+          onRenameKey={(newKey) => renameRule(key, newKey)}
+          onChangeRule={(next) => updateRule(key, next)}
+          onRemove={() => removeRule(key)}
+        />
+      ))}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={addRule}
+        className="self-start"
+      >
+        <Plus className="mr-1 h-3 w-3" /> Add rule
+      </Button>
+    </div>
+  );
+}
+
+function ChannelRuleRow({
+  ruleKey,
+  rule,
+  idLabel,
+  idPlaceholder,
+  promptPlaceholder,
+  onRenameKey,
+  onChangeRule,
+  onRemove,
+}: {
+  ruleKey: string;
+  rule: ChannelBehaviorRule;
+  idLabel: string;
+  idPlaceholder: string;
+  promptPlaceholder: string;
+  onRenameKey: (newKey: string) => void;
+  onChangeRule: (next: ChannelBehaviorRule) => void;
+  onRemove: () => void;
+}) {
+  // Local id buffer commits on blur to avoid a parent re-render between every
+  // keystroke (which would steal cursor focus when the record key is renamed).
+  const [localId, setLocalId] = useState(ruleKey);
+  useEffect(() => {
+    setLocalId(ruleKey);
+  }, [ruleKey]);
+
+  const commitId = () => {
+    const trimmed = localId.trim();
+    if (trimmed !== ruleKey) onRenameKey(trimmed);
+  };
+
+  return (
+    <div
+      className="flex min-w-0 flex-col gap-1.5 rounded-[6px] border p-2"
+      style={{
+        background: "var(--oc-bg2)",
+        borderColor: "var(--oc-border)",
+      }}
+    >
+      <div className="flex items-center gap-1.5">
+        <input
+          value={localId}
+          onChange={(e) => setLocalId(e.target.value)}
+          onBlur={commitId}
+          placeholder={idPlaceholder}
+          aria-label={idLabel}
+          className="h-7 min-w-0 flex-1 rounded-[5px] border px-2 font-mono text-[11px] outline-none"
+          style={{
+            background: "var(--oc-bg3)",
+            borderColor: "var(--oc-border)",
+            color: "var(--color-foreground)",
+          }}
+        />
+        <select
+          value={rule.reply_to_mode ?? ""}
+          onChange={(e) =>
+            onChangeRule({
+              ...rule,
+              reply_to_mode: (e.target.value || undefined) as ReplyToMode | undefined,
+            })
+          }
+          aria-label="Reply mode override"
+          className="h-7 cursor-pointer rounded-[5px] border px-2 text-[11px]"
+          style={{
+            background: "var(--oc-bg3)",
+            borderColor: "var(--oc-border)",
+            color: "var(--color-foreground)",
+          }}
+        >
+          <option value="">inherit reply mode</option>
+          <option value="always">always reply</option>
+          <option value="incoming_reply_only">reply only to replies</option>
+          <option value="never">never thread</option>
+        </select>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onRemove}
+          aria-label="Remove rule"
+          className="h-7 w-7 p-0"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <textarea
+        value={rule.prompt ?? ""}
+        onChange={(e) => onChangeRule({ ...rule, prompt: e.target.value })}
+        placeholder={promptPlaceholder}
+        rows={3}
+        className="min-h-[60px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
+        style={{
+          background: "var(--oc-bg3)",
+          borderColor: "var(--oc-border)",
+          color: "var(--color-foreground)",
+        }}
+      />
     </div>
   );
 }
