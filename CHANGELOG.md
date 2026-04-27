@@ -4,6 +4,103 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-27
+
+This release fixes the WhatsApp pair → reply path end-to-end, makes sessions
+survive restart, plugs framework debug-string leaks to end users, and adds
+conventional building blocks (NO_REPLY sentinel, serial queue mode, Python
+runtime, opt-in task notifications).
+
+### Added
+
+- **Persistent session mappings.** `sessionKey ↔ sessionId` is now written to
+  `data/session-mappings/{agentId}.json` on every change and reloaded on
+  startup. Gateway restarts (deploys, container recreate, OOM) no longer make
+  the bot "forget" ongoing chats — the next inbound message resumes the same
+  SDK session with the full transcript intact (4069332).
+- **`NO_REPLY` sentinel.** Conventional pattern for conversational agents:
+  emit `NO_REPLY` when the model judges the turn doesn't warrant a reply
+  (blocked sender, ack-only follow-up, operator handoff). Gateway recognizes
+  the marker — both as the whole response and as a trailing line tacked onto
+  a real reply — and suppresses delivery (b4dd853).
+- **Serial queue mode.** New `queue_mode: serial` runs each buffered message
+  as its own turn in arrival order, instead of folding them into one merged
+  follow-up like `collect` does (b483d4e).
+- **`display.taskNotifications` flag.** Forwarding SDK task lifecycle
+  notifications (`Task completed: …`) to the user channel is now opt-in via
+  agent.yml. Off by default — these are framework-internal progress events
+  that look like debug output in a real chat (fb6f71b).
+- **Python + curl + common Python deps in runtime image.** `python3`,
+  `python3-pip`, `curl`, plus `google-auth`, `google-api-python-client`, and
+  `requests`. Agents shipping Python helper scripts (Calendar booking,
+  Sheets logging, Gmail follow-ups) no longer need to bundle their own venv
+  (d08c0a0).
+
+### Fixed
+
+- **WhatsApp `@lid` outbound now actually delivers.** Baileys 7.0.0-rc.9
+  throws `Cannot read properties of undefined (reading 'undefined')` inside
+  `generateWAMessageFromContent` for bare `@lid` JIDs whose participant
+  device list is partially resolved. Resolve LID → phone-number JID via
+  `signalRepository.lidMapping.getPNForLID`, then strip the device suffix
+  with `jidNormalizedUser`. Falls back to the original LID if no mapping
+  exists yet (da140bc).
+- **WhatsApp quoted-reply no longer crashes the send.** The synthetic
+  `{quoted: {key: {…}}}` we built for replies omitted the `message` body,
+  which made Baileys call `getContentType(undefined)` and throw the same
+  `'undefined'` error. Drop the quoted option entirely — bots don't really
+  benefit from quote-replies anyway (da140bc).
+- **Empty agent responses no longer leak `Agent X processed your message
+  but produced no text response`** to end users. When the model emits no
+  text this turn (only tool calls, hits iteration budget, or chooses
+  silence), the gateway returns empty and skips delivery instead of
+  inventing a synthetic placeholder (fb6f71b).
+- **WhatsApp `auth_dir` resolves against workspace root, not cwd.** The
+  Next.js host runs from `/app/ui`, which made relative `auth_dir`
+  resolve to `/app/ui/data/whatsapp/...` (empty) instead of the mounted
+  `/app/data/whatsapp/...`. Pair-then-restart silently broke the
+  WhatsApp connection on every deploy (a9c2934).
+- **WhatsApp pair UI now actually works end-to-end.** Unified Baileys
+  `browser` tuple between pair-whatsapp and the gateway socket (different
+  tuples = different "linked devices" to WhatsApp); pair UI accepts both
+  legacy SSE field names; resolves accountId from the selected agent's
+  whatsapp route (e034720). Bind button opens the pair flow scoped to the
+  selected account (0d9f047). Trash button on the channels page wired to
+  the DELETE endpoint (413b342).
+- **WhatsApp typing-presence failures stop blocking actual sends.**
+  Baileys throws on `sendPresenceUpdate('composing', '@lid')` for some
+  device-list states. Wrapped in `.catch` so the typing indicator can fail
+  without aborting the message that follows (87e535a).
+- **Queue `collect` mode buffers and drains follow-up messages instead of
+  silently dropping them.** During an active turn, additional messages are
+  now folded into a merged follow-up turn — as documented (ebc6fc3).
+- **Drain-dispatch failures no longer crash the worker.** Errors when
+  delivering a buffered turn (e.g. Baileys `@lid` throw) are caught,
+  logged, and continue draining (ba60616).
+- **Steer-aborted runs don't leak a stub reply.** When a follow-up message
+  cancels an in-flight query, the original turn now exits silently so the
+  follow-up's reply is the only thing the user sees (79c331e).
+- **`pairing.mode = "off"` warns once.** Counter-intuitive default that
+  silently denies everyone unless allowlisted now emits a one-time warn
+  log per (agentId, channel) explaining the footgun (87e535a).
+- **Group access defaults open + multi-line channel rule editor fixed.**
+  Dropping a bot into a group with `@`-mention no longer requires
+  per-group config; UI editor for channel rules accepts multi-line input
+  again (88bc614).
+
+### Docs
+
+- Queue modes guide and UI picker now explain all four modes
+  (`always`, `interrupt`, `collect`, `serial`) and when to pick each
+  (ab3404b).
+
+### Verified
+
+- Full test suite: 92 files passed, 899 tests passed.
+- Root TypeScript check and UI TypeScript check passed.
+- End-to-end WhatsApp pair → message → reply confirmed in production.
+
+
 ## [0.2.1] - 2026-04-26
 
 ### Changed
