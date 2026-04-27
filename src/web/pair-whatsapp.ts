@@ -93,7 +93,12 @@ export async function* pairWhatsApp(authDir: string): AsyncGenerator<PairEvent> 
           phone: me?.id?.split('@')[0]?.split(':')[0],
         });
         done = true;
-        sock.end(undefined);
+        // Defer socket close so Baileys can finish post-pair registration:
+        // it sets `creds.registered = true` and persists the final creds via
+        // `creds.update` events that fire AFTER `connection: 'open'`. Closing
+        // immediately leaves `registered: false` on disk, and the next socket
+        // (the gateway adapter) will be told to re-pair on connect.
+        setTimeout(() => sock.end(undefined), 10_000);
       }
 
       if (connection === 'close') {
