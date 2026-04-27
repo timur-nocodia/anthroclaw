@@ -81,7 +81,10 @@ function loadStore(): AlertsStore {
   if (!existsSync(filePath)) {
     return { alerts: [], rules: { ...DEFAULT_RULES } };
   }
-  const raw = readFileSync(filePath, 'utf-8');
+  const raw = readFileSync(filePath, 'utf-8').trim();
+  if (raw === '') {
+    return { alerts: [], rules: { ...DEFAULT_RULES } };
+  }
   const parsed = JSON.parse(raw) as Partial<AlertsStore>;
   return {
     alerts: parsed.alerts ?? [],

@@ -109,7 +109,8 @@ export function loadFleet(): FleetServer[] {
   if (!existsSync(filePath)) {
     return [];
   }
-  const raw = readFileSync(filePath, 'utf-8');
+  const raw = readFileSync(filePath, 'utf-8').trim();
+  if (raw === '') return [];
   return JSON.parse(raw) as FleetServer[];
 }
 
