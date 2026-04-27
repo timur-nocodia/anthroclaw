@@ -1,5 +1,5 @@
 import { readdirSync, existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, isAbsolute, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { query, startup } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
@@ -539,8 +539,25 @@ export class Gateway {
     }
 
     if (config.whatsapp) {
+      // Resolve relative auth_dir against the workspace root (parent of dataDir),
+      // not process.cwd(). When the gateway runs inside the Next.js process, cwd
+      // is /app/ui but the data mount lives at /app/data, so unqualified paths
+      // like "./data/whatsapp/foo" would land in /app/ui/data/... — outside the
+      // mount — and silently create empty fresh creds on every restart.
+      const workspaceRoot = resolve(dataDir, '..');
+      const resolvedAccounts = Object.fromEntries(
+        Object.entries(config.whatsapp.accounts).map(([id, acct]) => [
+          id,
+          {
+            ...acct,
+            auth_dir: isAbsolute(acct.auth_dir)
+              ? acct.auth_dir
+              : resolve(workspaceRoot, acct.auth_dir),
+          },
+        ]),
+      );
       const wa = new WhatsAppChannel({
-        accounts: config.whatsapp.accounts,
+        accounts: resolvedAccounts,
         mediaDir: join(dataDir, 'media', 'whatsapp'),
       });
       wa.onMessage(onInbound);
