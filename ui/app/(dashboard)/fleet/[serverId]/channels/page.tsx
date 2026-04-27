@@ -395,7 +395,15 @@ export default function ChannelsPage() {
                   )}
                 </div>
                 <div className="flex justify-end gap-1">
-                  <Button variant="ghost" size="sm">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      router.push(
+                        `/fleet/${serverId}/channels/whatsapp/pair?accountId=${encodeURIComponent(c.accountId)}`,
+                      )
+                    }
+                  >
                     <Pencil className="h-3 w-3" />
                     Bind
                   </Button>

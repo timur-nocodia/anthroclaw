@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,9 @@ interface AgentSummary {
 export default function PairWhatsAppPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const serverId = params.serverId as string;
+  const accountIdOverride = searchParams.get("accountId") ?? undefined;
 
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [selectedAgent, setSelectedAgent] = useState("");
@@ -58,7 +60,11 @@ export default function PairWhatsAppPage() {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ agentId: selectedAgent }),
+            body: JSON.stringify(
+              accountIdOverride
+                ? { accountId: accountIdOverride, agentId: selectedAgent }
+                : { agentId: selectedAgent },
+            ),
             signal: abort.signal,
           },
         );
@@ -118,7 +124,7 @@ export default function PairWhatsAppPage() {
       abort.abort();
       abortRef.current = null;
     };
-  }, [step, serverId, selectedAgent]);
+  }, [step, serverId, selectedAgent, accountIdOverride]);
 
   const goBack = () => {
     if (abortRef.current) abortRef.current.abort();
