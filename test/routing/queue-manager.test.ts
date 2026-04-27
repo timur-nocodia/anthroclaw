@@ -1,5 +1,19 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { QueueManager } from '../../src/routing/queue-manager.js';
+import type { InboundMessage } from '../../src/channels/types.js';
+
+function fakeMessage(text: string, messageId: string): InboundMessage {
+  return {
+    channel: 'telegram',
+    accountId: 'default',
+    chatType: 'group',
+    peerId: 'peer-1',
+    senderId: 'sender-1',
+    text,
+    messageId,
+    mentionedBot: true,
+  };
+}
 
 /** Create a mock Query object with an interrupt() method */
 function mockQuery(interruptFn?: () => Promise<void>) {
@@ -166,6 +180,37 @@ describe('QueueManager', () => {
     expect(interruptFn).toHaveBeenCalledOnce();
     expect(abort.signal.aborted).toBe(true);
     expect(qm.isActive('session-1')).toBe(false);
+  });
+
+  it('enqueue buffers messages and drainPending returns and clears them', () => {
+    const qm = new QueueManager();
+
+    expect(qm.drainPending('session-1')).toEqual([]);
+
+    qm.enqueue('session-1', fakeMessage('first', 'm1'));
+    qm.enqueue('session-1', fakeMessage('second', 'm2'));
+
+    const drained = qm.drainPending('session-1');
+    expect(drained.map((m) => m.text)).toEqual(['first', 'second']);
+
+    // Subsequent drain returns empty (state was cleared)
+    expect(qm.drainPending('session-1')).toEqual([]);
+  });
+
+  it('enqueue is per-session — sessions do not see each other\'s pending', () => {
+    const qm = new QueueManager();
+    qm.enqueue('session-a', fakeMessage('A1', 'a1'));
+    qm.enqueue('session-b', fakeMessage('B1', 'b1'));
+
+    expect(qm.drainPending('session-a').map((m) => m.text)).toEqual(['A1']);
+    expect(qm.drainPending('session-b').map((m) => m.text)).toEqual(['B1']);
+  });
+
+  it('stop() clears any pending messages', () => {
+    const qm = new QueueManager();
+    qm.enqueue('session-1', fakeMessage('lost', 'm1'));
+    qm.stop();
+    expect(qm.drainPending('session-1')).toEqual([]);
   });
 
   it('error in interrupt() does not throw for interrupt mode', async () => {

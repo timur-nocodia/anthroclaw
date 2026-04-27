@@ -7,7 +7,7 @@ import { Agent } from './agent/agent.js';
 import { RouteTable, type RouteEntry } from './routing/table.js';
 import { AccessControl } from './routing/access.js';
 import { buildSessionKey } from './routing/session-key.js';
-import { MessageDebouncer } from './routing/debounce.js';
+import { MessageDebouncer, mergeInboundMessages } from './routing/debounce.js';
 import { RateLimiter } from './routing/rate-limiter.js';
 import { QueueManager, type ActiveQueryView } from './routing/queue-manager.js';
 import { TelegramChannel } from './channels/telegram.js';
@@ -2342,7 +2342,11 @@ export class Gateway {
         return;
       }
       if (action === 'queued') {
-        logger.info({ sessionKey, queueMode }, 'Queue: message queued (collect mode)');
+        this.queueManager.enqueue(sessionKey, msg);
+        logger.info(
+          { sessionKey, queueMode },
+          'Queue: message buffered (collect mode); will run after active query completes',
+        );
         recordRouteDecision({
           outcome: 'queue_queued',
           candidates: routeCandidates,
@@ -2615,6 +2619,18 @@ export class Gateway {
       }
     } finally {
       if (typingInterval) clearInterval(typingInterval);
+      // Drain any messages that arrived during this query in collect mode and
+      // re-dispatch them as one merged turn — without this, "collect" silently
+      // drops follow-up messages instead of folding them into the next turn.
+      const queued = this.queueManager.drainPending(sessionKey);
+      if (queued.length > 0) {
+        const merged = mergeInboundMessages(queued);
+        logger.info(
+          { sessionKey, count: queued.length },
+          'Queue: draining buffered messages into a follow-up dispatch',
+        );
+        void this.dispatch(merged);
+      }
     }
   }
 

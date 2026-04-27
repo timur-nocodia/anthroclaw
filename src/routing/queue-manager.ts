@@ -1,4 +1,5 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
+import type { InboundMessage } from '../channels/types.js';
 
 type QueueMode = 'collect' | 'steer' | 'interrupt';
 
@@ -37,6 +38,12 @@ export interface ActiveQueryView {
 
 export class QueueManager {
   private active = new Map<string, ActiveQuery>();
+  /**
+   * Messages received during an active query in collect mode. Drained when the
+   * active query completes and re-dispatched as a single merged turn — this is
+   * what makes "collect" actually collect instead of silently dropping.
+   */
+  private pending = new Map<string, InboundMessage[]>();
 
   /** Register a running query for a session key */
   register(sessionKey: string, q: Query, abort: AbortController, metadata: ActiveQueryMetadata = {}): void {
@@ -56,6 +63,28 @@ export class QueueManager {
   /** Unregister when query completes */
   unregister(sessionKey: string): void {
     this.active.delete(sessionKey);
+  }
+
+  /**
+   * Buffer a message that arrived during an active collect-mode query.
+   * The caller is responsible for draining via {@link drainPending} once the
+   * active query completes and re-dispatching the merged result.
+   */
+  enqueue(sessionKey: string, msg: InboundMessage): void {
+    const list = this.pending.get(sessionKey) ?? [];
+    list.push(msg);
+    this.pending.set(sessionKey, list);
+  }
+
+  /**
+   * Return and clear all messages buffered for this session via
+   * {@link enqueue}. Returns an empty array if nothing was buffered.
+   */
+  drainPending(sessionKey: string): InboundMessage[] {
+    const list = this.pending.get(sessionKey);
+    if (!list) return [];
+    this.pending.delete(sessionKey);
+    return list;
   }
 
   /** Check if there's an active query for this session */
@@ -137,6 +166,7 @@ export class QueueManager {
       entry.abortController.abort();
       this.active.delete(key);
     }
+    this.pending.clear();
   }
 }
 

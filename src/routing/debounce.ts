@@ -53,26 +53,7 @@ export class MessageDebouncer {
   }
 
   private merge(messages: InboundMessage[]): InboundMessage {
-    if (messages.length === 1) return messages[0];
-
-    const first = messages[0];
-    const last = messages[messages.length - 1];
-
-    const textParts: string[] = [];
-    let media = first.media;
-
-    for (const m of messages) {
-      if (m.text) textParts.push(m.text);
-      if (m.media) media = m.media;
-    }
-
-    return {
-      ...first,
-      text: textParts.join('\n'),
-      messageId: last.messageId,
-      media,
-      mentionedBot: messages.some((m) => m.mentionedBot),
-    };
+    return mergeInboundMessages(messages);
   }
 
   stop(): void {
@@ -81,4 +62,38 @@ export class MessageDebouncer {
     }
     this.pending.clear();
   }
+}
+
+/**
+ * Merge a list of inbound messages into one. Concatenates text with newlines,
+ * uses the last messageId (so reactions / replies attach to the most recent
+ * message), and preserves media + the mentionedBot flag if any input had it.
+ *
+ * Shared by the debouncer (in-window batching) and the queue manager
+ * (collect-mode drain after an active query completes).
+ */
+export function mergeInboundMessages(messages: InboundMessage[]): InboundMessage {
+  if (messages.length === 0) {
+    throw new Error('mergeInboundMessages requires at least one message');
+  }
+  if (messages.length === 1) return messages[0];
+
+  const first = messages[0];
+  const last = messages[messages.length - 1];
+
+  const textParts: string[] = [];
+  let media = first.media;
+
+  for (const m of messages) {
+    if (m.text) textParts.push(m.text);
+    if (m.media) media = m.media;
+  }
+
+  return {
+    ...first,
+    text: textParts.join('\n'),
+    messageId: last.messageId,
+    media,
+    mentionedBot: messages.some((m) => m.mentionedBot),
+  };
 }
