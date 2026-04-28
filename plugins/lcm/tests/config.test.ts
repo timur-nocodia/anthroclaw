@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ZodError } from 'zod';
-import { LCMConfigSchema, resolveConfig, type LCMConfig } from '../src/config.js';
+import { LCMConfigSchema, resolveConfig, toEngineConfig, type LCMConfig } from '../src/config.js';
 
 // ─── Schema defaults ──────────────────────────────────────────────────────────
 
@@ -283,5 +283,57 @@ describe('resolveConfig', () => {
     expect(_g).toBeDefined();
     expect(_t).toBeDefined();
     expect(_p).toBeInstanceOf(Array);
+  });
+});
+
+// ─── toEngineConfig ───────────────────────────────────────────────────────────
+
+describe('toEngineConfig', () => {
+  it('maps all LCMConfig fields to engine ResolvedLCMConfig correctly', () => {
+    const cfg = LCMConfigSchema.parse({
+      triggers: {
+        compress_threshold_tokens: 40_000,
+        fresh_tail_count: 64,
+        assembly_cap_tokens: 160_000,
+      },
+      escalation: {
+        l3_truncate_tokens: 512,
+        l2_budget_ratio: 0.5,
+      },
+      dag: {
+        condensation_fanin: 4,
+        cache_friendly_condensation: { enabled: false },
+      },
+      summarizer: {
+        dynamic_leaf_chunk: { enabled: false },
+      },
+    });
+    const ec = toEngineConfig(cfg);
+    // leafChunkTokens = floor(40_000 / 16) = 2500
+    expect(ec.leafChunkTokens).toBe(2500);
+    expect(ec.condensationFanin).toBe(4);
+    expect(ec.freshTailLength).toBe(64);
+    expect(ec.assemblyCapTokens).toBe(160_000);
+    // l3TruncateChars = 512 * 4 = 2048
+    expect(ec.l3TruncateChars).toBe(2048);
+    expect(ec.l2BudgetRatio).toBe(0.5);
+    expect(ec.dynamicLeafChunk).toBe(false);
+    expect(ec.cacheFriendlyCondensation).toBe(false);
+  });
+
+  it('dynamic leaf chunk and cache friendly condensation set to true when enabled', () => {
+    const cfg = LCMConfigSchema.parse({
+      summarizer: { dynamic_leaf_chunk: { enabled: true } },
+      dag: { cache_friendly_condensation: { enabled: true } },
+    });
+    const ec = toEngineConfig(cfg);
+    expect(ec.dynamicLeafChunk).toBe(true);
+    expect(ec.cacheFriendlyCondensation).toBe(true);
+  });
+
+  it('custom compress_threshold_tokens produces correct leafChunkTokens', () => {
+    const cfg = LCMConfigSchema.parse({ triggers: { compress_threshold_tokens: 32_000 } });
+    const ec = toEngineConfig(cfg);
+    expect(ec.leafChunkTokens).toBe(2000);
   });
 });

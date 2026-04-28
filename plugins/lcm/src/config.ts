@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { ResolvedLCMConfig as EngineConfig } from './engine.js';
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -104,6 +105,34 @@ function deepMerge<T extends Record<string, unknown>>(
     }
   }
   return out as T;
+}
+
+// ─── toEngineConfig ───────────────────────────────────────────────────────────
+
+/**
+ * Flatten the rich LCMConfig into the engine's narrower ResolvedLCMConfig shape.
+ *
+ * Field mapping:
+ *   leafChunkTokens          ← floor(triggers.compress_threshold_tokens / 16) (default: ~2500)
+ *   condensationFanin        ← dag.condensation_fanin
+ *   freshTailLength          ← triggers.fresh_tail_count
+ *   assemblyCapTokens        ← triggers.assembly_cap_tokens
+ *   l3TruncateChars          ← escalation.l3_truncate_tokens * 4 (rough char-from-token conversion)
+ *   l2BudgetRatio            ← escalation.l2_budget_ratio
+ *   dynamicLeafChunk         ← summarizer.dynamic_leaf_chunk.enabled
+ *   cacheFriendlyCondensation ← dag.cache_friendly_condensation.enabled
+ */
+export function toEngineConfig(c: LCMConfig): EngineConfig {
+  return {
+    leafChunkTokens: Math.floor(c.triggers.compress_threshold_tokens / 16),
+    condensationFanin: c.dag.condensation_fanin,
+    freshTailLength: c.triggers.fresh_tail_count,
+    assemblyCapTokens: c.triggers.assembly_cap_tokens,
+    l3TruncateChars: c.escalation.l3_truncate_tokens * 4,
+    l2BudgetRatio: c.escalation.l2_budget_ratio,
+    dynamicLeafChunk: c.summarizer.dynamic_leaf_chunk.enabled,
+    cacheFriendlyCondensation: c.dag.cache_friendly_condensation.enabled,
+  };
 }
 
 // ─── resolveConfig ────────────────────────────────────────────────────────────
