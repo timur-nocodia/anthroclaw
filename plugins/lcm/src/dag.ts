@@ -330,6 +330,24 @@ export class SummaryDAG {
   }
 
   /**
+   * Count summary nodes grouped by depth for a given session.
+   * Returns a map of depth → count.
+   */
+  countByDepth(sessionId: string): Record<number, number> {
+    const rows = this._db
+      .prepare(
+        `SELECT depth, COUNT(*) AS c FROM summary_nodes WHERE session_id = ? GROUP BY depth`
+      )
+      .all(sessionId) as Array<{ depth: number; c: number }>;
+
+    const out: Record<number, number> = {};
+    for (const r of rows) {
+      out[r.depth] = r.c;
+    }
+    return out;
+  }
+
+  /**
    * CRITICAL for lossless drill-down: walk down the subtree from nodeId
    * until reaching nodes with source_type='messages', then collect all
    * message store_ids. Returns a deduplicated, sorted ASC number array.

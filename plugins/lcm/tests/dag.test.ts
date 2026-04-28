@@ -521,7 +521,7 @@ describe('SummaryDAG', () => {
   });
 
   // ── 30. immutability: only expected methods on prototype ──────────────────
-  it('SummaryDAG prototype exposes exactly the 11 public methods + constructor', () => {
+  it('SummaryDAG prototype exposes exactly the 12 public methods + constructor', () => {
     const proto = SummaryDAG.prototype;
     const methods = Object.getOwnPropertyNames(proto).filter((m) => m !== 'constructor');
     const expected = new Set([
@@ -536,6 +536,7 @@ describe('SummaryDAG', () => {
       'findOrphans',
       'walkSubtree',
       'collectLeafMessageIds',
+      'countByDepth',
     ]);
     // No extra public methods
     const unexpectedPublic = methods.filter((m) => !m.startsWith('_') && !expected.has(m));
@@ -544,5 +545,26 @@ describe('SummaryDAG', () => {
     expected.forEach((m) => {
       expect(proto).toHaveProperty(m);
     });
+  });
+
+  // ── 31. countByDepth returns correct depth → count map ───────────────────
+  it('countByDepth returns correct depth → count mapping', () => {
+    const sess = 'count-depth-sess';
+    // Create 3 D0 nodes, 2 D1 nodes, 1 D2 node
+    dag.create(newNode({ session_id: sess, depth: 0 }));
+    dag.create(newNode({ session_id: sess, depth: 0 }));
+    dag.create(newNode({ session_id: sess, depth: 0 }));
+    dag.create(newNode({ session_id: sess, depth: 1, source_type: 'nodes', source_ids: [] }));
+    dag.create(newNode({ session_id: sess, depth: 1, source_type: 'nodes', source_ids: [] }));
+    dag.create(newNode({ session_id: sess, depth: 2, source_type: 'nodes', source_ids: [] }));
+
+    const counts = dag.countByDepth(sess);
+    expect(counts[0]).toBe(3);
+    expect(counts[1]).toBe(2);
+    expect(counts[2]).toBe(1);
+
+    // Different session should return empty
+    const otherCounts = dag.countByDepth('other-sess');
+    expect(Object.keys(otherCounts)).toHaveLength(0);
   });
 });
