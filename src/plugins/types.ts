@@ -1,5 +1,6 @@
 // src/plugins/types.ts
 import type { z } from 'zod';
+import type { HookEvent } from '../hooks/emitter.js';
 
 /**
  * Manifest, как он лежит в plugins/{name}/.claude-plugin/plugin.json
@@ -50,13 +51,7 @@ export interface PluginContext {
   getGlobalConfig(): unknown;                    // Returns GlobalConfig
 }
 
-export type HookEvent =
-  | 'on_message_received'
-  | 'on_before_query'
-  | 'on_after_query'
-  | 'on_session_reset'
-  | 'on_tool_use'
-  | 'on_tool_result';
+export type { HookEvent } from '../hooks/emitter.js';
 
 export type HookHandler = (payload: Record<string, unknown>) => void | Promise<void>;
 
@@ -113,7 +108,7 @@ export interface CompressInput {
   currentTokens: number;
 }
 export interface CompressResult {
-  assembled: unknown[];
+  messages: unknown[];           // transformed prompt
 }
 
 export interface ShouldCompressInput {

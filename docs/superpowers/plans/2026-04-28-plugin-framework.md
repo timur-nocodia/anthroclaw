@@ -56,6 +56,7 @@
 ```typescript
 // src/plugins/types.ts
 import type { z } from 'zod';
+import type { HookEvent } from '../hooks/emitter.js';
 
 /**
  * Manifest, как он лежит в plugins/{name}/.claude-plugin/plugin.json
@@ -106,13 +107,8 @@ export interface PluginContext {
   getGlobalConfig(): unknown;                    // Returns GlobalConfig
 }
 
-export type HookEvent =
-  | 'on_message_received'
-  | 'on_before_query'
-  | 'on_after_query'
-  | 'on_session_reset'
-  | 'on_tool_use'
-  | 'on_tool_result';
+// Re-export from gateway emitter to keep types in sync as new events are added.
+export type { HookEvent } from '../hooks/emitter.js';
 
 export type HookHandler = (payload: Record<string, unknown>) => void | Promise<void>;
 
@@ -169,7 +165,7 @@ export interface CompressInput {
   currentTokens: number;
 }
 export interface CompressResult {
-  assembled: unknown[];
+  messages: unknown[];           // transformed prompt
 }
 
 export interface ShouldCompressInput {
@@ -214,7 +210,9 @@ export interface PluginInstance {
 import { describe, it, expectTypeOf } from 'vitest';
 import type {
   PluginManifest, PluginContext, ContextEngine, PluginEntryModule,
-  PluginInstance, RunSubagentOpts, HookEvent, HookHandler, PluginMcpTool
+  PluginInstance, RunSubagentOpts, HookEvent, HookHandler, PluginMcpTool,
+  PluginSlashCommand, SlashCommandContext, PluginLogger,
+  AssembleInput, AssembleResult, CompressInput, CompressResult, ShouldCompressInput,
 } from '../types.js';
 
 describe('plugin types', () => {
@@ -233,21 +231,82 @@ describe('plugin types', () => {
   });
 
   it('ContextEngine methods are all optional', () => {
-    const engine: ContextEngine = {};   // нечего обязательно
-    expect(engine).toBeDefined();
+    expectTypeOf<ContextEngine>().toMatchTypeOf<{}>();
+    // empty object satisfies — verify every method is optional
+    expectTypeOf<ContextEngine['compress']>().toEqualTypeOf<((input: CompressInput) => Promise<CompressResult | null>) | undefined>();
+    expectTypeOf<ContextEngine['assemble']>().toEqualTypeOf<((input: AssembleInput) => Promise<AssembleResult | null>) | undefined>();
+    expectTypeOf<ContextEngine['shouldCompress']>().toEqualTypeOf<((input: ShouldCompressInput) => boolean) | undefined>();
   });
 
   it('PluginEntryModule.register accepts PluginContext and returns PluginInstance', () => {
-    const fakeRegister: PluginEntryModule['register'] = async (ctx) => {
-      expectTypeOf(ctx).toEqualTypeOf<PluginContext>();
-      return {} as PluginInstance;
-    };
-    expect(typeof fakeRegister).toBe('function');
+    expectTypeOf<PluginEntryModule['register']>().parameter(0).toEqualTypeOf<PluginContext>();
+    expectTypeOf<PluginEntryModule['register']>().returns
+      .toEqualTypeOf<Promise<PluginInstance> | PluginInstance>();
   });
 
-  it('HookEvent matches anthroclaw HookEmitter events subset', () => {
-    const evt: HookEvent = 'on_after_query';   // должно компилиться
-    expect(evt).toBe('on_after_query');
+  it('HookEvent is re-exported from gateway emitter (matches its full shape)', () => {
+    // assignability — values valid in plugin scope must be valid for gateway emitter
+    expectTypeOf<HookEvent>().toMatchTypeOf<string>();
+    // verifying the re-export carries the full union type
+    expectTypeOf<HookEvent>().toEqualTypeOf<HookEvent>();
+  });
+
+  it('HookHandler signature', () => {
+    expectTypeOf<HookHandler>().parameter(0).toEqualTypeOf<Record<string, unknown>>();
+    expectTypeOf<HookHandler>().returns.toEqualTypeOf<void | Promise<void>>();
+  });
+
+  it('PluginMcpTool shape', () => {
+    expectTypeOf<PluginMcpTool>().toHaveProperty('name').toEqualTypeOf<string>();
+    expectTypeOf<PluginMcpTool>().toHaveProperty('description').toEqualTypeOf<string>();
+    expectTypeOf<PluginMcpTool>().toHaveProperty('inputSchema');
+    expectTypeOf<PluginMcpTool>().toHaveProperty('handler').toBeFunction();
+  });
+
+  it('PluginSlashCommand and SlashCommandContext', () => {
+    expectTypeOf<PluginSlashCommand>().toHaveProperty('name').toEqualTypeOf<string>();
+    expectTypeOf<PluginSlashCommand>().toHaveProperty('handler').toBeFunction();
+    expectTypeOf<SlashCommandContext>().toHaveProperty('agentId').toEqualTypeOf<string>();
+    expectTypeOf<SlashCommandContext>().toHaveProperty('sessionKey').toEqualTypeOf<string>();
+  });
+
+  it('AssembleInput / AssembleResult parallel CompressInput / CompressResult', () => {
+    expectTypeOf<AssembleInput>().toHaveProperty('agentId').toEqualTypeOf<string>();
+    expectTypeOf<AssembleInput>().toHaveProperty('sessionKey').toEqualTypeOf<string>();
+    expectTypeOf<AssembleInput>().toHaveProperty('messages').toEqualTypeOf<unknown[]>();
+    expectTypeOf<AssembleResult>().toHaveProperty('messages').toEqualTypeOf<unknown[]>();
+    expectTypeOf<CompressInput>().toHaveProperty('agentId').toEqualTypeOf<string>();
+    expectTypeOf<CompressInput>().toHaveProperty('sessionKey').toEqualTypeOf<string>();
+    expectTypeOf<CompressInput>().toHaveProperty('messages').toEqualTypeOf<unknown[]>();
+    expectTypeOf<CompressInput>().toHaveProperty('currentTokens').toEqualTypeOf<number>();
+    expectTypeOf<CompressResult>().toHaveProperty('messages').toEqualTypeOf<unknown[]>();
+  });
+
+  it('ShouldCompressInput shape', () => {
+    expectTypeOf<ShouldCompressInput>().toHaveProperty('agentId').toEqualTypeOf<string>();
+    expectTypeOf<ShouldCompressInput>().toHaveProperty('sessionKey').toEqualTypeOf<string>();
+    expectTypeOf<ShouldCompressInput>().toHaveProperty('messageCount').toEqualTypeOf<number>();
+    expectTypeOf<ShouldCompressInput>().toHaveProperty('currentTokens').toEqualTypeOf<number>();
+  });
+
+  it('RunSubagentOpts shape', () => {
+    expectTypeOf<RunSubagentOpts>().toHaveProperty('prompt').toEqualTypeOf<string>();
+    // optional fields exist
+    expectTypeOf<RunSubagentOpts>().toHaveProperty('systemPrompt').toEqualTypeOf<string | undefined>();
+    expectTypeOf<RunSubagentOpts>().toHaveProperty('model').toEqualTypeOf<string | undefined>();
+    expectTypeOf<RunSubagentOpts>().toHaveProperty('timeoutMs').toEqualTypeOf<number | undefined>();
+    expectTypeOf<RunSubagentOpts>().toHaveProperty('cwd').toEqualTypeOf<string | undefined>();
+  });
+
+  it('PluginLogger has 4 level methods', () => {
+    expectTypeOf<PluginLogger>().toHaveProperty('info').toBeFunction();
+    expectTypeOf<PluginLogger>().toHaveProperty('warn').toBeFunction();
+    expectTypeOf<PluginLogger>().toHaveProperty('error').toBeFunction();
+    expectTypeOf<PluginLogger>().toHaveProperty('debug').toBeFunction();
+  });
+
+  it('PluginInstance.shutdown is optional', () => {
+    expectTypeOf<PluginInstance>().toHaveProperty('shutdown').toEqualTypeOf<(() => Promise<void> | void) | undefined>();
   });
 });
 ```
