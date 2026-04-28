@@ -11,6 +11,7 @@ import {
   startPluginsWatcher,
   type DiscoveredPlugin,
   type PluginsWatcher,
+  type ContextEngine,
 } from './plugins/index.js';
 
 const ANTHROCLAW_VERSION = (() => {
@@ -435,6 +436,50 @@ function streamingUserPrompt(prompt: string): AsyncIterable<SDKUserMessage> {
     // rewindFiles() remain available until the checkpoint registry closes it.
     await new Promise<void>(() => {});
   })();
+}
+
+/**
+ * Attempt to delegate auto-compression to a plugin's ContextEngine.
+ *
+ * Returns `true` iff the plugin successfully produced a `CompressResult` —
+ * caller MUST skip the legacy summarize/clear/emit/💾 flow in that case.
+ * In all other paths (no engine, engine without `.compress`, engine returns
+ * `null`, engine throws) returns `false` and caller falls back to legacy.
+ *
+ * Failures are logged and swallowed; this never throws.
+ *
+ * Exported for unit testing — see src/plugins/__tests__/compressor-delegation.test.ts.
+ */
+export async function tryPluginCompress(
+  engine: ContextEngine | null,
+  agentId: string,
+  sessionKey: string,
+): Promise<boolean> {
+  if (!engine?.compress) return false;
+  try {
+    const result = await engine.compress({
+      agentId,
+      sessionKey,
+      // gateway has no in-memory message list at this seam; LCM uses its own
+      // state populated via on_after_query mirror hook (T19 design).
+      messages: [],
+      currentTokens: 0,
+    });
+    if (result) {
+      logger.info(
+        { agentId, sessionKey },
+        'plugin context-engine compress succeeded; legacy bypassed',
+      );
+      return true;
+    }
+    return false;
+  } catch (err) {
+    logger.warn(
+      { err, agentId, sessionKey },
+      'plugin context-engine compress failed; fallback to legacy',
+    );
+    return false;
+  }
 }
 
 export class Gateway {
@@ -2862,15 +2907,26 @@ export class Gateway {
         const msgCount = agent.getMessageCount(sessionKey) * 2;
         if (compressor.shouldCompress(msgCount) && agent.getSessionId(sessionKey)) {
           logger.info({ agentId: route.agentId, sessionKey, msgCount }, 'Auto-compressing session');
-          await this.summarizeAndSaveSession(agent, sessionKey);
-          agent.clearSession(sessionKey);
-          if (emitter) {
-            void emitter.emit('on_session_reset', { agentId: route.agentId, sessionKey, reason: 'auto_compress' });
-          }
-          if (channel) {
-            await channel.sendText(msg.peerId, '💾 Context compressed. Summary saved to memory.', {
-              accountId: msg.accountId, threadId: msg.threadId,
-            });
+
+          // Plugin context-engine delegation (T20): if a plugin's ContextEngine
+          // successfully compresses, skip the legacy memory-write + session-clear
+          // flow. The plugin updates its own DAG internally; T21 (assemble) will
+          // inject context at the next query(). NOTE: cannot `return` here — we
+          // must still run prefetch + finally{} queue drain below.
+          const lcm = this.pluginRegistry.getContextEngine(route.agentId);
+          const pluginHandledCompression = await tryPluginCompress(lcm, route.agentId, sessionKey);
+
+          if (!pluginHandledCompression) {
+            await this.summarizeAndSaveSession(agent, sessionKey);
+            agent.clearSession(sessionKey);
+            if (emitter) {
+              void emitter.emit('on_session_reset', { agentId: route.agentId, sessionKey, reason: 'auto_compress' });
+            }
+            if (channel) {
+              await channel.sendText(msg.peerId, '💾 Context compressed. Summary saved to memory.', {
+                accountId: msg.accountId, threadId: msg.threadId,
+              });
+            }
           }
         }
       }
