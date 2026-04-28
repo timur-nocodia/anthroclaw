@@ -1,6 +1,19 @@
 import { readdirSync, existsSync, readFileSync } from 'node:fs';
-import { join, isAbsolute, resolve } from 'node:path';
+import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
+import { discoverPlugins, loadPlugin } from './plugins/loader.js';
+import { createPluginContext } from './plugins/context.js';
+import { PluginRegistry } from './plugins/registry.js';
+
+const ANTHROCLAW_VERSION = (() => {
+  try {
+    const pkgPath = joinPath(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+    return (JSON.parse(readFileSync(pkgPath, 'utf-8')) as Record<string, unknown>).version as string ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+})();
 import { query, startup } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent/agent.js';
@@ -445,8 +458,9 @@ export class Gateway {
   private controlRegistry = new SdkControlRegistry();
   private subagentRegistry = new SdkSubagentRegistry();
   private fileOwnershipRegistry = new FileOwnershipRegistry();
+  public pluginRegistry: PluginRegistry = new PluginRegistry();
 
-  async start(config: GlobalConfig, agentsDir: string, dataDir: string): Promise<void> {
+  async start(config: GlobalConfig, agentsDir: string, dataDir: string, pluginsDir?: string): Promise<void> {
     this.startedAt = Date.now();
     this.globalConfig = config;
     this.agentsDir = agentsDir;
@@ -500,6 +514,54 @@ export class Gateway {
     }
 
     this.rebuildHookEmitters();
+
+    // ─── Plugin discovery & registration ────────────────────────────
+    this.pluginRegistry = new PluginRegistry();
+    const resolvedPluginsDir = pluginsDir ?? joinPath(dataDir, '..', 'plugins');
+    const discovered = await discoverPlugins(resolvedPluginsDir);
+    for (const d of discovered) {
+      try {
+        const mod = await loadPlugin(d, { anthroclawVersion: ANTHROCLAW_VERSION });
+        const ctx = createPluginContext({
+          pluginName: d.manifest.name,
+          pluginVersion: d.manifest.version,
+          dataDir: joinPath(dataDir, d.manifest.name),
+          rootLogger: logger,
+          hookEmitterFor: (agentId: string) => this.hookEmitters.get(agentId) ?? null,
+          registerTool: (pluginTool) => this.pluginRegistry.addToolFromPlugin(d.manifest.name, pluginTool),
+          registerEngine: (name, engine) => this.pluginRegistry.addEngineFromPlugin(name, engine),
+          registerCommand: (cmd) => this.pluginRegistry.addCommandFromPlugin(d.manifest.name, cmd),
+          getAgentConfig: (id: string) => this.agents.get(id)?.config,
+          getGlobalConfig: () => this.globalConfig,
+          listAgentIds: () => [...this.agents.keys()],
+        });
+        const instance = await mod.register(ctx);
+        this.pluginRegistry.addPlugin(d.manifest.name, { manifest: d.manifest, instance });
+        logger.info({ plugin: d.manifest.name, version: d.manifest.version }, 'plugin loaded');
+      } catch (err) {
+        logger.error({ err, plugin: d.manifest.name }, 'failed to load plugin');
+      }
+    }
+
+    // Apply per-agent plugin enables and refresh MCP servers with plugin tools
+    for (const [agentId, agent] of this.agents) {
+      const pluginsCfg = (agent.config as { plugins?: Record<string, { enabled?: boolean }> }).plugins ?? {};
+      for (const [pluginName, cfg] of Object.entries(pluginsCfg)) {
+        if (cfg?.enabled) {
+          try {
+            this.pluginRegistry.enableForAgent(agentId, pluginName);
+            logger.info({ agentId, plugin: pluginName }, 'plugin enabled for agent');
+          } catch (err) {
+            logger.warn({ agentId, plugin: pluginName, err }, 'failed to enable plugin for agent');
+          }
+        }
+      }
+      const pluginTools = this.pluginRegistry.getMcpToolsForAgent(agentId);
+      if (pluginTools.length > 0) {
+        agent.refreshPluginTools(pluginTools);
+        logger.info({ agentId, pluginToolCount: pluginTools.length }, 'plugin tools added to agent MCP server');
+      }
+    }
 
     for (const agent of this.agents.values()) {
       void this.prewarmAgent(agent);
@@ -666,6 +728,16 @@ export class Gateway {
     this.subagentRegistry.clear();
     this.routeTable = null;
     this.accessControl = null;
+
+    // Shutdown plugins
+    for (const entry of this.pluginRegistry.listPlugins()) {
+      try {
+        await entry.instance.shutdown?.();
+      } catch (err) {
+        logger.warn({ err, plugin: entry.manifest.name }, 'plugin shutdown error');
+      }
+    }
+    this.pluginRegistry = new PluginRegistry();
   }
 
   private buildUserQueryOptions(
@@ -2064,6 +2136,24 @@ export class Gateway {
     this.rebuildHookEmitters();
     for (const agentId of removed) {
       this.subagentRegistry.clearAgent(agentId);
+    }
+
+    // Re-apply plugin tools to (re)loaded agents
+    for (const [agentId, agent] of this.agents) {
+      const pluginsCfg = (agent.config as { plugins?: Record<string, { enabled?: boolean }> }).plugins ?? {};
+      for (const [pluginName, cfg] of Object.entries(pluginsCfg)) {
+        if (cfg?.enabled && !this.pluginRegistry.isEnabledFor(agentId, pluginName)) {
+          try {
+            this.pluginRegistry.enableForAgent(agentId, pluginName);
+          } catch {
+            // plugin may no longer exist — ignore
+          }
+        }
+      }
+      const pluginTools = this.pluginRegistry.getMcpToolsForAgent(agentId);
+      if (pluginTools.length > 0) {
+        agent.refreshPluginTools(pluginTools);
+      }
     }
 
     this.warmQueries.closeAll();

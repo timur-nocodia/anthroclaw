@@ -7,6 +7,7 @@ import { logger } from './logger.js';
 const configPath = process.argv[2] ?? './config.yml';
 const agentsDir = process.argv[3] ?? './agents';
 const dataDir = process.argv[4] ?? './data';
+const pluginsDir = process.argv[5] ?? './plugins';
 
 async function main() {
   const config = loadGlobalConfig(resolve(configPath));
@@ -22,7 +23,7 @@ async function main() {
     process.exit(0);
   });
 
-  await gateway.start(config, resolve(agentsDir), resolve(dataDir));
+  await gateway.start(config, resolve(agentsDir), resolve(dataDir), resolve(pluginsDir));
 }
 
 main().catch((err) => {
