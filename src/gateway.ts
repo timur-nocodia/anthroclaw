@@ -487,6 +487,98 @@ export async function tryPluginCompress(
   }
 }
 
+/**
+ * Flatten an LCM-style message array down to a single string the gateway
+ * can pass into `query()` as a `prompt: string`.
+ *
+ * Convention:
+ *   - non-`user` roles become labeled context lines wrapped in a single
+ *     `<lcm-context>...</lcm-context>` block (mirrors the gateway's existing
+ *     `<memory-context>` pattern at the prefetch seam).
+ *   - `user` role(s) are appended as the actual prompt body, joined by
+ *     blank lines if there is more than one.
+ *   - malformed entries (non-objects, missing/non-string content) are
+ *     skipped silently.
+ *   - empty / all-skipped input → returns `''`. Caller should treat empty
+ *     as "no transform" and pass the original prompt through.
+ *
+ * Exported for unit testing.
+ */
+export function flattenAssembledMessages(messages: unknown[]): string {
+  if (!Array.isArray(messages) || messages.length === 0) return '';
+  const userTurns: string[] = [];
+  const contextBlocks: string[] = [];
+  for (const raw of messages) {
+    if (!raw || typeof raw !== 'object') continue;
+    const m = raw as { role?: unknown; content?: unknown };
+    if (typeof m.content !== 'string') continue;
+    if (m.role === 'user') {
+      userTurns.push(m.content);
+    } else {
+      const role = typeof m.role === 'string' ? m.role : 'context';
+      contextBlocks.push(`[${role}]: ${m.content}`);
+    }
+  }
+  if (contextBlocks.length === 0 && userTurns.length === 0) return '';
+  if (contextBlocks.length === 0) return userTurns.join('\n\n');
+  const ctx = `<lcm-context>\n${contextBlocks.join('\n')}\n</lcm-context>`;
+  return userTurns.length === 0 ? ctx : `${ctx}\n\n${userTurns.join('\n\n')}`;
+}
+
+/**
+ * Attempt to delegate prompt assembly to a plugin's ContextEngine.
+ *
+ * Returns the assembled prompt string, or `null` if the plugin did not
+ * transform the prompt (no engine, no `.assemble` method, returned null
+ * or empty/malformed messages, or threw). Caller falls back to the
+ * original prompt in those cases.
+ *
+ * Failures are logged and swallowed; this never throws.
+ *
+ * @internal
+ * Exported for unit testing — see src/plugins/__tests__/assemble-delegation.test.ts.
+ */
+export async function tryPluginAssemble(
+  engine: ContextEngine | null,
+  agentId: string,
+  sessionKey: string,
+  prompt: string,
+  pluginName: string | null = null,
+): Promise<string | null> {
+  if (!engine?.assemble) return null;
+  try {
+    const result = await engine.assemble({
+      agentId,
+      sessionKey,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    if (!result) return null;
+    const flattened = flattenAssembledMessages(result.messages);
+    if (!flattened) return null;
+    logger.info(
+      {
+        agentId,
+        sessionKey,
+        pluginName,
+        originalLen: prompt.length,
+        assembledLen: flattened.length,
+      },
+      'plugin context-engine assemble succeeded',
+    );
+    return flattened;
+  } catch (err) {
+    // Redact `err` before logging — a plugin's assemble() error may carry
+    // user message content, prompt fragments, or API response payloads in
+    // its message / .cause / stack frames. Pino would serialize the full
+    // object verbatim, so log shippers could exfiltrate secrets.
+    logger.warn(
+      { err: redactSecrets(String(err)), agentId, sessionKey, pluginName },
+      'plugin context-engine assemble failed; pass-through',
+    );
+    return null;
+  }
+}
+
 export class Gateway {
   private agents = new Map<string, Agent>();
   private channels = new Map<string, ChannelAdapter>();
@@ -3126,6 +3218,23 @@ export class Gateway {
           refs: memoryRefsFromSearchResults(prefetchedForPrompt),
         });
       }
+
+      // Plugin context-engine assemble (T21): if a plugin transforms the
+      // prompt (e.g. LCM injects compressed history context), use the
+      // transformed version. Otherwise pass the original prompt through
+      // unchanged. Failures fall back to the original prompt silently.
+      const assembleEntry = this.pluginRegistry.getContextEngine(agent.id);
+      const assembledPrompt = await tryPluginAssemble(
+        assembleEntry?.engine ?? null,
+        agent.id,
+        sessionKey,
+        prompt,
+        assembleEntry?.name ?? null,
+      );
+      if (assembledPrompt !== null) {
+        prompt = assembledPrompt;
+      }
+
       const result = this.startQuery(agent, prompt, options, existingSessionId);
       this.queueManager.register(sessionKey, result, abort, {
         traceId: runId,
