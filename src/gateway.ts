@@ -1,4 +1,5 @@
 import { readdirSync, existsSync, readFileSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
@@ -521,19 +522,25 @@ export class Gateway {
     const discovered = await discoverPlugins(resolvedPluginsDir);
     for (const d of discovered) {
       try {
+        const pluginDataDir = joinPath(dataDir, d.manifest.name);
+        await mkdir(pluginDataDir, { recursive: true });
         const mod = await loadPlugin(d, { anthroclawVersion: ANTHROCLAW_VERSION });
         const ctx = createPluginContext({
           pluginName: d.manifest.name,
           pluginVersion: d.manifest.version,
-          dataDir: joinPath(dataDir, d.manifest.name),
+          dataDir: pluginDataDir,
           rootLogger: logger,
-          hookEmitterFor: (agentId: string) => this.hookEmitters.get(agentId) ?? null,
+          registerHook: (pluginName, event, handler) => {
+            this.pluginRegistry.addHookFromPlugin(pluginName, event, handler);
+            for (const emitter of this.hookEmitters.values()) {
+              emitter.subscribe(event, handler);
+            }
+          },
           registerTool: (pluginTool) => this.pluginRegistry.addToolFromPlugin(d.manifest.name, pluginTool),
           registerEngine: (name, engine) => this.pluginRegistry.addEngineFromPlugin(name, engine),
           registerCommand: (cmd) => this.pluginRegistry.addCommandFromPlugin(d.manifest.name, cmd),
           getAgentConfig: (id: string) => this.agents.get(id)?.config,
           getGlobalConfig: () => this.globalConfig,
-          listAgentIds: () => [...this.agents.keys()],
         });
         const instance = await mod.register(ctx);
         this.pluginRegistry.addPlugin(d.manifest.name, { manifest: d.manifest, instance });
@@ -545,7 +552,7 @@ export class Gateway {
 
     // Apply per-agent plugin enables and refresh MCP servers with plugin tools
     for (const [agentId, agent] of this.agents) {
-      const pluginsCfg = (agent.config as { plugins?: Record<string, { enabled?: boolean }> }).plugins ?? {};
+      const pluginsCfg = agent.config.plugins ?? {};
       for (const [pluginName, cfg] of Object.entries(pluginsCfg)) {
         if (cfg?.enabled) {
           try {
@@ -557,8 +564,8 @@ export class Gateway {
         }
       }
       const pluginTools = this.pluginRegistry.getMcpToolsForAgent(agentId);
+      agent.refreshPluginTools(pluginTools);
       if (pluginTools.length > 0) {
-        agent.refreshPluginTools(pluginTools);
         logger.info({ agentId, pluginToolCount: pluginTools.length }, 'plugin tools added to agent MCP server');
       }
     }
@@ -719,6 +726,16 @@ export class Gateway {
     this.scheduler?.stop();
     this.scheduler = null;
 
+    // Shutdown plugins before clearing agent state so plugins can do final ops
+    for (const entry of this.pluginRegistry.listPlugins()) {
+      try {
+        await entry.instance.shutdown?.();
+      } catch (err) {
+        logger.warn({ err, plugin: entry.manifest.name }, 'plugin shutdown error');
+      }
+    }
+    this.pluginRegistry = new PluginRegistry();
+
     for (const [id, channel] of this.channels) {
       await channel.stop();
       logger.info({ channel: id }, 'Channel stopped');
@@ -728,16 +745,6 @@ export class Gateway {
     this.subagentRegistry.clear();
     this.routeTable = null;
     this.accessControl = null;
-
-    // Shutdown plugins
-    for (const entry of this.pluginRegistry.listPlugins()) {
-      try {
-        await entry.instance.shutdown?.();
-      } catch (err) {
-        logger.warn({ err, plugin: entry.manifest.name }, 'plugin shutdown error');
-      }
-    }
-    this.pluginRegistry = new PluginRegistry();
   }
 
   private buildUserQueryOptions(
@@ -2134,15 +2141,29 @@ export class Gateway {
     }
 
     this.rebuildHookEmitters();
+
+    // Re-subscribe all plugin hooks to the fresh emitters (C1: hooks were orphaned after rebuild)
+    for (const reg of this.pluginRegistry.listAllHooks()) {
+      for (const emitter of this.hookEmitters.values()) {
+        emitter.subscribe(reg.event, reg.handler);
+      }
+    }
+
     for (const agentId of removed) {
       this.subagentRegistry.clearAgent(agentId);
     }
 
-    // Re-apply plugin tools to (re)loaded agents
+    // Re-apply plugin enables/disables and refresh MCP servers for (re)loaded agents
     for (const [agentId, agent] of this.agents) {
-      const pluginsCfg = (agent.config as { plugins?: Record<string, { enabled?: boolean }> }).plugins ?? {};
+      const pluginsCfg = agent.config.plugins ?? {};
+      const desired = new Set<string>();
       for (const [pluginName, cfg] of Object.entries(pluginsCfg)) {
-        if (cfg?.enabled && !this.pluginRegistry.isEnabledFor(agentId, pluginName)) {
+        if (cfg?.enabled) desired.add(pluginName);
+      }
+
+      // Apply additions
+      for (const pluginName of desired) {
+        if (!this.pluginRegistry.isEnabledFor(agentId, pluginName)) {
           try {
             this.pluginRegistry.enableForAgent(agentId, pluginName);
           } catch {
@@ -2150,10 +2171,17 @@ export class Gateway {
           }
         }
       }
-      const pluginTools = this.pluginRegistry.getMcpToolsForAgent(agentId);
-      if (pluginTools.length > 0) {
-        agent.refreshPluginTools(pluginTools);
+
+      // Apply removals (C2: enabled:true → false was never applied without restart)
+      for (const { manifest } of this.pluginRegistry.listPlugins()) {
+        if (this.pluginRegistry.isEnabledFor(agentId, manifest.name) && !desired.has(manifest.name)) {
+          this.pluginRegistry.disableForAgent(agentId, manifest.name);
+        }
       }
+
+      // Always refresh MCP server — even empty array correctly resets to built-in-only
+      const pluginTools = this.pluginRegistry.getMcpToolsForAgent(agentId);
+      agent.refreshPluginTools(pluginTools);
     }
 
     this.warmQueries.closeAll();

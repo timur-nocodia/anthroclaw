@@ -93,6 +93,9 @@ export const GlobalConfigSchema = z.object({
   }).optional(),
   webhooks: z.record(z.string(), DirectWebhookSchema).optional(),
   features: FeatureFlagsSchema,
+  plugins: z.record(z.string(), z.object({
+    defaults: z.record(z.string(), z.unknown()).optional(),
+  }).passthrough()).optional(),
 });
 
 // ─── RouteSchema ───────────────────────────────────────────────────

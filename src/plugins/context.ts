@@ -9,7 +9,6 @@ import type {
   PluginLogger,
 } from './types.js';
 import { runSubagent as runSubagentImpl } from './subagent-runner.js';
-import type { HookEmitter } from '../hooks/emitter.js';
 
 export interface ContextDeps {
   pluginName: string;
@@ -19,8 +18,11 @@ export interface ContextDeps {
   /** Root pino-style logger — child adds { plugin: name } to every log entry. */
   rootLogger: PluginLogger;
 
-  /** Returns HookEmitter for a specific agent, or null if not found. */
-  hookEmitterFor(agentId: string): HookEmitter | null;
+  /**
+   * Store a hook registration and subscribe to all current agent emitters.
+   * Gateway-provided callback — handles both persistence and fan-out.
+   */
+  registerHook(pluginName: string, event: HookEvent, handler: HookHandler): void;
 
   /** Register an MCP tool in the plugin registry — it will be served to agents via per-agent MCP server. */
   registerTool(tool: PluginMcpTool): void;
@@ -33,9 +35,6 @@ export interface ContextDeps {
 
   getAgentConfig(agentId: string): unknown;
   getGlobalConfig(): unknown;
-
-  /** List all agent IDs for global hook registrations. */
-  listAgentIds(): string[];
 }
 
 export function createPluginContext(deps: ContextDeps): PluginContext {
@@ -60,12 +59,10 @@ export function createPluginContext(deps: ContextDeps): PluginContext {
     logger: childLogger,
 
     registerHook(event: HookEvent, handler: HookHandler): void {
-      // Hook is registered on ALL existing agent emitters.
-      // When a new agent is created, the gateway resubscribes plugin hooks (see Task 8).
-      for (const agentId of deps.listAgentIds()) {
-        const emitter = deps.hookEmitterFor(agentId);
-        if (emitter) emitter.subscribe(event, handler);
-      }
+      // Delegate entirely to the gateway-provided callback which:
+      // 1. Persists the registration in PluginRegistry (for hot-reload resubscription).
+      // 2. Subscribes handler to all current agent emitters immediately.
+      deps.registerHook(deps.pluginName, event, handler);
     },
 
     registerMcpTool(tool: PluginMcpTool): void {

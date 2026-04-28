@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import { PluginRegistry } from '../registry.js';
 import type { ContextEngine, PluginMcpTool } from '../types.js';
@@ -109,5 +109,47 @@ describe('PluginRegistry', () => {
     reg.addCommandFromPlugin('lcm', { name: 'cmd1', description: 'd', handler: async () => 'ok' });
     reg.addCommandFromPlugin('lcm', { name: 'cmd2', description: 'd', handler: async () => 'ok' });
     expect(reg.listSlashCommands()).toHaveLength(2);
+  });
+
+  // ─── Hook registration (C1 regression) ───────────────────────────
+
+  it('addHookFromPlugin and listAllHooks track registrations', () => {
+    const reg = new PluginRegistry();
+    reg.addPlugin('lcm', { manifest: { name: 'lcm', version: '0.1.0', entry: 'x' } as never, instance: {} });
+    const handler1 = vi.fn();
+    const handler2 = vi.fn();
+    reg.addHookFromPlugin('lcm', 'on_after_query', handler1);
+    reg.addHookFromPlugin('lcm', 'on_before_query', handler2);
+    const all = reg.listAllHooks();
+    expect(all).toHaveLength(2);
+    expect(all[0]).toEqual({ pluginName: 'lcm', event: 'on_after_query', handler: handler1 });
+    expect(all[1]).toEqual({ pluginName: 'lcm', event: 'on_before_query', handler: handler2 });
+  });
+
+  it('listAllHooks returns empty when no hooks registered', () => {
+    const reg = new PluginRegistry();
+    expect(reg.listAllHooks()).toEqual([]);
+  });
+
+  it('removePlugin clears its hook registrations', () => {
+    const reg = new PluginRegistry();
+    reg.addPlugin('lcm', { manifest: { name: 'lcm', version: '0.1.0', entry: 'x' } as never, instance: {} });
+    reg.addHookFromPlugin('lcm', 'on_after_query', vi.fn());
+    reg.removePlugin('lcm');
+    expect(reg.listAllHooks()).toEqual([]);
+  });
+
+  it('listAllHooks aggregates hooks from multiple plugins', () => {
+    const reg = new PluginRegistry();
+    reg.addPlugin('plugin-a', { manifest: { name: 'plugin-a', version: '0.1.0', entry: 'x' } as never, instance: {} });
+    reg.addPlugin('plugin-b', { manifest: { name: 'plugin-b', version: '0.1.0', entry: 'x' } as never, instance: {} });
+    const handlerA = vi.fn();
+    const handlerB = vi.fn();
+    reg.addHookFromPlugin('plugin-a', 'on_message_received', handlerA);
+    reg.addHookFromPlugin('plugin-b', 'on_after_query', handlerB);
+    const all = reg.listAllHooks();
+    expect(all).toHaveLength(2);
+    expect(all.find(h => h.pluginName === 'plugin-a')?.event).toBe('on_message_received');
+    expect(all.find(h => h.pluginName === 'plugin-b')?.event).toBe('on_after_query');
   });
 });

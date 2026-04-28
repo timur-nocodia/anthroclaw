@@ -9,15 +9,12 @@ function mkDeps(): ContextDeps {
     pluginVersion: '0.1.0',
     dataDir: '/tmp/test-plugin',
     rootLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
-    hookEmitterFor: vi.fn().mockReturnValue({
-      subscribe: vi.fn().mockReturnValue(() => {}),
-    }),
+    registerHook: vi.fn(),
     registerTool: vi.fn(),
     registerEngine: vi.fn(),
     registerCommand: vi.fn(),
     getAgentConfig: vi.fn().mockReturnValue({ id: 'agent-x' }),
     getGlobalConfig: vi.fn().mockReturnValue({ defaults: {} }),
-    listAgentIds: vi.fn().mockReturnValue(['agent-x']),
   };
 }
 
@@ -30,15 +27,12 @@ describe('createPluginContext', () => {
     expect(ctx.dataDir).toBe('/tmp/test-plugin');
   });
 
-  it('registerHook delegates to all per-agent emitters', () => {
+  it('registerHook delegates to deps.registerHook with pluginName', () => {
     const deps = mkDeps();
-    const subscribeMock = vi.fn().mockReturnValue(() => {});
-    deps.hookEmitterFor = vi.fn().mockReturnValue({ subscribe: subscribeMock });
     const ctx = createPluginContext(deps);
     const handler = vi.fn();
     ctx.registerHook('on_after_query', handler);
-    expect(deps.hookEmitterFor).toHaveBeenCalledWith('agent-x');
-    expect(subscribeMock).toHaveBeenCalledWith('on_after_query', handler);
+    expect(deps.registerHook).toHaveBeenCalledWith('test', 'on_after_query', handler);
   });
 
   it('registerMcpTool calls deps.registerTool with namespaced name', () => {

@@ -1,9 +1,14 @@
-import type { PluginManifest, PluginInstance, PluginMcpTool, ContextEngine, PluginSlashCommand } from './types.js';
+import type { PluginManifest, PluginInstance, PluginMcpTool, ContextEngine, PluginSlashCommand, HookEvent, HookHandler } from './types.js';
 import { logger } from '../logger.js';
 
 interface PluginEntry {
   manifest: PluginManifest;
   instance: PluginInstance;
+}
+
+interface PluginHookRegistration {
+  event: HookEvent;
+  handler: HookHandler;
 }
 
 export class PluginRegistry {
@@ -12,6 +17,7 @@ export class PluginRegistry {
   private toolsByPlugin = new Map<string, PluginMcpTool[]>();
   private engineByPlugin = new Map<string, ContextEngine>();
   private commandsByPlugin = new Map<string, PluginSlashCommand[]>();
+  private hooksByPlugin = new Map<string, PluginHookRegistration[]>();
 
   // ─── Plugins ──────────────────────────────────────────────────────
 
@@ -24,6 +30,7 @@ export class PluginRegistry {
     this.toolsByPlugin.delete(name);
     this.engineByPlugin.delete(name);
     this.commandsByPlugin.delete(name);
+    this.hooksByPlugin.delete(name);
     for (const enabled of this.enabledByAgent.values()) {
       enabled.delete(name);
     }
@@ -50,6 +57,23 @@ export class PluginRegistry {
 
   isEnabledFor(agentId: string, pluginName: string): boolean {
     return this.enabledByAgent.get(agentId)?.has(pluginName) ?? false;
+  }
+
+  // ─── Hook registration ────────────────────────────────────────────
+
+  addHookFromPlugin(pluginName: string, event: HookEvent, handler: HookHandler): void {
+    const hooks = this.hooksByPlugin.get(pluginName) ?? [];
+    hooks.push({ event, handler });
+    this.hooksByPlugin.set(pluginName, hooks);
+  }
+
+  /** All plugin-registered hooks across all plugins (for resubscription after emitter rebuild). */
+  listAllHooks(): Array<{ pluginName: string; event: HookEvent; handler: HookHandler }> {
+    const result: Array<{ pluginName: string; event: HookEvent; handler: HookHandler }> = [];
+    for (const [pluginName, hooks] of this.hooksByPlugin) {
+      for (const h of hooks) result.push({ pluginName, event: h.event, handler: h.handler });
+    }
+    return result;
   }
 
   // ─── Tool registration ────────────────────────────────────────────

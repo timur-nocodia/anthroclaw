@@ -1653,9 +1653,13 @@ git add src/gateway.ts src/agent/agent.ts src/index.ts
 git commit -m "feat(plugins): wire PluginRegistry into Gateway and per-agent MCP server"
 ```
 
+**Post-review addendum (code review of Task 8 implementation):** Four bugs were found and fixed in the Task 8 implementation. (C1) Plugin hook handlers were orphaned after `rebuildHookEmitters()` because fresh emitters replaced old ones without re-subscribing stored handlers. Fixed by moving hook registration through `PluginRegistry.addHookFromPlugin` + `listAllHooks`, having the gateway re-subscribe all stored hooks to fresh emitters after every `rebuildHookEmitters()` call. (C2) Setting `enabled: false` in agent config had no effect on hot-reload — only additions were applied, never removals. Fixed by reconciling desired vs actual enabled set in the reload loop and calling `disableForAgent` where needed. (I1) Plugin data directory was passed to plugin but never created; added `mkdir(..., { recursive: true })` before `createPluginContext`. (I4) Plugin `shutdown()` was called after `agents.clear()` in `stop()`; moved plugin shutdown loop above agents/channels teardown. Additionally, `GlobalConfigSchema.plugins` field was added here (see Task 9 note below), the `ContextDeps` interface was simplified by replacing `hookEmitterFor`/`listAgentIds` with a single `registerHook` callback, and per-agent `refreshPluginTools` is now always called (even with empty array) to correctly reset to built-in-only when a plugin is disabled.
+
 ---
 
 ## Task 9: Add `plugins` section to GlobalConfigSchema and AgentYmlSchema
+
+**Note:** `GlobalConfigSchema.plugins` was added in the Task 8 post-review fix. Task 9 only needs to add the `AgentYmlSchema.plugins` part (which was already done there too) and add schema tests.
 
 **Files:**
 - Modify: `src/config/schema.ts`
