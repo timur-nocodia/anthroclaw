@@ -576,22 +576,24 @@ export default function SessionDetailPage() {
       </div>
 
       {/* Transcript */}
-      <div className="flex-1 overflow-auto px-5 py-4">
-        {loading && messages.length === 0 && <TranscriptSkeleton />}
-        {error && (
-          <div className="text-[12px]" style={{ color: "#f87171" }}>
-            {error}
+      <div className="flex flex-1 justify-center overflow-auto">
+        <div className="w-full max-w-[720px] px-5 py-4">
+          {loading && messages.length === 0 && <TranscriptSkeleton />}
+          {error && (
+            <div className="text-[12px]" style={{ color: "#f87171" }}>
+              {error}
+            </div>
+          )}
+          {!loading && !error && messages.length === 0 && (
+            <div className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
+              No messages in this session.
+            </div>
+          )}
+          <div className={cn("flex flex-col gap-3", loading && "opacity-60")}>
+            {messages.map((m) => (
+              <MessageBubble key={m.id} m={m} toolCallDefaultOpen={false} />
+            ))}
           </div>
-        )}
-        {!loading && !error && messages.length === 0 && (
-          <div className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-            No messages in this session.
-          </div>
-        )}
-        <div className={cn("flex flex-col gap-3", loading && "opacity-60")}>
-          {messages.map((m) => (
-            <MessageBubble key={m.id} m={m} toolCallDefaultOpen={false} />
-          ))}
         </div>
       </div>
     </div>
