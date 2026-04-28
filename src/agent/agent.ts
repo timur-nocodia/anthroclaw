@@ -190,13 +190,16 @@ export class Agent {
    * Called by Gateway after plugins are loaded and enabled for this agent.
    */
   refreshPluginTools(pluginTools: PluginMcpTool[]): void {
+    const agentId = this.id;
     const allTools: any[] = [
       ...(this.tools as any[]),
       ...pluginTools.map((pt) => ({
         name: pt.name,
         description: pt.description,
         inputSchema: pt.inputSchema,
-        handler: (input: unknown) => pt.handler(input),
+        // Bind agentId at refresh time. sessionKey is left undefined here —
+        // it varies per dispatch and is reserved for future plumbing.
+        handler: (input: unknown) => pt.handler(input, { agentId }),
       })),
     ];
     this.mcpServer = createSdkMcpServer({

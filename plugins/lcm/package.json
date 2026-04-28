@@ -1,0 +1,20 @@
+{
+  "name": "@anthroclaw/plugin-lcm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc && mkdir -p dist/db && cp src/db/schema.sql dist/db/schema.sql",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.9.0",
+    "ulid": "^2.4.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}

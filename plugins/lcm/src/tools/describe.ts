@@ -1,0 +1,239 @@
+/**
+ * lcm_describe MCP tool — read-only introspection of the LCM store and DAG.
+ *
+ * Registered as 'describe'; the plugin framework auto-namespaces it to 'lcm_describe'.
+ *
+ * Three modes:
+ *   1. No args — overview: session stats, depth distribution, total counts, timestamps.
+ *   2. node_id — full metadata for a single DAG node, including projected children.
+ *   3. externalized_ref — preview of an externalized tool-result (T18 feature; optional reader).
+ */
+
+import { z } from 'zod';
+import type { PluginMcpTool } from '../types-shim.js';
+import type { AgentState } from '../agent-state.js';
+
+// ─── Public constants ─────────────────────────────────────────────────────────
+
+export const DESCRIBE_RATE_LIMIT_PER_TURN = 10;
+
+// ─── Deps interface ───────────────────────────────────────────────────────────
+
+export interface DescribeDeps {
+  /** Resolves per-agent state for the calling agentId. */
+  resolveAgent: (agentId: string) => AgentState;
+  /** Optional: resolves externalized file content by ref. T18 will provide; for T12 optional. */
+  externalizedReader?: (ref: string) => Promise<{ content: string; size: number } | null>;
+  logger?: { info: (obj: unknown, msg: string) => void; warn: (obj: unknown, msg: string) => void };
+}
+
+// ─── Input schema ─────────────────────────────────────────────────────────────
+
+const INPUT_SCHEMA = z
+  .object({
+    node_id: z.string().optional(),
+    externalized_ref: z.string().optional(),
+    /**
+     * Optional: narrow the no-args overview to a specific session_id.
+     * When omitted, the overview aggregates the agent's whole DB.
+     * Ignored when node_id or externalized_ref is provided.
+     */
+    session_id: z.string().min(1).optional(),
+  })
+  .refine((d) => !(d.node_id && d.externalized_ref), {
+    message: 'pass at most one of node_id or externalized_ref',
+  });
+
+// ─── Factory ──────────────────────────────────────────────────────────────────
+
+export function createDescribeTool(deps: DescribeDeps): PluginMcpTool {
+  let callCount = 0;
+
+  const handler = async (
+    raw: unknown,
+    ctx: { agentId: string; sessionKey?: string },
+  ): Promise<{ content: Array<{ type: 'text'; text: string }> }> => {
+    callCount++;
+    if (callCount > DESCRIBE_RATE_LIMIT_PER_TURN) {
+      deps.logger?.warn({ count: callCount }, 'lcm_describe rate limit exceeded');
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({ error: 'rate limit: lcm_describe allows max 10 calls per turn' }),
+          },
+        ],
+      };
+    }
+
+    try {
+      const input = INPUT_SCHEMA.parse(raw);
+      const state = deps.resolveAgent(ctx.agentId);
+
+      // ── Mode 3: externalized_ref ─────────────────────────────────────────
+      if (input.externalized_ref !== undefined) {
+        const ref = input.externalized_ref;
+        if (!deps.externalizedReader) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({ error: 'externalized_ref not supported in this build' }),
+              },
+            ],
+          };
+        }
+        const result = await deps.externalizedReader(ref);
+        if (result === null) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({ error: `ref not found: ${ref}` }),
+              },
+            ],
+          };
+        }
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                externalized_ref: ref,
+                preview: result.content.slice(0, 1000),
+                size: result.size,
+              }),
+            },
+          ],
+        };
+      }
+
+      // ── Mode 2: node_id ───────────────────────────────────────────────────
+      if (input.node_id !== undefined) {
+        const node = state.dag.get(input.node_id);
+        if (!node) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({ error: `node not found: ${input.node_id}` }),
+              },
+            ],
+          };
+        }
+
+        let children: Array<
+          | { node_id: string; depth: number }
+          | { store_id: number; role: string; snippet: string }
+        >;
+
+        if (node.source_type === 'nodes') {
+          // Children are DAG nodes
+          const childNodes = state.dag.getChildren(node.node_id);
+          children = childNodes.map((n) => ({ node_id: n.node_id, depth: n.depth }));
+        } else {
+          // source_type === 'messages': children are store messages
+          const msgIds = state.dag.getSourceMessageIds(node.node_id);
+          const messages = state.store.getMany(msgIds);
+          children = messages.map((m) => ({
+            store_id: m.store_id,
+            role: m.role,
+            snippet: m.content.slice(0, 80),
+          }));
+        }
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                node_id: node.node_id,
+                depth: node.depth,
+                summary: node.summary,
+                token_count: node.token_count,
+                source_token_count: node.source_token_count,
+                source_count: node.source_ids.length,
+                source_type: node.source_type,
+                expand_hint: node.expand_hint ?? null,
+                earliest_at: node.earliest_at,
+                latest_at: node.latest_at,
+                children,
+              }),
+            },
+          ],
+        };
+      }
+
+      // ── Mode 1: overview (no node/ref) ────────────────────────────────────
+      // Default scope = whole agent DB (all sessions). Optional `session_id`
+      // input narrows to one session. Session scoping precedence (T24 review):
+      //   1. explicit `session_id` input arg
+      //   2. else `ctx.sessionKey` from McpToolContext (when gateway plumbs it)
+      //   3. else null → aggregate the agent's whole DB.
+      const sessionId = input.session_id ?? ctx.sessionKey ?? null;
+
+      let totalMessages: number;
+      let depthCounts: Record<number, number>;
+      let oldest_at: number | null;
+      let newest_at: number | null;
+
+      if (sessionId) {
+        const messages = state.store.listSession(sessionId);
+        totalMessages = messages.length;
+        depthCounts = state.dag.countByDepth(sessionId);
+        oldest_at = messages.length > 0 ? Math.min(...messages.map((m) => m.ts)) : null;
+        newest_at = messages.length > 0 ? Math.max(...messages.map((m) => m.ts)) : null;
+      } else {
+        totalMessages = state.store.totalMessages();
+        depthCounts = state.dag.countByDepthAcrossSessions();
+        const range = state.store.timeRange();
+        oldest_at = range.oldest;
+        newest_at = range.newest;
+      }
+
+      // Compute depth_distribution with string keys
+      const depthDistribution: Record<string, number> = {};
+      let totalNodes = 0;
+      for (const [depth, count] of Object.entries(depthCounts)) {
+        depthDistribution[depth] = count;
+        totalNodes += count;
+      }
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              session_key: sessionId,
+              session_count: sessionId ? 1 : state.dag.listSessionIds().length,
+              depth_distribution: depthDistribution,
+              total_messages: totalMessages,
+              total_nodes: totalNodes,
+              oldest_at,
+              newest_at,
+            }),
+          },
+        ],
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }],
+      };
+    }
+  };
+
+  return {
+    name: 'describe',
+    description:
+      "Introspect the LCM message store and DAG. " +
+      "No args: returns an overview aggregated across the agent's whole DB " +
+      "(depth_distribution, total_messages, total_nodes, session_count, oldest/newest timestamps). " +
+      "Pass session_id to narrow the overview to one session. " +
+      "node_id: returns full metadata for one DAG node including children (projected as {store_id, role, snippet} for messages or {node_id, depth} for nodes). " +
+      "externalized_ref: preview an externalized tool-result (T18 feature). " +
+      "Pass at most one of node_id or externalized_ref.",
+    inputSchema: INPUT_SCHEMA,
+    handler,
+  };
+}

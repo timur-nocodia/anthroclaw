@@ -2,7 +2,7 @@ import { readdirSync, existsSync, readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
   discoverPlugins,
   loadPlugin,
@@ -11,6 +11,7 @@ import {
   startPluginsWatcher,
   type DiscoveredPlugin,
   type PluginsWatcher,
+  type ContextEngine,
 } from './plugins/index.js';
 
 const ANTHROCLAW_VERSION = (() => {
@@ -435,6 +436,210 @@ function streamingUserPrompt(prompt: string): AsyncIterable<SDKUserMessage> {
     // rewindFiles() remain available until the checkpoint registry closes it.
     await new Promise<void>(() => {});
   })();
+}
+
+/**
+ * Attempt to delegate auto-compression to a plugin's ContextEngine.
+ *
+ * Returns `true` iff the plugin successfully produced a `CompressResult` —
+ * caller MUST skip the legacy summarize/clear/emit/💾 flow in that case.
+ * In all other paths (no engine, engine without `.compress`, engine returns
+ * `null`, engine throws) returns `false` and caller falls back to legacy.
+ *
+ * Failures are logged and swallowed; this never throws.
+ *
+ * Exported for unit testing — see src/plugins/__tests__/compressor-delegation.test.ts.
+ */
+export async function tryPluginCompress(
+  engine: ContextEngine | null,
+  agentId: string,
+  sessionKey: string,
+  pluginName: string | null = null,
+): Promise<boolean> {
+  if (!engine?.compress) return false;
+  try {
+    const result = await engine.compress({
+      agentId,
+      sessionKey,
+      // gateway has no in-memory message list at this seam; LCM uses its own
+      // state populated via on_after_query mirror hook (T19 design).
+      messages: [],
+      currentTokens: 0,
+    });
+    if (result) {
+      logger.info(
+        { agentId, sessionKey, pluginName },
+        'plugin context-engine compress succeeded; legacy bypassed',
+      );
+      return true;
+    }
+    return false;
+  } catch (err) {
+    // Redact `err` before logging — a plugin's compress() error may carry
+    // user message content, prompt fragments, or API response payloads in
+    // its message / .cause / stack frames. Pino would serialize the full
+    // object verbatim, so log shippers could exfiltrate secrets.
+    logger.warn(
+      { err: redactSecrets(String(err)), agentId, sessionKey, pluginName },
+      'plugin context-engine compress failed; fallback to legacy',
+    );
+    return false;
+  }
+}
+
+/**
+ * Build a randomized `<lcm-context-NNNNNNNN>` tag pair used to wrap
+ * plugin-assembled context blocks. The 8-hex-char suffix is unpredictable
+ * per-call, so a plugin's own (or user-injected) content can't forge the
+ * boundary by emitting a literal `</lcm-context>` string and inject
+ * post-tag instructions the model would treat as trusted.
+ */
+function makeAssembleBoundaryTag(): { open: string; close: string } {
+  const id = randomBytes(4).toString('hex');
+  return { open: `<lcm-context-${id}>`, close: `</lcm-context-${id}>` };
+}
+
+/**
+ * Flatten an LCM-style message array down to a single string the gateway
+ * can pass into `query()` as a `prompt: string`.
+ *
+ * Convention:
+ *   - non-`user` roles become labeled context lines wrapped in a single
+ *     `<lcm-context-NNNNNNNN>...</lcm-context-NNNNNNNN>` block (mirrors the
+ *     gateway's existing `<memory-context>` pattern at the prefetch seam).
+ *     The 8-hex suffix is randomized per call to defeat tag-forgery prompt
+ *     injection.
+ *   - `user` role(s) are appended as the actual prompt body, joined by
+ *     blank lines if there is more than one.
+ *   - malformed entries (non-objects, missing/non-string content) are
+ *     skipped silently.
+ *   - empty / all-skipped input → returns `''`. Caller should treat empty
+ *     as "no transform" and pass the original prompt through.
+ *
+ * Exported for unit testing.
+ */
+export function flattenAssembledMessages(messages: unknown[]): string {
+  if (!Array.isArray(messages) || messages.length === 0) return '';
+  const userTurns: string[] = [];
+  const contextBlocks: string[] = [];
+  for (const raw of messages) {
+    if (!raw || typeof raw !== 'object') continue;
+    const m = raw as { role?: unknown; content?: unknown };
+    if (typeof m.content !== 'string') continue;
+    if (m.role === 'user') {
+      userTurns.push(m.content);
+    } else {
+      const role = typeof m.role === 'string' ? m.role : 'context';
+      contextBlocks.push(`[${role}]: ${m.content}`);
+    }
+  }
+  if (contextBlocks.length === 0 && userTurns.length === 0) return '';
+  if (contextBlocks.length === 0) return userTurns.join('\n\n');
+  const { open, close } = makeAssembleBoundaryTag();
+  const ctx = `${open}\n${contextBlocks.join('\n')}\n${close}`;
+  return userTurns.length === 0 ? ctx : `${ctx}\n\n${userTurns.join('\n\n')}`;
+}
+
+/**
+ * Sanity caps applied to the output of a plugin's `assemble()` before we
+ * trust it as a prompt. A buggy plugin could blow the prompt up to MBs;
+ * we'd rather fall back to the original than push that into `query()`.
+ */
+const MAX_ASSEMBLED_RATIO = 4;             // assembled may grow up to 4x original
+const ABSOLUTE_MAX_ASSEMBLED_LEN = 500_000; // ~125k tokens upper bound
+
+/**
+ * Soft timeout for a plugin's `assemble()` call. On timeout we log warn
+ * and pass the original prompt through. The plugin's promise is left to
+ * resolve in the background (we can't truly abort without an AbortSignal).
+ *
+ * NOTE: asymmetry — we do NOT apply this to `tryPluginCompress` in this
+ * commit to keep the blast radius narrow. Follow-up: mirror the timeout
+ * pattern there once this has bedded in.
+ */
+const ASSEMBLE_TIMEOUT_MS = 5_000;
+const TIMEOUT_SENTINEL = Symbol('assemble-timeout');
+
+/**
+ * Attempt to delegate prompt assembly to a plugin's ContextEngine.
+ *
+ * Returns the assembled prompt string, or `null` if the plugin did not
+ * transform the prompt (no engine, no `.assemble` method, returned null
+ * or empty/malformed messages, exceeded sanity caps, timed out, or
+ * threw). Caller falls back to the original prompt in those cases.
+ *
+ * Failures are logged and swallowed; this never throws.
+ *
+ * @internal
+ * Exported for unit testing — see src/plugins/__tests__/assemble-delegation.test.ts.
+ */
+export async function tryPluginAssemble(
+  engine: ContextEngine | null,
+  agentId: string,
+  sessionKey: string,
+  prompt: string,
+  pluginName: string | null = null,
+): Promise<string | null> {
+  if (!engine?.assemble) return null;
+  try {
+    const result = await Promise.race([
+      engine.assemble({
+        agentId,
+        sessionKey,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+      new Promise<typeof TIMEOUT_SENTINEL>((resolve) =>
+        setTimeout(() => resolve(TIMEOUT_SENTINEL), ASSEMBLE_TIMEOUT_MS),
+      ),
+    ]);
+    if (result === TIMEOUT_SENTINEL) {
+      logger.warn(
+        { agentId, sessionKey, pluginName, timeoutMs: ASSEMBLE_TIMEOUT_MS },
+        'plugin context-engine assemble timed out; pass-through',
+      );
+      return null;
+    }
+    if (!result) return null;
+    const flattened = flattenAssembledMessages(result.messages);
+    if (!flattened) return null;
+    if (
+      flattened.length > ABSOLUTE_MAX_ASSEMBLED_LEN ||
+      (prompt.length > 0 && flattened.length > prompt.length * MAX_ASSEMBLED_RATIO)
+    ) {
+      logger.warn(
+        {
+          agentId,
+          sessionKey,
+          pluginName,
+          originalLen: prompt.length,
+          assembledLen: flattened.length,
+        },
+        'plugin context-engine assemble exceeded sanity cap; falling back to original prompt',
+      );
+      return null;
+    }
+    logger.info(
+      {
+        agentId,
+        sessionKey,
+        pluginName,
+        originalLen: prompt.length,
+        assembledLen: flattened.length,
+      },
+      'plugin context-engine assemble succeeded',
+    );
+    return flattened;
+  } catch (err) {
+    // Redact `err` before logging — a plugin's assemble() error may carry
+    // user message content, prompt fragments, or API response payloads in
+    // its message / .cause / stack frames. Pino would serialize the full
+    // object verbatim, so log shippers could exfiltrate secrets.
+    logger.warn(
+      { err: redactSecrets(String(err)), agentId, sessionKey, pluginName },
+      'plugin context-engine assemble failed; pass-through',
+    );
+    return null;
+  }
 }
 
 export class Gateway {
@@ -2862,15 +3067,33 @@ export class Gateway {
         const msgCount = agent.getMessageCount(sessionKey) * 2;
         if (compressor.shouldCompress(msgCount) && agent.getSessionId(sessionKey)) {
           logger.info({ agentId: route.agentId, sessionKey, msgCount }, 'Auto-compressing session');
-          await this.summarizeAndSaveSession(agent, sessionKey);
-          agent.clearSession(sessionKey);
-          if (emitter) {
-            void emitter.emit('on_session_reset', { agentId: route.agentId, sessionKey, reason: 'auto_compress' });
-          }
-          if (channel) {
-            await channel.sendText(msg.peerId, '💾 Context compressed. Summary saved to memory.', {
-              accountId: msg.accountId, threadId: msg.threadId,
-            });
+
+          // Plugin context-engine delegation (T20): if a plugin's ContextEngine
+          // successfully compresses, skip the legacy memory-write + session-clear
+          // flow. The plugin updates its own DAG internally; T21 (assemble) will
+          // inject context at the next query(). NOTE: cannot `return` here — we
+          // must still run prefetch + finally{} queue drain below. Messages
+          // arriving during the compress await stay buffered because
+          // queueManager.isActive(sessionKey) remains true until finally{} drains.
+          const lcmEntry = this.pluginRegistry.getContextEngine(route.agentId);
+          const pluginHandledCompression = await tryPluginCompress(
+            lcmEntry?.engine ?? null,
+            route.agentId,
+            sessionKey,
+            lcmEntry?.name ?? null,
+          );
+
+          if (!pluginHandledCompression) {
+            await this.summarizeAndSaveSession(agent, sessionKey);
+            agent.clearSession(sessionKey);
+            if (emitter) {
+              void emitter.emit('on_session_reset', { agentId: route.agentId, sessionKey, reason: 'auto_compress' });
+            }
+            if (channel) {
+              await channel.sendText(msg.peerId, '💾 Context compressed. Summary saved to memory.', {
+                accountId: msg.accountId, threadId: msg.threadId,
+              });
+            }
           }
         }
       }
@@ -3058,6 +3281,23 @@ export class Gateway {
           refs: memoryRefsFromSearchResults(prefetchedForPrompt),
         });
       }
+
+      // Plugin context-engine assemble (T21): if a plugin transforms the
+      // prompt (e.g. LCM injects compressed history context), use the
+      // transformed version. Otherwise pass the original prompt through
+      // unchanged. Failures fall back to the original prompt silently.
+      const assembleEntry = this.pluginRegistry.getContextEngine(agent.id);
+      const assembledPrompt = await tryPluginAssemble(
+        assembleEntry?.engine ?? null,
+        agent.id,
+        sessionKey,
+        prompt,
+        assembleEntry?.name ?? null,
+      );
+      if (assembledPrompt !== null) {
+        prompt = assembledPrompt;
+      }
+
       const result = this.startQuery(agent, prompt, options, existingSessionId);
       this.queueManager.register(sessionKey, result, abort, {
         traceId: runId,

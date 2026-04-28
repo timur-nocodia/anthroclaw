@@ -12,11 +12,19 @@ export interface PluginLogger {
   debug(obj: unknown, msg?: string): void;
 }
 
+export interface McpToolContext {
+  agentId: string;
+  sessionKey?: string;
+}
+
 export interface PluginMcpTool {
   name: string;
   description: string;
   inputSchema: z.ZodTypeAny;
-  handler: (input: unknown) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+  handler: (
+    input: unknown,
+    ctx: McpToolContext,
+  ) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
 }
 
 export type HookEvent = string;

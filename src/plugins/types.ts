@@ -61,11 +61,35 @@ export type { HookEvent } from '../hooks/emitter.js';
 
 export type HookHandler = (payload: Record<string, unknown>) => void | Promise<void>;
 
+/**
+ * Context passed to MCP tool handlers at invocation time.
+ *
+ * Plugins that maintain per-agent state should resolve the right state
+ * via `ctx.agentId` instead of binding to a single agent at register time.
+ *
+ * `sessionKey` is reserved for future use — it varies per dispatch and is
+ * not currently plumbed through `Agent.refreshPluginTools`. May be undefined.
+ */
+export interface McpToolContext {
+  /** ID of the agent invoking this tool. Always present at runtime. */
+  agentId: string;
+  /** Session key, if known. May be undefined for tools called outside dispatch flow. */
+  sessionKey?: string;
+}
+
 export interface PluginMcpTool {
   name: string;
   description: string;
   inputSchema: z.ZodTypeAny;
-  handler: (input: unknown) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+  /**
+   * Tool implementation. Receives the parsed input and a context object
+   * with the calling agent's ID. Plugins that maintain per-agent state
+   * should resolve the right state via `ctx.agentId` at invocation time.
+   */
+  handler: (
+    input: unknown,
+    ctx: McpToolContext,
+  ) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
 }
 
 export interface PluginSlashCommand {
@@ -110,6 +134,12 @@ export interface AssembleResult {
 export interface CompressInput {
   agentId: string;
   sessionKey: string;
+  /**
+   * NOTE: When invoked from the gateway's auto-compress seam, this is `[]`
+   * and `currentTokens` is `0`. Plugins that need message history must
+   * mirror it themselves via the `on_after_query` hook — the gateway does
+   * not retain SDK message arrays at the dispatch boundary.
+   */
   messages: unknown[];
   currentTokens: number;
 }

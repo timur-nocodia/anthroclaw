@@ -2,6 +2,7 @@ import { describe, it, expectTypeOf } from 'vitest';
 import type {
   PluginManifest, PluginContext, ContextEngine, PluginEntryModule,
   PluginInstance, RunSubagentOpts, HookEvent, HookHandler, PluginMcpTool,
+  McpToolContext,
   PluginSlashCommand, SlashCommandContext, PluginLogger,
   AssembleInput, AssembleResult, CompressInput, CompressResult, ShouldCompressInput,
 } from '../types.js';
@@ -52,6 +53,18 @@ describe('plugin types', () => {
     expectTypeOf<PluginMcpTool>().toHaveProperty('description').toEqualTypeOf<string>();
     expectTypeOf<PluginMcpTool>().toHaveProperty('inputSchema');
     expectTypeOf<PluginMcpTool>().toHaveProperty('handler').toBeFunction();
+  });
+
+  it('PluginMcpTool.handler accepts (input, ctx) and returns content envelope', () => {
+    expectTypeOf<PluginMcpTool['handler']>().parameter(0).toEqualTypeOf<unknown>();
+    expectTypeOf<PluginMcpTool['handler']>().parameter(1).toEqualTypeOf<McpToolContext>();
+    expectTypeOf<PluginMcpTool['handler']>().returns
+      .toEqualTypeOf<Promise<{ content: Array<{ type: 'text'; text: string }> }>>();
+  });
+
+  it('McpToolContext: agentId required, sessionKey optional', () => {
+    expectTypeOf<McpToolContext>().toHaveProperty('agentId').toEqualTypeOf<string>();
+    expectTypeOf<McpToolContext>().toHaveProperty('sessionKey').toEqualTypeOf<string | undefined>();
   });
 
   it('PluginSlashCommand and SlashCommandContext', () => {
