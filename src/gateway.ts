@@ -3,9 +3,10 @@ import { mkdir } from 'node:fs/promises';
 import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { discoverPlugins, loadPlugin } from './plugins/loader.js';
+import { discoverPlugins, loadPlugin, type DiscoveredPlugin } from './plugins/loader.js';
 import { createPluginContext } from './plugins/context.js';
 import { PluginRegistry } from './plugins/registry.js';
+import { startPluginsWatcher, type PluginsWatcher } from './plugins/watcher.js';
 
 const ANTHROCLAW_VERSION = (() => {
   try {
@@ -460,6 +461,8 @@ export class Gateway {
   private subagentRegistry = new SdkSubagentRegistry();
   private fileOwnershipRegistry = new FileOwnershipRegistry();
   public pluginRegistry: PluginRegistry = new PluginRegistry();
+  private pluginsWatcher: PluginsWatcher | null = null;
+  private resolvedPluginsDir: string | null = null;
 
   async start(config: GlobalConfig, agentsDir: string, dataDir: string, pluginsDir?: string): Promise<void> {
     this.startedAt = Date.now();
@@ -518,37 +521,38 @@ export class Gateway {
 
     // ─── Plugin discovery & registration ────────────────────────────
     this.pluginRegistry = new PluginRegistry();
-    const resolvedPluginsDir = pluginsDir ?? joinPath(dataDir, '..', 'plugins');
-    const discovered = await discoverPlugins(resolvedPluginsDir);
+    this.resolvedPluginsDir = pluginsDir ?? joinPath(dataDir, '..', 'plugins');
+    const discovered = await discoverPlugins(this.resolvedPluginsDir);
     for (const d of discovered) {
       try {
-        const pluginDataDir = joinPath(dataDir, d.manifest.name);
-        await mkdir(pluginDataDir, { recursive: true });
-        const mod = await loadPlugin(d, { anthroclawVersion: ANTHROCLAW_VERSION });
-        const ctx = createPluginContext({
-          pluginName: d.manifest.name,
-          pluginVersion: d.manifest.version,
-          dataDir: pluginDataDir,
-          rootLogger: logger,
-          registerHook: (pluginName, event, handler) => {
-            this.pluginRegistry.addHookFromPlugin(pluginName, event, handler);
-            for (const emitter of this.hookEmitters.values()) {
-              emitter.subscribe(event, handler);
-            }
-          },
-          registerTool: (pluginTool) => this.pluginRegistry.addToolFromPlugin(d.manifest.name, pluginTool),
-          registerEngine: (name, engine) => this.pluginRegistry.addEngineFromPlugin(name, engine),
-          registerCommand: (cmd) => this.pluginRegistry.addCommandFromPlugin(d.manifest.name, cmd),
-          getAgentConfig: (id: string) => this.agents.get(id)?.config,
-          getGlobalConfig: () => this.globalConfig,
-        });
-        const instance = await mod.register(ctx);
-        this.pluginRegistry.addPlugin(d.manifest.name, { manifest: d.manifest, instance });
+        await this.loadAndRegisterPlugin(d, dataDir);
         logger.info({ plugin: d.manifest.name, version: d.manifest.version }, 'plugin loaded');
       } catch (err) {
         logger.error({ err, plugin: d.manifest.name }, 'failed to load plugin');
       }
     }
+
+    // Hot-reload watcher for plugins directory
+    this.pluginsWatcher = startPluginsWatcher(this.resolvedPluginsDir, {
+      onAdd: async (d) => {
+        try {
+          await this.loadAndRegisterPlugin(d, dataDir);
+          logger.info({ plugin: d.manifest.name }, 'plugin hot-reloaded');
+        } catch (err) {
+          logger.error({ err, plugin: d.manifest.name }, 'failed to hot-reload plugin');
+        }
+      },
+      onRemove: async (name) => {
+        const entry = this.pluginRegistry.listPlugins().find(p => p.manifest.name === name);
+        if (entry?.instance.shutdown) {
+          try { await entry.instance.shutdown(); } catch (err) {
+            logger.warn({ err, plugin: name }, 'plugin shutdown error during hot-remove');
+          }
+        }
+        this.pluginRegistry.removePlugin(name);
+        logger.info({ plugin: name }, 'plugin removed');
+      },
+    });
 
     // Apply per-agent plugin enables and refresh MCP servers with plugin tools
     for (const [agentId, agent] of this.agents) {
@@ -726,6 +730,10 @@ export class Gateway {
     this.scheduler?.stop();
     this.scheduler = null;
 
+    // Close plugin hot-reload watcher first so no new add events fire during shutdown
+    await this.pluginsWatcher?.close();
+    this.pluginsWatcher = null;
+
     // Shutdown plugins before clearing agent state so plugins can do final ops
     for (const entry of this.pluginRegistry.listPlugins()) {
       try {
@@ -745,6 +753,36 @@ export class Gateway {
     this.subagentRegistry.clear();
     this.routeTable = null;
     this.accessControl = null;
+  }
+
+  /**
+   * Creates a PluginContext and registers a discovered plugin in pluginRegistry.
+   * Extracted to avoid duplicating context-construction logic between initial
+   * discovery and hot-reload onAdd.
+   */
+  private async loadAndRegisterPlugin(d: DiscoveredPlugin, dataDir: string): Promise<void> {
+    const pluginDataDir = joinPath(dataDir, d.manifest.name);
+    await mkdir(pluginDataDir, { recursive: true });
+    const mod = await loadPlugin(d, { anthroclawVersion: ANTHROCLAW_VERSION });
+    const ctx = createPluginContext({
+      pluginName: d.manifest.name,
+      pluginVersion: d.manifest.version,
+      dataDir: pluginDataDir,
+      rootLogger: logger,
+      registerHook: (pluginName, event, handler) => {
+        this.pluginRegistry.addHookFromPlugin(pluginName, event, handler);
+        for (const emitter of this.hookEmitters.values()) {
+          emitter.subscribe(event, handler);
+        }
+      },
+      registerTool: (pluginTool) => this.pluginRegistry.addToolFromPlugin(d.manifest.name, pluginTool),
+      registerEngine: (name, engine) => this.pluginRegistry.addEngineFromPlugin(name, engine),
+      registerCommand: (cmd) => this.pluginRegistry.addCommandFromPlugin(d.manifest.name, cmd),
+      getAgentConfig: (id: string) => this.agents.get(id)?.config,
+      getGlobalConfig: () => this.globalConfig,
+    });
+    const instance = await mod.register(ctx);
+    this.pluginRegistry.addPlugin(d.manifest.name, { manifest: d.manifest, instance });
   }
 
   private buildUserQueryOptions(
