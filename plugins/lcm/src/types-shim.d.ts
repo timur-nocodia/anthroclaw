@@ -19,7 +19,26 @@ export interface PluginMcpTool {
   handler: (input: unknown) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
 }
 
-export type HookEvent = string;
+/**
+ * Subset of HookEvent values. Mirrors src/hooks/emitter.ts at the
+ * time of writing — keep in sync if new events are added there.
+ */
+export type HookEvent =
+  | 'on_message_received'
+  | 'on_before_query'
+  | 'on_after_query'
+  | 'on_session_reset'
+  | 'on_cron_fire'
+  | 'on_memory_write'
+  | 'on_tool_use'
+  | 'on_tool_result'
+  | 'on_tool_error'
+  | 'on_permission_request'
+  | 'on_elicitation'
+  | 'on_elicitation_result'
+  | 'on_sdk_notification'
+  | 'on_subagent_start'
+  | 'on_subagent_stop';
 export type HookHandler = (payload: Record<string, unknown>) => void | Promise<void>;
 
 export interface PluginContext {
