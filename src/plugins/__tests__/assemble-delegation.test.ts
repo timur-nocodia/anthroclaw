@@ -47,10 +47,13 @@ describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () =
   });
 
   it('returns flattened string and logs info on a successful AssembleResult', async () => {
+    // Use a prompt long enough that flattening (boundary tag adds ~50 chars
+    // of overhead) does not trip the 4x size-cap defensive check.
+    const userPrompt = 'original prompt that is long enough to satisfy size cap';
     const result: AssembleResult = {
       messages: [
         { role: 'system', content: 'LCM summary D2/D1/D0' },
-        { role: 'user', content: 'original prompt' },
+        { role: 'user', content: userPrompt },
       ],
     };
     const assembleFn = vi.fn(
@@ -62,7 +65,7 @@ describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () =
       engine,
       'agent-7',
       'sk-99',
-      'original prompt',
+      userPrompt,
       'lcm',
     );
 
@@ -71,12 +74,16 @@ describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () =
     expect(assembleFn).toHaveBeenCalledWith({
       agentId: 'agent-7',
       sessionKey: 'sk-99',
-      messages: [{ role: 'user', content: 'original prompt' }],
+      messages: [{ role: 'user', content: userPrompt }],
     });
 
-    // flattened: context block then user turn
-    expect(out).toBe(
-      '<lcm-context>\n[system]: LCM summary D2/D1/D0\n</lcm-context>\n\noriginal prompt',
+    // flattened: context block then user turn — boundary tag is randomized
+    // per call (`<lcm-context-NNNNNNNN>`) to defeat tag-forgery prompt
+    // injection, so we match a regex shape rather than a fixed string.
+    expect(out).toMatch(
+      new RegExp(
+        `^<lcm-context-[0-9a-f]{8}>\\n\\[system\\]: LCM summary D2/D1/D0\\n</lcm-context-[0-9a-f]{8}>\\n\\n${userPrompt}$`,
+      ),
     );
 
     // info log
@@ -86,7 +93,7 @@ describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () =
       agentId: 'agent-7',
       sessionKey: 'sk-99',
       pluginName: 'lcm',
-      originalLen: 'original prompt'.length,
+      originalLen: userPrompt.length,
     });
     expect((payload as { assembledLen: number }).assembledLen).toBe(out!.length);
     expect(message).toMatch(/plugin context-engine assemble succeeded/);
@@ -142,37 +149,50 @@ describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () =
   });
 
   it('skips malformed entries (non-objects / missing content / non-string content)', async () => {
+    // Pad system + user content so the flattened string stays under the
+    // 4x size-cap (boundary tag adds ~50 chars).
+    const sys = 'kept system content padded long enough';
+    const user = 'kept user content padded long enough';
     const result: AssembleResult = {
       messages: [
         null,
         'not-an-object',
         { role: 'system' }, // missing content
         { role: 'system', content: 42 }, // non-string content
-        { role: 'system', content: 'kept system' },
-        { role: 'user', content: 'kept user' },
+        { role: 'system', content: sys },
+        { role: 'user', content: user },
       ] as unknown[],
     };
     const engine: ContextEngine = { assemble: vi.fn(async () => result) };
 
-    const out = await tryPluginAssemble(engine, 'a', 's', 'kept user');
+    const out = await tryPluginAssemble(engine, 'a', 's', user);
 
-    expect(out).toBe(
-      '<lcm-context>\n[system]: kept system\n</lcm-context>\n\nkept user',
+    expect(out).toMatch(
+      new RegExp(
+        `^<lcm-context-[0-9a-f]{8}>\\n\\[system\\]: ${sys}\\n</lcm-context-[0-9a-f]{8}>\\n\\n${user}$`,
+      ),
     );
   });
 
   it('falls back to "[context]:" label for entries with non-string role', async () => {
+    // Pad content so flattening doesn't trip the 4x size-cap check.
+    const ctx = 'weird role content padded long enough for size cap';
+    const user = 'user content padded long enough for size cap';
     const result: AssembleResult = {
       messages: [
-        { role: 123, content: 'weird role' },
-        { role: 'user', content: 'u' },
+        { role: 123, content: ctx },
+        { role: 'user', content: user },
       ] as unknown[],
     };
     const engine: ContextEngine = { assemble: vi.fn(async () => result) };
 
-    const out = await tryPluginAssemble(engine, 'a', 's', 'u');
+    const out = await tryPluginAssemble(engine, 'a', 's', user);
 
-    expect(out).toBe('<lcm-context>\n[context]: weird role\n</lcm-context>\n\nu');
+    expect(out).toMatch(
+      new RegExp(
+        `^<lcm-context-[0-9a-f]{8}>\\n\\[context\\]: ${ctx}\\n</lcm-context-[0-9a-f]{8}>\\n\\n${user}$`,
+      ),
+    );
   });
 
   it('joins multiple user turns with blank-line separators', async () => {
@@ -200,5 +220,93 @@ describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () =
     expect(infoSpy).toHaveBeenCalledTimes(1);
     const [payload] = infoSpy.mock.calls[0];
     expect(payload).toMatchObject({ pluginName: null });
+  });
+
+  // --- T21 review fix #4: container-level malformation tests ---
+
+  it('returns null when result.messages is null', async () => {
+    const engine: ContextEngine = {
+      assemble: vi.fn(async () => ({ messages: null as unknown as never[] })),
+    };
+    const out = await tryPluginAssemble(engine, 'a', 's', 'prompt');
+    expect(out).toBeNull();
+    expect(infoSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns null when result.messages is undefined', async () => {
+    const engine: ContextEngine = {
+      assemble: vi.fn(async () => ({}) as never),
+    };
+    const out = await tryPluginAssemble(engine, 'a', 's', 'prompt');
+    expect(out).toBeNull();
+    expect(infoSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns null when result.messages is a string (not an array)', async () => {
+    const engine: ContextEngine = {
+      assemble: vi.fn(async () => ({ messages: 'not-array' as unknown as never[] })),
+    };
+    const out = await tryPluginAssemble(engine, 'a', 's', 'prompt');
+    expect(out).toBeNull();
+    expect(infoSpy).not.toHaveBeenCalled();
+  });
+
+  // --- T21 review fix #2: size-cap tests ---
+
+  it('falls back to original when assembled exceeds absolute cap', async () => {
+    const huge = 'x'.repeat(600_000);
+    const engine: ContextEngine = {
+      assemble: vi.fn(async () => ({
+        messages: [{ role: 'user', content: huge }],
+      })),
+    };
+    const out = await tryPluginAssemble(engine, 'a', 's', 'short prompt');
+    expect(out).toBeNull();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const [, msg] = warnSpy.mock.calls[0];
+    expect(msg).toMatch(/exceeded sanity cap/);
+    expect(infoSpy).not.toHaveBeenCalled();
+  });
+
+  it('falls back to original when assembled exceeds 4x ratio', async () => {
+    const original = 'a'.repeat(100);
+    const big = 'b'.repeat(401); // 401 > 100*4 = 400
+    const engine: ContextEngine = {
+      assemble: vi.fn(async () => ({
+        messages: [{ role: 'user', content: big }],
+      })),
+    };
+    const out = await tryPluginAssemble(engine, 'a', 's', original);
+    expect(out).toBeNull();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const [, msg] = warnSpy.mock.calls[0];
+    expect(msg).toMatch(/exceeded sanity cap/);
+    expect(infoSpy).not.toHaveBeenCalled();
+  });
+
+  // --- T21 review fix #3: soft timeout test ---
+
+  it('falls back to original when assemble exceeds soft timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const engine: ContextEngine = {
+        assemble: vi.fn(
+          () =>
+            new Promise(() => {
+              /* never resolves */
+            }),
+        ),
+      };
+      const promise = tryPluginAssemble(engine, 'a', 's', 'prompt');
+      await vi.advanceTimersByTimeAsync(6_000); // > ASSEMBLE_TIMEOUT_MS
+      const out = await promise;
+      expect(out).toBeNull();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const [, msg] = warnSpy.mock.calls[0];
+      expect(msg).toMatch(/timed out/);
+      expect(infoSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

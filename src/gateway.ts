@@ -2,7 +2,7 @@ import { readdirSync, existsSync, readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
   discoverPlugins,
   loadPlugin,
@@ -488,13 +488,27 @@ export async function tryPluginCompress(
 }
 
 /**
+ * Build a randomized `<lcm-context-NNNNNNNN>` tag pair used to wrap
+ * plugin-assembled context blocks. The 8-hex-char suffix is unpredictable
+ * per-call, so a plugin's own (or user-injected) content can't forge the
+ * boundary by emitting a literal `</lcm-context>` string and inject
+ * post-tag instructions the model would treat as trusted.
+ */
+function makeAssembleBoundaryTag(): { open: string; close: string } {
+  const id = randomBytes(4).toString('hex');
+  return { open: `<lcm-context-${id}>`, close: `</lcm-context-${id}>` };
+}
+
+/**
  * Flatten an LCM-style message array down to a single string the gateway
  * can pass into `query()` as a `prompt: string`.
  *
  * Convention:
  *   - non-`user` roles become labeled context lines wrapped in a single
- *     `<lcm-context>...</lcm-context>` block (mirrors the gateway's existing
- *     `<memory-context>` pattern at the prefetch seam).
+ *     `<lcm-context-NNNNNNNN>...</lcm-context-NNNNNNNN>` block (mirrors the
+ *     gateway's existing `<memory-context>` pattern at the prefetch seam).
+ *     The 8-hex suffix is randomized per call to defeat tag-forgery prompt
+ *     injection.
  *   - `user` role(s) are appended as the actual prompt body, joined by
  *     blank lines if there is more than one.
  *   - malformed entries (non-objects, missing/non-string content) are
@@ -521,17 +535,38 @@ export function flattenAssembledMessages(messages: unknown[]): string {
   }
   if (contextBlocks.length === 0 && userTurns.length === 0) return '';
   if (contextBlocks.length === 0) return userTurns.join('\n\n');
-  const ctx = `<lcm-context>\n${contextBlocks.join('\n')}\n</lcm-context>`;
+  const { open, close } = makeAssembleBoundaryTag();
+  const ctx = `${open}\n${contextBlocks.join('\n')}\n${close}`;
   return userTurns.length === 0 ? ctx : `${ctx}\n\n${userTurns.join('\n\n')}`;
 }
+
+/**
+ * Sanity caps applied to the output of a plugin's `assemble()` before we
+ * trust it as a prompt. A buggy plugin could blow the prompt up to MBs;
+ * we'd rather fall back to the original than push that into `query()`.
+ */
+const MAX_ASSEMBLED_RATIO = 4;             // assembled may grow up to 4x original
+const ABSOLUTE_MAX_ASSEMBLED_LEN = 500_000; // ~125k tokens upper bound
+
+/**
+ * Soft timeout for a plugin's `assemble()` call. On timeout we log warn
+ * and pass the original prompt through. The plugin's promise is left to
+ * resolve in the background (we can't truly abort without an AbortSignal).
+ *
+ * NOTE: asymmetry — we do NOT apply this to `tryPluginCompress` in this
+ * commit to keep the blast radius narrow. Follow-up: mirror the timeout
+ * pattern there once this has bedded in.
+ */
+const ASSEMBLE_TIMEOUT_MS = 5_000;
+const TIMEOUT_SENTINEL = Symbol('assemble-timeout');
 
 /**
  * Attempt to delegate prompt assembly to a plugin's ContextEngine.
  *
  * Returns the assembled prompt string, or `null` if the plugin did not
  * transform the prompt (no engine, no `.assemble` method, returned null
- * or empty/malformed messages, or threw). Caller falls back to the
- * original prompt in those cases.
+ * or empty/malformed messages, exceeded sanity caps, timed out, or
+ * threw). Caller falls back to the original prompt in those cases.
  *
  * Failures are logged and swallowed; this never throws.
  *
@@ -547,14 +582,42 @@ export async function tryPluginAssemble(
 ): Promise<string | null> {
   if (!engine?.assemble) return null;
   try {
-    const result = await engine.assemble({
-      agentId,
-      sessionKey,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const result = await Promise.race([
+      engine.assemble({
+        agentId,
+        sessionKey,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+      new Promise<typeof TIMEOUT_SENTINEL>((resolve) =>
+        setTimeout(() => resolve(TIMEOUT_SENTINEL), ASSEMBLE_TIMEOUT_MS),
+      ),
+    ]);
+    if (result === TIMEOUT_SENTINEL) {
+      logger.warn(
+        { agentId, sessionKey, pluginName, timeoutMs: ASSEMBLE_TIMEOUT_MS },
+        'plugin context-engine assemble timed out; pass-through',
+      );
+      return null;
+    }
     if (!result) return null;
     const flattened = flattenAssembledMessages(result.messages);
     if (!flattened) return null;
+    if (
+      flattened.length > ABSOLUTE_MAX_ASSEMBLED_LEN ||
+      (prompt.length > 0 && flattened.length > prompt.length * MAX_ASSEMBLED_RATIO)
+    ) {
+      logger.warn(
+        {
+          agentId,
+          sessionKey,
+          pluginName,
+          originalLen: prompt.length,
+          assembledLen: flattened.length,
+        },
+        'plugin context-engine assemble exceeded sanity cap; falling back to original prompt',
+      );
+      return null;
+    }
     logger.info(
       {
         agentId,
