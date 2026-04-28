@@ -542,7 +542,22 @@ export class Gateway {
       onAdd: async (d) => {
         try {
           await this.loadAndRegisterPlugin(d, dataDir);
-          logger.info({ plugin: d.manifest.name }, 'plugin hot-reloaded');
+          // Per-agent enable + tool refresh for the newly added plugin
+          const newPluginName = d.manifest.name;
+          for (const [agentId, agent] of this.agents) {
+            const cfg = agent.config.plugins?.[newPluginName];
+            if (cfg?.enabled) {
+              try {
+                this.pluginRegistry.enableForAgent(agentId, newPluginName);
+                logger.info({ agentId, plugin: newPluginName }, 'hot-added plugin enabled for agent');
+              } catch (err) {
+                logger.warn({ agentId, plugin: newPluginName, err }, 'failed to enable hot-added plugin for agent');
+                continue;
+              }
+            }
+            agent.refreshPluginTools(this.pluginRegistry.getMcpToolsForAgent(agentId));
+          }
+          logger.info({ plugin: newPluginName }, 'hot-added plugin wired to enabled agents');
         } catch (err) {
           logger.error({ err, plugin: d.manifest.name }, 'failed to hot-reload plugin');
         }
@@ -555,7 +570,11 @@ export class Gateway {
           }
         }
         this.pluginRegistry.removePlugin(name);
-        logger.info({ plugin: name }, 'plugin removed');
+        // Refresh all agents so the removed plugin's tools are dropped immediately
+        for (const [agentId, agent] of this.agents) {
+          agent.refreshPluginTools(this.pluginRegistry.getMcpToolsForAgent(agentId));
+        }
+        logger.info({ plugin: name }, 'plugin removed and agents refreshed');
       },
     });
 

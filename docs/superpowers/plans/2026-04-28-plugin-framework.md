@@ -1926,6 +1926,8 @@ git add src/plugins/watcher.ts src/plugins/__tests__/watcher.test.ts src/gateway
 git commit -m "feat(plugins): chokidar-based hot-reload for plugins/*/plugin.json"
 ```
 
+**Post-final-review fix:** Watcher `onAdd` was originally only registering the plugin globally — agent enables and `refreshPluginTools()` were not applied until next agent-config reload. Final review caught this; `onAdd` now mirrors the per-agent enable+refresh loop from initial discovery, and `onRemove` also refreshes agent tools to drop the removed plugin's tool definitions immediately.
+
 ---
 
 ## Task 11: Stub plugin (`plugins/__example/`) for E2E test
@@ -2271,6 +2273,8 @@ Expected:
 git add src/plugins/index.ts
 git commit -m "feat(plugins): public API barrel"
 ```
+
+**Note:** `registerSlashCommand` registers but does not dispatch in v0.1.0 — dispatch integration is Plan 2 work. Documented in JSDoc on `PluginContext.registerSlashCommand`.
 
 ---
 

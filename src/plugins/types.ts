@@ -39,7 +39,13 @@ export interface PluginContext {
   // Регистрация ContextEngine (для context-management плагинов вроде LCM)
   registerContextEngine(engine: ContextEngine): void;
 
-  // Регистрация slash-команд
+  /**
+   * Регистрирует slash-команду.
+   * NOTE: As of Plan 1 (v0.1.0), commands are stored in the registry but
+   * NOT dispatched anywhere. Dispatch wiring is deferred to Plan 2 — calling
+   * this method currently has no observable effect at runtime. Tests in
+   * registry.test.ts verify the registration mechanic.
+   */
   registerSlashCommand(cmd: PluginSlashCommand): void;
 
   // Единственный способ LLM-вызова — через SDK query() с maxTurns:1, tools:[]

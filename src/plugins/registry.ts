@@ -134,6 +134,7 @@ export class PluginRegistry {
     const cmds = this.commandsByPlugin.get(pluginName) ?? [];
     cmds.push(cmd);
     this.commandsByPlugin.set(pluginName, cmds);
+    logger.debug({ pluginName, command: cmd.name }, 'plugin slash command registered (dispatch pending)');
   }
 
   listSlashCommands(): PluginSlashCommand[] {
