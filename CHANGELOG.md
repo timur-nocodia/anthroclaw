@@ -8,7 +8,8 @@ All notable changes to AnthroClaw are documented here.
 
 Polish pass on the Sessions surface shipped in 0.4.0: shape-matched
 loading skeletons, faster detail-page open, plus a small reliability
-fix and a favicon.
+fix and a favicon. Also includes a config-mutation fix for Docker
+deployments and a UX fix for the WhatsApp pair flow.
 
 ### Added
 
@@ -41,6 +42,23 @@ fix and a favicon.
   which surfaced as the empty "No gateways in fleet" state on the
   Fleet page even though the gateway itself was healthy. Empty file
   is now treated as default state (3ede5cb).
+- **WhatsApp Disconnect and config edits no longer fail with
+  `EROFS` in Docker.** The production compose file mounts
+  `config.yml` read-only, but the UI's `DELETE /api/channels/whatsapp/[accountId]`
+  and `PUT /api/config` handlers tried to `writeFileSync` to it. New
+  runtime overlay (`data/runtime-overrides.yml`) is deep-merged with
+  the base `config.yml` at gateway startup; UI mutations write to the
+  overlay only, with `null` values acting as tombstones to suppress
+  base entries. The base file stays read-only as the operator-edited
+  source of truth (60bed6d).
+- **WhatsApp pair page no longer dead-ends on `loggedOut`.** Previously
+  the page showed "Logged out by WhatsApp. Clear credentials and try
+  again." with a perpetually pulsing "Generating QR…" spinner and no
+  affordance to clear. Now an error panel renders with a "Clear
+  credentials & retry" button that wipes the auth dir via the pair
+  endpoint's new `reset:true` flag and restarts the SSE stream.
+  Account ID is echoed up front so the retry targets the right
+  directory even when it was derived from the agent's route (60bed6d).
 
 ### Docs
 
