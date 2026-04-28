@@ -858,6 +858,9 @@ describe('runSubagent', () => {
     expect(callArg.options.allowedTools).toEqual([]);
     expect(callArg.options.permissionMode).toBe('dontAsk');
     expect(callArg.options.model).toBe('claude-haiku-4-5');
+    // Verify canUseTool is actually a deny function, not just present.
+    expect(typeof callArg.options.canUseTool).toBe('function');
+    await expect(callArg.options.canUseTool()).resolves.toMatchObject({ behavior: 'deny' });
   });
 
   it('extracts text from assistant blocks if no result event', async () => {
@@ -912,6 +915,8 @@ Expected: FAIL (`Cannot find module '../subagent-runner'`)
 
 - [ ] **Step 3: Implement subagent-runner.ts**
 
+(After review: includes timeout abort propagation + SDKResultError surfacing.)
+
 ```typescript
 // src/plugins/subagent-runner.ts
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -929,6 +934,9 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
+  // AbortController created before sdkOptions so it can be passed in (propagates abort to SDK subprocess).
+  const controller = new AbortController();
+
   const sdkOptions: Options = {
     model: opts.model ?? 'claude-sonnet-4-6',
     cwd: opts.cwd ?? process.cwd(),
@@ -939,6 +947,7 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
       behavior: 'deny',
       message: 'Tools disabled in plugin subagent.',
     }),
+    abortController: controller,
     settingSources: ['project'],
     persistSession: false,
     maxTurns: 1,
@@ -949,21 +958,24 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
 
   const stream = query({ prompt: opts.prompt, options: sdkOptions });
 
-  // Timeout через AbortController + race
-  const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let result = '';
   let resultFound = false;
   const accumulated: string[] = [];
 
-  try {
+  const completePromise = (async () => {
     for await (const evt of stream) {
-      if (controller.signal.aborted) {
-        throw new Error(`runSubagent timeout after ${timeoutMs}ms`);
+      const e = evt as Record<string, unknown>;
+
+      // Detect SDK result errors before checking for success result string.
+      const isErrorResult = e.type === 'result' && Boolean((e as { is_error?: boolean }).is_error);
+      if (isErrorResult) {
+        const errors = (e as { errors?: string[] }).errors ?? [];
+        const subtype = (e as { subtype?: string }).subtype ?? 'unknown';
+        throw new Error(`runSubagent LLM error (${subtype}): ${errors.join('; ') || subtype}`);
       }
 
-      const e = evt as Record<string, unknown>;
       if (e.type === 'result' && typeof e.result === 'string') {
         result = e.result.trim();
         resultFound = true;
@@ -980,7 +992,18 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
         }
       }
     }
+  })();
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    controller.signal.addEventListener('abort', () => {
+      reject(new Error(`runSubagent timeout after ${timeoutMs}ms`));
+    });
+  });
+
+  try {
+    await Promise.race([completePromise, timeoutPromise]);
   } finally {
+    // stream.close() in outer finally so it runs even when timeout wins. Calling twice is safe.
     clearTimeout(timer);
     stream.close?.();
   }
@@ -1000,7 +1023,7 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/plugins/__tests__/subagent-runner.test.ts`
-Expected: PASS (all 4 cases)
+Expected: PASS (all 6 cases after review fixes)
 
 - [ ] **Step 5: Commit**
 
@@ -1008,6 +1031,8 @@ Expected: PASS (all 4 cases)
 git add src/plugins/subagent-runner.ts src/plugins/__tests__/subagent-runner.test.ts
 git commit -m "feat(plugins): runSubagent — single LLM path via SDK query() with deny-all tools"
 ```
+
+NOTE: This task also adds `clearMocks: true` to `vitest.config.ts` to ensure clean mock state between tests.
 
 ---
 

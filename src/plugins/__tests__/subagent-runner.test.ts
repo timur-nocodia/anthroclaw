@@ -31,6 +31,9 @@ describe('runSubagent', () => {
     expect(callArg.options.allowedTools).toEqual([]);
     expect(callArg.options.permissionMode).toBe('dontAsk');
     expect(callArg.options.model).toBe('claude-haiku-4-5');
+    // I1: Verify canUseTool: deny is actually a function that returns deny behavior.
+    expect(typeof callArg.options.canUseTool).toBe('function');
+    await expect(callArg.options.canUseTool()).resolves.toMatchObject({ behavior: 'deny' });
   });
 
   it('extracts text from assistant blocks if no result event', async () => {
@@ -74,5 +77,33 @@ describe('runSubagent', () => {
     });
 
     await expect(runSubagent({ prompt: 'p' })).rejects.toThrow(/empty|no result/i);
+  });
+
+  // M2: Test zero-event case (stream ends with no events).
+  it('throws when stream ends with no events', async () => {
+    const empty = (async function* () { /* yields nothing */ })();
+    (query as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      [Symbol.asyncIterator]: () => empty,
+      close: vi.fn(),
+    });
+    await expect(runSubagent({ prompt: 'p' })).rejects.toThrow(/empty|no result/i);
+  });
+
+  // M2: Test SDKResultError surfacing.
+  it('surfaces SDKResultError as a thrown error with subtype and errors', async () => {
+    const events = (async function* () {
+      yield {
+        type: 'result',
+        is_error: true,
+        subtype: 'error_during_execution',
+        errors: ['authentication_failed'],
+      };
+    })();
+    (query as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      [Symbol.asyncIterator]: () => events,
+      close: vi.fn(),
+    });
+    await expect(runSubagent({ prompt: 'p' }))
+      .rejects.toThrow(/error_during_execution|authentication_failed/);
   });
 });
