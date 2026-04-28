@@ -23,6 +23,7 @@ reference-projects/
 # Temp dirs
 openclaw-path-alias-*/
 --code/
-docs/
+docs/*
+!docs/superpowers/
 
 CLAUDE.md
