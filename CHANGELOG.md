@@ -4,6 +4,16 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-04-28
+
+### Changed
+- perf(sessions): include meta in detail endpoint, lazy-load label autocomplete (dfb1aaf)
+- feat(ui): skeleton loaders for Sessions list and detail pages (caf709e)
+- fix(ui): handle empty fleet-alerts.json / fleet.json without crashing (3ede5cb)
+- feat(ui): add favicon (2529214)
+- docs: mention Sessions browser; correct on-disk persistence claim (035ead7)
+
+
 ## [0.4.0] - 2026-04-27
 
 This release ships a dedicated **Sessions** section in the UI: full read /
