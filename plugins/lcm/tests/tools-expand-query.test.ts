@@ -6,7 +6,12 @@ import { join } from 'node:path';
 import { bootstrap } from '../src/db/bootstrap.js';
 import { MessageStore } from '../src/store.js';
 import { SummaryDAG } from '../src/dag.js';
+import { LifecycleManager } from '../src/lifecycle.js';
+import { LCMConfigSchema } from '../src/config.js';
 import { createExpandQueryTool, EXPAND_QUERY_RATE_LIMIT_PER_TURN } from '../src/tools/expand-query.js';
+import type { AgentState } from '../src/agent-state.js';
+
+const CTX = { agentId: 'test-agent' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -14,6 +19,22 @@ function makeDb(dir: string) {
   const db = new Database(join(dir, 'lcm.sqlite'));
   bootstrap(db);
   return db;
+}
+
+function makeState(
+  db: Database.Database,
+  store: MessageStore,
+  dag: SummaryDAG,
+  sessionKey: string,
+): AgentState {
+  return {
+    db,
+    store,
+    dag,
+    lifecycle: new LifecycleManager(db),
+    config: LCMConfigSchema.parse({}),
+    sessionKey,
+  };
 }
 
 function mockSubagent(answer: string) {
@@ -77,9 +98,7 @@ describe('createExpandQueryTool', () => {
   // Test 1: Tool name, description, schema
   it('has name "expand_query", non-empty description, and a defined inputSchema', () => {
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent: mockSubagent('answer'),
     });
     expect(tool.name).toBe('expand_query');
@@ -91,12 +110,10 @@ describe('createExpandQueryTool', () => {
   // Test 2: Schema requires prompt
   it('schema rejects missing prompt', async () => {
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent: mockSubagent('answer'),
     });
-    const result = await tool.handler({ query: 'hello' });
+    const result = await tool.handler({ query: 'hello' }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error.length).toBeGreaterThan(0);
@@ -105,24 +122,20 @@ describe('createExpandQueryTool', () => {
   // Test 3: Schema rejects both query+node_ids, and also rejects neither
   it('schema rejects both query AND node_ids simultaneously', async () => {
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent: mockSubagent('answer'),
     });
-    const resultBoth = await tool.handler({ prompt: 'test', query: 'hello', node_ids: [messagesNodeId] });
+    const resultBoth = await tool.handler({ prompt: 'test', query: 'hello', node_ids: [messagesNodeId] }, CTX);
     const parsedBoth = JSON.parse(resultBoth.content[0].text);
     expect(typeof parsedBoth.error).toBe('string');
   });
 
   it('schema rejects neither query NOR node_ids', async () => {
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent: mockSubagent('answer'),
     });
-    const resultNeither = await tool.handler({ prompt: 'test' });
+    const resultNeither = await tool.handler({ prompt: 'test' }, CTX);
     const parsedNeither = JSON.parse(resultNeither.content[0].text);
     expect(typeof parsedNeither.error).toBe('string');
   });
@@ -131,13 +144,11 @@ describe('createExpandQueryTool', () => {
   it('query-mode: searches DAG, calls subagent with grounded context, returns {answer, sources}', async () => {
     const runSubagent = mockSubagent('The answer is about hello world.');
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent,
     });
 
-    const result = await tool.handler({ prompt: 'What was said?', query: 'hello' });
+    const result = await tool.handler({ prompt: 'What was said?', query: 'hello' }, CTX);
     const parsed = JSON.parse(result.content[0].text);
 
     // Should have answer and sources
@@ -159,13 +170,11 @@ describe('createExpandQueryTool', () => {
   it('node_ids-mode: skips DAG search, uses direct node_ids', async () => {
     const runSubagent = mockSubagent('Direct answer.');
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent,
     });
 
-    const result = await tool.handler({ prompt: 'Summarize', node_ids: [messagesNodeId] });
+    const result = await tool.handler({ prompt: 'Summarize', node_ids: [messagesNodeId] }, CTX);
     const parsed = JSON.parse(result.content[0].text);
 
     expect(typeof parsed.answer).toBe('string');
@@ -187,14 +196,12 @@ describe('createExpandQueryTool', () => {
   it('query-mode: no matching nodes → returns error JSON', async () => {
     const runSubagent = mockSubagent('Should not be called');
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent,
     });
 
     // Use a query that will definitely not match
-    const result = await tool.handler({ prompt: 'test', query: 'zzzznotfound1234567890xyz' });
+    const result = await tool.handler({ prompt: 'test', query: 'zzzznotfound1234567890xyz' }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/no matching nodes/i);
@@ -205,13 +212,11 @@ describe('createExpandQueryTool', () => {
   it('node_ids-mode: all node_ids unknown → returns error JSON', async () => {
     const runSubagent = mockSubagent('Should not be called');
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent,
     });
 
-    const result = await tool.handler({ prompt: 'test', node_ids: ['nonexistent-node-id-xyz-123'] });
+    const result = await tool.handler({ prompt: 'test', node_ids: ['nonexistent-node-id-xyz-123'] }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/no nodes found/i);
@@ -262,9 +267,7 @@ describe('createExpandQueryTool', () => {
 
     const runSubagent = mockSubagent('Capped answer.');
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session2',
+      resolveAgent: () => makeState(db, store, dag, 'session2'),
       runSubagent,
     });
 
@@ -275,7 +278,7 @@ describe('createExpandQueryTool', () => {
       prompt: 'What happened?',
       node_ids: [earlyNodeId, lateNodeId],
       max_context_tokens: 150,
-    });
+    }, CTX);
     const parsed = JSON.parse(result.content[0].text);
 
     // Should succeed (at least 1 fits)
@@ -294,13 +297,11 @@ describe('createExpandQueryTool', () => {
   it('subagent returns empty string → returns error JSON', async () => {
     const runSubagent = vi.fn().mockResolvedValue('');
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent,
     });
 
-    const result = await tool.handler({ prompt: 'test', node_ids: [messagesNodeId] });
+    const result = await tool.handler({ prompt: 'test', node_ids: [messagesNodeId] }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/empty/i);
@@ -310,13 +311,11 @@ describe('createExpandQueryTool', () => {
   it('subagent throws → returns error JSON', async () => {
     const runSubagent = vi.fn().mockRejectedValue(new Error('subagent timeout'));
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent,
     });
 
-    const result = await tool.handler({ prompt: 'test', node_ids: [messagesNodeId] });
+    const result = await tool.handler({ prompt: 'test', node_ids: [messagesNodeId] }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/subagent timeout/i);
@@ -328,21 +327,19 @@ describe('createExpandQueryTool', () => {
 
     const runSubagent = mockSubagent('ok');
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent,
     });
 
     // First 5 calls should succeed
     for (let i = 0; i < EXPAND_QUERY_RATE_LIMIT_PER_TURN; i++) {
-      const result = await tool.handler({ prompt: 'test', node_ids: [messagesNodeId] });
+      const result = await tool.handler({ prompt: 'test', node_ids: [messagesNodeId] }, CTX);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBeUndefined();
     }
 
     // 6th call should return rate limit error
-    const result = await tool.handler({ prompt: 'test', node_ids: [messagesNodeId] });
+    const result = await tool.handler({ prompt: 'test', node_ids: [messagesNodeId] }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/rate limit/i);
@@ -352,14 +349,12 @@ describe('createExpandQueryTool', () => {
   it('expansionTimeoutMs is forwarded to runSubagent as timeoutMs', async () => {
     const runSubagent = mockSubagent('timed answer');
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent,
       expansionTimeoutMs: 42_000,
     });
 
-    await tool.handler({ prompt: 'test', node_ids: [messagesNodeId] });
+    await tool.handler({ prompt: 'test', node_ids: [messagesNodeId] }, CTX);
 
     expect(runSubagent).toHaveBeenCalledOnce();
     const callArgs = runSubagent.mock.calls[0][0];
@@ -370,13 +365,11 @@ describe('createExpandQueryTool', () => {
   it('nodes-type source_type uses summary text directly (no recursion)', async () => {
     const runSubagent = mockSubagent('summary-based answer');
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => makeState(db, store, dag, 'session1'),
       runSubagent,
     });
 
-    const result = await tool.handler({ prompt: 'test', node_ids: [nodesNodeId] });
+    const result = await tool.handler({ prompt: 'test', node_ids: [nodesNodeId] }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.answer).toBe('string');
 
@@ -412,13 +405,11 @@ describe('createExpandQueryTool', () => {
 
     const runSubagent = mockSubagent('answer with long snippet');
     const tool = createExpandQueryTool({
-      store,
-      dag,
-      sessionResolver: () => 'session3',
+      resolveAgent: () => makeState(db, store, dag, 'session3'),
       runSubagent,
     });
 
-    const result = await tool.handler({ prompt: 'test', node_ids: [longNodeId] });
+    const result = await tool.handler({ prompt: 'test', node_ids: [longNodeId] }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.answer).toBe('string');
     expect(Array.isArray(parsed.sources)).toBe(true);

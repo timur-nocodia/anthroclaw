@@ -10,9 +10,8 @@
  */
 
 import { z } from 'zod';
-import type { MessageStore } from '../store.js';
-import type { SummaryDAG } from '../dag.js';
 import type { PluginMcpTool } from '../types-shim.js';
+import type { AgentState } from '../agent-state.js';
 
 // ─── Public constants ─────────────────────────────────────────────────────────
 
@@ -21,10 +20,8 @@ export const DESCRIBE_RATE_LIMIT_PER_TURN = 10;
 // ─── Deps interface ───────────────────────────────────────────────────────────
 
 export interface DescribeDeps {
-  store: MessageStore;
-  dag: SummaryDAG;
-  /** Resolves current session_key for this turn. */
-  sessionResolver: () => string;
+  /** Resolves per-agent state for the calling agentId. */
+  resolveAgent: (agentId: string) => AgentState;
   /** Optional: resolves externalized file content by ref. T18 will provide; for T12 optional. */
   externalizedReader?: (ref: string) => Promise<{ content: string; size: number } | null>;
   logger?: { info: (obj: unknown, msg: string) => void; warn: (obj: unknown, msg: string) => void };
@@ -48,6 +45,7 @@ export function createDescribeTool(deps: DescribeDeps): PluginMcpTool {
 
   const handler = async (
     raw: unknown,
+    ctx: { agentId: string; sessionKey?: string },
   ): Promise<{ content: Array<{ type: 'text'; text: string }> }> => {
     callCount++;
     if (callCount > DESCRIBE_RATE_LIMIT_PER_TURN) {
@@ -64,7 +62,8 @@ export function createDescribeTool(deps: DescribeDeps): PluginMcpTool {
 
     try {
       const input = INPUT_SCHEMA.parse(raw);
-      const sessionKey = deps.sessionResolver();
+      const state = deps.resolveAgent(ctx.agentId);
+      const sessionKey = state.sessionKey;
 
       // ── Mode 3: externalized_ref ─────────────────────────────────────────
       if (input.externalized_ref !== undefined) {
@@ -106,7 +105,7 @@ export function createDescribeTool(deps: DescribeDeps): PluginMcpTool {
 
       // ── Mode 2: node_id ───────────────────────────────────────────────────
       if (input.node_id !== undefined) {
-        const node = deps.dag.get(input.node_id);
+        const node = state.dag.get(input.node_id);
         if (!node) {
           return {
             content: [
@@ -125,12 +124,12 @@ export function createDescribeTool(deps: DescribeDeps): PluginMcpTool {
 
         if (node.source_type === 'nodes') {
           // Children are DAG nodes
-          const childNodes = deps.dag.getChildren(node.node_id);
+          const childNodes = state.dag.getChildren(node.node_id);
           children = childNodes.map((n) => ({ node_id: n.node_id, depth: n.depth }));
         } else {
           // source_type === 'messages': children are store messages
-          const msgIds = deps.dag.getSourceMessageIds(node.node_id);
-          const messages = deps.store.getMany(msgIds);
+          const msgIds = state.dag.getSourceMessageIds(node.node_id);
+          const messages = state.store.getMany(msgIds);
           children = messages.map((m) => ({
             store_id: m.store_id,
             role: m.role,
@@ -161,8 +160,8 @@ export function createDescribeTool(deps: DescribeDeps): PluginMcpTool {
       }
 
       // ── Mode 1: overview (no args) ────────────────────────────────────────
-      const messages = deps.store.listSession(sessionKey);
-      const depthCounts = deps.dag.countByDepth(sessionKey);
+      const messages = state.store.listSession(sessionKey);
+      const depthCounts = state.dag.countByDepth(sessionKey);
 
       // Compute depth_distribution with string keys
       const depthDistribution: Record<string, number> = {};

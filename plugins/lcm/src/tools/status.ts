@@ -12,10 +12,8 @@
  */
 
 import { z } from 'zod';
-import type { MessageStore } from '../store.js';
-import type { SummaryDAG } from '../dag.js';
-import type { LifecycleManager } from '../lifecycle.js';
 import type { PluginMcpTool } from '../types-shim.js';
+import type { AgentState } from '../agent-state.js';
 
 // ─── Public constants ─────────────────────────────────────────────────────────
 
@@ -24,13 +22,8 @@ export const STATUS_RATE_LIMIT_PER_TURN = 10;
 // ─── Deps interface ───────────────────────────────────────────────────────────
 
 export interface StatusDeps {
-  store: MessageStore;
-  dag: SummaryDAG;
-  lifecycle: LifecycleManager;
-  /** Resolves current session_key for this turn. */
-  sessionResolver: () => string;
-  /** Resolves agentId (= conversation_id for lifecycle). */
-  agentResolver: () => string;
+  /** Resolves per-agent state for the calling agentId. */
+  resolveAgent: (agentId: string) => AgentState;
   logger?: { info: (obj: unknown, msg: string) => void; warn: (obj: unknown, msg: string) => void };
 }
 
@@ -45,6 +38,7 @@ export function createStatusTool(deps: StatusDeps): PluginMcpTool {
 
   const handler = async (
     raw: unknown,
+    ctx: { agentId: string; sessionKey?: string },
   ): Promise<{ content: Array<{ type: 'text'; text: string }> }> => {
     callCount++;
     if (callCount > STATUS_RATE_LIMIT_PER_TURN) {
@@ -61,22 +55,23 @@ export function createStatusTool(deps: StatusDeps): PluginMcpTool {
 
     try {
       INPUT_SCHEMA.parse(raw);
-      const sessionKey = deps.sessionResolver();
-      const agentId = deps.agentResolver();
+      const state = deps.resolveAgent(ctx.agentId);
+      const sessionKey = state.sessionKey;
+      const agentId = ctx.agentId;
 
       // store stats
-      const messages = deps.store.listSession(sessionKey);
-      const tokens = deps.store.totalTokensInSession(sessionKey);
+      const messages = state.store.listSession(sessionKey);
+      const tokens = state.store.totalTokensInSession(sessionKey);
 
       // dag stats — keys formatted as "d0", "d1", etc.
-      const depthCounts = deps.dag.countByDepth(sessionKey);
+      const depthCounts = state.dag.countByDepth(sessionKey);
       const dagOut: Record<string, number> = {};
       for (const [depth, count] of Object.entries(depthCounts)) {
         dagOut[`d${depth}`] = count;
       }
 
       // lifecycle state
-      const lcState = deps.lifecycle.get(agentId);
+      const lcState = state.lifecycle.get(agentId);
       const lifecycle = lcState
         ? {
             current_session_id: lcState.current_session_id,

@@ -5,9 +5,8 @@
  */
 
 import { z } from 'zod';
-import type { MessageStore } from '../store.js';
-import type { SummaryDAG } from '../dag.js';
 import type { PluginMcpTool } from '../types-shim.js';
+import type { AgentState } from '../agent-state.js';
 
 // ─── Public constants ─────────────────────────────────────────────────────────
 
@@ -16,10 +15,8 @@ export const GREP_RATE_LIMIT_PER_TURN = 10;
 // ─── Deps interface ───────────────────────────────────────────────────────────
 
 export interface GrepDeps {
-  store: MessageStore;
-  dag: SummaryDAG;
-  /** Resolver injected by register(): returns the current session_key for this turn. */
-  sessionResolver: () => string;
+  /** Resolver injected by register(): returns per-agent state for the calling agentId. */
+  resolveAgent: (agentId: string) => AgentState;
   /** Optional logger; defaults to no-op. */
   logger?: { info: (obj: unknown, msg: string) => void; warn: (obj: unknown, msg: string) => void };
 }
@@ -60,7 +57,10 @@ type GrepResult = MessageResult | SummaryResult;
 export function createGrepTool(deps: GrepDeps): PluginMcpTool {
   let callCount = 0;
 
-  const handler = async (raw: unknown): Promise<{ content: Array<{ type: 'text'; text: string }> }> => {
+  const handler = async (
+    raw: unknown,
+    ctx: { agentId: string; sessionKey?: string },
+  ): Promise<{ content: Array<{ type: 'text'; text: string }> }> => {
     callCount++;
     if (callCount > GREP_RATE_LIMIT_PER_TURN) {
       deps.logger?.warn({ count: callCount }, 'lcm_grep rate limit exceeded');
@@ -76,7 +76,8 @@ export function createGrepTool(deps: GrepDeps): PluginMcpTool {
 
     try {
       const input = INPUT_SCHEMA.parse(raw);
-      const sessionKey = deps.sessionResolver();
+      const state = deps.resolveAgent(ctx.agentId);
+      const sessionKey = state.sessionKey;
 
       const { query, scope, source, sort, limit } = input;
       const sourceOpt = source !== 'all' ? source : undefined;
@@ -85,7 +86,7 @@ export function createGrepTool(deps: GrepDeps): PluginMcpTool {
 
       // Fetch messages
       if (scope === 'messages' || scope === 'both') {
-        const msgResults = deps.store.search(query, {
+        const msgResults = state.store.search(query, {
           sessionId: sessionKey,
           source: sourceOpt,
           sort,
@@ -104,7 +105,7 @@ export function createGrepTool(deps: GrepDeps): PluginMcpTool {
 
       // Fetch summaries
       if (scope === 'summaries' || scope === 'both') {
-        const nodeResults = deps.dag.search(query, {
+        const nodeResults = state.dag.search(query, {
           sessionId: sessionKey,
           source: sourceOpt,
           limit,

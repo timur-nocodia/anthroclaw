@@ -21,12 +21,9 @@
 import { z } from 'zod';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type Database from 'better-sqlite3';
-import type { MessageStore } from '../store.js';
-import type { SummaryDAG } from '../dag.js';
-import type { LifecycleManager } from '../lifecycle.js';
 import type { PluginMcpTool } from '../types-shim.js';
-import { LCMConfigSchema, type LCMConfig } from '../config.js';
+import type { AgentState } from '../agent-state.js';
+import { LCMConfigSchema } from '../config.js';
 
 // ─── Public constants ─────────────────────────────────────────────────────────
 
@@ -35,16 +32,12 @@ export const DOCTOR_RATE_LIMIT_PER_TURN = 3;
 // ─── Deps interface ───────────────────────────────────────────────────────────
 
 export interface DoctorDeps {
-  db: Database.Database;
-  store: MessageStore;
-  dag: SummaryDAG;
-  lifecycle: LifecycleManager;
-  config: LCMConfig;
-  /** Resolves agentId for status pressure & backup naming. */
-  agentResolver: () => string;
-  /** Resolves sessionKey for status pressure check. */
-  sessionResolver: () => string;
-  /** Backup directory (absolute path). E.g., `${dataDir}/backups`. Must exist or be createable. */
+  /** Resolves per-agent state for the calling agentId. */
+  resolveAgent: (agentId: string) => AgentState;
+  /**
+   * Backup directory (absolute path). E.g., `${dataDir}/lcm-backups`.
+   * Plugin-instance-wide constant — NOT per-agent. Created on demand.
+   */
   backupDir: string;
   logger?: { info: (obj: unknown, msg: string) => void; warn: (obj: unknown, msg: string) => void };
 }
@@ -76,6 +69,7 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
 
   const handler = async (
     raw: unknown,
+    ctx: { agentId: string; sessionKey?: string },
   ): Promise<{ content: Array<{ type: 'text'; text: string }> }> => {
     callCount++;
     if (callCount > DOCTOR_RATE_LIMIT_PER_TURN) {
@@ -94,13 +88,14 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
       const input = INPUT_SCHEMA.parse(raw);
       const { apply } = input;
 
-      const sessionKey = deps.sessionResolver();
-      const agentId = deps.agentResolver();
+      const state = deps.resolveAgent(ctx.agentId);
+      const sessionKey = state.sessionKey;
+      const agentId = ctx.agentId;
 
       const checks: CheckResult[] = [];
 
       // ── Check 1: sqlite_integrity ─────────────────────────────────────────
-      const integrityRow = deps.db.prepare('PRAGMA integrity_check').get() as { integrity_check: string } | undefined;
+      const integrityRow = state.db.prepare('PRAGMA integrity_check').get() as { integrity_check: string } | undefined;
       const integrityValue = integrityRow?.integrity_check ?? 'unknown';
       const integrityOk = integrityValue === 'ok';
       checks.push({
@@ -114,10 +109,10 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
       // from the external content source (messages/summary_nodes), so it always
       // equals the source count. Instead we compare against the FTS5 _docsize
       // shadow table, which tracks actually-indexed documents.
-      const msgCount = (deps.db.prepare('SELECT COUNT(*) AS c FROM messages').get() as { c: number }).c;
-      const msgFtsCount = (deps.db.prepare('SELECT COUNT(*) AS c FROM messages_fts_docsize').get() as { c: number }).c;
-      const nodeCount = (deps.db.prepare('SELECT COUNT(*) AS c FROM summary_nodes').get() as { c: number }).c;
-      const nodeFtsCount = (deps.db.prepare('SELECT COUNT(*) AS c FROM nodes_fts_docsize').get() as { c: number }).c;
+      const msgCount = (state.db.prepare('SELECT COUNT(*) AS c FROM messages').get() as { c: number }).c;
+      const msgFtsCount = (state.db.prepare('SELECT COUNT(*) AS c FROM messages_fts_docsize').get() as { c: number }).c;
+      const nodeCount = (state.db.prepare('SELECT COUNT(*) AS c FROM summary_nodes').get() as { c: number }).c;
+      const nodeFtsCount = (state.db.prepare('SELECT COUNT(*) AS c FROM nodes_fts_docsize').get() as { c: number }).c;
       const ftsOk = msgCount === msgFtsCount && nodeCount === nodeFtsCount;
       checks.push({
         name: 'fts_sync',
@@ -128,7 +123,7 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
       });
 
       // ── Check 3: orphaned_dag_nodes ───────────────────────────────────────
-      const orphans = deps.dag.findOrphans();
+      const orphans = state.dag.findOrphans();
       const orphanOk = orphans.length === 0;
       checks.push({
         name: 'orphaned_dag_nodes',
@@ -137,7 +132,7 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
       });
 
       // ── Check 4: config_validation ────────────────────────────────────────
-      const configResult = LCMConfigSchema.safeParse(deps.config);
+      const configResult = LCMConfigSchema.safeParse(state.config);
       const configErrors: string[] = configResult.success
         ? []
         : configResult.error.issues.map((issue) => issue.path.join('.') || issue.message);
@@ -152,7 +147,7 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
         node_id: string;
         missing_store_id: string;
       }
-      const lineageRows = deps.db
+      const lineageRows = state.db
         .prepare(
           `SELECT n.node_id, j.value AS missing_store_id
            FROM summary_nodes n, json_each(n.source_ids_json) j
@@ -171,8 +166,8 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
       checks.push(lineageCheck);
 
       // ── Check 6: context_pressure ─────────────────────────────────────────
-      const currentTokens = deps.store.totalTokensInSession(sessionKey);
-      const budget = deps.config.triggers.compress_threshold_tokens;
+      const currentTokens = state.store.totalTokensInSession(sessionKey);
+      const budget = state.config.triggers.compress_threshold_tokens;
       const pressureOk = currentTokens < budget;
       checks.push({
         name: 'context_pressure',
@@ -199,8 +194,8 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
 
       // ── Double-gate check ─────────────────────────────────────────────────
       const gateOpen =
-        deps.config.operator.slash_command.enabled === true &&
-        deps.config.operator.doctor.clean_apply.enabled === true;
+        state.config.operator.slash_command.enabled === true &&
+        state.config.operator.doctor.clean_apply.enabled === true;
 
       if (!gateOpen) {
         deps.logger?.warn({ agentId }, 'lcm_doctor apply refused: double-gate not enabled');
@@ -224,7 +219,7 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
       mkdirSync(deps.backupDir, { recursive: true });
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const backupPath = join(deps.backupDir, `${agentId}-${ts}.sqlite`);
-      await deps.db.backup(backupPath);
+      await state.db.backup(backupPath);
 
       deps.logger?.info({ backupPath, agentId }, 'lcm_doctor: backup created');
 
@@ -259,7 +254,7 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
         // Since orphans don't exist as nodes (they are missing ids), this is a no-op for them.
         // The intent is to clean up parent nodes that reference missing ids by deleting
         // the orphan references. We align with spec: attempt delete of the orphan ids.
-        const deleteResult = deps.db
+        const deleteResult = state.db
           .prepare(`DELETE FROM summary_nodes WHERE node_id IN (${placeholders})`)
           .run(...orphans);
         removed += deleteResult.changes;
@@ -267,8 +262,8 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
 
       // Rebuild FTS if integrity check failed or fts_sync check failed
       if (!integrityOk || !ftsOk) {
-        deps.db.prepare(`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`).run();
-        deps.db.prepare(`INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')`).run();
+        state.db.prepare(`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`).run();
+        state.db.prepare(`INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')`).run();
         deps.logger?.info({}, 'lcm_doctor: FTS indexes rebuilt');
       }
 

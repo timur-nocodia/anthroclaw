@@ -12,11 +12,25 @@ export interface PluginLogger {
   debug(obj: unknown, msg?: string): void;
 }
 
+/**
+ * Context passed to MCP tool handlers at invocation time. Mirrors
+ * src/plugins/types.ts McpToolContext — keep in sync.
+ */
+export interface McpToolContext {
+  /** ID of the agent invoking this tool. Always present at runtime. */
+  agentId: string;
+  /** Session key, if known. May be undefined for tools called outside dispatch flow. */
+  sessionKey?: string;
+}
+
 export interface PluginMcpTool {
   name: string;
   description: string;
   inputSchema: z.ZodTypeAny;
-  handler: (input: unknown) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+  handler: (
+    input: unknown,
+    ctx: McpToolContext,
+  ) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
 }
 
 /**

@@ -9,6 +9,9 @@ import { SummaryDAG } from '../src/dag.js';
 import { LifecycleManager } from '../src/lifecycle.js';
 import { createDoctorTool, DOCTOR_RATE_LIMIT_PER_TURN } from '../src/tools/doctor.js';
 import { LCMConfigSchema, type LCMConfig } from '../src/config.js';
+import type { AgentState } from '../src/agent-state.js';
+
+const CTX = { agentId: 'agent1' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +58,17 @@ function teardown(s: SetupResult) {
   rmSync(s.tmp, { recursive: true, force: true });
 }
 
+function stateFor(s: SetupResult, config: LCMConfig): AgentState {
+  return {
+    db: s.db,
+    store: s.store,
+    dag: s.dag,
+    lifecycle: s.lifecycle,
+    config,
+    sessionKey: 'sess1',
+  };
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('createDoctorTool', () => {
@@ -71,13 +85,7 @@ describe('createDoctorTool', () => {
   // Test 1: tool name, description, schema
   it('has name "doctor", non-empty description, and inputSchema', () => {
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: defaultConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, defaultConfig()),
       backupDir: s.backupDir,
     });
     expect(tool.name).toBe('doctor');
@@ -89,16 +97,10 @@ describe('createDoctorTool', () => {
   // Test 2: apply=false (default): runs all 6 checks, no cleanup
   it('apply=false returns all 6 checks, can_clean=false, cleanup=null', async () => {
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: defaultConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, defaultConfig()),
       backupDir: s.backupDir,
     });
-    const result = await tool.handler({ apply: false });
+    const result = await tool.handler({ apply: false }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.checks).toHaveLength(6);
     expect(parsed.can_clean).toBe(false);
@@ -115,16 +117,10 @@ describe('createDoctorTool', () => {
   // Test 3: All checks pass on a fresh clean DB
   it('all checks pass on a fresh clean DB with default config', async () => {
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: defaultConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, defaultConfig()),
       backupDir: s.backupDir,
     });
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX);
     const parsed = JSON.parse(result.content[0].text);
     for (const check of parsed.checks) {
       if (check.name === 'context_pressure') {
@@ -153,16 +149,10 @@ describe('createDoctorTool', () => {
     expect(parentId).toBeTruthy();
 
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: defaultConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, defaultConfig()),
       backupDir: s.backupDir,
     });
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX);
     const parsed = JSON.parse(result.content[0].text);
     const orphanCheck = parsed.checks.find((c: { name: string }) => c.name === 'orphaned_dag_nodes');
     expect(orphanCheck.ok).toBe(false);
@@ -178,16 +168,10 @@ describe('createDoctorTool', () => {
       },
     });
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config,
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, config),
       backupDir: s.backupDir,
     });
-    const result = await tool.handler({ apply: true });
+    const result = await tool.handler({ apply: true }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.can_clean).toBe(false);
     expect(parsed.cleanup).toBeNull();
@@ -213,17 +197,11 @@ describe('createDoctorTool', () => {
     });
 
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: gatedConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, gatedConfig()),
       backupDir: s.backupDir,
     });
 
-    const result = await tool.handler({ apply: true });
+    const result = await tool.handler({ apply: true }, CTX);
     const parsed = JSON.parse(result.content[0].text);
 
     expect(parsed.can_clean).toBe(true);
@@ -243,17 +221,11 @@ describe('createDoctorTool', () => {
     s.store.append({ session_id: 'sess1', source: 'cli', role: 'user', content: 'hello', ts: Date.now() });
 
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: gatedConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, gatedConfig()),
       backupDir: s.backupDir,
     });
 
-    const result = await tool.handler({ apply: true });
+    const result = await tool.handler({ apply: true }, CTX);
     const parsed = JSON.parse(result.content[0].text);
 
     // Should have backup_path (no issues = can_clean=false but backup still created)
@@ -277,17 +249,11 @@ describe('createDoctorTool', () => {
   it('apply=true with double-gate and no orphans: backup created, removed=0, can_clean=false', async () => {
     // Fresh DB — no orphans, no issues
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: gatedConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, gatedConfig()),
       backupDir: s.backupDir,
     });
 
-    const result = await tool.handler({ apply: true });
+    const result = await tool.handler({ apply: true }, CTX);
     const parsed = JSON.parse(result.content[0].text);
 
     // No issues → can_clean=false
@@ -305,17 +271,11 @@ describe('createDoctorTool', () => {
     s.store.append({ session_id: 'sess1', source: 'cli', role: 'user', content: 'short', ts: Date.now() });
 
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: defaultConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, defaultConfig()),
       backupDir: s.backupDir,
     });
 
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX);
     const parsed = JSON.parse(result.content[0].text);
     const pressureCheck = parsed.checks.find((c: { name: string }) => c.name === 'context_pressure');
 
@@ -331,16 +291,10 @@ describe('createDoctorTool', () => {
   it('config_validation: valid config→ok=true; invalid config (pre-parsed corrupt) → errors array non-empty', async () => {
     // Valid config
     const toolValid = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: defaultConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, defaultConfig()),
       backupDir: s.backupDir,
     });
-    const validResult = await toolValid.handler({});
+    const validResult = await toolValid.handler({}, CTX);
     const validParsed = JSON.parse(validResult.content[0].text);
     const validConfigCheck = validParsed.checks.find((c: { name: string }) => c.name === 'config_validation');
     expect(validConfigCheck.ok).toBe(true);
@@ -352,16 +306,10 @@ describe('createDoctorTool', () => {
     // We pass the valid config object but then corrupt triggers.compress_threshold_tokens
     const badConfig = { ...defaultConfig(), triggers: { ...defaultConfig().triggers, compress_threshold_tokens: -1 } };
     const toolBad = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: badConfig as LCMConfig,
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, badConfig as LCMConfig),
       backupDir: s.backupDir,
     });
-    const badResult = await toolBad.handler({});
+    const badResult = await toolBad.handler({}, CTX);
     const badParsed = JSON.parse(badResult.content[0].text);
     const badConfigCheck = badParsed.checks.find((c: { name: string }) => c.name === 'config_validation');
     expect(badConfigCheck.ok).toBe(false);
@@ -371,13 +319,7 @@ describe('createDoctorTool', () => {
   // Test 11: Rate limit — 4th call returns error
   it('rate limit: 4th call (over DOCTOR_RATE_LIMIT_PER_TURN=3) returns error', async () => {
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: defaultConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, defaultConfig()),
       backupDir: s.backupDir,
     });
 
@@ -385,13 +327,13 @@ describe('createDoctorTool', () => {
 
     // Calls 1-3 succeed
     for (let i = 0; i < DOCTOR_RATE_LIMIT_PER_TURN; i++) {
-      const result = await tool.handler({});
+      const result = await tool.handler({}, CTX);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBeUndefined();
     }
 
     // Call 4 returns rate limit error
-    const limitResult = await tool.handler({});
+    const limitResult = await tool.handler({}, CTX);
     const limitParsed = JSON.parse(limitResult.content[0].text);
     expect(typeof limitParsed.error).toBe('string');
     expect(limitParsed.error).toContain('rate limit');
@@ -407,18 +349,12 @@ describe('createDoctorTool', () => {
     s.store.append({ session_id: 'sess1', source: 'cli', role: 'user', content: 'hello world', ts: Date.now() });
 
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: defaultConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, defaultConfig()),
       backupDir: s.backupDir,
     });
 
     // First call: everything in sync
-    const syncResult = await tool.handler({});
+    const syncResult = await tool.handler({}, CTX);
     const syncParsed = JSON.parse(syncResult.content[0].text);
     const syncFtsCheck = syncParsed.checks.find((c: { name: string }) => c.name === 'fts_sync');
     expect(syncFtsCheck.ok).toBe(true);
@@ -433,17 +369,11 @@ describe('createDoctorTool', () => {
 
     // Second call (different tool instance to avoid rate limit): should detect desync
     const tool2 = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: defaultConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, defaultConfig()),
       backupDir: s.backupDir,
     });
 
-    const desyncResult = await tool2.handler({});
+    const desyncResult = await tool2.handler({}, CTX);
     const desyncParsed = JSON.parse(desyncResult.content[0].text);
     const desyncFtsCheck = desyncParsed.checks.find((c: { name: string }) => c.name === 'fts_sync');
     expect(desyncFtsCheck.ok).toBe(false);
@@ -466,17 +396,11 @@ describe('createDoctorTool', () => {
     });
 
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config: defaultConfig(),
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, defaultConfig()),
       backupDir: s.backupDir,
     });
 
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX);
     const parsed = JSON.parse(result.content[0].text);
     const lineageCheck = parsed.checks.find((c: { name: string }) => c.name === 'source_lineage_hygiene');
     expect(lineageCheck.ok).toBe(false);
@@ -494,16 +418,10 @@ describe('createDoctorTool', () => {
       },
     });
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config,
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, config),
       backupDir: s.backupDir,
     });
-    const result = await tool.handler({ apply: true });
+    const result = await tool.handler({ apply: true }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.apply_refused).toBeDefined();
     expect(parsed.can_clean).toBe(false);
@@ -520,17 +438,11 @@ describe('createDoctorTool', () => {
     s.store.append({ session_id: 'sess1', source: 'cli', role: 'user', content: 'a longer message with content', ts: Date.now() });
 
     const tool = createDoctorTool({
-      db: s.db,
-      store: s.store,
-      dag: s.dag,
-      lifecycle: s.lifecycle,
-      config,
-      agentResolver: () => 'agent1',
-      sessionResolver: () => 'sess1',
+      resolveAgent: () => stateFor(s, config),
       backupDir: s.backupDir,
     });
 
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX);
     const parsed = JSON.parse(result.content[0].text);
     const pressureCheck = parsed.checks.find((c: { name: string }) => c.name === 'context_pressure');
     expect(pressureCheck.ok).toBe(false);

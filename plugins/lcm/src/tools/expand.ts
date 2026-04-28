@@ -16,9 +16,8 @@
  */
 
 import { z } from 'zod';
-import type { MessageStore, StoredMessage } from '../store.js';
-import type { SummaryDAG, SummaryNode } from '../dag.js';
 import type { PluginMcpTool } from '../types-shim.js';
+import type { AgentState } from '../agent-state.js';
 import { estimateTokens } from '../tokens.js';
 
 // ─── Public constants ─────────────────────────────────────────────────────────
@@ -28,8 +27,8 @@ export const EXPAND_RATE_LIMIT_PER_TURN = 10;
 // ─── Deps interface ───────────────────────────────────────────────────────────
 
 export interface ExpandDeps {
-  store: MessageStore;
-  dag: SummaryDAG;
+  /** Resolves per-agent state for the calling agentId. */
+  resolveAgent: (agentId: string) => AgentState;
   /** Optional: resolves externalized file content by ref. */
   externalizedReader?: (ref: string) => Promise<{ content: string; size: number } | null>;
   logger?: { info: (obj: unknown, msg: string) => void; warn: (obj: unknown, msg: string) => void };
@@ -78,6 +77,7 @@ export function createExpandTool(deps: ExpandDeps): PluginMcpTool {
 
   const handler = async (
     raw: unknown,
+    ctx: { agentId: string; sessionKey?: string },
   ): Promise<{ content: Array<{ type: 'text'; text: string }> }> => {
     callCount++;
     if (callCount > EXPAND_RATE_LIMIT_PER_TURN) {
@@ -94,6 +94,7 @@ export function createExpandTool(deps: ExpandDeps): PluginMcpTool {
 
     try {
       const input = INPUT_SCHEMA.parse(raw);
+      const state = deps.resolveAgent(ctx.agentId);
 
       // ── Mode 3: externalized_ref ─────────────────────────────────────────
       if (input.externalized_ref !== undefined) {
@@ -138,7 +139,7 @@ export function createExpandTool(deps: ExpandDeps): PluginMcpTool {
       const nodeId = input.node_id!;
       const maxTokens = input.max_tokens;
 
-      const node = deps.dag.get(nodeId);
+      const node = state.dag.get(nodeId);
       if (!node) {
         return {
           content: [
@@ -152,8 +153,8 @@ export function createExpandTool(deps: ExpandDeps): PluginMcpTool {
 
       if (node.source_type === 'messages') {
         // Mode 1: expand to raw messages
-        const storeIds = deps.dag.getSourceMessageIds(nodeId);
-        const messages = deps.store.getMany(storeIds);
+        const storeIds = state.dag.getSourceMessageIds(nodeId);
+        const messages = state.store.getMany(storeIds);
 
         const items: MessageItem[] = [];
         let cumulativeTokens = 0;
@@ -196,7 +197,7 @@ export function createExpandTool(deps: ExpandDeps): PluginMcpTool {
         };
       } else {
         // Mode 2: expand to direct child nodes (source_type === 'nodes')
-        const children = deps.dag.getChildren(nodeId);
+        const children = state.dag.getChildren(nodeId);
 
         const items: NodeItem[] = [];
         let cumulativeTokens = 0;

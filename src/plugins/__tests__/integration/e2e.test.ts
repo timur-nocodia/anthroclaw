@@ -65,7 +65,7 @@ describe('plugin framework E2E', () => {
     expect(tools).toHaveLength(1);
     expect(tools[0].name).toBe('example_echo');     // namespaced
 
-    const result = await tools[0].handler({ message: 'hi' });
+    const result = await tools[0].handler({ message: 'hi' }, { agentId: 'agent-1' });
     expect(result.content[0].text).toBe('echo: hi');
 
     // 5. Hook subscribed on fakeEmitter

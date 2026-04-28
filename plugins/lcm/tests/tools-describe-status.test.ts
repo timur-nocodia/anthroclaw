@@ -7,8 +7,13 @@ import { bootstrap } from '../src/db/bootstrap.js';
 import { MessageStore } from '../src/store.js';
 import { SummaryDAG } from '../src/dag.js';
 import { LifecycleManager } from '../src/lifecycle.js';
+import { LCMConfigSchema } from '../src/config.js';
 import { createDescribeTool, DESCRIBE_RATE_LIMIT_PER_TURN } from '../src/tools/describe.js';
 import { createStatusTool, STATUS_RATE_LIMIT_PER_TURN } from '../src/tools/status.js';
+import type { AgentState } from '../src/agent-state.js';
+
+const CTX_DESC = { agentId: 'test-agent' };
+const CTX_STATUS = { agentId: 'agent1' };
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -16,6 +21,23 @@ function makeDb(dir: string) {
   const db = new Database(join(dir, 'lcm.sqlite'));
   bootstrap(db);
   return db;
+}
+
+function makeState(
+  db: Database.Database,
+  store: MessageStore,
+  dag: SummaryDAG,
+  sessionKey: string,
+  lifecycle?: LifecycleManager,
+): AgentState {
+  return {
+    db,
+    store,
+    dag,
+    lifecycle: lifecycle ?? new LifecycleManager(db),
+    config: LCMConfigSchema.parse({}),
+    sessionKey,
+  };
 }
 
 // ─── lcm_describe tests ──────────────────────────────────────────────────────
@@ -37,7 +59,8 @@ describe('createDescribeTool', () => {
     store = new MessageStore(db);
     dag = new SummaryDAG(db);
 
-    tool = createDescribeTool({ store, dag, sessionResolver: () => 'session1' });
+    const state = makeState(db, store, dag, 'session1');
+    tool = createDescribeTool({ resolveAgent: () => state });
 
     // Seed: 3 messages in session1
     store.append({ session_id: 'session1', source: 'cli', role: 'user', content: 'hello world', ts: 1000 });
@@ -87,7 +110,7 @@ describe('createDescribeTool', () => {
 
   // Test 2: No-args call returns overview
   it('no-args call returns overview with depth_distribution, total_messages, total_nodes, oldest_at, newest_at', async () => {
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX_DESC);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.session_key).toBe('session1');
     expect(typeof parsed.total_messages).toBe('number');
@@ -105,7 +128,7 @@ describe('createDescribeTool', () => {
 
   // Test 3: node_id arg for source_type='messages' node returns metadata with children as {store_id, role, snippet}
   it('node_id arg for source_type="messages" node returns metadata with children as {store_id, role, snippet}', async () => {
-    const result = await tool.handler({ node_id: messagesNodeId });
+    const result = await tool.handler({ node_id: messagesNodeId }, CTX_DESC);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.node_id).toBe(messagesNodeId);
     expect(parsed.depth).toBe(0);
@@ -133,7 +156,7 @@ describe('createDescribeTool', () => {
 
   // Test 4: node_id arg for source_type='nodes' node returns metadata with children as {node_id, depth}
   it('node_id arg for source_type="nodes" node returns metadata with children as {node_id, depth}', async () => {
-    const result = await tool.handler({ node_id: nodesNodeId });
+    const result = await tool.handler({ node_id: nodesNodeId }, CTX_DESC);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.node_id).toBe(nodesNodeId);
     expect(parsed.depth).toBe(1);
@@ -150,7 +173,7 @@ describe('createDescribeTool', () => {
 
   // Test 5: node_id for unknown id returns error JSON
   it('node_id for unknown id returns error JSON', async () => {
-    const result = await tool.handler({ node_id: 'nonexistent-node-id-xyz' });
+    const result = await tool.handler({ node_id: 'nonexistent-node-id-xyz' }, CTX_DESC);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/not found/i);
@@ -158,7 +181,7 @@ describe('createDescribeTool', () => {
 
   // Test 6: Both node_id AND externalized_ref → refine error → error JSON
   it('both node_id AND externalized_ref → Zod refine error → error JSON', async () => {
-    const result = await tool.handler({ node_id: messagesNodeId, externalized_ref: 'some-ref' });
+    const result = await tool.handler({ node_id: messagesNodeId, externalized_ref: 'some-ref' }, CTX_DESC);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error.length).toBeGreaterThan(0);
@@ -166,7 +189,7 @@ describe('createDescribeTool', () => {
 
   // Test 7: externalized_ref with no reader configured → error JSON
   it('externalized_ref with no reader configured → error JSON', async () => {
-    const result = await tool.handler({ externalized_ref: 'some-ref' });
+    const result = await tool.handler({ externalized_ref: 'some-ref' }, CTX_DESC);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/not supported/i);
@@ -176,13 +199,12 @@ describe('createDescribeTool', () => {
   it('externalized_ref with reader returning content → preview + size', async () => {
     const content = 'A'.repeat(2000);
     const reader = async (_ref: string) => ({ content, size: content.length });
+    const localState = makeState(db, store, dag, 'session1');
     const toolWithReader = createDescribeTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => localState,
       externalizedReader: reader,
     });
-    const result = await toolWithReader.handler({ externalized_ref: 'ref-abc' });
+    const result = await toolWithReader.handler({ externalized_ref: 'ref-abc' }, CTX_DESC);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.externalized_ref).toBe('ref-abc');
     expect(typeof parsed.preview).toBe('string');
@@ -193,13 +215,12 @@ describe('createDescribeTool', () => {
   // Test 9: externalized_ref with reader returning null → error JSON
   it('externalized_ref with reader returning null → error JSON', async () => {
     const reader = async (_ref: string) => null;
+    const localState = makeState(db, store, dag, 'session1');
     const toolWithReader = createDescribeTool({
-      store,
-      dag,
-      sessionResolver: () => 'session1',
+      resolveAgent: () => localState,
       externalizedReader: reader,
     });
-    const result = await toolWithReader.handler({ externalized_ref: 'missing-ref' });
+    const result = await toolWithReader.handler({ externalized_ref: 'missing-ref' }, CTX_DESC);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/not found/i);
@@ -210,12 +231,12 @@ describe('createDescribeTool', () => {
     expect(DESCRIBE_RATE_LIMIT_PER_TURN).toBe(10);
     // 10 calls should succeed
     for (let i = 0; i < DESCRIBE_RATE_LIMIT_PER_TURN; i++) {
-      const result = await tool.handler({});
+      const result = await tool.handler({}, CTX_DESC);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBeUndefined();
     }
     // 11th call should return rate limit error
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX_DESC);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/rate limit/i);
@@ -241,13 +262,8 @@ describe('createStatusTool', () => {
 
     lifecycle.initialize('agent1', 'session1');
 
-    tool = createStatusTool({
-      store,
-      dag,
-      lifecycle,
-      sessionResolver: () => 'session1',
-      agentResolver: () => 'agent1',
-    });
+    const state = makeState(db, store, dag, 'session1', lifecycle);
+    tool = createStatusTool({ resolveAgent: () => state });
 
     // Seed some data
     store.append({ session_id: 'session1', source: 'cli', role: 'user', content: 'hello', ts: 1000 });
@@ -292,7 +308,7 @@ describe('createStatusTool', () => {
 
   // Test 12: Empty input call returns full status JSON with store, dag, lifecycle keys
   it('empty input call returns full status JSON with store, dag, lifecycle, compression_count, last_compressed_at', async () => {
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX_STATUS);
     expect(result.content[0].type).toBe('text');
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.session_key).toBe('session1');
@@ -305,7 +321,7 @@ describe('createStatusTool', () => {
 
   // Test 13: dag keys formatted as d0, d1, etc. (strings)
   it('dag keys are formatted as d0, d1, etc.', async () => {
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX_STATUS);
     const parsed = JSON.parse(result.content[0].text);
     // We have depth 0 and depth 1 nodes
     expect(parsed.dag['d0']).toBe(1);
@@ -317,7 +333,7 @@ describe('createStatusTool', () => {
 
   // Test 14: lifecycle keys: current_session_id, current_frontier_store_id, debt_kind, etc.
   it('lifecycle contains required keys', async () => {
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX_STATUS);
     const parsed = JSON.parse(result.content[0].text);
     const lc = parsed.lifecycle;
     expect('current_session_id' in lc).toBe(true);
@@ -331,7 +347,7 @@ describe('createStatusTool', () => {
 
   // Test 15: compression_count returns 0; last_compressed_at returns null
   it('compression_count is 0 and last_compressed_at is null (T9-deferred)', async () => {
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX_STATUS);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.compression_count).toBe(0);
     expect(parsed.last_compressed_at).toBeNull();
@@ -342,12 +358,12 @@ describe('createStatusTool', () => {
     expect(STATUS_RATE_LIMIT_PER_TURN).toBe(10);
     // 10 calls should succeed
     for (let i = 0; i < STATUS_RATE_LIMIT_PER_TURN; i++) {
-      const result = await tool.handler({});
+      const result = await tool.handler({}, CTX_STATUS);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBeUndefined();
     }
     // 11th call should return rate limit error
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX_STATUS);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/rate limit/i);

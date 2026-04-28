@@ -139,6 +139,34 @@ describe('PluginRegistry', () => {
     expect(reg.listAllHooks()).toEqual([]);
   });
 
+  // ─── McpToolContext (T24) ─────────────────────────────────────────
+
+  it('PluginMcpTool.handler receives McpToolContext with agentId at invocation time', async () => {
+    const reg = new PluginRegistry();
+    reg.addPlugin('lcm', { manifest: { name: 'lcm', version: '0.1.0', entry: 'x' } as never, instance: {} });
+    const observed: string[] = [];
+    const tool: PluginMcpTool = {
+      name: 'spy',
+      description: 'records ctx.agentId',
+      inputSchema: z.object({}),
+      handler: async (_input, ctx) => {
+        observed.push(ctx.agentId);
+        return { content: [{ type: 'text', text: ctx.agentId }] };
+      },
+    };
+    reg.addToolFromPlugin('lcm', tool);
+    reg.enableForAgent('agent-A', 'lcm');
+    reg.enableForAgent('agent-B', 'lcm');
+
+    // Simulate the agent.ts wrapping: each agent invokes the tool with its own id.
+    const toolsForA = reg.getMcpToolsForAgent('agent-A');
+    const toolsForB = reg.getMcpToolsForAgent('agent-B');
+    await toolsForA[0].handler({}, { agentId: 'agent-A' });
+    await toolsForB[0].handler({}, { agentId: 'agent-B' });
+
+    expect(observed).toEqual(['agent-A', 'agent-B']);
+  });
+
   it('listAllHooks aggregates hooks from multiple plugins', () => {
     const reg = new PluginRegistry();
     reg.addPlugin('plugin-a', { manifest: { name: 'plugin-a', version: '0.1.0', entry: 'x' } as never, instance: {} });

@@ -5,6 +5,7 @@ export type {
   PluginEntryModule,
   PluginInstance,
   PluginMcpTool,
+  McpToolContext,
   PluginSlashCommand,
   SlashCommandContext,
   HookEvent,

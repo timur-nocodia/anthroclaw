@@ -17,9 +17,9 @@
  */
 
 import { z } from 'zod';
-import type { MessageStore } from '../store.js';
-import type { SummaryDAG, SummaryNode } from '../dag.js';
+import type { SummaryNode } from '../dag.js';
 import type { PluginMcpTool } from '../types-shim.js';
+import type { AgentState } from '../agent-state.js';
 import { estimateTokens } from '../tokens.js';
 
 // ─── Public constants ─────────────────────────────────────────────────────────
@@ -29,10 +29,8 @@ export const EXPAND_QUERY_RATE_LIMIT_PER_TURN = 5;
 // ─── Deps interface ───────────────────────────────────────────────────────────
 
 export interface ExpandQueryDeps {
-  store: MessageStore;
-  dag: SummaryDAG;
-  /** Resolves current sessionKey for DAG search. */
-  sessionResolver: () => string;
+  /** Resolves per-agent state for the calling agentId. */
+  resolveAgent: (agentId: string) => AgentState;
   /** Subagent runner (caller-supplied; usually plugin context's runSubagent). */
   runSubagent: (opts: { prompt: string; systemPrompt?: string; timeoutMs?: number }) => Promise<string>;
   /** Default subagent timeout (ms). */
@@ -65,7 +63,10 @@ export function createExpandQueryTool(deps: ExpandQueryDeps): PluginMcpTool {
   const timeout = deps.expansionTimeoutMs ?? 120_000;
   let callCount = 0;
 
-  const handler = async (raw: unknown): Promise<{ content: Array<{ type: 'text'; text: string }> }> => {
+  const handler = async (
+    raw: unknown,
+    ctx: { agentId: string; sessionKey?: string },
+  ): Promise<{ content: Array<{ type: 'text'; text: string }> }> => {
     callCount++;
     if (callCount > EXPAND_QUERY_RATE_LIMIT_PER_TURN) {
       deps.logger?.warn({ count: callCount }, 'lcm_expand_query rate limit exceeded');
@@ -74,17 +75,18 @@ export function createExpandQueryTool(deps: ExpandQueryDeps): PluginMcpTool {
 
     try {
       const input = INPUT_SCHEMA.parse(raw);
-      const sessionKey = deps.sessionResolver();
+      const state = deps.resolveAgent(ctx.agentId);
+      const sessionKey = state.sessionKey;
 
       // 1. Resolve target nodes
       let nodes: SummaryNode[];
       if (input.query) {
-        const results = deps.dag.search(input.query, { sessionId: sessionKey, limit: 10 });
+        const results = state.dag.search(input.query, { sessionId: sessionKey, limit: 10 });
         const ids = results.map((r) => r.node_id);
-        nodes = ids.map((id) => deps.dag.get(id)).filter((n): n is SummaryNode => n !== null);
+        nodes = ids.map((id) => state.dag.get(id)).filter((n): n is SummaryNode => n !== null);
       } else {
         nodes = (input.node_ids ?? [])
-          .map((id) => deps.dag.get(id))
+          .map((id) => state.dag.get(id))
           .filter((n): n is SummaryNode => n !== null);
       }
 
@@ -102,7 +104,7 @@ export function createExpandQueryTool(deps: ExpandQueryDeps): PluginMcpTool {
         let text: string;
         if (node.source_type === 'messages') {
           const ids = node.source_ids.map(Number);
-          const msgs = deps.store.getMany(ids);
+          const msgs = state.store.getMany(ids);
           text = msgs.map((m) => `${m.role}: ${m.content}`).join('\n');
         } else {
           // For 'nodes' type — use the summary itself (don't recurse for T15)

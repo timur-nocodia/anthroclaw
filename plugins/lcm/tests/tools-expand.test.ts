@@ -6,7 +6,12 @@ import { join } from 'node:path';
 import { bootstrap } from '../src/db/bootstrap.js';
 import { MessageStore } from '../src/store.js';
 import { SummaryDAG } from '../src/dag.js';
+import { LifecycleManager } from '../src/lifecycle.js';
+import { LCMConfigSchema } from '../src/config.js';
 import { createExpandTool, EXPAND_RATE_LIMIT_PER_TURN } from '../src/tools/expand.js';
+import type { AgentState } from '../src/agent-state.js';
+
+const CTX = { agentId: 'test-agent' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -14,6 +19,17 @@ function makeDb(dir: string) {
   const db = new Database(join(dir, 'lcm.sqlite'));
   bootstrap(db);
   return db;
+}
+
+function makeState(db: Database.Database, store: MessageStore, dag: SummaryDAG): AgentState {
+  return {
+    db,
+    store,
+    dag,
+    lifecycle: new LifecycleManager(db),
+    config: LCMConfigSchema.parse({}),
+    sessionKey: 'session1',
+  };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -35,7 +51,8 @@ describe('createExpandTool', () => {
     store = new MessageStore(db);
     dag = new SummaryDAG(db);
 
-    tool = createExpandTool({ store, dag });
+    const state = makeState(db, store, dag);
+    tool = createExpandTool({ resolveAgent: () => state });
 
     // Seed: 3 messages in session1
     store.append({ session_id: 'session1', source: 'cli', role: 'user', content: 'hello world', ts: 1000 });
@@ -89,7 +106,7 @@ describe('createExpandTool', () => {
 
   // Test 3: Schema rejects empty input (no node_id and no externalized_ref)
   it('schema rejects empty input — refine fires with error', async () => {
-    const result = await tool.handler({});
+    const result = await tool.handler({}, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error.length).toBeGreaterThan(0);
@@ -97,7 +114,7 @@ describe('createExpandTool', () => {
 
   // Test 4: Schema rejects both node_id AND externalized_ref simultaneously
   it('schema rejects both node_id AND externalized_ref — refine fires with error', async () => {
-    const result = await tool.handler({ node_id: messagesNodeId, externalized_ref: 'some-ref' });
+    const result = await tool.handler({ node_id: messagesNodeId, externalized_ref: 'some-ref' }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error.length).toBeGreaterThan(0);
@@ -105,7 +122,7 @@ describe('createExpandTool', () => {
 
   // Test 5: node_id with source_type='messages' returns type='messages' and items array
   it('node_id with source_type="messages" returns type="messages" and items with StoredMessage projections', async () => {
-    const result = await tool.handler({ node_id: messagesNodeId });
+    const result = await tool.handler({ node_id: messagesNodeId }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.type).toBe('messages');
     expect(parsed.node_id).toBe(messagesNodeId);
@@ -131,7 +148,7 @@ describe('createExpandTool', () => {
 
   // Test 6: node_id with source_type='nodes' returns type='nodes' and items of SummaryNode projections (NOT recursive)
   it('node_id with source_type="nodes" returns type="nodes" with direct child SummaryNode projections', async () => {
-    const result = await tool.handler({ node_id: nodesNodeId });
+    const result = await tool.handler({ node_id: nodesNodeId }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.type).toBe('nodes');
     expect(parsed.node_id).toBe(nodesNodeId);
@@ -159,7 +176,7 @@ describe('createExpandTool', () => {
 
   // Test 7: Unknown node_id returns error JSON
   it('unknown node_id returns error JSON', async () => {
-    const result = await tool.handler({ node_id: 'nonexistent-node-id-xyz' });
+    const result = await tool.handler({ node_id: 'nonexistent-node-id-xyz' }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/not found/i);
@@ -194,7 +211,7 @@ describe('createExpandTool', () => {
     });
 
     // Use a small max_tokens to trigger truncation (100 tokens will fit ~1-2 items)
-    const result = await tool.handler({ node_id: bigNodeId, max_tokens: 100 });
+    const result = await tool.handler({ node_id: bigNodeId, max_tokens: 100 }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.type).toBe('messages');
     expect(parsed.items.length).toBeLessThan(10);
@@ -203,7 +220,7 @@ describe('createExpandTool', () => {
 
   // Test 9: max_tokens very large doesn't truncate — truncated=false
   it('max_tokens very large does not truncate; truncated=false', async () => {
-    const result = await tool.handler({ node_id: messagesNodeId, max_tokens: 50000 });
+    const result = await tool.handler({ node_id: messagesNodeId, max_tokens: 50000 }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.type).toBe('messages');
     expect(parsed.items.length).toBe(2);
@@ -213,7 +230,7 @@ describe('createExpandTool', () => {
   // Test 10: externalized_ref with reader undefined returns error "not supported"
   it('externalized_ref with reader undefined returns error "not supported"', async () => {
     // tool has no reader (created without externalizedReader)
-    const result = await tool.handler({ externalized_ref: 'some-ref' });
+    const result = await tool.handler({ externalized_ref: 'some-ref' }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/not supported/i);
@@ -221,12 +238,12 @@ describe('createExpandTool', () => {
 
   // Test 11: externalized_ref with reader returning null returns error "not found"
   it('externalized_ref with reader returning null returns error "not found"', async () => {
+    const localState = makeState(db, store, dag);
     const toolWithReader = createExpandTool({
-      store,
-      dag,
+      resolveAgent: () => localState,
       externalizedReader: async (_ref) => null,
     });
-    const result = await toolWithReader.handler({ externalized_ref: 'missing-ref' });
+    const result = await toolWithReader.handler({ externalized_ref: 'missing-ref' }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/not found/i);
@@ -235,12 +252,12 @@ describe('createExpandTool', () => {
   // Test 12: externalized_ref with reader returning content returns type='externalized'
   it('externalized_ref with reader returning content returns type="externalized" with content and size', async () => {
     const content = 'Full content of the externalized blob';
+    const localState = makeState(db, store, dag);
     const toolWithReader = createExpandTool({
-      store,
-      dag,
+      resolveAgent: () => localState,
       externalizedReader: async (ref) => ({ content: `[${ref}] ${content}`, size: content.length }),
     });
-    const result = await toolWithReader.handler({ externalized_ref: 'ref-abc' });
+    const result = await toolWithReader.handler({ externalized_ref: 'ref-abc' }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.type).toBe('externalized');
     expect(parsed.externalized_ref).toBe('ref-abc');
@@ -256,13 +273,13 @@ describe('createExpandTool', () => {
 
     // 10 calls should succeed
     for (let i = 0; i < EXPAND_RATE_LIMIT_PER_TURN; i++) {
-      const result = await tool.handler({ node_id: messagesNodeId });
+      const result = await tool.handler({ node_id: messagesNodeId }, CTX);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBeUndefined();
     }
 
     // 11th call should return rate limit error
-    const result = await tool.handler({ node_id: messagesNodeId });
+    const result = await tool.handler({ node_id: messagesNodeId }, CTX);
     const parsed = JSON.parse(result.content[0].text);
     expect(typeof parsed.error).toBe('string');
     expect(parsed.error).toMatch(/rate limit/i);
