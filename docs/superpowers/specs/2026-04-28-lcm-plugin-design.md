@@ -343,7 +343,7 @@ async function compressSession(
   if (lcm) {
     try {
       const result = await lcm.compress({ sessionKey, messages, currentTokens });
-      if (result) return result.assembled;
+      if (result) return result.messages;
       // result === null → плагин решил пропустить
     } catch (err) {
       logger.warn({ err, agentId: agent.id }, 'lcm compress failed, falling back');
