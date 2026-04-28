@@ -292,7 +292,7 @@ describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () =
       const engine: ContextEngine = {
         assemble: vi.fn(
           () =>
-            new Promise(() => {
+            new Promise<AssembleResult | null>(() => {
               /* never resolves */
             }),
         ),
