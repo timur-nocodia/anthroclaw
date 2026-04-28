@@ -1,8 +1,10 @@
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { satisfies as semverSatisfies } from 'semver';
 import { logger } from '../logger.js';
 import { parsePluginManifest } from './manifest-schema.js';
-import type { PluginManifest } from './types.js';
+import type { PluginManifest, PluginEntryModule } from './types.js';
 
 export interface DiscoveredPlugin {
   manifest: PluginManifest;
@@ -51,4 +53,48 @@ export async function discoverPlugins(pluginsDir: string): Promise<DiscoveredPlu
   }
 
   return discovered;
+}
+
+export interface LoadPluginOpts {
+  anthroclawVersion?: string;
+}
+
+export async function loadPlugin(
+  discovered: DiscoveredPlugin,
+  opts: LoadPluginOpts = {},
+): Promise<PluginEntryModule> {
+  // 1. Semver compat check
+  const requiresAnthroclaw = discovered.manifest.requires?.anthroclaw;
+  if (requiresAnthroclaw && opts.anthroclawVersion) {
+    if (!semverSatisfies(opts.anthroclawVersion, requiresAnthroclaw)) {
+      throw new Error(
+        `plugin ${discovered.manifest.name}@${discovered.manifest.version} requires ` +
+        `anthroclaw ${requiresAnthroclaw}, but current version is ${opts.anthroclawVersion}`
+      );
+    }
+  }
+
+  // 2. Resolve entry path
+  const entryAbs = join(discovered.pluginDir, discovered.manifest.entry);
+
+  // 3. Dynamic import via file:// URL for ESM compatibility
+  let mod: unknown;
+  try {
+    mod = await import(pathToFileURL(entryAbs).href);
+  } catch (err) {
+    throw new Error(
+      `failed to import plugin entry ${entryAbs}: ${(err as Error).message}`
+    );
+  }
+
+  // 4. Validate register() export
+  const m = mod as Record<string, unknown>;
+  if (typeof m.register !== 'function') {
+    throw new Error(
+      `plugin ${discovered.manifest.name} entry ${discovered.manifest.entry} ` +
+      `does not export a register() function`
+    );
+  }
+
+  return m as unknown as PluginEntryModule;
 }
