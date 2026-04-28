@@ -1,5 +1,6 @@
 packages:
   - "ui"
+  - "plugins/*"
 
 onlyBuiltDependencies:
   - better-sqlite3

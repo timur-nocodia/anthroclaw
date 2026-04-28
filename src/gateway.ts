@@ -1,6 +1,26 @@
 import { readdirSync, existsSync, readFileSync } from 'node:fs';
-import { join, isAbsolute, resolve } from 'node:path';
+import { mkdir } from 'node:fs/promises';
+import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
+import {
+  discoverPlugins,
+  loadPlugin,
+  createPluginContext,
+  PluginRegistry,
+  startPluginsWatcher,
+  type DiscoveredPlugin,
+  type PluginsWatcher,
+} from './plugins/index.js';
+
+const ANTHROCLAW_VERSION = (() => {
+  try {
+    const pkgPath = joinPath(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+    return (JSON.parse(readFileSync(pkgPath, 'utf-8')) as Record<string, unknown>).version as string ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+})();
 import { query, startup } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent/agent.js';
@@ -445,8 +465,11 @@ export class Gateway {
   private controlRegistry = new SdkControlRegistry();
   private subagentRegistry = new SdkSubagentRegistry();
   private fileOwnershipRegistry = new FileOwnershipRegistry();
+  public pluginRegistry: PluginRegistry = new PluginRegistry();
+  private pluginsWatcher: PluginsWatcher | null = null;
+  private resolvedPluginsDir: string | null = null;
 
-  async start(config: GlobalConfig, agentsDir: string, dataDir: string): Promise<void> {
+  async start(config: GlobalConfig, agentsDir: string, dataDir: string, pluginsDir?: string): Promise<void> {
     this.startedAt = Date.now();
     this.globalConfig = config;
     this.agentsDir = agentsDir;
@@ -500,6 +523,80 @@ export class Gateway {
     }
 
     this.rebuildHookEmitters();
+
+    // ─── Plugin discovery & registration ────────────────────────────
+    this.pluginRegistry = new PluginRegistry();
+    this.resolvedPluginsDir = pluginsDir ?? joinPath(dataDir, '..', 'plugins');
+    const discovered = await discoverPlugins(this.resolvedPluginsDir);
+    for (const d of discovered) {
+      try {
+        await this.loadAndRegisterPlugin(d, dataDir);
+        logger.info({ plugin: d.manifest.name, version: d.manifest.version }, 'plugin loaded');
+      } catch (err) {
+        logger.error({ err, plugin: d.manifest.name }, 'failed to load plugin');
+      }
+    }
+
+    // Hot-reload watcher for plugins directory
+    this.pluginsWatcher = startPluginsWatcher(this.resolvedPluginsDir, {
+      onAdd: async (d) => {
+        try {
+          await this.loadAndRegisterPlugin(d, dataDir);
+          // Per-agent enable + tool refresh for the newly added plugin
+          const newPluginName = d.manifest.name;
+          for (const [agentId, agent] of this.agents) {
+            const cfg = agent.config.plugins?.[newPluginName];
+            if (cfg?.enabled) {
+              try {
+                this.pluginRegistry.enableForAgent(agentId, newPluginName);
+                logger.info({ agentId, plugin: newPluginName }, 'hot-added plugin enabled for agent');
+              } catch (err) {
+                logger.warn({ agentId, plugin: newPluginName, err }, 'failed to enable hot-added plugin for agent');
+                continue;
+              }
+            }
+            agent.refreshPluginTools(this.pluginRegistry.getMcpToolsForAgent(agentId));
+          }
+          logger.info({ plugin: newPluginName }, 'hot-added plugin wired to enabled agents');
+        } catch (err) {
+          logger.error({ err, plugin: d.manifest.name }, 'failed to hot-reload plugin');
+        }
+      },
+      onRemove: async (name) => {
+        const entry = this.pluginRegistry.listPlugins().find(p => p.manifest.name === name);
+        if (entry?.instance.shutdown) {
+          try { await entry.instance.shutdown(); } catch (err) {
+            logger.warn({ err, plugin: name }, 'plugin shutdown error during hot-remove');
+          }
+        }
+        this.pluginRegistry.removePlugin(name);
+        // Refresh all agents so the removed plugin's tools are dropped immediately
+        for (const [agentId, agent] of this.agents) {
+          agent.refreshPluginTools(this.pluginRegistry.getMcpToolsForAgent(agentId));
+        }
+        logger.info({ plugin: name }, 'plugin removed and agents refreshed');
+      },
+    });
+
+    // Apply per-agent plugin enables and refresh MCP servers with plugin tools
+    for (const [agentId, agent] of this.agents) {
+      const pluginsCfg = agent.config.plugins ?? {};
+      for (const [pluginName, cfg] of Object.entries(pluginsCfg)) {
+        if (cfg?.enabled) {
+          try {
+            this.pluginRegistry.enableForAgent(agentId, pluginName);
+            logger.info({ agentId, plugin: pluginName }, 'plugin enabled for agent');
+          } catch (err) {
+            logger.warn({ agentId, plugin: pluginName, err }, 'failed to enable plugin for agent');
+          }
+        }
+      }
+      const pluginTools = this.pluginRegistry.getMcpToolsForAgent(agentId);
+      agent.refreshPluginTools(pluginTools);
+      if (pluginTools.length > 0) {
+        logger.info({ agentId, pluginToolCount: pluginTools.length }, 'plugin tools added to agent MCP server');
+      }
+    }
 
     for (const agent of this.agents.values()) {
       void this.prewarmAgent(agent);
@@ -657,6 +754,20 @@ export class Gateway {
     this.scheduler?.stop();
     this.scheduler = null;
 
+    // Close plugin hot-reload watcher first so no new add events fire during shutdown
+    await this.pluginsWatcher?.close();
+    this.pluginsWatcher = null;
+
+    // Shutdown plugins before clearing agent state so plugins can do final ops
+    for (const entry of this.pluginRegistry.listPlugins()) {
+      try {
+        await entry.instance.shutdown?.();
+      } catch (err) {
+        logger.warn({ err, plugin: entry.manifest.name }, 'plugin shutdown error');
+      }
+    }
+    this.pluginRegistry = new PluginRegistry();
+
     for (const [id, channel] of this.channels) {
       await channel.stop();
       logger.info({ channel: id }, 'Channel stopped');
@@ -666,6 +777,49 @@ export class Gateway {
     this.subagentRegistry.clear();
     this.routeTable = null;
     this.accessControl = null;
+  }
+
+  /**
+   * Creates a PluginContext and registers a discovered plugin in pluginRegistry.
+   * Extracted to avoid duplicating context-construction logic between initial
+   * discovery and hot-reload onAdd.
+   */
+  private async loadAndRegisterPlugin(d: DiscoveredPlugin, dataDir: string): Promise<void> {
+    const pluginName = d.manifest.name;
+
+    // Idempotent: if already loaded, shutdown + remove first.
+    const existing = this.pluginRegistry.listPlugins().find(p => p.manifest.name === pluginName);
+    if (existing) {
+      if (existing.instance.shutdown) {
+        try { await existing.instance.shutdown(); } catch (err) {
+          logger.warn({ err, plugin: pluginName }, 'shutdown error during reload');
+        }
+      }
+      this.pluginRegistry.removePlugin(pluginName);
+    }
+
+    const pluginDataDir = joinPath(dataDir, pluginName);
+    await mkdir(pluginDataDir, { recursive: true });
+    const mod = await loadPlugin(d, { anthroclawVersion: ANTHROCLAW_VERSION });
+    const ctx = createPluginContext({
+      pluginName: d.manifest.name,
+      pluginVersion: d.manifest.version,
+      dataDir: pluginDataDir,
+      rootLogger: logger,
+      registerHook: (pluginName, event, handler) => {
+        this.pluginRegistry.addHookFromPlugin(pluginName, event, handler);
+        for (const emitter of this.hookEmitters.values()) {
+          emitter.subscribe(event, handler);
+        }
+      },
+      registerTool: (pluginTool) => this.pluginRegistry.addToolFromPlugin(d.manifest.name, pluginTool),
+      registerEngine: (name, engine) => this.pluginRegistry.addEngineFromPlugin(name, engine),
+      registerCommand: (cmd) => this.pluginRegistry.addCommandFromPlugin(d.manifest.name, cmd),
+      getAgentConfig: (id: string) => this.agents.get(id)?.config,
+      getGlobalConfig: () => this.globalConfig,
+    });
+    const instance = await mod.register(ctx);
+    this.pluginRegistry.addPlugin(d.manifest.name, { manifest: d.manifest, instance });
   }
 
   private buildUserQueryOptions(
@@ -2082,8 +2236,47 @@ export class Gateway {
     }
 
     this.rebuildHookEmitters();
+
+    // Re-subscribe all plugin hooks to the fresh emitters (C1: hooks were orphaned after rebuild)
+    for (const reg of this.pluginRegistry.listAllHooks()) {
+      for (const emitter of this.hookEmitters.values()) {
+        emitter.subscribe(reg.event, reg.handler);
+      }
+    }
+
     for (const agentId of removed) {
       this.subagentRegistry.clearAgent(agentId);
+    }
+
+    // Re-apply plugin enables/disables and refresh MCP servers for (re)loaded agents
+    for (const [agentId, agent] of this.agents) {
+      const pluginsCfg = agent.config.plugins ?? {};
+      const desired = new Set<string>();
+      for (const [pluginName, cfg] of Object.entries(pluginsCfg)) {
+        if (cfg?.enabled) desired.add(pluginName);
+      }
+
+      // Apply additions
+      for (const pluginName of desired) {
+        if (!this.pluginRegistry.isEnabledFor(agentId, pluginName)) {
+          try {
+            this.pluginRegistry.enableForAgent(agentId, pluginName);
+          } catch {
+            // plugin may no longer exist — ignore
+          }
+        }
+      }
+
+      // Apply removals (C2: enabled:true → false was never applied without restart)
+      for (const { manifest } of this.pluginRegistry.listPlugins()) {
+        if (this.pluginRegistry.isEnabledFor(agentId, manifest.name) && !desired.has(manifest.name)) {
+          this.pluginRegistry.disableForAgent(agentId, manifest.name);
+        }
+      }
+
+      // Always refresh MCP server — even empty array correctly resets to built-in-only
+      const pluginTools = this.pluginRegistry.getMcpToolsForAgent(agentId);
+      agent.refreshPluginTools(pluginTools);
     }
 
     this.warmQueries.closeAll();

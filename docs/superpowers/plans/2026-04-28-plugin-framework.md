@@ -56,6 +56,7 @@
 ```typescript
 // src/plugins/types.ts
 import type { z } from 'zod';
+import type { HookEvent } from '../hooks/emitter.js';
 
 /**
  * Manifest, как он лежит в plugins/{name}/.claude-plugin/plugin.json
@@ -106,13 +107,8 @@ export interface PluginContext {
   getGlobalConfig(): unknown;                    // Returns GlobalConfig
 }
 
-export type HookEvent =
-  | 'on_message_received'
-  | 'on_before_query'
-  | 'on_after_query'
-  | 'on_session_reset'
-  | 'on_tool_use'
-  | 'on_tool_result';
+// Re-export from gateway emitter to keep types in sync as new events are added.
+export type { HookEvent } from '../hooks/emitter.js';
 
 export type HookHandler = (payload: Record<string, unknown>) => void | Promise<void>;
 
@@ -169,7 +165,7 @@ export interface CompressInput {
   currentTokens: number;
 }
 export interface CompressResult {
-  assembled: unknown[];
+  messages: unknown[];           // transformed prompt
 }
 
 export interface ShouldCompressInput {
@@ -214,7 +210,9 @@ export interface PluginInstance {
 import { describe, it, expectTypeOf } from 'vitest';
 import type {
   PluginManifest, PluginContext, ContextEngine, PluginEntryModule,
-  PluginInstance, RunSubagentOpts, HookEvent, HookHandler, PluginMcpTool
+  PluginInstance, RunSubagentOpts, HookEvent, HookHandler, PluginMcpTool,
+  PluginSlashCommand, SlashCommandContext, PluginLogger,
+  AssembleInput, AssembleResult, CompressInput, CompressResult, ShouldCompressInput,
 } from '../types.js';
 
 describe('plugin types', () => {
@@ -233,21 +231,82 @@ describe('plugin types', () => {
   });
 
   it('ContextEngine methods are all optional', () => {
-    const engine: ContextEngine = {};   // нечего обязательно
-    expect(engine).toBeDefined();
+    expectTypeOf<ContextEngine>().toMatchTypeOf<{}>();
+    // empty object satisfies — verify every method is optional
+    expectTypeOf<ContextEngine['compress']>().toEqualTypeOf<((input: CompressInput) => Promise<CompressResult | null>) | undefined>();
+    expectTypeOf<ContextEngine['assemble']>().toEqualTypeOf<((input: AssembleInput) => Promise<AssembleResult | null>) | undefined>();
+    expectTypeOf<ContextEngine['shouldCompress']>().toEqualTypeOf<((input: ShouldCompressInput) => boolean) | undefined>();
   });
 
   it('PluginEntryModule.register accepts PluginContext and returns PluginInstance', () => {
-    const fakeRegister: PluginEntryModule['register'] = async (ctx) => {
-      expectTypeOf(ctx).toEqualTypeOf<PluginContext>();
-      return {} as PluginInstance;
-    };
-    expect(typeof fakeRegister).toBe('function');
+    expectTypeOf<PluginEntryModule['register']>().parameter(0).toEqualTypeOf<PluginContext>();
+    expectTypeOf<PluginEntryModule['register']>().returns
+      .toEqualTypeOf<Promise<PluginInstance> | PluginInstance>();
   });
 
-  it('HookEvent matches anthroclaw HookEmitter events subset', () => {
-    const evt: HookEvent = 'on_after_query';   // должно компилиться
-    expect(evt).toBe('on_after_query');
+  it('HookEvent is re-exported from gateway emitter (matches its full shape)', () => {
+    // assignability — values valid in plugin scope must be valid for gateway emitter
+    expectTypeOf<HookEvent>().toMatchTypeOf<string>();
+    // verifying the re-export carries the full union type
+    expectTypeOf<HookEvent>().toEqualTypeOf<HookEvent>();
+  });
+
+  it('HookHandler signature', () => {
+    expectTypeOf<HookHandler>().parameter(0).toEqualTypeOf<Record<string, unknown>>();
+    expectTypeOf<HookHandler>().returns.toEqualTypeOf<void | Promise<void>>();
+  });
+
+  it('PluginMcpTool shape', () => {
+    expectTypeOf<PluginMcpTool>().toHaveProperty('name').toEqualTypeOf<string>();
+    expectTypeOf<PluginMcpTool>().toHaveProperty('description').toEqualTypeOf<string>();
+    expectTypeOf<PluginMcpTool>().toHaveProperty('inputSchema');
+    expectTypeOf<PluginMcpTool>().toHaveProperty('handler').toBeFunction();
+  });
+
+  it('PluginSlashCommand and SlashCommandContext', () => {
+    expectTypeOf<PluginSlashCommand>().toHaveProperty('name').toEqualTypeOf<string>();
+    expectTypeOf<PluginSlashCommand>().toHaveProperty('handler').toBeFunction();
+    expectTypeOf<SlashCommandContext>().toHaveProperty('agentId').toEqualTypeOf<string>();
+    expectTypeOf<SlashCommandContext>().toHaveProperty('sessionKey').toEqualTypeOf<string>();
+  });
+
+  it('AssembleInput / AssembleResult parallel CompressInput / CompressResult', () => {
+    expectTypeOf<AssembleInput>().toHaveProperty('agentId').toEqualTypeOf<string>();
+    expectTypeOf<AssembleInput>().toHaveProperty('sessionKey').toEqualTypeOf<string>();
+    expectTypeOf<AssembleInput>().toHaveProperty('messages').toEqualTypeOf<unknown[]>();
+    expectTypeOf<AssembleResult>().toHaveProperty('messages').toEqualTypeOf<unknown[]>();
+    expectTypeOf<CompressInput>().toHaveProperty('agentId').toEqualTypeOf<string>();
+    expectTypeOf<CompressInput>().toHaveProperty('sessionKey').toEqualTypeOf<string>();
+    expectTypeOf<CompressInput>().toHaveProperty('messages').toEqualTypeOf<unknown[]>();
+    expectTypeOf<CompressInput>().toHaveProperty('currentTokens').toEqualTypeOf<number>();
+    expectTypeOf<CompressResult>().toHaveProperty('messages').toEqualTypeOf<unknown[]>();
+  });
+
+  it('ShouldCompressInput shape', () => {
+    expectTypeOf<ShouldCompressInput>().toHaveProperty('agentId').toEqualTypeOf<string>();
+    expectTypeOf<ShouldCompressInput>().toHaveProperty('sessionKey').toEqualTypeOf<string>();
+    expectTypeOf<ShouldCompressInput>().toHaveProperty('messageCount').toEqualTypeOf<number>();
+    expectTypeOf<ShouldCompressInput>().toHaveProperty('currentTokens').toEqualTypeOf<number>();
+  });
+
+  it('RunSubagentOpts shape', () => {
+    expectTypeOf<RunSubagentOpts>().toHaveProperty('prompt').toEqualTypeOf<string>();
+    // optional fields exist
+    expectTypeOf<RunSubagentOpts>().toHaveProperty('systemPrompt').toEqualTypeOf<string | undefined>();
+    expectTypeOf<RunSubagentOpts>().toHaveProperty('model').toEqualTypeOf<string | undefined>();
+    expectTypeOf<RunSubagentOpts>().toHaveProperty('timeoutMs').toEqualTypeOf<number | undefined>();
+    expectTypeOf<RunSubagentOpts>().toHaveProperty('cwd').toEqualTypeOf<string | undefined>();
+  });
+
+  it('PluginLogger has 4 level methods', () => {
+    expectTypeOf<PluginLogger>().toHaveProperty('info').toBeFunction();
+    expectTypeOf<PluginLogger>().toHaveProperty('warn').toBeFunction();
+    expectTypeOf<PluginLogger>().toHaveProperty('error').toBeFunction();
+    expectTypeOf<PluginLogger>().toHaveProperty('debug').toBeFunction();
+  });
+
+  it('PluginInstance.shutdown is optional', () => {
+    expectTypeOf<PluginInstance>().toHaveProperty('shutdown').toEqualTypeOf<(() => Promise<void> | void) | undefined>();
   });
 });
 ```
@@ -799,6 +858,9 @@ describe('runSubagent', () => {
     expect(callArg.options.allowedTools).toEqual([]);
     expect(callArg.options.permissionMode).toBe('dontAsk');
     expect(callArg.options.model).toBe('claude-haiku-4-5');
+    // Verify canUseTool is actually a deny function, not just present.
+    expect(typeof callArg.options.canUseTool).toBe('function');
+    await expect(callArg.options.canUseTool()).resolves.toMatchObject({ behavior: 'deny' });
   });
 
   it('extracts text from assistant blocks if no result event', async () => {
@@ -853,6 +915,8 @@ Expected: FAIL (`Cannot find module '../subagent-runner'`)
 
 - [ ] **Step 3: Implement subagent-runner.ts**
 
+(After review: includes timeout abort propagation + SDKResultError surfacing.)
+
 ```typescript
 // src/plugins/subagent-runner.ts
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -870,6 +934,9 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
+  // AbortController created before sdkOptions so it can be passed in (propagates abort to SDK subprocess).
+  const controller = new AbortController();
+
   const sdkOptions: Options = {
     model: opts.model ?? 'claude-sonnet-4-6',
     cwd: opts.cwd ?? process.cwd(),
@@ -880,6 +947,7 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
       behavior: 'deny',
       message: 'Tools disabled in plugin subagent.',
     }),
+    abortController: controller,
     settingSources: ['project'],
     persistSession: false,
     maxTurns: 1,
@@ -890,21 +958,24 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
 
   const stream = query({ prompt: opts.prompt, options: sdkOptions });
 
-  // Timeout через AbortController + race
-  const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let result = '';
   let resultFound = false;
   const accumulated: string[] = [];
 
-  try {
+  const completePromise = (async () => {
     for await (const evt of stream) {
-      if (controller.signal.aborted) {
-        throw new Error(`runSubagent timeout after ${timeoutMs}ms`);
+      const e = evt as Record<string, unknown>;
+
+      // Detect SDK result errors before checking for success result string.
+      const isErrorResult = e.type === 'result' && Boolean((e as { is_error?: boolean }).is_error);
+      if (isErrorResult) {
+        const errors = (e as { errors?: string[] }).errors ?? [];
+        const subtype = (e as { subtype?: string }).subtype ?? 'unknown';
+        throw new Error(`runSubagent LLM error (${subtype}): ${errors.join('; ') || subtype}`);
       }
 
-      const e = evt as Record<string, unknown>;
       if (e.type === 'result' && typeof e.result === 'string') {
         result = e.result.trim();
         resultFound = true;
@@ -921,7 +992,18 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
         }
       }
     }
+  })();
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    controller.signal.addEventListener('abort', () => {
+      reject(new Error(`runSubagent timeout after ${timeoutMs}ms`));
+    });
+  });
+
+  try {
+    await Promise.race([completePromise, timeoutPromise]);
   } finally {
+    // stream.close() in outer finally so it runs even when timeout wins. Calling twice is safe.
     clearTimeout(timer);
     stream.close?.();
   }
@@ -941,7 +1023,7 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/plugins/__tests__/subagent-runner.test.ts`
-Expected: PASS (all 4 cases)
+Expected: PASS (all 6 cases after review fixes)
 
 - [ ] **Step 5: Commit**
 
@@ -949,6 +1031,8 @@ Expected: PASS (all 4 cases)
 git add src/plugins/subagent-runner.ts src/plugins/__tests__/subagent-runner.test.ts
 git commit -m "feat(plugins): runSubagent — single LLM path via SDK query() with deny-all tools"
 ```
+
+NOTE: This task also adds `clearMocks: true` to `vitest.config.ts` to ensure clean mock state between tests.
 
 ---
 
@@ -1569,9 +1653,13 @@ git add src/gateway.ts src/agent/agent.ts src/index.ts
 git commit -m "feat(plugins): wire PluginRegistry into Gateway and per-agent MCP server"
 ```
 
+**Post-review addendum (code review of Task 8 implementation):** Four bugs were found and fixed in the Task 8 implementation. (C1) Plugin hook handlers were orphaned after `rebuildHookEmitters()` because fresh emitters replaced old ones without re-subscribing stored handlers. Fixed by moving hook registration through `PluginRegistry.addHookFromPlugin` + `listAllHooks`, having the gateway re-subscribe all stored hooks to fresh emitters after every `rebuildHookEmitters()` call. (C2) Setting `enabled: false` in agent config had no effect on hot-reload — only additions were applied, never removals. Fixed by reconciling desired vs actual enabled set in the reload loop and calling `disableForAgent` where needed. (I1) Plugin data directory was passed to plugin but never created; added `mkdir(..., { recursive: true })` before `createPluginContext`. (I4) Plugin `shutdown()` was called after `agents.clear()` in `stop()`; moved plugin shutdown loop above agents/channels teardown. Additionally, `GlobalConfigSchema.plugins` field was added here (see Task 9 note below), the `ContextDeps` interface was simplified by replacing `hookEmitterFor`/`listAgentIds` with a single `registerHook` callback, and per-agent `refreshPluginTools` is now always called (even with empty array) to correctly reset to built-in-only when a plugin is disabled.
+
 ---
 
 ## Task 9: Add `plugins` section to GlobalConfigSchema and AgentYmlSchema
+
+**Note:** `GlobalConfigSchema.plugins` was added in the Task 8 post-review fix. Task 9 only needs to add the `AgentYmlSchema.plugins` part (which was already done there too) and add schema tests.
 
 **Files:**
 - Modify: `src/config/schema.ts`
@@ -1837,6 +1925,10 @@ await this.pluginsWatcher?.close();
 git add src/plugins/watcher.ts src/plugins/__tests__/watcher.test.ts src/gateway.ts
 git commit -m "feat(plugins): chokidar-based hot-reload for plugins/*/plugin.json"
 ```
+
+**Post-final-review fix:** Watcher `onAdd` was originally only registering the plugin globally — agent enables and `refreshPluginTools()` were not applied until next agent-config reload. Final review caught this; `onAdd` now mirrors the per-agent enable+refresh loop from initial discovery, and `onRemove` also refreshes agent tools to drop the removed plugin's tool definitions immediately.
+
+**Smoke-test fix:** The watcher initially used `ignoreInitial: false`, causing chokidar to fire `add` events for plugin manifests that were already loaded by `Gateway.start()`'s initial `discoverPlugins` pass. This produced a "Tool X is already registered" error at SDK level. Fix: `ignoreInitial: true` (post-startup events only) plus idempotent `loadAndRegisterPlugin` (removes any existing same-name plugin before re-loading) as defense in depth.
 
 ---
 
@@ -2183,6 +2275,8 @@ Expected:
 git add src/plugins/index.ts
 git commit -m "feat(plugins): public API barrel"
 ```
+
+**Note:** `registerSlashCommand` registers but does not dispatch in v0.1.0 — dispatch integration is Plan 2 work. Documented in JSDoc on `PluginContext.registerSlashCommand`.
 
 ---
 

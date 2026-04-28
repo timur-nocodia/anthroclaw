@@ -39,6 +39,7 @@
     "openai": "^6.34.0",
     "pino": "^10.3.1",
     "qrcode-terminal": "^0.12.0",
+    "semver": "^7.7.4",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },
@@ -46,6 +47,7 @@
     "@types/bcrypt": "^5.0.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.6.0",
+    "@types/semver": "^7.7.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"

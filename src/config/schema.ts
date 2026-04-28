@@ -93,6 +93,9 @@ export const GlobalConfigSchema = z.object({
   }).optional(),
   webhooks: z.record(z.string(), DirectWebhookSchema).optional(),
   features: FeatureFlagsSchema,
+  plugins: z.record(z.string(), z.object({
+    defaults: z.record(z.string(), z.unknown()).optional(),
+  }).passthrough()).optional(),
 });
 
 // ─── RouteSchema ───────────────────────────────────────────────────
@@ -337,6 +340,14 @@ export const AgentYmlSchema = z.object({
     taskNotifications: z.boolean().default(false),
   }).optional(),
   sdk: SdkAgentConfigSchema,
+  /**
+   * Per-agent plugin enable/disable config.
+   * Keyed by plugin name. Task 9 will replace this with a proper typed schema.
+   */
+  plugins: z.record(
+    z.string(),
+    z.object({ enabled: z.boolean().optional() }).passthrough(),
+  ).optional(),
 });
 
 // ─── Exported types ────────────────────────────────────────────────

@@ -19,6 +19,7 @@ import { createLocalNoteProposeTool } from './tools/local-note-propose.js';
 import type { DynamicCronStore } from '../cron/dynamic-store.js';
 import { createSdkMcpServer, query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpSdkServerConfigWithInstance, Options } from '@anthropic-ai/claude-agent-sdk';
+import type { PluginMcpTool } from '../plugins/types.js';
 import type { ToolDefinition } from './tools/types.js';
 import type { ChannelAdapter } from '../channels/types.js';
 import type { AccessControl } from '../routing/access.js';
@@ -106,7 +107,7 @@ export class Agent {
   readonly config: AgentYml;
   readonly workspacePath: string;
   readonly memoryStore: MemoryStore;
-  readonly mcpServer: McpSdkServerConfigWithInstance;
+  mcpServer: McpSdkServerConfigWithInstance;
 
   /** Raw tool definitions for introspection/testing */
   readonly tools: ToolDefinition[];
@@ -182,6 +183,26 @@ export class Agent {
     if (this.sessionModelOverrides.delete(sessionKey)) {
       this.persistSessionModelOverrides();
     }
+  }
+
+  /**
+   * Rebuild the agent's MCP server to include plugin tools.
+   * Called by Gateway after plugins are loaded and enabled for this agent.
+   */
+  refreshPluginTools(pluginTools: PluginMcpTool[]): void {
+    const allTools: any[] = [
+      ...(this.tools as any[]),
+      ...pluginTools.map((pt) => ({
+        name: pt.name,
+        description: pt.description,
+        inputSchema: pt.inputSchema,
+        handler: (input: unknown) => pt.handler(input),
+      })),
+    ];
+    this.mcpServer = createSdkMcpServer({
+      name: `${this.id}-tools`,
+      tools: allTools,
+    });
   }
 
   private loadSessionMappings(): void {

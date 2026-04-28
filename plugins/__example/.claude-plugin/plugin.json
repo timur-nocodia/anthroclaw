@@ -1,0 +1,6 @@
+{
+  "name": "example",
+  "version": "0.0.1",
+  "description": "Stub plugin for plugin-framework E2E tests. Not for production.",
+  "entry": "dist/index.js"
+}
