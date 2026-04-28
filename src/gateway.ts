@@ -785,7 +785,20 @@ export class Gateway {
    * discovery and hot-reload onAdd.
    */
   private async loadAndRegisterPlugin(d: DiscoveredPlugin, dataDir: string): Promise<void> {
-    const pluginDataDir = joinPath(dataDir, d.manifest.name);
+    const pluginName = d.manifest.name;
+
+    // Idempotent: if already loaded, shutdown + remove first.
+    const existing = this.pluginRegistry.listPlugins().find(p => p.manifest.name === pluginName);
+    if (existing) {
+      if (existing.instance.shutdown) {
+        try { await existing.instance.shutdown(); } catch (err) {
+          logger.warn({ err, plugin: pluginName }, 'shutdown error during reload');
+        }
+      }
+      this.pluginRegistry.removePlugin(pluginName);
+    }
+
+    const pluginDataDir = joinPath(dataDir, pluginName);
     await mkdir(pluginDataDir, { recursive: true });
     const mod = await loadPlugin(d, { anthroclawVersion: ANTHROCLAW_VERSION });
     const ctx = createPluginContext({

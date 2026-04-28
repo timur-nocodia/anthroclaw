@@ -1928,6 +1928,8 @@ git commit -m "feat(plugins): chokidar-based hot-reload for plugins/*/plugin.jso
 
 **Post-final-review fix:** Watcher `onAdd` was originally only registering the plugin globally — agent enables and `refreshPluginTools()` were not applied until next agent-config reload. Final review caught this; `onAdd` now mirrors the per-agent enable+refresh loop from initial discovery, and `onRemove` also refreshes agent tools to drop the removed plugin's tool definitions immediately.
 
+**Smoke-test fix:** The watcher initially used `ignoreInitial: false`, causing chokidar to fire `add` events for plugin manifests that were already loaded by `Gateway.start()`'s initial `discoverPlugins` pass. This produced a "Tool X is already registered" error at SDK level. Fix: `ignoreInitial: true` (post-startup events only) plus idempotent `loadAndRegisterPlugin` (removes any existing same-name plugin before re-loading) as defense in depth.
+
 ---
 
 ## Task 11: Stub plugin (`plugins/__example/`) for E2E test

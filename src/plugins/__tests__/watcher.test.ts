@@ -48,6 +48,25 @@ describe('startPluginsWatcher', () => {
     await watcher.close();
   });
 
+  it('does not fire onAdd for plugins existing at watcher start (ignoreInitial)', async () => {
+    // Setup: plugin already exists BEFORE watcher starts.
+    // We write the file and then pause long enough for FSEvents (macOS) to deliver
+    // the creation events to the OS, so they are NOT mistaken for post-start changes.
+    mkdirSync(join(tmp, 'pre-existing/.claude-plugin'), { recursive: true });
+    writeFileSync(
+      join(tmp, 'pre-existing/.claude-plugin/plugin.json'),
+      JSON.stringify({ name: 'pre-existing', version: '0.1.0', entry: 'dist/index.js' })
+    );
+    await new Promise(r => setTimeout(r, 500));  // let FSEvents settle before watcher starts
+
+    const onAdd = vi.fn();
+    const watcher = startPluginsWatcher(tmp, { onAdd, onRemove: vi.fn() });
+    await new Promise(r => setTimeout(r, 800));   // plenty of time for any wrong fire
+
+    expect(onAdd).not.toHaveBeenCalled();
+    await watcher.close();
+  });
+
   it('detects manifest change and calls onRemove + onAdd', async () => {
     mkdirSync(join(tmp, 'baz/.claude-plugin'), { recursive: true });
     writeFileSync(

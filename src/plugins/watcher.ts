@@ -41,7 +41,7 @@ export function startPluginsWatcher(
   // pattern — watching the parent dir with depth is more reliable.
   const watcher = chokidar.watch(resolvedPluginsDir, {
     persistent: true,
-    ignoreInitial: false,
+    ignoreInitial: true,
     depth: 3,
   });
 
