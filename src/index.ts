@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { resolve } from 'node:path';
-import { loadGlobalConfig } from './config/loader.js';
+import { getOverlayPath, loadGlobalConfigWithOverlay } from './config/overlay.js';
 import { Gateway } from './gateway.js';
 import { logger } from './logger.js';
 
@@ -10,7 +10,10 @@ const dataDir = process.argv[4] ?? './data';
 const pluginsDir = process.argv[5] ?? './plugins';
 
 async function main() {
-  const config = loadGlobalConfig(resolve(configPath));
+  const config = loadGlobalConfigWithOverlay(
+    resolve(configPath),
+    getOverlayPath(resolve(dataDir)),
+  );
   const gateway = new Gateway();
 
   process.on('SIGINT', async () => {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { AlertCircle, Check, ChevronLeft, ChevronRight, RefreshCw, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 
@@ -32,7 +32,14 @@ export default function PairWhatsAppPage() {
   const [qrData, setQrData] = useState("");
   const [statusText, setStatusText] = useState("Connecting...");
   const [phone, setPhone] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [resolvedAccountId, setResolvedAccountId] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [isResetting, setIsResetting] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  // Mirror of resolvedAccountId so the retry handler always reads the latest
+  // value, even if the state update has not yet flushed when the user clicks.
+  const resolvedAccountIdRef = useRef<string | null>(null);
 
   // Fetch agents
   useEffect(() => {
@@ -46,12 +53,15 @@ export default function PairWhatsAppPage() {
       .catch(() => {});
   }, [serverId]);
 
-  // Start SSE pairing when step 2
+  // Start SSE pairing when step 2 (re-fires on attempt++)
   useEffect(() => {
     if (step !== 2) return;
 
     const abort = new AbortController();
     abortRef.current = abort;
+    setErrorMessage(null);
+    setQrData("");
+    setStatusText("Connecting...");
 
     (async () => {
       try {
@@ -60,17 +70,17 @@ export default function PairWhatsAppPage() {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(
-              accountIdOverride
-                ? { accountId: accountIdOverride, agentId: selectedAgent }
-                : { agentId: selectedAgent },
-            ),
+            body: JSON.stringify({
+              ...(accountIdOverride ? { accountId: accountIdOverride } : {}),
+              agentId: selectedAgent,
+              reset: attempt > 0,
+            }),
             signal: abort.signal,
           },
         );
 
         if (!res.ok || !res.body) {
-          setStatusText("Failed to start pairing.");
+          setErrorMessage("Failed to start pairing.");
           return;
         }
 
@@ -93,6 +103,10 @@ export default function PairWhatsAppPage() {
 
             try {
               const ev = JSON.parse(raw);
+              if (ev.accountId && !resolvedAccountIdRef.current) {
+                resolvedAccountIdRef.current = ev.accountId;
+                setResolvedAccountId(ev.accountId);
+              }
               const qrPayload = ev.code ?? ev.data;
               if (ev.type === "qr" && qrPayload) {
                 setQrData(qrPayload);
@@ -106,7 +120,8 @@ export default function PairWhatsAppPage() {
                 setStep(3);
               }
               if (ev.type === "error") {
-                setStatusText(ev.message ?? "Pairing failed.");
+                setErrorMessage(ev.message ?? "Pairing failed.");
+                setQrData("");
               }
             } catch {
               // skip invalid JSON
@@ -115,7 +130,7 @@ export default function PairWhatsAppPage() {
         }
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
-          setStatusText("Connection lost. Try again.");
+          setErrorMessage("Connection lost. Try again.");
         }
       }
     })();
@@ -124,7 +139,24 @@ export default function PairWhatsAppPage() {
       abort.abort();
       abortRef.current = null;
     };
-  }, [step, serverId, selectedAgent, accountIdOverride]);
+  }, [step, serverId, selectedAgent, accountIdOverride, attempt]);
+
+  const handleClearAndRetry = useCallback(async () => {
+    if (isResetting) return;
+    setIsResetting(true);
+    if (abortRef.current) abortRef.current.abort();
+    try {
+      const accountId = accountIdOverride ?? resolvedAccountIdRef.current;
+      if (accountId) {
+        await fetch(`/api/fleet/${serverId}/channels/whatsapp/${encodeURIComponent(accountId)}`, {
+          method: "DELETE",
+        }).catch(() => {});
+      }
+      setAttempt((n) => n + 1);
+    } finally {
+      setIsResetting(false);
+    }
+  }, [accountIdOverride, isResetting, serverId]);
 
   const goBack = () => {
     if (abortRef.current) abortRef.current.abort();
@@ -230,48 +262,76 @@ export default function PairWhatsAppPage() {
             <div className="flex flex-col items-center gap-4">
               <div className="text-center">
                 <h2 className="mb-1 text-base font-semibold" style={{ color: "var(--color-foreground)" }}>
-                  Scan this QR code
+                  {errorMessage ? "Pairing failed" : "Scan this QR code"}
                 </h2>
                 <p className="text-xs" style={{ color: "var(--oc-text-muted)" }}>
-                  Open WhatsApp on your phone &rarr; Settings &rarr; Linked Devices &rarr; Link a Device
+                  {errorMessage
+                    ? "WhatsApp rejected the stored credentials. Clear them and try again."
+                    : "Open WhatsApp on your phone → Settings → Linked Devices → Link a Device"}
                 </p>
               </div>
-              <div
-                className="rounded-md p-3.5"
-                style={{
-                  background: "#fff",
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-                }}
-              >
-                {qrData ? (
-                  <QRCodeSVG value={qrData} size={192} />
-                ) : (
-                  <div
-                    className="flex h-[192px] w-[192px] items-center justify-center text-xs"
-                    style={{ color: "var(--oc-text-muted)" }}
-                  >
-                    Generating QR...
-                  </div>
-                )}
-              </div>
-              <div
-                className="flex items-center gap-2 text-[11.5px]"
-                style={{ color: "var(--oc-text-dim)", fontFamily: "var(--oc-mono)" }}
-              >
-                <span
-                  className="inline-block h-1.5 w-1.5 rounded-full"
+              {errorMessage ? (
+                <div
+                  className="flex w-full flex-col items-center gap-3 rounded-md px-4 py-5"
                   style={{
-                    background: "var(--oc-yellow)",
-                    animation: "pulse 1s infinite",
+                    background: "rgba(248,113,113,0.08)",
+                    border: "1px solid rgba(248,113,113,0.3)",
                   }}
-                />
-                {statusText}
-              </div>
+                >
+                  <AlertCircle className="h-7 w-7" style={{ color: "var(--oc-red, #f87171)" }} />
+                  <div
+                    className="text-center text-xs"
+                    style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                  >
+                    {errorMessage}
+                  </div>
+                  <Button onClick={handleClearAndRetry} disabled={isResetting} className="mt-1">
+                    <RefreshCw className={`h-3.5 w-3.5 ${isResetting ? "animate-spin" : ""}`} />
+                    {isResetting ? "Clearing…" : "Clear credentials & retry"}
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className="rounded-md p-3.5"
+                  style={{
+                    background: "#fff",
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                  }}
+                >
+                  {qrData ? (
+                    <QRCodeSVG value={qrData} size={192} />
+                  ) : (
+                    <div
+                      className="flex h-[192px] w-[192px] items-center justify-center text-xs"
+                      style={{ color: "var(--oc-text-muted)" }}
+                    >
+                      Generating QR...
+                    </div>
+                  )}
+                </div>
+              )}
+              {!errorMessage && (
+                <div
+                  className="flex items-center gap-2 text-[11.5px]"
+                  style={{ color: "var(--oc-text-dim)", fontFamily: "var(--oc-mono)" }}
+                >
+                  <span
+                    className="inline-block h-1.5 w-1.5 rounded-full"
+                    style={{
+                      background: "var(--oc-yellow)",
+                      animation: "pulse 1s infinite",
+                    }}
+                  />
+                  {statusText}
+                </div>
+              )}
               <span
                 className="text-[11px]"
                 style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}
               >
-                agent: {selectedAgent} &middot; SSE connected
+                agent: {selectedAgent}
+                {resolvedAccountId ? ` · account: ${resolvedAccountId}` : ""}
+                {errorMessage ? "" : " · SSE connected"}
               </span>
             </div>
           )}

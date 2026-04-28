@@ -1,10 +1,30 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, handleAuthError } from '@/lib/require-auth';
 import { createSSEStream } from '@/lib/sse';
-import { resolve, join } from 'node:path';
+import { resolve, sep } from 'node:path';
+import { rmSync } from 'node:fs';
 import { getGateway } from '@/lib/gateway';
 
-const DATA_DIR = resolve(process.cwd(), '..', 'data');
+const WHATSAPP_AUTH_ROOT = resolve(process.cwd(), '..', 'data', 'whatsapp');
+
+/**
+ * Refuse account IDs that would resolve outside the whatsapp auth dir.
+ * Without this check `accountId: "../../agents/foo"` + `reset:true` would
+ * `rmSync` arbitrary directories under cwd.
+ */
+function safeAuthDir(accountId: string): string {
+  const candidate = resolve(WHATSAPP_AUTH_ROOT, accountId);
+  if (
+    candidate !== WHATSAPP_AUTH_ROOT &&
+    !candidate.startsWith(WHATSAPP_AUTH_ROOT + sep)
+  ) {
+    throw new Error(`Invalid accountId: ${accountId}`);
+  }
+  if (candidate === WHATSAPP_AUTH_ROOT) {
+    throw new Error('accountId cannot be empty');
+  }
+  return candidate;
+}
 
 async function resolveAccountId(body: { accountId?: string; agentId?: string }): Promise<string> {
   // Explicit accountId always wins.
@@ -33,7 +53,7 @@ export async function POST(req: NextRequest) {
     return handleAuthError(err);
   }
 
-  let body: { accountId?: string; agentId?: string };
+  let body: { accountId?: string; agentId?: string; reset?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -41,10 +61,34 @@ export async function POST(req: NextRequest) {
   }
 
   const accountId = await resolveAccountId(body);
-  const authDir = join(DATA_DIR, 'whatsapp', accountId);
+  let authDir: string;
+  try {
+    authDir = safeAuthDir(accountId);
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: 'invalid_account_id', message: (err as Error).message }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    );
+  }
+
+  // When the previous attempt was rejected by WhatsApp (loggedOut), the auth
+  // dir holds dead credentials that will keep failing. The "Clear credentials
+  // & retry" button on the pair page sends `reset: true` to wipe them.
+  // rmSync with force:true is a no-op if the dir doesn't exist.
+  if (body.reset) {
+    try {
+      rmSync(authDir, { recursive: true, force: true });
+    } catch {
+      // Best effort — let pairWhatsApp recreate the dir.
+    }
+  }
 
   return createSSEStream(async (send, close) => {
     try {
+      // Echo the resolved accountId up front so the UI can target it
+      // (e.g. for subsequent reset requests when accountId was derived).
+      send({ type: 'status', accountId, message: `pairing ${accountId}` });
+
       const { pairWhatsApp } = await import('@backend/web/pair-whatsapp.js');
 
       for await (const event of pairWhatsApp(authDir)) {

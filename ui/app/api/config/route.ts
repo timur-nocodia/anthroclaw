@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/route-handler';
 import { resolve } from 'node:path';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { GlobalConfigSchema } from '@backend/config/schema.js';
+import {
+  deepDiffOverlay,
+  deepMergeOverlay,
+  getOverlayPath,
+  readBaseConfigRaw,
+  readRuntimeOverlay,
+  writeRuntimeOverlay,
+} from '@backend/config/overlay.js';
 import { ValidationError } from '@/lib/agents';
 
 const CONFIG_PATH = resolve(process.cwd(), '..', 'config.yml');
+const OVERLAY_PATH = getOverlayPath(resolve(process.cwd(), '..', 'data'));
 
 const SENSITIVE_KEYS = /^(token|password|api_key|secret|auth_dir)$/i;
 
-/**
- * Recursively mask sensitive values in a config object.
- */
 function maskSensitive(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj;
 
@@ -36,10 +41,9 @@ function maskSensitive(obj: unknown): unknown {
 }
 
 /**
- * Merge masked values -- only update fields that actually changed.
- * If a value in the new config is "****", preserve the original value.
+ * Restore "****" placeholders to their corresponding values from `original`.
  */
-function mergeMasked(
+function unmaskAgainst(
   original: Record<string, unknown>,
   updated: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -56,7 +60,7 @@ function mergeMasked(
       typeof original[key] === 'object' &&
       !Array.isArray(original[key])
     ) {
-      result[key] = mergeMasked(
+      result[key] = unmaskAgainst(
         original[key] as Record<string, unknown>,
         value as Record<string, unknown>,
       );
@@ -66,16 +70,31 @@ function mergeMasked(
   return result;
 }
 
+/**
+ * Walk a parsed config and collect dotted paths that still hold the "****"
+ * placeholder. A leftover mask means the user moved/renamed a section so the
+ * mask couldn't be resolved against the previous config — writing it would
+ * literally replace the secret with the string "****".
+ */
+function findUnresolvedMasks(value: unknown, path: string[] = []): string[] {
+  if (value === '****') return [path.join('.') || '<root>'];
+  if (Array.isArray(value)) {
+    return value.flatMap((v, i) => findUnresolvedMasks(v, [...path, String(i)]));
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).flatMap(([k, v]) =>
+      findUnresolvedMasks(v, [...path, k]),
+    );
+  }
+  return [];
+}
+
 export async function GET() {
   return withAuth(async () => {
-    if (!existsSync(CONFIG_PATH)) {
-      return NextResponse.json({ raw: '', masked: true });
-    }
-
-    const raw = readFileSync(CONFIG_PATH, 'utf-8');
-    const parsed = parseYaml(raw) as Record<string, unknown>;
-    const maskedYaml = stringifyYaml(maskSensitive(parsed));
-
+    const base = readBaseConfigRaw(CONFIG_PATH);
+    const overlay = readRuntimeOverlay(OVERLAY_PATH);
+    const merged = deepMergeOverlay(base, overlay);
+    const maskedYaml = stringifyYaml(maskSensitive(merged));
     return NextResponse.json({ raw: maskedYaml, masked: true });
   });
 }
@@ -89,28 +108,44 @@ export async function PUT(req: NextRequest) {
       throw new ValidationError('invalid_yaml', '"yaml" (string) is required');
     }
 
-    let newData: Record<string, unknown>;
+    let submitted: Record<string, unknown>;
     try {
-      newData = parseYaml(yamlStr) as Record<string, unknown>;
+      submitted = parseYaml(yamlStr) as Record<string, unknown>;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Invalid YAML';
       throw new ValidationError('invalid_yaml', message);
     }
 
-    // If config exists, merge masked values from original
-    if (existsSync(CONFIG_PATH)) {
-      const originalRaw = readFileSync(CONFIG_PATH, 'utf-8');
-      const originalData = parseYaml(originalRaw) as Record<string, unknown>;
-      newData = mergeMasked(originalData, newData);
+    const base = readBaseConfigRaw(CONFIG_PATH);
+    const currentOverlay = readRuntimeOverlay(OVERLAY_PATH);
+    const currentMerged = deepMergeOverlay(base, currentOverlay);
+
+    // The user is editing what GET returned (merged + masked). Restore secrets
+    // from the merged view so unchanged "****" fields keep their real value.
+    const target = unmaskAgainst(currentMerged, submitted);
+
+    // If the user moved/renamed a masked section, "****" survives the unmask
+    // and would be written as a literal secret. Reject before persisting.
+    const unresolved = findUnresolvedMasks(target);
+    if (unresolved.length > 0) {
+      throw new ValidationError(
+        'unresolved_secret_mask',
+        `Secret values masked as "****" could not be resolved at: ${unresolved.join(', ')}. ` +
+          'Re-enter the actual values for these fields.',
+      );
     }
 
-    const result = GlobalConfigSchema.safeParse(newData);
-    if (!result.success) {
-      const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+    const validated = GlobalConfigSchema.safeParse(target);
+    if (!validated.success) {
+      const issues = validated.error.issues
+        .map((i) => `${i.path.join('.')}: ${i.message}`)
+        .join('; ');
       throw new ValidationError('invalid_yaml', issues);
     }
 
-    writeFileSync(CONFIG_PATH, stringifyYaml(newData), 'utf-8');
+    const nextOverlay = deepDiffOverlay(base, target);
+    writeRuntimeOverlay(OVERLAY_PATH, nextOverlay);
+
     return NextResponse.json({ ok: true });
   });
 }

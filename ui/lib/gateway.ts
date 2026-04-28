@@ -1,9 +1,11 @@
 import { resolve } from 'node:path';
 import type { Gateway } from '@backend/gateway.js';
+import { getOverlayPath } from '@backend/config/overlay.js';
 
 const CONFIG_PATH = resolve(process.cwd(), '..', 'config.yml');
 const AGENTS_DIR = resolve(process.cwd(), '..', 'agents');
 const DATA_DIR = resolve(process.cwd(), '..', 'data');
+const OVERLAY_PATH = getOverlayPath(DATA_DIR);
 
 let instance: Gateway | null = null;
 let initPromise: Promise<Gateway> | null = null;
@@ -19,9 +21,9 @@ export async function getGateway(): Promise<Gateway> {
 
   initPromise = (async () => {
     const { Gateway: GatewayClass } = await import('@backend/gateway.js');
-    const { loadGlobalConfig } = await import('@backend/config/loader.js');
+    const { loadGlobalConfigWithOverlay } = await import('@backend/config/overlay.js');
 
-    const config = loadGlobalConfig(CONFIG_PATH);
+    const config = loadGlobalConfigWithOverlay(CONFIG_PATH, OVERLAY_PATH);
     const gw = new GatewayClass();
     await gw.start(config, AGENTS_DIR, DATA_DIR);
 

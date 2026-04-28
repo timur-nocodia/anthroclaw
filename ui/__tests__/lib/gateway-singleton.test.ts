@@ -22,8 +22,9 @@ vi.mock('@backend/gateway.js', () => {
   return { Gateway: MockGateway, _mockStart: mockStart, _mockStop: mockStop };
 });
 
-vi.mock('@backend/config/loader.js', () => ({
-  loadGlobalConfig: vi.fn().mockReturnValue({
+vi.mock('@backend/config/overlay.js', () => ({
+  getOverlayPath: vi.fn().mockReturnValue('/tmp/test-overlay.yml'),
+  loadGlobalConfigWithOverlay: vi.fn().mockReturnValue({
     defaults: { model: 'claude-sonnet-4-6', embedding_provider: 'off', embedding_model: '', debounce_ms: 0 },
   }),
 }));
@@ -47,8 +48,9 @@ beforeEach(async () => {
     return { Gateway: MockGateway };
   });
 
-  vi.mock('@backend/config/loader.js', () => ({
-    loadGlobalConfig: vi.fn().mockReturnValue({
+  vi.mock('@backend/config/overlay.js', () => ({
+    getOverlayPath: vi.fn().mockReturnValue('/tmp/test-overlay.yml'),
+    loadGlobalConfigWithOverlay: vi.fn().mockReturnValue({
       defaults: { model: 'claude-sonnet-4-6', embedding_provider: 'off', embedding_model: '', debounce_ms: 0 },
     }),
   }));
