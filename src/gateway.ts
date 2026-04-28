@@ -778,6 +778,26 @@ export class Gateway {
     };
   }
 
+  /**
+   * Disconnect a WhatsApp account: stop its Baileys socket, wipe auth state,
+   * remove it from the live globalConfig.
+   *
+   * The caller must persist the matching change to config.yml separately —
+   * this method only mutates the in-memory config so getStatus() / route
+   * matching reflect the disconnect immediately.
+   */
+  async disconnectWhatsAppAccount(accountId: string): Promise<void> {
+    const wa = this.channels.get('whatsapp');
+    if (!(wa instanceof WhatsAppChannel)) {
+      throw new Error('WhatsApp channel is not active');
+    }
+    await wa.disconnectAccount(accountId);
+
+    if (this.globalConfig?.whatsapp?.accounts) {
+      delete this.globalConfig.whatsapp.accounts[accountId];
+    }
+  }
+
   getAgent(id: string): Agent | undefined {
     return this.agents.get(id);
   }

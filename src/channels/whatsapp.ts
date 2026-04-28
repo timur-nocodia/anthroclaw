@@ -95,6 +95,11 @@ export class WhatsAppChannel implements ChannelAdapter {
   private handler: ((msg: InboundMessage) => Promise<void>) | undefined;
   private accountPhones = new Map<string, string>();
   private accountStatuses = new Map<string, string>();
+  // Accounts explicitly torn down via disconnectAccount(). The connection.update
+  // 'close' handler checks this set to skip its automatic reconnect — without
+  // it, sock.logout() would trigger a close event which would immediately try
+  // to reconnect the socket we just removed.
+  private disconnectedAccounts = new Set<string>();
 
   constructor(config: WhatsAppConfig) {
     this.config = config;
@@ -121,6 +126,52 @@ export class WhatsAppChannel implements ChannelAdapter {
       sock.end(undefined);
     }
     this.sockets.clear();
+  }
+
+  /**
+   * Tear down a single account: best-effort WhatsApp-side logout, close socket,
+   * wipe in-memory state, remove auth directory, drop from config.accounts.
+   *
+   * After this returns, getAccountInfo() no longer lists the account and a
+   * future restart won't try to reconnect it. The caller is responsible for
+   * removing the account from the persisted config.yml.
+   */
+  async disconnectAccount(accountId: string): Promise<void> {
+    const acct = this.config.accounts[accountId];
+    if (!acct) {
+      throw new Error(`WhatsApp account "${accountId}" is not configured`);
+    }
+
+    this.disconnectedAccounts.add(accountId);
+
+    const sock = this.sockets.get(accountId);
+    if (sock) {
+      logger.info({ accountId }, 'whatsapp: disconnecting account');
+      // Best-effort logout (removes the device from WhatsApp's Linked Devices
+      // list). Bounded by a 5s timeout — if the WA servers are unreachable we
+      // still want to wipe local state.
+      await Promise.race([
+        Promise.resolve(sock.logout('User disconnected via UI')).catch((err) => {
+          logger.warn({ err, accountId }, 'whatsapp: logout failed (non-fatal)');
+        }),
+        new Promise<void>((r) => setTimeout(r, 5000)),
+      ]);
+      try {
+        sock.end(undefined);
+      } catch (err) {
+        logger.debug({ err, accountId }, 'whatsapp: sock.end after logout failed (non-fatal)');
+      }
+    }
+
+    this.sockets.delete(accountId);
+    this.accountPhones.delete(accountId);
+    this.accountStatuses.delete(accountId);
+    delete this.config.accounts[accountId];
+
+    if (acct.auth_dir && fs.existsSync(acct.auth_dir)) {
+      fs.rmSync(acct.auth_dir, { recursive: true, force: true });
+      logger.info({ accountId, authDir: acct.auth_dir }, 'whatsapp: auth directory removed');
+    }
   }
 
   async sendText(
@@ -251,6 +302,9 @@ export class WhatsAppChannel implements ChannelAdapter {
     authDir: string,
     version: [number, number, number],
   ): Promise<void> {
+    // Re-pairing the same accountId after a disconnect should be allowed.
+    this.disconnectedAccounts.delete(accountId);
+
     fs.mkdirSync(authDir, { recursive: true });
 
     // Restore from backup if creds.json is corrupted/truncated
@@ -320,6 +374,15 @@ export class WhatsAppChannel implements ChannelAdapter {
 
       if (connection === 'close') {
         this.accountStatuses.set(accountId, 'disconnected');
+
+        // Account was explicitly torn down via disconnectAccount() — don't
+        // reconnect, regardless of whether the close came from logout() or
+        // from sock.end(). disconnectAccount() handles its own cleanup.
+        if (this.disconnectedAccounts.has(accountId)) {
+          this.sockets.delete(accountId);
+          return;
+        }
+
         const statusCode =
           (lastDisconnect?.error as any)?.output?.statusCode as number | undefined;
         const loggedOut = statusCode === DisconnectReason.loggedOut;
