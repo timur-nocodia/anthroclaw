@@ -11,6 +11,7 @@
 
 import type Database from 'better-sqlite3';
 import { estimateTokens } from './tokens.js';
+import { requiresLikeFallback, escapeLike, buildLikeSnippet } from './_search-helpers.js';
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 
@@ -63,58 +64,6 @@ export interface SearchResult {
 function normalizeSource(source: string | null | undefined): string {
   const s = (source ?? '').trim();
   return s || 'unknown';
-}
-
-/**
- * Detect whether a query should bypass FTS5 and use LIKE fallback.
- * Triggers: CJK characters, emoji, unbalanced double-quotes, or empty/whitespace.
- *
- * NOTE: T7 will move this to search-query.ts. Keep non-exported so refactor is
- * non-breaking.
- */
-function requiresLikeFallback(query: string): boolean {
-  const trimmed = query.trim();
-  if (!trimmed) return true;
-
-  // CJK unified ideographs, Hiragana/Katakana, Hangul
-  if (/[一-鿿぀-ヿ가-힯]/.test(trimmed)) return true;
-
-  // Emoji (Unicode property; node supports /\p{Emoji}/u)
-  if (/\p{Emoji}/u.test(trimmed)) return true;
-
-  // Unbalanced double-quotes
-  if (((trimmed.match(/"/g) ?? []).length % 2) === 1) return true;
-
-  return false;
-}
-
-/**
- * Escape a single term for use with SQLite LIKE … ESCAPE '\\'.
- * Escapes backslash, percent, underscore.
- *
- * NOTE: T7 will move this to search-query.ts. Keep non-exported.
- */
-function escapeLike(term: string): string {
-  return term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-}
-
-/**
- * Build a simple snippet from plain content for LIKE-fallback results.
- * Returns up to 120 chars surrounding the first term match.
- */
-function buildLikeSnippet(content: string, terms: string[]): string {
-  const lower = content.toLowerCase();
-  for (const term of terms) {
-    const idx = lower.indexOf(term.toLowerCase());
-    if (idx >= 0) {
-      const start = Math.max(0, idx - 20);
-      const end = Math.min(content.length, idx + term.length + 100);
-      const prefix = start > 0 ? '...' : '';
-      const suffix = end < content.length ? '...' : '';
-      return prefix + content.slice(start, end) + suffix;
-    }
-  }
-  return content.slice(0, 120);
 }
 
 // ─── Row type for internal mapping ───────────────────────────────────────────

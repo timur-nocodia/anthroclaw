@@ -20,6 +20,7 @@
 
 import type Database from 'better-sqlite3';
 import { ulid } from 'ulid';
+import { requiresLikeFallback, escapeLike, buildLikeSnippet } from './_search-helpers.js';
 
 // ─── Public interfaces ───────────────────────────────────────────────────────
 
@@ -78,34 +79,6 @@ interface NodeRow {
 }
 
 // ─── Private helpers ─────────────────────────────────────────────────────────
-
-/**
- * Detect whether a query should bypass FTS5 and use LIKE fallback.
- * Triggers: CJK characters, emoji, unbalanced double-quotes, or empty/whitespace.
- *
- * NOTE: T7 will move this to search-query.ts.
- */
-function requiresLikeFallback(query: string): boolean {
-  const trimmed = query.trim();
-  if (!trimmed) return true;
-  // CJK unified ideographs, Hiragana/Katakana, Hangul
-  if (/[一-鿿぀-ヿ가-힯]/.test(trimmed)) return true;
-  // Emoji
-  if (/\p{Emoji}/u.test(trimmed)) return true;
-  // Unbalanced double-quotes
-  if (((trimmed.match(/"/g) ?? []).length % 2) === 1) return true;
-  return false;
-}
-
-/**
- * Escape a single term for use with SQLite LIKE … ESCAPE '\\'.
- * Escapes backslash, percent, underscore.
- *
- * NOTE: T7 will move this to search-query.ts.
- */
-function escapeLike(term: string): string {
-  return term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-}
 
 /** Normalise a source value for comparison (empty / null → 'unknown'). */
 function normalizeSource(source: string | null | undefined): string {
@@ -332,6 +305,8 @@ export class SummaryDAG {
    * (NOT including the root itself).
    *
    * Uses a recursive CTE traversing source_ids_json where source_type='nodes'.
+   * Cycle safety: relies on `UNION` (not `UNION ALL`) for implicit dedup-based
+   * termination. T6 lifecycle and T9 engine must never produce DAG cycles.
    */
   walkSubtree(rootNodeId: string): string[] {
     const rows = this._db
@@ -358,6 +333,8 @@ export class SummaryDAG {
    * CRITICAL for lossless drill-down: walk down the subtree from nodeId
    * until reaching nodes with source_type='messages', then collect all
    * message store_ids. Returns a deduplicated, sorted ASC number array.
+   * Cycle safety: relies on `UNION` (not `UNION ALL`) for implicit dedup-based
+   * termination. T6 lifecycle and T9 engine must never produce DAG cycles.
    */
   collectLeafMessageIds(nodeId: string): number[] {
     // Check node exists first
@@ -540,7 +517,7 @@ export class SummaryDAG {
       if (score <= 0) continue;
 
       // Build a simple snippet
-      const snippet = this._buildLikeSnippet(row.summary, rawTerms);
+      const snippet = buildLikeSnippet(row.summary, rawTerms);
 
       scored.push({ node_id: row.node_id, depth: row.depth, latest_at: row.latest_at, snippet, score });
     }
@@ -565,6 +542,8 @@ export class SummaryDAG {
    * then JOINs with the messages table.
    *
    * Back-compat: source='unknown' matches m.source = '' OR m.source = 'unknown' OR m.source IS NULL.
+   * Cycle safety: relies on `UNION` (not `UNION ALL`) for implicit dedup-based
+   * termination. T6 lifecycle and T9 engine must never produce DAG cycles.
    */
   private _nodeMatchesSource(nodeId: string, source: string): boolean {
     if (!source) return true;
@@ -600,23 +579,6 @@ export class SummaryDAG {
       .get(nodeId, normalizedSource, normalizedSource) as unknown;
 
     return row !== undefined && row !== null;
-  }
-
-  // ─── Private: snippet helper ──────────────────────────────────────────────
-
-  private _buildLikeSnippet(content: string, terms: string[]): string {
-    const lower = content.toLowerCase();
-    for (const term of terms) {
-      const idx = lower.indexOf(term.toLowerCase());
-      if (idx >= 0) {
-        const start = Math.max(0, idx - 20);
-        const end = Math.min(content.length, idx + term.length + 100);
-        const prefix = start > 0 ? '...' : '';
-        const suffix = end < content.length ? '...' : '';
-        return prefix + content.slice(start, end) + suffix;
-      }
-    }
-    return content.slice(0, 120);
   }
 
   // ─── Private: row mapping ─────────────────────────────────────────────────

@@ -304,6 +304,34 @@ describe('SummaryDAG', () => {
     expect(resultIds).not.toContain(d0);
   });
 
+  // ── 16b. search source-lineage matches legacy blank-source messages when filter is unknown ──
+  it('search source-lineage matches legacy blank-source messages when filter is unknown', () => {
+    // Insert a message with source='' directly via raw SQL (bypasses MessageStore normalization)
+    const insertRaw = db.prepare(`
+      INSERT INTO messages (session_id, source, role, content, ts, token_estimate, pinned)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const blankId = insertRaw.run('s', '', 'user', 'legacy blank source content', 1, 5, 0).lastInsertRowid as number;
+
+    // Create a d1 node whose source_ids reference the blank-source message
+    const nodeId = dag.create({
+      session_id: 's',
+      depth: 1,
+      summary: 'distinctkeyword wraps legacy content',
+      token_count: 8,
+      source_token_count: 5,
+      source_ids: [blankId],
+      source_type: 'messages',
+      earliest_at: 1,
+      latest_at: 1,
+    });
+
+    // Search with source: 'unknown' should match the d1 node since its leaf message has source=''
+    const results = dag.search('distinctkeyword', { sessionId: 's', source: 'unknown' });
+    const ids = results.map(r => r.node_id);
+    expect(ids).toContain(nodeId);
+  });
+
   // ── 17. search depthMin/depthMax bounds ───────────────────────────────────
   it('search respects depthMin and depthMax filters', () => {
     const sess = 'depth-filter-sess';
