@@ -53,10 +53,14 @@ function runMigrations(db: Database, from: number, to: number): void {
     if (!migration) {
       throw new Error(`No migration registered for schema version ${v}`);
     }
-    migration(db);
+    // Each migration runs in a transaction so partial failures don't corrupt state.
+    // Future migrations should NOT manage their own transactions.
+    db.transaction(migration)(db);
   }
 }
 
 const MIGRATIONS: Record<number, (db: Database) => void> = {
-  // Future migrations: 2: (db) => { db.exec('ALTER TABLE ...') }
+  // Future migrations: 2: (db) => { db.exec('ALTER TABLE messages ADD COLUMN foo TEXT') }
+  // NOTE: each migration is automatically wrapped in a transaction by runMigrations.
+  // Do NOT use db.transaction() inside the migration body.
 };

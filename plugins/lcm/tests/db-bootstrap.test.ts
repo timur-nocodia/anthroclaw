@@ -120,4 +120,83 @@ describe('bootstrap', () => {
     expect(mode).toBe('wal');
     db.close();
   });
+
+  it('FTS update trigger: messages_fts swaps old term for new', () => {
+    const db = new Database(dbPath);
+    bootstrap(db);
+    const result = db.prepare(
+      `INSERT INTO messages (session_id, source, role, content, ts) VALUES (?, ?, ?, ?, ?)`
+    ).run('s', 'cli', 'user', 'apple', Date.now());
+    const id = result.lastInsertRowid as number;
+
+    // Verify initial term indexed
+    const before = db.prepare(`SELECT COUNT(*) as c FROM messages_fts WHERE messages_fts MATCH ?`).get('apple') as { c: number };
+    expect(before.c).toBe(1);
+
+    db.prepare(`UPDATE messages SET content = ? WHERE store_id = ?`).run('banana', id);
+
+    // Old term should be gone
+    const oldGone = db.prepare(`SELECT COUNT(*) as c FROM messages_fts WHERE messages_fts MATCH ?`).get('apple') as { c: number };
+    expect(oldGone.c).toBe(0);
+    // New term should be indexed
+    const newPresent = db.prepare(`SELECT COUNT(*) as c FROM messages_fts WHERE messages_fts MATCH ?`).get('banana') as { c: number };
+    expect(newPresent.c).toBe(1);
+    db.close();
+  });
+
+  it('FTS delete trigger: messages_fts removes deleted row term', () => {
+    const db = new Database(dbPath);
+    bootstrap(db);
+    const result = db.prepare(
+      `INSERT INTO messages (session_id, source, role, content, ts) VALUES (?, ?, ?, ?, ?)`
+    ).run('s', 'cli', 'user', 'kiwi', Date.now());
+    const id = result.lastInsertRowid as number;
+
+    const before = db.prepare(`SELECT COUNT(*) as c FROM messages_fts WHERE messages_fts MATCH ?`).get('kiwi') as { c: number };
+    expect(before.c).toBe(1);
+
+    db.prepare(`DELETE FROM messages WHERE store_id = ?`).run(id);
+
+    const after = db.prepare(`SELECT COUNT(*) as c FROM messages_fts WHERE messages_fts MATCH ?`).get('kiwi') as { c: number };
+    expect(after.c).toBe(0);
+    db.close();
+  });
+
+  it('FTS update trigger: nodes_fts swaps old term for new', () => {
+    const db = new Database(dbPath);
+    bootstrap(db);
+    db.prepare(
+      `INSERT INTO summary_nodes (node_id, session_id, depth, summary, token_count, source_token_count, source_ids_json, source_type, earliest_at, latest_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run('n1', 's', 0, 'orange juice', 5, 100, '[]', 'messages', 1, 2, 3);
+
+    const before = db.prepare(`SELECT COUNT(*) as c FROM nodes_fts WHERE nodes_fts MATCH ?`).get('orange') as { c: number };
+    expect(before.c).toBe(1);
+
+    db.prepare(`UPDATE summary_nodes SET summary = ? WHERE node_id = ?`).run('lemon water', 'n1');
+
+    const oldGone = db.prepare(`SELECT COUNT(*) as c FROM nodes_fts WHERE nodes_fts MATCH ?`).get('orange') as { c: number };
+    expect(oldGone.c).toBe(0);
+    const newPresent = db.prepare(`SELECT COUNT(*) as c FROM nodes_fts WHERE nodes_fts MATCH ?`).get('lemon') as { c: number };
+    expect(newPresent.c).toBe(1);
+    db.close();
+  });
+
+  it('FTS delete trigger: nodes_fts removes deleted row term', () => {
+    const db = new Database(dbPath);
+    bootstrap(db);
+    db.prepare(
+      `INSERT INTO summary_nodes (node_id, session_id, depth, summary, token_count, source_token_count, source_ids_json, source_type, earliest_at, latest_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run('n2', 's', 0, 'mango pulp', 5, 100, '[]', 'messages', 1, 2, 3);
+
+    const before = db.prepare(`SELECT COUNT(*) as c FROM nodes_fts WHERE nodes_fts MATCH ?`).get('mango') as { c: number };
+    expect(before.c).toBe(1);
+
+    db.prepare(`DELETE FROM summary_nodes WHERE node_id = ?`).run('n2');
+
+    const after = db.prepare(`SELECT COUNT(*) as c FROM nodes_fts WHERE nodes_fts MATCH ?`).get('mango') as { c: number };
+    expect(after.c).toBe(0);
+    db.close();
+  });
 });
