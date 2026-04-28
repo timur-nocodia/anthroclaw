@@ -108,8 +108,10 @@ export class PluginRegistry {
   /**
    * Active ContextEngine for an agent: last among enabled plugins with a registered engine.
    * If multiple — we take the last enabled (insertion-order Set) and log a warning.
+   * Returns `{ name, engine }` so callers can attribute log lines to the plugin
+   * that took over (operator debuggability when several engines are registered).
    */
-  getContextEngine(agentId: string): ContextEngine | null {
+  getContextEngine(agentId: string): { name: string; engine: ContextEngine } | null {
     const enabled = this.enabledByAgent.get(agentId);
     if (!enabled || enabled.size === 0) return null;
 
@@ -125,7 +127,7 @@ export class PluginRegistry {
         'multiple ContextEngines enabled for agent; using last enabled'
       );
     }
-    return candidates[candidates.length - 1].engine;
+    return candidates[candidates.length - 1];
   }
 
   // ─── Slash commands ───────────────────────────────────────────────

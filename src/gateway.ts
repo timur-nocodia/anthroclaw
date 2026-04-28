@@ -454,6 +454,7 @@ export async function tryPluginCompress(
   engine: ContextEngine | null,
   agentId: string,
   sessionKey: string,
+  pluginName: string | null = null,
 ): Promise<boolean> {
   if (!engine?.compress) return false;
   try {
@@ -467,15 +468,19 @@ export async function tryPluginCompress(
     });
     if (result) {
       logger.info(
-        { agentId, sessionKey },
+        { agentId, sessionKey, pluginName },
         'plugin context-engine compress succeeded; legacy bypassed',
       );
       return true;
     }
     return false;
   } catch (err) {
+    // Redact `err` before logging — a plugin's compress() error may carry
+    // user message content, prompt fragments, or API response payloads in
+    // its message / .cause / stack frames. Pino would serialize the full
+    // object verbatim, so log shippers could exfiltrate secrets.
     logger.warn(
-      { err, agentId, sessionKey },
+      { err: redactSecrets(String(err)), agentId, sessionKey, pluginName },
       'plugin context-engine compress failed; fallback to legacy',
     );
     return false;
@@ -2912,9 +2917,16 @@ export class Gateway {
           // successfully compresses, skip the legacy memory-write + session-clear
           // flow. The plugin updates its own DAG internally; T21 (assemble) will
           // inject context at the next query(). NOTE: cannot `return` here — we
-          // must still run prefetch + finally{} queue drain below.
-          const lcm = this.pluginRegistry.getContextEngine(route.agentId);
-          const pluginHandledCompression = await tryPluginCompress(lcm, route.agentId, sessionKey);
+          // must still run prefetch + finally{} queue drain below. Messages
+          // arriving during the compress await stay buffered because
+          // queueManager.isActive(sessionKey) remains true until finally{} drains.
+          const lcmEntry = this.pluginRegistry.getContextEngine(route.agentId);
+          const pluginHandledCompression = await tryPluginCompress(
+            lcmEntry?.engine ?? null,
+            route.agentId,
+            sessionKey,
+            lcmEntry?.name ?? null,
+          );
 
           if (!pluginHandledCompression) {
             await this.summarizeAndSaveSession(agent, sessionKey);

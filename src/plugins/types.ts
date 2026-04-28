@@ -110,6 +110,12 @@ export interface AssembleResult {
 export interface CompressInput {
   agentId: string;
   sessionKey: string;
+  /**
+   * NOTE: When invoked from the gateway's auto-compress seam, this is `[]`
+   * and `currentTokens` is `0`. Plugins that need message history must
+   * mirror it themselves via the `on_after_query` hook — the gateway does
+   * not retain SDK message arrays at the dispatch boundary.
+   */
   messages: unknown[];
   currentTokens: number;
 }

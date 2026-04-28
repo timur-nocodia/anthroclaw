@@ -67,7 +67,7 @@ describe('PluginRegistry', () => {
     reg.addEngineFromPlugin('lcm', engine);
     expect(reg.getContextEngine('agent-1')).toBeNull();
     reg.enableForAgent('agent-1', 'lcm');
-    expect(reg.getContextEngine('agent-1')).toBe(engine);
+    expect(reg.getContextEngine('agent-1')).toEqual({ name: 'lcm', engine });
   });
 
   it('multiple ContextEngines — last enabled wins, with warning', () => {
@@ -81,7 +81,7 @@ describe('PluginRegistry', () => {
 
     reg.enableForAgent('agent-1', 'lcm-a');
     reg.enableForAgent('agent-1', 'lcm-b');
-    expect(reg.getContextEngine('agent-1')).toBe(engineB);
+    expect(reg.getContextEngine('agent-1')).toEqual({ name: 'lcm-b', engine: engineB });
   });
 
   it('addEngineFromPlugin throws on duplicate registration', () => {

@@ -82,8 +82,46 @@ describe('tryPluginCompress — gateway delegation helper', () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
     const [payload, message] = warnSpy.mock.calls[0];
     expect(payload).toMatchObject({ agentId: 'agent-2', sessionKey: 'sk-x' });
-    expect((payload as { err: unknown }).err).toBe(boom);
+    // err is now redacted to a string (was: raw Error object) — see Fix #1.
+    expect(typeof (payload as { err: unknown }).err).toBe('string');
+    expect((payload as { err: string }).err).toContain('engine kaboom');
     expect(message).toMatch(/plugin context-engine compress failed; fallback to legacy/);
     expect(infoSpy).not.toHaveBeenCalled();
+  });
+
+  it('forwards pluginName into the success info log payload', async () => {
+    const result: CompressResult = { messages: [] };
+    const compressFn = vi.fn(async (): Promise<CompressResult | null> => result);
+    const engine: ContextEngine = { compress: compressFn };
+
+    await tryPluginCompress(engine, 'agent-x', 'sk-x', 'lcm');
+
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    const [payload] = infoSpy.mock.calls[0];
+    expect(payload).toMatchObject({ agentId: 'agent-x', sessionKey: 'sk-x', pluginName: 'lcm' });
+  });
+
+  it('forwards pluginName into the failure warn log payload', async () => {
+    const compressFn = vi.fn(async (): Promise<CompressResult | null> => {
+      throw new Error('boom');
+    });
+    const engine: ContextEngine = { compress: compressFn };
+
+    await tryPluginCompress(engine, 'agent-x', 'sk-x', 'lcm');
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const [payload] = warnSpy.mock.calls[0];
+    expect(payload).toMatchObject({ agentId: 'agent-x', sessionKey: 'sk-x', pluginName: 'lcm' });
+  });
+
+  it('handles null pluginName (e.g., when called without registry context)', async () => {
+    const result: CompressResult = { messages: [] };
+    const engine: ContextEngine = { compress: vi.fn(async () => result) };
+
+    await tryPluginCompress(engine, 'agent-x', 'sk-x', null);
+
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    const [payload] = infoSpy.mock.calls[0];
+    expect(payload).toMatchObject({ pluginName: null });
   });
 });
