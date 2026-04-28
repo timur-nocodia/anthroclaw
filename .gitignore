@@ -26,4 +26,7 @@ openclaw-path-alias-*/
 docs/*
 !docs/superpowers/
 
+# Git worktrees (used by superpowers subagent-driven workflow)
+.worktrees/
+
 CLAUDE.md
