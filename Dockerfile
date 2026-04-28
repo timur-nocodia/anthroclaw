@@ -76,7 +76,10 @@ COPY --from=build --chown=node:node /app/ui/next.config.ts ./ui/next.config.ts
 COPY --from=build --chown=node:node /app/ui/tsconfig.json ./ui/tsconfig.json
 
 # Persistent state mount points (overridden by compose volumes).
-RUN mkdir -p /app/data /app/agents && chown -R node:node /app
+# Only chown the directories we just created — the COPY --from=build above
+# already set node:node on everything else. A recursive chown over /app
+# walks the entire 1.3 GB tree and adds ~5 minutes to every build.
+RUN mkdir -p /app/data /app/agents && chown node:node /app/data /app/agents
 
 USER node
 
