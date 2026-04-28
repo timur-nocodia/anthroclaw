@@ -1,0 +1,11 @@
+{
+  "name": "lcm",
+  "version": "0.1.0",
+  "description": "Lossless Context Management — иерархический DAG саммаризаций с L1→L2→L3 escalation и 6 retrieval-тулзов агенту.",
+  "entry": "dist/index.js",
+  "configSchema": "dist/config-schema.js",
+  "skills": "skills/",
+  "requires": {
+    "anthroclaw": ">=0.4.0"
+  }
+}
