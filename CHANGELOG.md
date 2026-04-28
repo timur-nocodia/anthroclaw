@@ -6,12 +6,50 @@ All notable changes to AnthroClaw are documented here.
 
 ## [0.4.1] - 2026-04-28
 
-### Changed
-- perf(sessions): include meta in detail endpoint, lazy-load label autocomplete (dfb1aaf)
-- feat(ui): skeleton loaders for Sessions list and detail pages (caf709e)
-- fix(ui): handle empty fleet-alerts.json / fleet.json without crashing (3ede5cb)
-- feat(ui): add favicon (2529214)
-- docs: mention Sessions browser; correct on-disk persistence claim (035ead7)
+Polish pass on the Sessions surface shipped in 0.4.0: shape-matched
+loading skeletons, faster detail-page open, plus a small reliability
+fix and a favicon.
+
+### Added
+
+- **Skeleton loaders for Sessions UI.** The list page now renders 8
+  shape-matched row skeletons while the first fetch is in flight (was
+  blank); the detail page renders 4 skeleton bubbles in place of the
+  thin "Loading transcript..." line, and the title shows a skeleton
+  bar instead of the long raw `sessionId` string before metadata
+  arrives. No layout shift when data lands (caf709e).
+- **Favicon.** Real favicon shipped under `ui/app/favicon.ico` —
+  Next.js auto-detects and serves at `/favicon.ico` (2529214).
+
+### Performance
+
+- **Session detail open is one fetch instead of two.** Opening a
+  session previously dispatched the detail fetch *and* a list of up
+  to 200 sibling sessions (only to find the meta — title, labels,
+  provenance, activeKeys, messageCount — for the one being opened).
+  `getAgentSessionDetails()` now returns those fields directly, and
+  the full session list (used solely as autocomplete source for "Add
+  label") is fetched lazily on first input focus. Noticeable on
+  agents with long history (dfb1aaf).
+
+### Fixed
+
+- **`/api/fleet/status` no longer 500s on a zero-byte
+  `fleet-alerts.json` / `fleet.json`.** A half-written or
+  externally-truncated JSON file made `loadFleet()` / `loadStore()`
+  throw "Unexpected end of JSON input" inside the route handler,
+  which surfaced as the empty "No gateways in fleet" state on the
+  Fleet page even though the gateway itself was healthy. Empty file
+  is now treated as default state (3ede5cb).
+
+### Docs
+
+- README "Control UI" section now lists the dedicated Sessions
+  browser; `docs/guide.md` "Session Lifecycle" corrected to reflect
+  on-disk persistence (`data/sdk-sessions/...main.jsonl` for SDK
+  transcripts, `data/session-mappings/{agentId}.json` for sessionKey
+  ↔ sessionId mapping) instead of the stale "in-memory only" claim
+  (035ead7).
 
 
 ## [0.4.0] - 2026-04-27
