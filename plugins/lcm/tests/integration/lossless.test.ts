@@ -49,19 +49,20 @@ async function mockSubagent(args: { prompt: string }): Promise<string> {
   return `anchor summary len ${args.prompt.length}`;
 }
 
-// Tuned config: small leaf chunk tokens so 200 messages produce many D0s,
-// fanin=4 so D2 emerges in a single compress pass. cacheFriendlyCondensation
-// disabled so single-batch condensation isn't skipped.
+// Tuned config: 200 messages × ~25 tok/msg ÷ 50 tok/leaf ≈ 100 D0s,
+// ÷ fanin 4 = ~25 D1s, ÷ 4 = ~6 D2s — so D2 emerges in a single compress pass.
+// If you tune the engine and this stops emerging, lower leafChunkTokens or
+// raise message count rather than weakening assertions in the tests below.
 function buildConfig(): ResolvedLCMConfig {
   return {
-    leafChunkTokens: 50,
-    condensationFanin: 4,
-    freshTailLength: 2,
+    leafChunkTokens: 50,             // small chunk → many D0 nodes from 200 msgs
+    condensationFanin: 4,            // 4 D{n} → 1 D{n+1}, standard fan-in
+    freshTailLength: 2,              // last 2 messages excluded from compression
     assemblyCapTokens: 32_000,
     l3TruncateChars: 2048,
     l2BudgetRatio: 0.5,
-    dynamicLeafChunk: false,
-    cacheFriendlyCondensation: false,
+    dynamicLeafChunk: false,         // off — keeps chunk size predictable for invariant
+    cacheFriendlyCondensation: false, // off — don't skip when single fanin group
   };
 }
 
@@ -107,7 +108,9 @@ describe('@lossless: full DAG drill-down recovers byte-exact source messages', (
   });
 
   afterEach(() => {
-    db.close();
+    // Sub-test 4 reopens db mid-test; if it fails between close and reassign,
+    // db could be a closed handle and .close() would throw. Tolerate.
+    try { db.close(); } catch { /* already closed or not opened */ }
     rmSync(tmp, { recursive: true, force: true });
   });
 
