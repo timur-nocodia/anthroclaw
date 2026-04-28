@@ -3,10 +3,15 @@ import { mkdir } from 'node:fs/promises';
 import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { discoverPlugins, loadPlugin, type DiscoveredPlugin } from './plugins/loader.js';
-import { createPluginContext } from './plugins/context.js';
-import { PluginRegistry } from './plugins/registry.js';
-import { startPluginsWatcher, type PluginsWatcher } from './plugins/watcher.js';
+import {
+  discoverPlugins,
+  loadPlugin,
+  createPluginContext,
+  PluginRegistry,
+  startPluginsWatcher,
+  type DiscoveredPlugin,
+  type PluginsWatcher,
+} from './plugins/index.js';
 
 const ANTHROCLAW_VERSION = (() => {
   try {
