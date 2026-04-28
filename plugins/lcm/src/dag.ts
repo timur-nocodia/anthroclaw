@@ -20,7 +20,7 @@
 
 import type Database from 'better-sqlite3';
 import { ulid } from 'ulid';
-import { requiresLikeFallback, escapeLike, buildLikeSnippet } from './_search-helpers.js';
+import { requiresLikeFallback, escapeLike, buildLikeSnippet } from './search-query.js';
 
 // ─── Public interfaces ───────────────────────────────────────────────────────
 
@@ -463,7 +463,8 @@ export class SummaryDAG {
 
     const likeArgs: unknown[] = [];
     const likeConditions = rawTerms.map((term) => {
-      likeArgs.push(`%${escapeLike(term)}%`);
+      const { pattern } = escapeLike(term);
+      likeArgs.push(pattern);
       return "summary LIKE ? ESCAPE '\\'";
     });
     whereClauses.push(`(${likeConditions.join(' OR ')})`);

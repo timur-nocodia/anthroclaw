@@ -11,7 +11,7 @@
 
 import type Database from 'better-sqlite3';
 import { estimateTokens } from './tokens.js';
-import { requiresLikeFallback, escapeLike, buildLikeSnippet } from './_search-helpers.js';
+import { requiresLikeFallback, escapeLike, buildLikeSnippet } from './search-query.js';
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 
@@ -361,7 +361,8 @@ export class MessageStore {
     // OR across all terms
     const likeArgs: unknown[] = [];
     const likeConditions = rawTerms.map(term => {
-      likeArgs.push(`%${escapeLike(term)}%`);
+      const { pattern } = escapeLike(term);
+      likeArgs.push(pattern);
       return "content LIKE ? ESCAPE '\\'";
     });
     whereClauses.push(`(${likeConditions.join(' OR ')})`);
