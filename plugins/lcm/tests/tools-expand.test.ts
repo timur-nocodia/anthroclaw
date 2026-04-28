@@ -28,7 +28,6 @@ function makeState(db: Database.Database, store: MessageStore, dag: SummaryDAG):
     dag,
     lifecycle: new LifecycleManager(db),
     config: LCMConfigSchema.parse({}),
-    sessionKey: 'session1',
   };
 }
 

@@ -29,6 +29,12 @@ export const INPUT_SCHEMA = z.object({
   source: z.enum(['telegram', 'whatsapp', 'cli', 'unknown', 'all']).default('all'),
   sort: z.enum(['relevance', 'recency', 'hybrid']).default('hybrid'),
   limit: z.number().int().min(1).max(100).default(20),
+  /**
+   * Optional: narrow to a specific session_id (real gateway-style key,
+   * e.g. "agent:telegram:dm:peerId"). Omit to search across the agent's
+   * entire DB (default after T24).
+   */
+  session_id: z.string().min(1).optional(),
 });
 
 // ─── Result types ─────────────────────────────────────────────────────────────
@@ -77,17 +83,22 @@ export function createGrepTool(deps: GrepDeps): PluginMcpTool {
     try {
       const input = INPUT_SCHEMA.parse(raw);
       const state = deps.resolveAgent(ctx.agentId);
-      const sessionKey = state.sessionKey;
 
       const { query, scope, source, sort, limit } = input;
       const sourceOpt = source !== 'all' ? source : undefined;
+
+      // Session scoping policy (T24 review C1):
+      //   1. explicit `session_id` input arg wins
+      //   2. else `ctx.sessionKey` from McpToolContext (when gateway plumbs it)
+      //   3. else null → search across all sessions in agent's DB
+      const sessionId = input.session_id ?? ctx.sessionKey ?? null;
 
       const results: GrepResult[] = [];
 
       // Fetch messages
       if (scope === 'messages' || scope === 'both') {
         const msgResults = state.store.search(query, {
-          sessionId: sessionKey,
+          sessionId,
           source: sourceOpt,
           sort,
           limit,
@@ -106,7 +117,7 @@ export function createGrepTool(deps: GrepDeps): PluginMcpTool {
       // Fetch summaries
       if (scope === 'summaries' || scope === 'both') {
         const nodeResults = state.dag.search(query, {
-          sessionId: sessionKey,
+          sessionId,
           source: sourceOpt,
           limit,
         });
@@ -148,6 +159,7 @@ export function createGrepTool(deps: GrepDeps): PluginMcpTool {
     name: 'grep',
     description:
       "Search across stored conversation messages and DAG summary nodes via FTS5 + LIKE fallback. " +
+      "Searches across the agent's full DB (all sessions) by default; pass session_id to narrow. " +
       "Use scope to limit to 'messages' or 'summaries'; 'both' (default) returns merged results. " +
       "source filter: 'all' (default), or specific channel ('telegram', 'whatsapp', 'cli', 'unknown'). " +
       "sort: 'hybrid' (default), 'relevance', or 'recency'. limit ≤ 100.",

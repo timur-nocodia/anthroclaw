@@ -65,7 +65,6 @@ function stateFor(s: SetupResult, config: LCMConfig): AgentState {
     dag: s.dag,
     lifecycle: s.lifecycle,
     config,
-    sessionKey: 'sess1',
   };
 }
 

@@ -233,6 +233,39 @@ export class MessageStore {
     return row.v;
   }
 
+  /**
+   * Total message count across ALL sessions in this DB. Used by agent-level
+   * introspection tools (lcm_status, lcm_describe). (T24.)
+   */
+  totalMessages(): number {
+    const row = this._db
+      .prepare('SELECT COUNT(*) AS v FROM messages')
+      .get() as { v: number };
+    return row.v;
+  }
+
+  /**
+   * Sum of token_estimate across ALL sessions in this DB. Used by agent-level
+   * introspection and health tools (lcm_status, lcm_doctor.context_pressure).
+   */
+  totalTokensAcrossSessions(): number {
+    const row = this._db
+      .prepare('SELECT COALESCE(SUM(token_estimate), 0) AS v FROM messages')
+      .get() as { v: number };
+    return row.v;
+  }
+
+  /**
+   * Min(ts) and Max(ts) across ALL messages in this DB, or {oldest:null,newest:null}
+   * if empty. Used by lcm_describe overview.
+   */
+  timeRange(): { oldest: number | null; newest: number | null } {
+    const row = this._db
+      .prepare('SELECT MIN(ts) AS oldest, MAX(ts) AS newest FROM messages')
+      .get() as { oldest: number | null; newest: number | null };
+    return { oldest: row.oldest ?? null, newest: row.newest ?? null };
+  }
+
   // ─── Search ────────────────────────────────────────────────────────────────
 
   /**

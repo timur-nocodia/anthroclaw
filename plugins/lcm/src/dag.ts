@@ -348,6 +348,36 @@ export class SummaryDAG {
   }
 
   /**
+   * Count summary nodes grouped by depth across ALL sessions in this DB.
+   * Used by agent-level introspection tools (lcm_status, lcm_describe)
+   * that need a per-agent overview rather than a per-session one. (T24.)
+   */
+  countByDepthAcrossSessions(): Record<number, number> {
+    const rows = this._db
+      .prepare(`SELECT depth, COUNT(*) AS c FROM summary_nodes GROUP BY depth`)
+      .all() as Array<{ depth: number; c: number }>;
+
+    const out: Record<number, number> = {};
+    for (const r of rows) {
+      out[r.depth] = r.c;
+    }
+    return out;
+  }
+
+  /**
+   * List distinct session_ids present in the DAG, ordered by most-recently-touched
+   * (max(latest_at) DESC). Used by agent-level introspection tools.
+   */
+  listSessionIds(): string[] {
+    const rows = this._db
+      .prepare(
+        `SELECT session_id FROM summary_nodes GROUP BY session_id ORDER BY MAX(latest_at) DESC`,
+      )
+      .all() as Array<{ session_id: string }>;
+    return rows.map((r) => r.session_id);
+  }
+
+  /**
    * CRITICAL for lossless drill-down: walk down the subtree from nodeId
    * until reaching nodes with source_type='messages', then collect all
    * message store_ids. Returns a deduplicated, sorted ASC number array.

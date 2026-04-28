@@ -89,7 +89,6 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
       const { apply } = input;
 
       const state = deps.resolveAgent(ctx.agentId);
-      const sessionKey = state.sessionKey;
       const agentId = ctx.agentId;
 
       const checks: CheckResult[] = [];
@@ -166,7 +165,9 @@ export function createDoctorTool(deps: DoctorDeps): PluginMcpTool {
       checks.push(lineageCheck);
 
       // ── Check 6: context_pressure ─────────────────────────────────────────
-      const currentTokens = state.store.totalTokensInSession(sessionKey);
+      // Agent-level: sum tokens across all of this agent's sessions, since
+      // there is no synthesised "current session" at doctor time. (T24 review.)
+      const currentTokens = state.store.totalTokensAcrossSessions();
       const budget = state.config.triggers.compress_threshold_tokens;
       const pressureOk = currentTokens < budget;
       checks.push({

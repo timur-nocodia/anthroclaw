@@ -25,7 +25,8 @@ function makeState(
   db: Database.Database,
   store: MessageStore,
   dag: SummaryDAG,
-  sessionKey: string,
+  /** Unused after T24 — kept for call-site stability; tools no longer scope by it. */
+  _sessionKey?: string,
 ): AgentState {
   return {
     db,
@@ -33,7 +34,6 @@ function makeState(
     dag,
     lifecycle: new LifecycleManager(db),
     config: LCMConfigSchema.parse({}),
-    sessionKey,
   };
 }
 

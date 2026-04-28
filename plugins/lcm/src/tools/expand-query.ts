@@ -46,6 +46,12 @@ const INPUT_SCHEMA = z
     query: z.string().optional(),
     node_ids: z.array(z.string()).optional(),
     max_context_tokens: z.number().int().positive().max(32_000).default(8_000),
+    /**
+     * Optional: in query-mode, narrow the DAG search to a specific session_id.
+     * When omitted, search across all sessions in the agent's DB. Ignored
+     * in node_ids-mode. (T24 review.)
+     */
+    session_id: z.string().min(1).optional(),
   })
   .refine((d) => Boolean(d.query) !== Boolean(d.node_ids?.length), {
     message: 'pass exactly one of query or node_ids',
@@ -76,12 +82,17 @@ export function createExpandQueryTool(deps: ExpandQueryDeps): PluginMcpTool {
     try {
       const input = INPUT_SCHEMA.parse(raw);
       const state = deps.resolveAgent(ctx.agentId);
-      const sessionKey = state.sessionKey;
+
+      // Session scoping for DAG search (query-mode only):
+      //   1. explicit `session_id` input arg
+      //   2. else `ctx.sessionKey` from McpToolContext (when gateway plumbs it)
+      //   3. else null → across all sessions in agent's DB.
+      const sessionId = input.session_id ?? ctx.sessionKey ?? null;
 
       // 1. Resolve target nodes
       let nodes: SummaryNode[];
       if (input.query) {
-        const results = state.dag.search(input.query, { sessionId: sessionKey, limit: 10 });
+        const results = state.dag.search(input.query, { sessionId, limit: 10 });
         const ids = results.map((r) => r.node_id);
         nodes = ids.map((id) => state.dag.get(id)).filter((n): n is SummaryNode => n !== null);
       } else {

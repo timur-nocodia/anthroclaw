@@ -521,7 +521,7 @@ describe('SummaryDAG', () => {
   });
 
   // ── 30. immutability: only expected methods on prototype ──────────────────
-  it('SummaryDAG prototype exposes exactly the 12 public methods + constructor', () => {
+  it('SummaryDAG prototype exposes exactly the expected public methods + constructor', () => {
     const proto = SummaryDAG.prototype;
     const methods = Object.getOwnPropertyNames(proto).filter((m) => m !== 'constructor');
     const expected = new Set([
@@ -537,6 +537,9 @@ describe('SummaryDAG', () => {
       'walkSubtree',
       'collectLeafMessageIds',
       'countByDepth',
+      // T24 review additions — agent-level aggregators
+      'countByDepthAcrossSessions',
+      'listSessionIds',
     ]);
     // No extra public methods
     const unexpectedPublic = methods.filter((m) => !m.startsWith('_') && !expected.has(m));

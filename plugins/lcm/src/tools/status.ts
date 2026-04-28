@@ -29,7 +29,13 @@ export interface StatusDeps {
 
 // ─── Input schema ─────────────────────────────────────────────────────────────
 
-const INPUT_SCHEMA = z.object({});
+const INPUT_SCHEMA = z.object({
+  /**
+   * Optional: narrow the snapshot to one session. When omitted, the snapshot
+   * is aggregated across the agent's whole DB. (T24 review.)
+   */
+  session_id: z.string().min(1).optional(),
+});
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
@@ -54,17 +60,32 @@ export function createStatusTool(deps: StatusDeps): PluginMcpTool {
     }
 
     try {
-      INPUT_SCHEMA.parse(raw);
+      const input = INPUT_SCHEMA.parse(raw);
       const state = deps.resolveAgent(ctx.agentId);
-      const sessionKey = state.sessionKey;
       const agentId = ctx.agentId;
 
+      // Session scoping (T24 review):
+      //   1. explicit `session_id` input arg
+      //   2. else `ctx.sessionKey` from McpToolContext (when gateway plumbs it)
+      //   3. else null → aggregate across the agent's whole DB.
+      const sessionId = input.session_id ?? ctx.sessionKey ?? null;
+
       // store stats
-      const messages = state.store.listSession(sessionKey);
-      const tokens = state.store.totalTokensInSession(sessionKey);
+      let storeMessages: number;
+      let storeTokens: number;
+      let depthCounts: Record<number, number>;
+
+      if (sessionId) {
+        storeMessages = state.store.countInSession(sessionId);
+        storeTokens = state.store.totalTokensInSession(sessionId);
+        depthCounts = state.dag.countByDepth(sessionId);
+      } else {
+        storeMessages = state.store.totalMessages();
+        storeTokens = state.store.totalTokensAcrossSessions();
+        depthCounts = state.dag.countByDepthAcrossSessions();
+      }
 
       // dag stats — keys formatted as "d0", "d1", etc.
-      const depthCounts = state.dag.countByDepth(sessionKey);
       const dagOut: Record<string, number> = {};
       for (const [depth, count] of Object.entries(depthCounts)) {
         dagOut[`d${depth}`] = count;
@@ -95,10 +116,11 @@ export function createStatusTool(deps: StatusDeps): PluginMcpTool {
           {
             type: 'text' as const,
             text: JSON.stringify({
-              session_key: sessionKey,
+              session_key: sessionId,
+              session_count: sessionId ? 1 : state.dag.listSessionIds().length,
               store: {
-                messages: messages.length,
-                tokens,
+                messages: storeMessages,
+                tokens: storeTokens,
               },
               dag: dagOut,
               lifecycle,
@@ -120,9 +142,11 @@ export function createStatusTool(deps: StatusDeps): PluginMcpTool {
   return {
     name: 'status',
     description:
-      'Returns a concise health snapshot for the current LCM session. ' +
-      'Includes store message count and token total, DAG node counts by depth (d0, d1, ...), ' +
-      'lifecycle state (current_session_id, frontier, debt), and compression stats (T9-deferred: always 0/null).',
+      "Returns a concise health snapshot for the LCM plugin. By default aggregates " +
+      "across all sessions in the agent's DB (pass session_id to narrow). " +
+      "Includes store message count and token total, DAG node counts by depth (d0, d1, ...), " +
+      "lifecycle state (current_session_id, frontier, debt), session_count, and compression stats " +
+      "(T9-deferred: always 0/null).",
     inputSchema: INPUT_SCHEMA,
     handler,
   };

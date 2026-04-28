@@ -14,14 +14,13 @@ import type { AgentState } from '../src/agent-state.js';
 
 const CTX = { agentId: 'test-agent' };
 
-function makeState(db: Database.Database, store: MessageStore, dag: SummaryDAG, sessionKey: string): AgentState {
+function makeState(db: Database.Database, store: MessageStore, dag: SummaryDAG): AgentState {
   return {
     db,
     store,
     dag,
     lifecycle: new LifecycleManager(db),
     config: LCMConfigSchema.parse({}),
-    sessionKey,
   };
 }
 
@@ -38,7 +37,7 @@ describe('createGrepTool', () => {
     bootstrap(db);
     store = new MessageStore(db);
     dag = new SummaryDAG(db);
-    const state = makeState(db, store, dag, 'session1');
+    const state = makeState(db, store, dag);
     tool = createGrepTool({ resolveAgent: () => state });
 
     // Seed test data
@@ -251,8 +250,8 @@ describe('createGrepTool — agent isolation', () => {
     // Seed agent B with 'banana' content (no apples)
     storeB.append({ session_id: 'agent-B:default', source: 'cli', role: 'user', content: 'banana in agent B', ts: 1 });
 
-    stateA = makeState(dbA, storeA, dagA, 'agent-A:default');
-    stateB = makeState(dbB, storeB, dagB, 'agent-B:default');
+    stateA = makeState(dbA, storeA, dagA);
+    stateB = makeState(dbB, storeB, dagB);
   });
 
   afterEach(() => {
@@ -283,5 +282,151 @@ describe('createGrepTool — agent isolation', () => {
     const resBban = await tool.handler({ query: 'banana', scope: 'messages' }, { agentId: 'agent-B' });
     const parsedBban = JSON.parse(resBban.content[0].text) as { results: unknown[] };
     expect(parsedBban.results.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── T24-fix: cross-session search inside one agent DB ────────────────────────
+//
+// The pre-fix bug: tools synthesised state.sessionKey = `${agentId}:default`
+// and used it to scope store.search/dag.search. The mirror hook and engine
+// facade ingest under REAL gateway sessionKeys (e.g.
+// "agent-A:telegram:dm:user1"), so production reads always returned nothing
+// even though the mirrored data was sitting in the same DB.
+//
+// After the fix: lcm_grep with no `session_id` arg searches across the
+// whole agent DB, so messages ingested under any real session_id are
+// discoverable.
+
+describe('createGrepTool — cross-session find (post-T24-fix)', () => {
+  let tmp: string;
+  let db: Database.Database;
+  let tool: ReturnType<typeof createGrepTool>;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'lcm-multi-sess-'));
+    db = new Database(join(tmp, 'a.sqlite'));
+    bootstrap(db);
+    const store = new MessageStore(db);
+    const dag = new SummaryDAG(db);
+    const lifecycle = new LifecycleManager(db);
+    lifecycle.initialize('agent-A', 'agent-A:telegram:dm:user1');
+
+    // Ingest under REAL gateway-style session keys (NOT "agent-A:default")
+    store.append({
+      session_id: 'agent-A:telegram:dm:user1',
+      source: 'telegram',
+      role: 'user',
+      content: 'apple in telegram',
+      ts: 1000,
+    });
+    store.append({
+      session_id: 'agent-A:whatsapp:dm:user2',
+      source: 'whatsapp',
+      role: 'user',
+      content: 'apple in whatsapp',
+      ts: 2000,
+    });
+
+    const config = LCMConfigSchema.parse({ enabled: true });
+    const state: AgentState = { db, store, dag, lifecycle, config };
+    tool = createGrepTool({ resolveAgent: () => state });
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('finds messages across multiple real session_ids in same agent DB (no session filter)', async () => {
+    const result = await tool.handler({ query: 'apple', scope: 'messages' }, { agentId: 'agent-A' });
+    const parsed = JSON.parse(result.content[0].text) as {
+      results: Array<{ kind: string; store_id: number }>;
+    };
+    expect(parsed.results.length).toBe(2);
+    // Both rows should come back (telegram + whatsapp). We can't assert source
+    // text directly because grep returns snippets only; instead fetch the rows
+    // by store_id from the underlying store via a fresh query.
+    const ids = parsed.results.map((r) => r.store_id).sort((a, b) => a - b);
+    expect(ids).toEqual([1, 2]);
+  });
+
+  it('explicit session_id input narrows to that session only', async () => {
+    const result = await tool.handler(
+      { query: 'apple', scope: 'messages', session_id: 'agent-A:telegram:dm:user1' },
+      { agentId: 'agent-A' },
+    );
+    const parsed = JSON.parse(result.content[0].text) as {
+      results: Array<{ store_id: number }>;
+    };
+    expect(parsed.results.length).toBe(1);
+    expect(parsed.results[0].store_id).toBe(1);
+  });
+
+  it('ctx.sessionKey is honoured when provided (gateway plumbing)', async () => {
+    const result = await tool.handler(
+      { query: 'apple', scope: 'messages' },
+      { agentId: 'agent-A', sessionKey: 'agent-A:whatsapp:dm:user2' },
+    );
+    const parsed = JSON.parse(result.content[0].text) as {
+      results: Array<{ store_id: number }>;
+    };
+    expect(parsed.results.length).toBe(1);
+    expect(parsed.results[0].store_id).toBe(2);
+  });
+});
+
+// ─── I1: getOrCreateForAgent guard ────────────────────────────────────────────
+//
+// A misconfigured caller bypassing the type system must not be allowed
+// to create `undefined.sqlite` / `.sqlite` files. The plugin's
+// `getOrCreateForAgent` throws a TypeError on empty/non-string agentId.
+// Verify via the resolveAgent path of a real registered tool.
+
+describe('lcm plugin: getOrCreateForAgent guard (I1)', () => {
+  it("rejects empty agentId with an informative TypeError when register()'d resolveAgent is invoked", async () => {
+    // Use the plugin's real register() with a stub PluginContext, then drive
+    // resolveAgent indirectly by invoking a tool with agentId=''.
+    const tmp = mkdtempSync(join(tmpdir(), 'lcm-guard-'));
+    try {
+      const { register } = await import('../src/index.js');
+      const calls: Array<{ name: string; handler: unknown }> = [];
+      const ctx = {
+        pluginName: 'lcm',
+        pluginVersion: '0.1.0',
+        dataDir: tmp,
+        registerHook: () => {},
+        registerMcpTool: (t: { name: string; handler: unknown }) => {
+          calls.push(t);
+        },
+        registerContextEngine: () => {},
+        registerSlashCommand: () => {},
+        runSubagent: async () => '',
+        logger: {
+          info: () => {},
+          warn: () => {},
+          error: () => {},
+          debug: () => {},
+        },
+        getAgentConfig: () => ({}),
+        getGlobalConfig: () => ({}),
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await register(ctx as any);
+
+      const grep = calls.find((c) => c.name === 'grep');
+      expect(grep).toBeDefined();
+      // Cast handler signature
+      const handler = grep!.handler as (
+        input: unknown,
+        c: { agentId: string },
+      ) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+
+      const res = await handler({ query: 'anything' }, { agentId: '' });
+      const parsed = JSON.parse(res.content[0].text) as { error?: string };
+      expect(typeof parsed.error).toBe('string');
+      expect(parsed.error).toMatch(/non-empty string agentId/i);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

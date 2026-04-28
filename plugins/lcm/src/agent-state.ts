@@ -5,6 +5,15 @@
  * callback and call it inside the handler with `ctx.agentId` from the
  * `McpToolContext`. This replaces the v0.1.0 'default' bootstrap that bound
  * tools to a single agent's state at register time (T19 → T24 amendment).
+ *
+ * Note: each `AgentState` represents the agent's full per-DB state (one
+ * SQLite file per agent). Session filtering is the responsibility of each
+ * tool — either via tool input args, or via `ctx.sessionKey` from
+ * `McpToolContext` when the gateway plumbs it through. There is intentionally
+ * NO `sessionKey` field on `AgentState`: the previous synthesised
+ * `${agentId}:default` value did not match the real gateway sessionKeys
+ * under which mirror-hook / engine-facade ingest data, so any tool that
+ * scoped reads by it returned nothing in production. (T24 review fix.)
  */
 
 import type Database from 'better-sqlite3';
@@ -19,10 +28,4 @@ export interface AgentState {
   dag: SummaryDAG;
   lifecycle: LifecycleManager;
   config: LCMConfig;
-  /**
-   * Stable session key built from agentId. Tools that need a session ID
-   * use this; future iterations may inject a richer sessionKey via
-   * `ctx.sessionKey` from `McpToolContext`.
-   */
-  sessionKey: string;
 }

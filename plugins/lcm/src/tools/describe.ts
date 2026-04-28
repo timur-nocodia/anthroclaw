@@ -33,6 +33,12 @@ const INPUT_SCHEMA = z
   .object({
     node_id: z.string().optional(),
     externalized_ref: z.string().optional(),
+    /**
+     * Optional: narrow the no-args overview to a specific session_id.
+     * When omitted, the overview aggregates the agent's whole DB.
+     * Ignored when node_id or externalized_ref is provided.
+     */
+    session_id: z.string().min(1).optional(),
   })
   .refine((d) => !(d.node_id && d.externalized_ref), {
     message: 'pass at most one of node_id or externalized_ref',
@@ -63,7 +69,6 @@ export function createDescribeTool(deps: DescribeDeps): PluginMcpTool {
     try {
       const input = INPUT_SCHEMA.parse(raw);
       const state = deps.resolveAgent(ctx.agentId);
-      const sessionKey = state.sessionKey;
 
       // ── Mode 3: externalized_ref ─────────────────────────────────────────
       if (input.externalized_ref !== undefined) {
@@ -159,9 +164,32 @@ export function createDescribeTool(deps: DescribeDeps): PluginMcpTool {
         };
       }
 
-      // ── Mode 1: overview (no args) ────────────────────────────────────────
-      const messages = state.store.listSession(sessionKey);
-      const depthCounts = state.dag.countByDepth(sessionKey);
+      // ── Mode 1: overview (no node/ref) ────────────────────────────────────
+      // Default scope = whole agent DB (all sessions). Optional `session_id`
+      // input narrows to one session. Session scoping precedence (T24 review):
+      //   1. explicit `session_id` input arg
+      //   2. else `ctx.sessionKey` from McpToolContext (when gateway plumbs it)
+      //   3. else null → aggregate the agent's whole DB.
+      const sessionId = input.session_id ?? ctx.sessionKey ?? null;
+
+      let totalMessages: number;
+      let depthCounts: Record<number, number>;
+      let oldest_at: number | null;
+      let newest_at: number | null;
+
+      if (sessionId) {
+        const messages = state.store.listSession(sessionId);
+        totalMessages = messages.length;
+        depthCounts = state.dag.countByDepth(sessionId);
+        oldest_at = messages.length > 0 ? Math.min(...messages.map((m) => m.ts)) : null;
+        newest_at = messages.length > 0 ? Math.max(...messages.map((m) => m.ts)) : null;
+      } else {
+        totalMessages = state.store.totalMessages();
+        depthCounts = state.dag.countByDepthAcrossSessions();
+        const range = state.store.timeRange();
+        oldest_at = range.oldest;
+        newest_at = range.newest;
+      }
 
       // Compute depth_distribution with string keys
       const depthDistribution: Record<string, number> = {};
@@ -171,19 +199,15 @@ export function createDescribeTool(deps: DescribeDeps): PluginMcpTool {
         totalNodes += count;
       }
 
-      const oldest_at =
-        messages.length > 0 ? Math.min(...messages.map((m) => m.ts)) : null;
-      const newest_at =
-        messages.length > 0 ? Math.max(...messages.map((m) => m.ts)) : null;
-
       return {
         content: [
           {
             type: 'text' as const,
             text: JSON.stringify({
-              session_key: sessionKey,
+              session_key: sessionId,
+              session_count: sessionId ? 1 : state.dag.listSessionIds().length,
               depth_distribution: depthDistribution,
-              total_messages: messages.length,
+              total_messages: totalMessages,
               total_nodes: totalNodes,
               oldest_at,
               newest_at,
@@ -202,11 +226,13 @@ export function createDescribeTool(deps: DescribeDeps): PluginMcpTool {
   return {
     name: 'describe',
     description:
-      'Introspect the LCM message store and DAG for the current session. ' +
-      'No args: returns overview with depth_distribution, total_messages, total_nodes, oldest/newest timestamps. ' +
-      'node_id: returns full metadata for one DAG node including children (projected as {store_id, role, snippet} for messages or {node_id, depth} for nodes). ' +
-      'externalized_ref: preview an externalized tool-result (T18 feature). ' +
-      'Pass at most one of node_id or externalized_ref.',
+      "Introspect the LCM message store and DAG. " +
+      "No args: returns an overview aggregated across the agent's whole DB " +
+      "(depth_distribution, total_messages, total_nodes, session_count, oldest/newest timestamps). " +
+      "Pass session_id to narrow the overview to one session. " +
+      "node_id: returns full metadata for one DAG node including children (projected as {store_id, role, snippet} for messages or {node_id, depth} for nodes). " +
+      "externalized_ref: preview an externalized tool-result (T18 feature). " +
+      "Pass at most one of node_id or externalized_ref.",
     inputSchema: INPUT_SCHEMA,
     handler,
   };

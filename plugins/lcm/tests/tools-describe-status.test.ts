@@ -27,7 +27,6 @@ function makeState(
   db: Database.Database,
   store: MessageStore,
   dag: SummaryDAG,
-  sessionKey: string,
   lifecycle?: LifecycleManager,
 ): AgentState {
   return {
@@ -36,7 +35,6 @@ function makeState(
     dag,
     lifecycle: lifecycle ?? new LifecycleManager(db),
     config: LCMConfigSchema.parse({}),
-    sessionKey,
   };
 }
 
@@ -59,7 +57,7 @@ describe('createDescribeTool', () => {
     store = new MessageStore(db);
     dag = new SummaryDAG(db);
 
-    const state = makeState(db, store, dag, 'session1');
+    const state = makeState(db, store, dag);
     tool = createDescribeTool({ resolveAgent: () => state });
 
     // Seed: 3 messages in session1
@@ -109,10 +107,12 @@ describe('createDescribeTool', () => {
   });
 
   // Test 2: No-args call returns overview
-  it('no-args call returns overview with depth_distribution, total_messages, total_nodes, oldest_at, newest_at', async () => {
+  it('no-args call returns overview with depth_distribution, total_messages, total_nodes, oldest_at, newest_at (T24: aggregated across whole agent DB by default)', async () => {
     const result = await tool.handler({}, CTX_DESC);
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.session_key).toBe('session1');
+    // No session_id → null (aggregated across all sessions in agent DB)
+    expect(parsed.session_key).toBeNull();
+    expect(typeof parsed.session_count).toBe('number');
     expect(typeof parsed.total_messages).toBe('number');
     expect(parsed.total_messages).toBe(3);
     expect(typeof parsed.total_nodes).toBe('number');
@@ -124,6 +124,15 @@ describe('createDescribeTool', () => {
     expect(parsed.depth_distribution['1']).toBe(1);
     expect(parsed.oldest_at).toBe(1000);
     expect(parsed.newest_at).toBe(3000);
+  });
+
+  it('explicit session_id input narrows the overview to that session', async () => {
+    const result = await tool.handler({ session_id: 'session1' }, CTX_DESC);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.session_key).toBe('session1');
+    expect(parsed.session_count).toBe(1);
+    expect(parsed.total_messages).toBe(3);
+    expect(parsed.total_nodes).toBe(2);
   });
 
   // Test 3: node_id arg for source_type='messages' node returns metadata with children as {store_id, role, snippet}
@@ -199,7 +208,7 @@ describe('createDescribeTool', () => {
   it('externalized_ref with reader returning content → preview + size', async () => {
     const content = 'A'.repeat(2000);
     const reader = async (_ref: string) => ({ content, size: content.length });
-    const localState = makeState(db, store, dag, 'session1');
+    const localState = makeState(db, store, dag);
     const toolWithReader = createDescribeTool({
       resolveAgent: () => localState,
       externalizedReader: reader,
@@ -215,7 +224,7 @@ describe('createDescribeTool', () => {
   // Test 9: externalized_ref with reader returning null → error JSON
   it('externalized_ref with reader returning null → error JSON', async () => {
     const reader = async (_ref: string) => null;
-    const localState = makeState(db, store, dag, 'session1');
+    const localState = makeState(db, store, dag);
     const toolWithReader = createDescribeTool({
       resolveAgent: () => localState,
       externalizedReader: reader,
@@ -262,7 +271,7 @@ describe('createStatusTool', () => {
 
     lifecycle.initialize('agent1', 'session1');
 
-    const state = makeState(db, store, dag, 'session1', lifecycle);
+    const state = makeState(db, store, dag, lifecycle);
     tool = createStatusTool({ resolveAgent: () => state });
 
     // Seed some data
@@ -311,12 +320,24 @@ describe('createStatusTool', () => {
     const result = await tool.handler({}, CTX_STATUS);
     expect(result.content[0].type).toBe('text');
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.session_key).toBe('session1');
+    // No session_id → null (aggregated across all sessions in agent DB)
+    expect(parsed.session_key).toBeNull();
+    expect(typeof parsed.session_count).toBe('number');
     expect(parsed.store).toBeDefined();
     expect(parsed.dag).toBeDefined();
     expect(parsed.lifecycle).toBeDefined();
     expect(typeof parsed.compression_count).toBe('number');
     expect(parsed.last_compressed_at).toBeNull();
+  });
+
+  it('explicit session_id input narrows the snapshot to that session', async () => {
+    const result = await tool.handler({ session_id: 'session1' }, CTX_STATUS);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.session_key).toBe('session1');
+    expect(parsed.session_count).toBe(1);
+    expect(parsed.store.messages).toBe(2);
+    expect(parsed.dag.d0).toBe(1);
+    expect(parsed.dag.d1).toBe(1);
   });
 
   // Test 13: dag keys formatted as d0, d1, etc. (strings)

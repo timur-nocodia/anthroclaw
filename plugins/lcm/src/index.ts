@@ -51,6 +51,15 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
   const perAgent = new Map<string, PerAgentState>();
 
   function getOrCreateForAgent(agentId: string): PerAgentState {
+    // Defensive guard (T24 review I1): a misconfigured caller bypassing the
+    // type system must not be allowed to create `undefined.sqlite` or
+    // `.sqlite` files in dbDir. agentId is required and must be a non-empty
+    // string at runtime.
+    if (!agentId || typeof agentId !== 'string') {
+      throw new TypeError(
+        `lcm: getOrCreateForAgent requires a non-empty string agentId; got ${typeof agentId}: ${String(agentId)}`,
+      );
+    }
     let state = perAgent.get(agentId);
     if (!state) {
       const agentConfig = ctx.getAgentConfig(agentId) as
@@ -87,8 +96,12 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
 
   /**
    * Bridge from PerAgentState to AgentState (the tool-facing shape).
-   * Adds a stable sessionKey derived from agentId. Tools that need a
-   * richer key may use ctx.sessionKey from McpToolContext in future.
+   *
+   * Sessions are NOT synthesised here. Each tool decides its own session
+   * scoping policy: most tools default to "across all sessions in the
+   * agent's DB", and may narrow via tool input args or `ctx.sessionKey`
+   * (when the gateway plumbs it). See agent-state.ts for the rationale.
+   * (T24 review C1 fix.)
    */
   function resolveAgent(agentId: string): AgentState {
     const state = getOrCreateForAgent(agentId);
@@ -98,7 +111,6 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
       dag: state.dag,
       lifecycle: state.lifecycle,
       config: state.config,
-      sessionKey: `${agentId}:default`,
     };
   }
 
