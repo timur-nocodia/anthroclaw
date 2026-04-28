@@ -88,7 +88,7 @@ export interface EscalationOpts {
 export interface EscalationResult {
   summary: string;
   level: 'L1' | 'L2' | 'L3';
-  /** Total LLM calls made (0 for pure L3, 1 for L1-only-success, 2 for L2-success). */
+  /** LLM calls made: 1 if L1 succeeds, 2 if L2 succeeds or both fail and we fall to L3. */
   attempts: number;
 }
 
