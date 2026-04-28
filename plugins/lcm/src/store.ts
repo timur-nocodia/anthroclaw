@@ -225,6 +225,14 @@ export class MessageStore {
     return row.v;
   }
 
+  /** Sum of token_estimate for all messages in a given session. */
+  totalTokensInSession(sessionId: string): number {
+    const row = this._db
+      .prepare('SELECT COALESCE(SUM(token_estimate), 0) AS v FROM messages WHERE session_id = ?')
+      .get(sessionId) as { v: number };
+    return row.v;
+  }
+
   // ─── Search ────────────────────────────────────────────────────────────────
 
   /**

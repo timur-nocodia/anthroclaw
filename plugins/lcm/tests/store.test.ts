@@ -498,4 +498,24 @@ describe('MessageStore', () => {
     expect(store.search('', { sessionId: 's' })).toEqual([]);
     expect(store.search('   ', { sessionId: 's' })).toEqual([]);
   });
+
+  // ── M4: totalTokensInSession returns sum of token_estimate ───────────────
+  it('totalTokensInSession returns sum of token_estimate for a session', () => {
+    store.append({ session_id: 'tok-sess', source: 'cli', role: 'user', content: 'hello world', ts: 1 });
+    store.append({ session_id: 'tok-sess', source: 'cli', role: 'assistant', content: 'hi there', ts: 2 });
+    // Other session — should not be counted
+    store.append({ session_id: 'other-sess', source: 'cli', role: 'user', content: 'unrelated', ts: 3 });
+
+    const total = store.totalTokensInSession('tok-sess');
+    // Check that it's positive and matches the sum from listSession
+    const messages = store.listSession('tok-sess');
+    const expected = messages.reduce((acc, m) => acc + m.token_estimate, 0);
+    expect(total).toBe(expected);
+    expect(total).toBeGreaterThan(0);
+  });
+
+  // ── M5: totalTokensInSession returns 0 for empty/unknown session ──────────
+  it('totalTokensInSession returns 0 for an empty or unknown session', () => {
+    expect(store.totalTokensInSession('nonexistent-session')).toBe(0);
+  });
 });
