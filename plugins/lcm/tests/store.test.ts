@@ -315,27 +315,27 @@ describe('MessageStore', () => {
   });
 
   // ── 25. search LIKE-mode escapes literal %, _, \ ─────────────────────────
-  it('search LIKE-mode escapes literal %, _, and \\ correctly', () => {
-    store.append(msg({ content: 'profit margin 100% growth this year' }));
-    store.append(msg({ content: 'column under_score naming convention' }));
-    store.append(msg({ content: 'path C:\\Users\\test backslash' }));
+  it('search LIKE-fallback escapes literal %, _, and \\ correctly', () => {
+    const idA = store.append({ session_id: 's', source: 'cli', role: 'user', content: 'profit margin 100% growth', ts: 1 });
+    const idB = store.append({ session_id: 's', source: 'cli', role: 'user', content: 'plain 100 number, no percent', ts: 2 });
+    const idC = store.append({ session_id: 's', source: 'cli', role: 'user', content: 'snake_case identifier here', ts: 3 });
+    const idD = store.append({ session_id: 's', source: 'cli', role: 'user', content: 'snakeXcase fake match', ts: 4 });
+    const idE = store.append({ session_id: 's', source: 'cli', role: 'user', content: 'path with backslash a\\b in it', ts: 5 });
+    const idF = store.append({ session_id: 's', source: 'cli', role: 'user', content: 'path with letters aXb only', ts: 6 });
 
-    // Unbalanced quote forces LIKE fallback
-    // Actually just use CJK to force LIKE path; or use direct approach with emoji
-    // Let's search for the content with emoji to force LIKE, or just rely on
-    // the fact that the LIKE path is triggered by % itself being in query
-    // Actually any unbalanced quote triggers LIKE, OR we can force it with CJK
-    // Let's just test with % in the query itself — check no throw and correct escape
-    expect(() => store.search('100%')).not.toThrow();
-    expect(() => store.search('under_score')).not.toThrow();
+    // Force LIKE-fallback via CJK character appended as extra term (CJK triggers requiresLikeFallback).
+    // The CJK term 「一」 is a separate whitespace-delimited token, so '100%' remains its own term
+    // and escapeLike must escape the % to avoid it matching arbitrary characters.
+    const pctIds = store.search('100% 一', { sessionId: 's' }).map(r => r.store_id);
+    expect(pctIds).toContain(idA);              // literal % present → matched
+    expect(pctIds).not.toContain(idB);          // % must NOT match arbitrary chars (idB has no %)
 
-    // Use unbalanced quote to force LIKE path and test escaping of content
-    const pctResults = store.search('100%"');  // unbalanced quote → LIKE path
-    // Should not accidentally match everything (% must be escaped)
-    // The content '100%' should match
-    const found = pctResults.some(r => r.snippet.includes('100%') || r.snippet.includes('100'));
-    // At minimum, no throw. Content found is a bonus assertion.
-    expect(Array.isArray(pctResults)).toBe(true);
+    const usIds = store.search('snake_case 一', { sessionId: 's' }).map(r => r.store_id);
+    expect(usIds).toContain(idC);               // literal _ present → matched
+    expect(usIds).not.toContain(idD);           // _ must NOT match X
+
+    // \ case: assert does-not-throw (composing LIKE pattern with \ is tricky cross-platform)
+    expect(() => store.search('a\\b 一', { sessionId: 's' })).not.toThrow();
   });
 
   // ── 26. search minStoreId bounds ──────────────────────────────────────────
@@ -455,5 +455,47 @@ describe('MessageStore', () => {
     const results = store.search('ranktest');
     expect(results.length).toBeGreaterThanOrEqual(1);
     expect(typeof results[0].rank).toBe('number');
+  });
+
+  // ── I2: getMany returns duplicates when input has duplicate ids ────────────
+  it('getMany returns duplicates when input has duplicate ids', () => {
+    const id1 = store.append({ session_id: 's', source: 'cli', role: 'user', content: 'a', ts: 1 });
+    const id2 = store.append({ session_id: 's', source: 'cli', role: 'user', content: 'b', ts: 2 });
+    const result = store.getMany([id1, id2, id1]);
+    expect(result).toHaveLength(3);
+    expect(result.map(r => r.store_id)).toEqual([id1, id2, id1]);
+    expect(result[0]).toEqual(result[2]);
+  });
+
+  // ── I3: search hybrid mode is deterministic for datasets exceeding pre-trim limit ──
+  it('search hybrid mode is deterministic for datasets exceeding pre-trim limit', () => {
+    // Insert 30 messages all containing the keyword 'apple' to force pre-trim.
+    // With limit=5 the pre-trim fetches 5*5=25 rows out of 30, so ORDER BY store_id DESC
+    // in the pre-trim query is what makes the subset deterministic.
+    for (let i = 0; i < 30; i++) {
+      store.append({ session_id: 's', source: 'cli', role: 'user', content: `apple message ${i}`, ts: i + 1 });
+    }
+    // Use CJK character to force LIKE path (CJK triggers requiresLikeFallback).
+    // 'apple' is the actual search term; 「一」 is the LIKE-forcing sentinel.
+    const run1 = store.search('apple 一', { sessionId: 's', sort: 'hybrid', limit: 5 }).map(r => r.store_id);
+    const run2 = store.search('apple 一', { sessionId: 's', sort: 'hybrid', limit: 5 }).map(r => r.store_id);
+    expect(run1).toEqual(run2);
+    expect(run1).toHaveLength(5);
+  });
+
+  // ── M2: append accepts empty content and computes token_estimate=0 ─────────
+  it('append accepts empty content and computes token_estimate=0', () => {
+    const id = store.append({ session_id: 's', source: 'cli', role: 'user', content: '', ts: 1 });
+    const got = store.get(id);
+    expect(got).not.toBeNull();
+    expect(got?.content).toBe('');
+    expect(got?.token_estimate).toBe(0);
+  });
+
+  // ── M3: search returns empty array for empty/whitespace query without throwing ──
+  it('search returns empty array for empty/whitespace query without throwing', () => {
+    store.append({ session_id: 's', source: 'cli', role: 'user', content: 'apple', ts: 1 });
+    expect(store.search('', { sessionId: 's' })).toEqual([]);
+    expect(store.search('   ', { sessionId: 's' })).toEqual([]);
   });
 });

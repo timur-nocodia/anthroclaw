@@ -236,8 +236,9 @@ export class MessageStore {
   }
 
   /**
-   * Bulk fetch by store_id. Result order matches the input array;
-   * missing ids are silently skipped.
+   * Fetch many messages by store_ids. Result order matches the input order.
+   * Missing ids are silently skipped. Duplicate ids in input return duplicate
+   * results in the same positions.
    */
   getMany(storeIds: number[]): StoredMessage[] {
     if (storeIds.length === 0) return [];
@@ -425,6 +426,9 @@ export class MessageStore {
       SELECT store_id, session_id, source, role, content, ts
       FROM messages
       ${whereStr}
+      -- ORDER BY store_id DESC makes pre-trim deterministic across runs
+      -- and biases toward recent messages (better for our use case).
+      ORDER BY store_id DESC
       LIMIT ?
     `;
 
