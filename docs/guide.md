@@ -80,6 +80,8 @@ AnthroClaw is inspired by OpenClaw and Hermes-style agent infrastructure, but it
 47. [Releases](#releases)
 48. [Running in Production](#running-in-production)
 49. [FAQ](#faq)
+50. [Plugin Framework](#plugin-framework)
+51. [LCM Plugin (Lossless Context Management)](#lcm-plugin-lossless-context-management)
 
 ---
 
@@ -2132,3 +2134,160 @@ Secret redaction (API keys masked in logs), file write safety (denylist for sens
 
 **Q: Can each user in a group chat have their own session?**
 Yes — set `group_sessions: per_user` in `agent.yml`. Each group member gets an isolated conversation.
+
+---
+
+## Plugin Framework
+
+AnthroClaw supports plugins in the [Claude Code Plugin Spec](https://docs.claude.com/en/docs/claude-code/plugins) format. Plugins extend the gateway with new MCP tools, lifecycle hooks, context engines (compress/assemble), and slash commands — without breaking the native Agent SDK runtime.
+
+### Plugin layout
+
+```
+plugins/<name>/
+├── .claude-plugin/plugin.json     # manifest
+├── package.json                    # workspace package
+├── tsconfig.json
+└── src/
+    └── index.ts                    # exports register(ctx)
+```
+
+### Manifest (`.claude-plugin/plugin.json`)
+
+```json
+{
+  "name": "lcm",
+  "version": "0.1.0",
+  "description": "Lossless Context Management",
+  "entry": "dist/index.js",
+  "configSchema": "dist/config-schema.js",
+  "skills": "skills/",
+  "requires": { "anthroclaw": ">=0.4.0" }
+}
+```
+
+### Plugin API
+
+Plugins receive a typed `PluginContext` and return a `PluginInstance`:
+
+```typescript
+export async function register(ctx: PluginContext): Promise<PluginInstance> {
+  // MCP tools — auto-namespaced as `<plugin>_<name>` (e.g. `lcm_grep`)
+  ctx.registerMcpTool({ name: 'mytool', description: '...', inputSchema, handler });
+
+  // Fire-and-forget observers
+  ctx.registerHook('on_after_query', (payload) => { /* ... */ });
+
+  // Optional: context-management plugin
+  ctx.registerContextEngine({ compress, assemble });
+
+  return { shutdown: () => { /* cleanup */ } };
+}
+```
+
+The MCP tool handler receives `(input, ctx: McpToolContext)` where `ctx.agentId` identifies the calling agent — plugins maintaining per-agent state resolve it at invocation time.
+
+The `runSubagent(opts)` method on `ctx` is the **only** sanctioned LLM path — it wraps Agent SDK's `query()` with `tools: []`, `canUseTool: deny`, and a 60s default timeout. Plugins MUST NOT import `@anthropic-ai/sdk` or `@anthropic-ai/claude-agent-sdk` directly. A contract test enforces this.
+
+### Per-agent enable
+
+```yaml
+# agent.yml
+plugins:
+  lcm:
+    enabled: true
+```
+
+Hot-reload supported: edit `agent.yml`, plugin reflects without restart.
+
+### Hooks (fire-and-forget observers)
+
+Plugins observe gateway events without blocking dispatch:
+
+- `on_message_received` — inbound message before routing
+- `on_before_query` — after access checks, before LLM call
+- `on_after_query` — full response delivered (LCM uses this)
+- `on_session_reset` — session cleared / auto-compressed
+- `on_cron_fire` — cron-triggered synthetic message
+
+### ContextEngine (optional)
+
+Context-management plugins implement:
+
+- `compress(input) → CompressResult | null` — invoked at the auto-compression site. Returns transformed messages to bypass legacy summarize+clear, or null for fallthrough.
+- `assemble(input) → AssembleResult | null` — invoked before each `query()`. Transforms the prompt to inject context (e.g. compressed history). Errors silently fall back to the original prompt; rogue results > 4× original or > 500k chars are rejected; 5s soft timeout protects dispatch.
+
+---
+
+## LCM Plugin (Lossless Context Management)
+
+Optional plugin (`plugins/lcm/`) implementing hierarchical context compression with full byte-exact recovery of source messages. Inspired by [hermes-lcm](https://github.com/stephenschoettler/hermes-lcm).
+
+### How it works
+
+When session token count crosses `compress_threshold_tokens`, the plugin:
+
+1. Mirrors all messages into per-agent SQLite (immutable append-only log + FTS5 index).
+2. Groups older messages into chunks; summarizes each via L1 → L2 → L3 escalation. L3 is deterministic head+tail truncation — never calls the LLM.
+3. Builds D0 nodes (raw chunk summaries), D1 (4 D0s → 1 D1), D2 (4 D1s → 1 D2), and so on — a hierarchical DAG with `source_ids` back-references at every level.
+4. Re-assembles the prompt as `[system, ...top-N anchors per depth, ...fresh tail]` capped at `assembly_cap_tokens`.
+
+### 6 retrieval tools
+
+When LCM is enabled the agent gets these auto-namespaced MCP tools:
+
+- `lcm_grep` — FTS over messages + summaries. Use for "what did we discuss about X earlier".
+- `lcm_describe` — preview node metadata; with no args, returns agent-wide overview.
+- `lcm_expand` — drill into a node (D2 → D1 children → D0 → raw messages).
+- `lcm_expand_query` — RAG-style: prompt → finds relevant nodes → expands → answers via `runSubagent`.
+- `lcm_status` — diagnostic: DAG size, compression count, last compaction time.
+- `lcm_doctor` — health check (orphans, FTS sync, integrity) + double-gated cleanup with backup.
+
+The agent learns when to use each via `plugins/lcm/skills/lcm-usage.md`.
+
+### Configuration
+
+Defaults live in `config.yml`, per-agent enable/override in `agent.yml`:
+
+```yaml
+# config.yml — global defaults
+plugins:
+  lcm:
+    defaults:
+      enabled: false              # opt-in
+      triggers:
+        compress_threshold_tokens: 40000
+        fresh_tail_count: 64
+        assembly_cap_tokens: 160000
+      escalation:
+        l2_budget_ratio: 0.5
+        l3_truncate_tokens: 512
+      dag:
+        condensation_fanin: 4
+        cache_friendly_condensation:
+          enabled: true
+      summarizer:
+        dynamic_leaf_chunk:
+          enabled: true
+```
+
+```yaml
+# agent.yml — per-agent enable
+plugins:
+  lcm:
+    enabled: true                 # required to activate
+```
+
+### When NOT to use LCM
+
+- Short-lived agents (sessions never grow past threshold).
+- Agents where the context window is naturally small (Haiku-only flows, etc).
+- Memory-constrained gateways (one SQLite file per agent grows ~1KB per message).
+
+### Storage
+
+Per-agent SQLite at `data/lcm-db/{agentId}.sqlite`. Schema is versioned via `bootstrap.ts`. `lcm_doctor apply: true` (under double gate) creates a backup at `data/lcm-db/backups/` before any cleanup.
+
+### Lossless invariant
+
+The defining property: from any D2 / D3 / D{n} node, the recursive `source_ids` chain leads back to the original byte-exact messages in the immutable store. Verified by the `@lossless` test suite under `plugins/lcm/tests/integration/lossless.test.ts` — four scenarios: drill-down recovery, source-lineage filter, carry-over preservation across session reset, and SQLite restart survival. This is the gating invariant for the plugin.
