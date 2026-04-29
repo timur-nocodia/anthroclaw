@@ -66,6 +66,9 @@ class MockChannel implements ChannelAdapter {
   async start(): Promise<void> {}
   async stop(): Promise<void> {}
 
+  readonly supportsApproval = false;
+  async promptForApproval(): Promise<void> { /* no-op for tests */ }
+
   /** Test helper to simulate an incoming message */
   async simulateMessage(msg: InboundMessage): Promise<void> {
     await this.handler?.(msg);
@@ -489,6 +492,8 @@ pairing:
       async sendTyping(peerId) {
         events.push(`typing:${peerId}`);
       },
+      supportsApproval: false,
+      async promptForApproval() {},
     };
     gw._setChannel('telegram', mockTg);
 

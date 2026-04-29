@@ -11,6 +11,7 @@ import type {
   OutboundMedia,
   SendOptions,
   InlineButton,
+  ApprovalRequest,
 } from './types.js';
 import { chunkText, mimeToExtension } from './utils.js';
 
@@ -48,6 +49,8 @@ function buildInlineKeyboard(buttons: InlineButton[][]): {
 
 export class TelegramChannel implements ChannelAdapter {
   readonly id = 'telegram' as const;
+  static readonly supportsApproval = true;
+  readonly supportsApproval = true as const;
 
   private bots = new Map<string, Bot>();
   private handler: ((msg: InboundMessage) => Promise<void>) | null = null;
@@ -322,6 +325,18 @@ export class TelegramChannel implements ChannelAdapter {
     const bot = this.resolveBot(accountId);
     // grammy types the emoji as a literal union; cast at the boundary.
     await bot.api.setMessageReaction(peerId, Number(messageId), [{ type: 'emoji', emoji } as never]);
+  }
+
+  async promptForApproval(req: ApprovalRequest): Promise<void> {
+    const text = `🔧 Tool: ${req.toolName}\n\n${req.argsPreview}`;
+    await this.sendText(req.peerId, text, {
+      accountId: req.accountId,
+      threadId: req.threadId,
+      buttons: [[
+        { text: '✅ Allow', callbackData: `approve:${req.id}` },
+        { text: '❌ Deny', callbackData: `deny:${req.id}` },
+      ]],
+    });
   }
 
   /* ---------------------------------------------------------------- */
