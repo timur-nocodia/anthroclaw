@@ -651,6 +651,7 @@ export class Gateway {
   private scheduler: CronScheduler | null = null;
   private debouncer: MessageDebouncer | null = null;
   private rateLimiter: RateLimiter | null = null;
+  private profileRateLimiters = new Map<string, RateLimiter>();
   private hookEmitters = new Map<string, HookEmitter>();
   private hookEmitterUnsubscribes = new Map<string, Array<() => void>>();
   private queueManager = new QueueManager();
@@ -726,6 +727,7 @@ export class Gateway {
         (event) => this.emitMemoryWriteHook(event),
       );
       this.agents.set(agent.id, agent);
+      this.registerProfileRateLimiter(agent.id, agent, dataDir);
       logger.info({ agentId: agent.id, routes: agent.config.routes.length }, 'Loaded agent');
     }
 
@@ -953,6 +955,10 @@ export class Gateway {
     this.debouncer = null;
     this.rateLimiter?.stop();
     this.rateLimiter = null;
+    for (const limiter of this.profileRateLimiters.values()) {
+      limiter.stop();
+    }
+    this.profileRateLimiters.clear();
     this.queueManager.stop();
     this.warmQueries.closeAll();
     this.controlRegistry.clear();
@@ -2451,6 +2457,7 @@ export class Gateway {
         }
 
         this.agents.set(agent.id, agent);
+        this.registerProfileRateLimiter(agent.id, agent, dataDir);
       } catch (err) {
         logger.error({ err, dir }, 'Hot reload: failed to load agent, keeping old version if available');
       }
@@ -2770,6 +2777,30 @@ export class Gateway {
         });
       }
       return;
+    }
+
+    // ─── Profile floor rate limiting (always enforced, no allowlist bypass) ─
+    const profileLimiter = this.profileRateLimiters.get(route.agentId);
+    if (profileLimiter) {
+      const rl = profileLimiter.check(msg.senderId);
+      if (!rl.allowed) {
+        const channel = this.channels.get(msg.channel);
+        if (channel) {
+          const retrySec = Math.ceil((rl.retryAfterMs ?? 0) / 1000);
+          await channel.sendText(msg.peerId,
+            `Rate limit exceeded. Please try again in ${retrySec} seconds.`,
+            { accountId: msg.accountId, threadId: msg.threadId },
+          );
+        }
+        logger.info({ senderId: msg.senderId, agentId: route.agentId, retryAfterMs: rl.retryAfterMs }, 'Profile floor rate limit exceeded');
+        recordRouteDecision({
+          outcome: 'rate_limited',
+          candidates: routeCandidates,
+          winnerAgentId: route.agentId,
+          accessAllowed: true,
+        });
+        return;
+      }
     }
 
     // ─── Rate limiting (after access control, before agent query) ──
@@ -4350,6 +4381,39 @@ export class Gateway {
   /** @internal Expose file ownership registry for testing */
   get _fileOwnershipRegistry(): FileOwnershipRegistry {
     return this.fileOwnershipRegistry;
+  }
+
+  /** @internal Expose profile rate limiters for testing */
+  get _profileRateLimiters(): Map<string, RateLimiter> {
+    return this.profileRateLimiters;
+  }
+
+  /**
+   * Creates or replaces the per-agent profile-floor rate limiter for an agent.
+   * Only creates a limiter when the agent's safety profile defines a rateLimitFloor.
+   * On reload, stops the old limiter (if any) before replacing it.
+   */
+  private registerProfileRateLimiter(agentId: string, agent: Agent, dataDir: string): void {
+    // Stop and remove any existing limiter for this agent (hot-reload)
+    const existing = this.profileRateLimiters.get(agentId);
+    if (existing) {
+      existing.stop();
+      this.profileRateLimiters.delete(agentId);
+    }
+
+    const floor = agent.safetyProfile.rateLimitFloor;
+    if (!floor) return;
+
+    const limiter = new RateLimiter(
+      {
+        maxAttempts: floor.max,
+        windowMs: floor.windowMs,
+        lockoutMs: 5 * 60_000, // 5 min lockout when floor exceeded
+      },
+      join(dataDir, `rate-limits-${agentId}.json`),
+    );
+    this.profileRateLimiters.set(agentId, limiter);
+    logger.debug({ agentId, floor }, 'Profile floor rate limiter registered');
   }
 }
 

@@ -13,6 +13,24 @@ import { buildExternalMcpServerSpec } from './external-mcp.js';
 import { normalizeSandboxSettings } from './sandbox.js';
 import { ApprovalBroker } from '../security/approval-broker.js';
 import type { ChannelAdapter } from '../channels/types.js';
+import type { SandboxDefaults } from '../security/profiles/types.js';
+import type { SdkSandboxConfig } from '../config/schema.js';
+
+/**
+ * Merges profile sandbox defaults with agent-level overrides.
+ * Agent yml values always win; profile fills in missing defaults.
+ */
+function applySandboxProfile(
+  profile: SandboxDefaults,
+  agentSandbox: SdkSandboxConfig | undefined,
+): SdkSandboxConfig {
+  return {
+    enabled: agentSandbox?.enabled ?? profile.enabled,
+    allowUnsandboxedCommands: agentSandbox?.allowUnsandboxedCommands ?? profile.allowUnsandboxedCommands,
+    // Spread remaining agent-level fields so nothing is lost
+    ...agentSandbox,
+  };
+}
 
 export interface BuildSdkOptionsParams {
   agent: Agent;
@@ -60,7 +78,7 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
     includePartialMessages: cfg?.includePartialMessages,
     includeHookEvents: cfg?.includeHookEvents,
     enableFileCheckpointing: cfg?.enableFileCheckpointing,
-    sandbox: normalizeSandboxSettings(cfg?.sandbox),
+    sandbox: normalizeSandboxSettings(applySandboxProfile(profile.sandboxDefaults, cfg?.sandbox)),
     settingSources: profile.settingSources,
     systemPrompt,
     sessionStore: params.sessionStore,

@@ -3,10 +3,10 @@ import { buildSdkOptions } from '../options.js';
 import { publicProfile, trustedProfile, privateProfile } from '../../security/profiles/index.js';
 import { ApprovalBroker } from '../../security/approval-broker.js';
 
-function fakeAgent(profile: any) {
+function fakeAgent(profile: any, sdkConfig?: any) {
   return {
     id: 'a',
-    config: { safety_profile: profile.name, model: 'claude-sonnet-4-6', sdk: {}, mcp_tools: [] },
+    config: { safety_profile: profile.name, model: 'claude-sonnet-4-6', sdk: sdkConfig ?? {}, mcp_tools: [] },
     safetyProfile: profile,
     workspacePath: '/tmp',
     tools: [],
@@ -52,5 +52,43 @@ describe('buildSdkOptions profile-aware', () => {
       sessionContext: { peerId: '1' },
     });
     expect(opts.settingSources).toEqual(['project', 'user']);
+  });
+});
+
+describe('buildSdkOptions sandboxDefaults from profile', () => {
+  it('public profile without agent sdk.sandbox → allowUnsandboxedCommands=false from profile', () => {
+    const opts = buildSdkOptions({
+      agent: fakeAgent(publicProfile),
+      approvalBroker: new ApprovalBroker(),
+      sessionContext: { peerId: '1' },
+    });
+    expect((opts.sandbox as any)?.allowUnsandboxedCommands).toBe(false);
+  });
+
+  it('trusted profile without agent sdk.sandbox → allowUnsandboxedCommands=false from profile', () => {
+    const opts = buildSdkOptions({
+      agent: fakeAgent(trustedProfile),
+      approvalBroker: new ApprovalBroker(),
+      sessionContext: { peerId: '1' },
+    });
+    expect((opts.sandbox as any)?.allowUnsandboxedCommands).toBe(false);
+  });
+
+  it('private profile + agent sdk.sandbox.allowUnsandboxedCommands=true → agent override wins', () => {
+    const opts = buildSdkOptions({
+      agent: fakeAgent(privateProfile, { sandbox: { allowUnsandboxedCommands: true } }),
+      approvalBroker: new ApprovalBroker(),
+      sessionContext: { peerId: '1' },
+    });
+    expect((opts.sandbox as any)?.allowUnsandboxedCommands).toBe(true);
+  });
+
+  it('public profile + agent sdk.sandbox.allowUnsandboxedCommands=true → agent override wins', () => {
+    const opts = buildSdkOptions({
+      agent: fakeAgent(publicProfile, { sandbox: { allowUnsandboxedCommands: true } }),
+      approvalBroker: new ApprovalBroker(),
+      sessionContext: { peerId: '1' },
+    });
+    expect((opts.sandbox as any)?.allowUnsandboxedCommands).toBe(true);
   });
 });
