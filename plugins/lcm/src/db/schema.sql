@@ -92,3 +92,14 @@ CREATE TABLE IF NOT EXISTS schema_meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- 5) Carry-over snippet pending injection on the next assemble().
+-- Single-row table (per-agent DB already isolates by agentId).
+-- Populated on `on_session_reset`; consumed and deleted by assemble()
+-- when the current sessionKey != source_session_id (i.e. a new session).
+CREATE TABLE IF NOT EXISTS carryover_pending (
+  id                  INTEGER PRIMARY KEY CHECK (id = 1),
+  source_session_id   TEXT NOT NULL,
+  snippet             TEXT NOT NULL,
+  created_at          INTEGER NOT NULL
+);

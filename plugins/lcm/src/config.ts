@@ -105,7 +105,7 @@ export const LCMConfigSchema = z.object({
       .describe('When the agent\'s session rotates, copy a slice of summarized context into the new session.'),
     carry_over_retain_depth: z.number().int().min(0)
       .default(2)
-      .describe('How many levels of the DAG to carry into the next session. 0 = nothing.'),
+      .describe('Carries top (retain_depth + 1) levels from the deepest. 0 = top level only; 2 = top three levels (default). Set carry_over_on_session_reset=false to disable entirely.'),
     deferred_maintenance: z.object({
       max_passes: z.number().int().min(0).default(4).describe('Max background condensation passes per maintenance run.'),
     })

@@ -22,7 +22,9 @@ import { MessageStore } from './store.js';
 import { SummaryDAG } from './dag.js';
 import { LifecycleManager } from './lifecycle.js';
 import { LCMEngine, type ResolvedLCMConfig as EngineConfig } from './engine.js';
+import { CarryoverStore } from './carryover.js';
 import { createMirrorHook } from './hooks/mirror.js';
+import { buildCarryoverSnippet, formatCarryoverBlock, formatToolPromptBlock } from './carryover-format.js';
 import { createGrepTool } from './tools/grep.js';
 import { createDescribeTool } from './tools/describe.js';
 import { createExpandTool } from './tools/expand.js';
@@ -36,6 +38,7 @@ interface PerAgentState {
   store: MessageStore;
   dag: SummaryDAG;
   lifecycle: LifecycleManager;
+  carryover: CarryoverStore;
   engine: LCMEngine;
   config: LCMConfig;
   engineConfig: EngineConfig;
@@ -79,6 +82,7 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
       const store = new MessageStore(db);
       const dag = new SummaryDAG(db);
       const lifecycle = new LifecycleManager(db);
+      const carryover = new CarryoverStore(db);
       const engine = new LCMEngine({
         store,
         dag,
@@ -87,7 +91,7 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
         config: engineConfig,
         logger: ctx.logger as never,
       });
-      state = { db, store, dag, lifecycle, engine, config, engineConfig };
+      state = { db, store, dag, lifecycle, carryover, engine, config, engineConfig };
       perAgent.set(agentId, state);
       ctx.logger.info({ agentId }, 'lcm: per-agent state initialized');
     }
@@ -148,7 +152,55 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
       if (!state.config.enabled) return null;
       try {
         const out = await state.engine.assemble(i as never);
-        return { messages: out.messages as never };
+        // Type-cast: the engine's EngineMessage shape and the gateway's
+        // SDK-message shape are bridge-compatible at the role+content level
+        // for our purposes — we only prepend system entries.
+        const messages = (out.messages as unknown[]).slice() as Array<{
+          role: string;
+          content: string;
+          [k: string]: unknown;
+        }>;
+
+        // Block 1 (always): tool-usage prompt so the model knows the LCM
+        // tools exist and when to use them — without per-agent CLAUDE.md edits.
+        const prepended: Array<{ role: string; content: string }> = [
+          { role: 'system', content: formatToolPromptBlock() },
+        ];
+
+        // Block 2 (one-time per new session): pending carry-over snippet.
+        // Consume only when sessionKey differs from the source session
+        // (avoids "ghost" injection when assembling for the just-reset session).
+        // After consume we `clear()` the row, so no second-call gate is needed.
+        try {
+          const pending = state.carryover.get();
+          if (pending && pending.source_session_id !== i.sessionKey) {
+            prepended.push({
+              role: 'system',
+              content: formatCarryoverBlock(pending.snippet, pending.source_session_id),
+            });
+            state.carryover.clear();
+            ctx.logger.info(
+              {
+                agentId: i.agentId,
+                sourceSession: pending.source_session_id,
+                targetSession: i.sessionKey,
+                snippetLen: pending.snippet.length,
+              },
+              'lcm: carry-over snippet injected into new session',
+            );
+          }
+        } catch (err) {
+          ctx.logger.warn(
+            { err: String(err), agentId: i.agentId },
+            'lcm carry-over read failed; assembly continues without it',
+          );
+        }
+
+        // Insert after a leading system message if one exists, else prepend.
+        const insertAt = messages[0]?.role === 'system' ? 1 : 0;
+        messages.splice(insertAt, 0, ...prepended);
+
+        return { messages: messages as never };
       } catch (err) {
         ctx.logger.warn(
           { err: String(err), agentId: i.agentId },
@@ -173,6 +225,45 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
       logger: ctx.logger as never,
     });
     hook(payload);
+  });
+
+  // ── Carry-over hook ────────────────────────────────────────────────────────
+  //
+  // When a session is reset (`/newsession`, `/compact`, policy rotation, or
+  // auto_compress threshold), capture a top-N-depth slice of the OLD session's
+  // DAG into the per-agent SQLite. The next `assemble()` for a *different*
+  // sessionKey on the same agent prepends it as a `<previous_session_memory>`
+  // system block, then deletes the row. Gated on
+  // `lifecycle.carry_over_on_session_reset`.
+
+  ctx.registerHook('on_session_reset', (payload) => {
+    const p = payload as { agentId?: string; sessionKey?: string };
+    if (!p.agentId || !p.sessionKey) return;
+    const state = getOrCreateForAgent(p.agentId);
+    if (!state.config.enabled) return;
+    if (!state.config.lifecycle.carry_over_on_session_reset) return;
+    try {
+      const snippet = buildCarryoverSnippet(
+        state.dag,
+        p.sessionKey,
+        state.config.lifecycle.carry_over_retain_depth,
+      );
+      if (!snippet) return;
+      state.carryover.upsert({
+        sourceSessionId: p.sessionKey,
+        snippet,
+        createdAt: Date.now(),
+      });
+      ctx.logger.info(
+        { agentId: p.agentId, sourceSession: p.sessionKey, snippetLen: snippet.length },
+        'lcm: carry-over snippet captured on session reset',
+      );
+    } catch (err) {
+      ctx.logger.warn(
+        { err: String(err), agentId: p.agentId },
+        'lcm carry-over capture failed; session reset proceeds without it',
+      );
+    }
   });
 
   // ── MCP Tools ──────────────────────────────────────────────────────────────
