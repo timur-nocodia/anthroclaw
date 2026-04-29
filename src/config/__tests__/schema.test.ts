@@ -110,9 +110,9 @@ describe('plugins config schema', () => {
     }
   });
 
-  it('example private agent is configured for propose-only learning rollout', () => {
+  it('example agent is configured for propose-only learning rollout', () => {
     const config = loadAgentYml(resolve(process.cwd(), 'agents', 'example'));
-    expect(config.safety_profile).toBe('private');
+    expect(config.safety_profile).toBe('chat_like_openclaw');
     expect(config.learning).toMatchObject({
       enabled: true,
       mode: 'propose',
