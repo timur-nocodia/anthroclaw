@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { parse as parseYaml, stringify as stringifyYaml, parseDocument } from 'yaml';
 import { AgentYmlSchema } from '@backend/config/schema.js';
+import { getDefaultProfile } from '@backend/security/profiles/index.js';
 
 const AGENTS_DIR = resolve(process.cwd(), '..', 'agents');
 
@@ -276,22 +277,24 @@ export function createAgent(
   if (template === 'example') {
     const config = {
       model: agentModel,
+      safety_profile: getDefaultProfile(),
       timezone: 'UTC',
       routes: [{ channel: 'telegram', scope: 'dm' }],
       pairing: { mode: 'off' },
-      mcp_tools: ['memory_search', 'memory_write', 'send_message', 'list_skills'],
+      mcp_tools: ['memory_search', 'memory_write', 'send_message', 'list_skills', 'manage_cron'],
       queue_mode: 'collect',
     };
     writeFileSync(join(dir, 'agent.yml'), stringifyYaml(config), 'utf-8');
     writeFileSync(
       join(dir, 'CLAUDE.md'),
-      `# ${id}\n\nYou are a helpful assistant available via messaging.\n\n- Respond concisely\n- Use the user's language\n- Search memory before answering questions about past events\n`,
+      `# ${id}\n\nYou are ${id}, a friendly conversational assistant available via messaging.\n\nBe warm and curious. Search memory before answering questions about past events. Write important facts to daily memory proactively.\n`,
       'utf-8',
     );
   } else {
     // blank template
     const config = {
       model: agentModel,
+      safety_profile: getDefaultProfile(),
       routes: [{ channel: 'telegram', scope: 'dm' }],
     };
     writeFileSync(join(dir, 'agent.yml'), stringifyYaml(config), 'utf-8');
