@@ -8,10 +8,7 @@ function writeAgentYml(dir: string, maxSessions?: number): void {
   const maxLine = maxSessions !== undefined ? `\nmaxSessions: ${maxSessions}` : '';
   writeFileSync(
     join(dir, 'agent.yml'),
-    `routes:
-  - channel: telegram
-    scope: dm${maxLine}
-`,
+    `safety_profile: trusted\nroutes:\n  - channel: telegram\n    scope: dm${maxLine}\n`,
   );
 }
 

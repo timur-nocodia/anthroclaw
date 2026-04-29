@@ -89,7 +89,9 @@ function minimalConfig(): GlobalConfig {
 
 /** Write an agent.yml into the given directory */
 function writeAgentYml(dir: string, content: string): void {
-  writeFileSync(join(dir, 'agent.yml'), content);
+  // Prepend safety_profile if not already present so all test fixtures are valid
+  const yaml = content.includes('safety_profile:') ? content : `safety_profile: trusted\n${content}`;
+  writeFileSync(join(dir, 'agent.yml'), yaml);
 }
 
 /** Create a standard InboundMessage for testing */

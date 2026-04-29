@@ -21,6 +21,9 @@ import { createSdkMcpServer, query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpSdkServerConfigWithInstance, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { PluginMcpTool } from '../plugins/types.js';
 import type { ToolDefinition } from './tools/types.js';
+import { validateSafetyProfile } from '../security/profiles/validate.js';
+import { getProfile, type SafetyProfile } from '../security/profiles/index.js';
+import { logger } from '../logger.js';
 import type { ChannelAdapter } from '../channels/types.js';
 import type { AccessControl } from '../routing/access.js';
 import { FileSessionStore } from '../sdk/session-store.js';
@@ -107,6 +110,7 @@ export class Agent {
   readonly config: AgentYml;
   readonly workspacePath: string;
   readonly memoryStore: MemoryStore;
+  readonly safetyProfile: SafetyProfile;
   mcpServer: McpSdkServerConfigWithInstance;
 
   /** Raw tool definitions for introspection/testing */
@@ -127,6 +131,7 @@ export class Agent {
     memoryStore: MemoryStore,
     mcpServer: McpSdkServerConfigWithInstance,
     tools: ToolDefinition[],
+    safetyProfile: SafetyProfile,
     sessionModelOverridesPath: string | null = null,
     sessionMappingsPath: string | null = null,
   ) {
@@ -134,6 +139,7 @@ export class Agent {
     this.config = config;
     this.workspacePath = workspacePath;
     this.memoryStore = memoryStore;
+    this.safetyProfile = safetyProfile;
     this.mcpServer = mcpServer;
     this.tools = tools;
     this.sessions = new Map();
@@ -266,6 +272,16 @@ export class Agent {
     const id = basename(agentDir);
     const config = loadAgentYml(agentDir);
 
+    // Validate safety profile
+    const validation = validateSafetyProfile(config);
+    if (!validation.ok) {
+      throw new Error(`❌ Cannot load agent "${id}":\n   ${validation.error}`);
+    }
+    for (const warning of validation.warnings) {
+      logger.warn({ agentId: id }, `safety_profile: ${warning}`);
+    }
+    const safetyProfile = getProfile(config.safety_profile);
+
     // Create memory DB directory and store
     const memoryDbDir = join(dataDir, 'memory-db');
     mkdirSync(memoryDbDir, { recursive: true });
@@ -361,7 +377,7 @@ export class Agent {
     mkdirSync(sessionMappingsDir, { recursive: true });
     const sessionMappingsPath = join(sessionMappingsDir, `${id}.json`);
 
-    return new Agent(id, config, agentDir, memoryStore, mcpServer, tools, sessionModelOverridesPath, sessionMappingsPath);
+    return new Agent(id, config, agentDir, memoryStore, mcpServer, tools, safetyProfile, sessionModelOverridesPath, sessionMappingsPath);
   }
 
   getSessionId(sessionKey: string): string | undefined {

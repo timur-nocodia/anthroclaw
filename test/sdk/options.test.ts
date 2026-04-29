@@ -5,6 +5,7 @@ import { FileOwnershipRegistry } from '../../src/sdk/file-ownership.js';
 
 function makeAgent(overrides?: Record<string, unknown>, workspacePath = '/tmp/test-agent') {
   const config = AgentYmlSchema.parse({
+    safety_profile: 'trusted' as const,
     routes: [{ channel: 'telegram' }],
     mcp_tools: ['memory_search'],
     ...overrides,

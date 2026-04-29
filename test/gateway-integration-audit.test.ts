@@ -49,13 +49,7 @@ describe('Gateway integration audit', () => {
   it('records integration audit events from SDK hook bridge payloads', async () => {
     const agentDir = join(agentsDir, 'main-agent');
     mkdirSync(agentDir);
-    writeFileSync(join(agentDir, 'agent.yml'), `
-routes:
-  - channel: telegram
-    scope: dm
-mcp_tools:
-  - web_search_brave
-`);
+    writeFileSync(join(agentDir, 'agent.yml'), `safety_profile: trusted\nroutes:\n  - channel: telegram\n    scope: dm\nmcp_tools:\n  - web_search_brave\n`);
 
     const gw = new Gateway();
     await gw.start(minimalConfig(), agentsDir, dataDir);
@@ -106,19 +100,7 @@ mcp_tools:
   it('records external MCP integration audit events by server name', async () => {
     const agentDir = join(agentsDir, 'ops-agent');
     mkdirSync(agentDir);
-    writeFileSync(join(agentDir, 'agent.yml'), `
-routes:
-  - channel: telegram
-    scope: dm
-external_mcp_servers:
-  calendar:
-    type: stdio
-    command: npx
-    args:
-      - google-calendar-mcp
-    allowed_tools:
-      - calendar_daily_brief
-`);
+    writeFileSync(join(agentDir, 'agent.yml'), `safety_profile: trusted\nroutes:\n  - channel: telegram\n    scope: dm\nexternal_mcp_servers:\n  calendar:\n    type: stdio\n    command: npx\n    args:\n      - google-calendar-mcp\n    allowed_tools:\n      - calendar_daily_brief\n`);
 
     const gw = new Gateway();
     await gw.start(minimalConfig(), agentsDir, dataDir);

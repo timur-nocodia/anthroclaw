@@ -7,11 +7,7 @@ import { Agent } from '../../src/agent/agent.js';
 function writeAgentYml(dir: string, sessionPolicy: string): void {
   writeFileSync(
     join(dir, 'agent.yml'),
-    `routes:
-  - channel: telegram
-    scope: dm
-session_policy: ${sessionPolicy}
-`,
+    `safety_profile: trusted\nroutes:\n  - channel: telegram\n    scope: dm\nsession_policy: ${sessionPolicy}\n`,
   );
 }
 

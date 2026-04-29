@@ -4,14 +4,13 @@ import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Agent } from '../../src/agent/agent.js';
 
-function writeMinimalAgentYml(dir: string, mcpTools?: string[]): void {
+function writeMinimalAgentYml(dir: string, mcpTools?: string[], profile: 'public' | 'trusted' | 'private' = 'trusted'): void {
   const tools = mcpTools ? `\nmcp_tools:\n${mcpTools.map((t) => `  - ${t}`).join('\n')}` : '';
+  // private profile requires exactly 1 allowlisted peer per channel
+  const allowlist = profile === 'private' ? '\nallowlist:\n  telegram:\n    - "test-user"' : '';
   writeFileSync(
     join(dir, 'agent.yml'),
-    `routes:
-  - channel: telegram
-    scope: dm${tools}
-`,
+    `safety_profile: ${profile}\nroutes:\n  - channel: telegram\n    scope: dm${allowlist}${tools}\n`,
   );
 }
 
@@ -64,7 +63,8 @@ describe('Agent', () => {
 
   // ─── 4. creates MCP server with requested tools ─────────────────
   it('creates MCP server with requested tools', async () => {
-    writeMinimalAgentYml(agentDir, ['memory_search', 'session_search', 'local_note_search', 'local_note_propose', 'memory_write', 'manage_skills']);
+    // manage_skills is only allowed in private profile (hard-blacklisted in trusted/public)
+    writeMinimalAgentYml(agentDir, ['memory_search', 'session_search', 'local_note_search', 'local_note_propose', 'memory_write', 'manage_skills'], 'private');
     const agent = await Agent.load(agentDir, dataDir);
 
     expect(agent.mcpServer).toBeDefined();

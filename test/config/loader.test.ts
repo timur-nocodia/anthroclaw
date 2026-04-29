@@ -121,6 +121,7 @@ describe('loadAgentYml', () => {
     writeFileSync(
       join(tmpDir, 'agent.yml'),
       `
+safety_profile: trusted
 routes:
   - channel: telegram
     scope: dm

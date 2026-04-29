@@ -4,6 +4,7 @@ import { GlobalConfigSchema, AgentYmlSchema } from '../schema.js';
 describe('plugins config schema', () => {
   // Minimal valid AgentYml with all required fields
   const minimalValidAgentYml = {
+    safety_profile: 'trusted' as const,
     routes: [{ channel: 'telegram' }],
     memory_extraction: undefined,
     subagents: undefined,

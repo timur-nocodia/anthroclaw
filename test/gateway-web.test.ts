@@ -37,7 +37,8 @@ function minimalConfig(): GlobalConfig {
 }
 
 function writeAgentYml(dir: string, content: string): void {
-  writeFileSync(join(dir, 'agent.yml'), content);
+  const yaml = content.includes('safety_profile:') ? content : `safety_profile: trusted\n${content}`;
+  writeFileSync(join(dir, 'agent.yml'), yaml);
 }
 
 /* ------------------------------------------------------------------ */
@@ -313,10 +314,7 @@ describe('Agent public methods', () => {
   function writeMinimalAgentYml(dir: string): void {
     writeFileSync(
       join(dir, 'agent.yml'),
-      `routes:
-  - channel: telegram
-    scope: dm
-`,
+      `safety_profile: trusted\nroutes:\n  - channel: telegram\n    scope: dm\n`,
     );
   }
 

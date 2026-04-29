@@ -38,6 +38,7 @@ describe('Gateway sanity — plugin loads at runtime', () => {
     writeFileSync(
       join(tmpAgentsDir, 'test-agent', 'agent.yml'),
       [
+        'safety_profile: trusted',
         'routes:',
         '  - channel: telegram',
         '    scope: dm',

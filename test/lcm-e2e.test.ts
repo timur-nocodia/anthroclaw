@@ -57,6 +57,7 @@ describe('@e2e: gateway + LCM plugin end-to-end', () => {
     writeFileSync(
       join(tmpAgentsDir, 'test-agent', 'agent.yml'),
       [
+        'safety_profile: trusted',
         'routes:',
         '  - channel: telegram',
         '    scope: dm',

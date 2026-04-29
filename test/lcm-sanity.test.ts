@@ -52,6 +52,7 @@ describe('LCM sanity — Gateway.start loads LCM plugin and registers all 6 tool
     writeFileSync(
       join(tmpAgentsDir, 'test-agent', 'agent.yml'),
       [
+        'safety_profile: trusted',
         'routes:',
         '  - channel: telegram',
         '    scope: dm',
