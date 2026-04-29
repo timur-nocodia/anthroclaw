@@ -291,6 +291,15 @@ const MemoryExtractionSchema = z.object({
   max_input_chars: z.number().int().min(500).max(20_000).default(6000),
 }).optional();
 
+const SafetyOverridesSchema = z.object({
+  allow_tools: z.array(z.string()).optional(),
+  deny_tools: z.array(z.string()).optional(),
+  permission_mode: z.enum(['default', 'bypass']).optional(),
+  sandbox: SdkSandboxSchema.optional(),
+}).strict();
+
+export type SafetyOverrides = z.infer<typeof SafetyOverridesSchema>;
+
 export const AgentYmlSchema = z.object({
   model: z.string().optional(),
   thinking: ThinkingConfigSchema.optional(),
@@ -299,6 +308,8 @@ export const AgentYmlSchema = z.object({
   maxBudgetUsd: z.number().min(0.01).optional().describe('Maximum USD budget per query'),
   timezone: z.string().default('UTC').describe('IANA timezone for timestamps, e.g. "Asia/Almaty"'),
   routes: z.array(RouteSchema).min(1),
+  safety_profile: z.enum(['public', 'trusted', 'private']),
+  safety_overrides: SafetyOverridesSchema.optional(),
   pairing: PairingSchema.optional(),
   allowlist: z.record(z.string(), z.array(z.string())).optional(),
   mcp_tools: z.array(z.string()).optional(),
