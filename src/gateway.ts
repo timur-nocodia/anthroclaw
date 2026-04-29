@@ -23,7 +23,7 @@ const ANTHROCLAW_VERSION = (() => {
   }
 })();
 import { query, startup } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent/agent.js';
 import { RouteTable, type RouteEntry } from './routing/table.js';
 import { AccessControl } from './routing/access.js';
@@ -96,7 +96,11 @@ import {
 } from './integrations/mcp-preflight.js';
 import { classifyIntegrationToolName } from './integrations/audit.js';
 import { buildSdkOptions } from './sdk/options.js';
+import { runHeadlessReview } from './sdk/headless-review.js';
 import { buildAllowedTools } from './sdk/permissions.js';
+import { LearningQueue, detectLearningTriggers, type LearningReviewJob } from './learning/queue.js';
+import { runLearningReview } from './learning/runner.js';
+import { LearningStore } from './learning/store.js';
 import { getSdkActiveInputStatus, type SdkActiveInputStatus } from './sdk/active-input.js';
 import {
   asAgentMcpServerSpec,
@@ -257,6 +261,14 @@ function compactError(value: unknown): string {
   return redactSecrets(text).slice(0, 2000);
 }
 
+function isLearningRelevantToolName(toolName: string): boolean {
+  const normalized = toolName.toLowerCase();
+  return normalized.includes('memory')
+    || normalized.includes('skill')
+    || normalized.includes('session_search')
+    || normalized.includes('local_note');
+}
+
 function definedBudget(values: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined));
 }
@@ -304,6 +316,16 @@ function withMessageRawMeta(msg: InboundMessage, meta: Record<string, unknown>):
     ...(msg.raw && typeof msg.raw === 'object' ? msg.raw as Record<string, unknown> : {}),
     ...meta,
   };
+}
+
+function readStringMeta(meta: Record<string, unknown>, key: string): string | undefined {
+  const value = meta[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readNumberMeta(meta: Record<string, unknown>, key: string): number {
+  const value = meta[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 function sessionProvenanceFromRun(
@@ -677,6 +699,8 @@ export class Gateway {
   public pluginRegistry: PluginRegistry = new PluginRegistry();
   private pluginsWatcher: PluginsWatcher | null = null;
   private resolvedPluginsDir: string | null = null;
+  private learningStore: LearningStore | null = null;
+  private learningQueue: LearningQueue | null = null;
 
   async start(config: GlobalConfig, agentsDir: string, dataDir: string, pluginsDir?: string): Promise<void> {
     this.startedAt = Date.now();
@@ -688,6 +712,10 @@ export class Gateway {
       loadTimeoutMs: 60_000,
     });
     metrics.setStore(new MetricsStore(join(dataDir, 'metrics.sqlite')));
+    this.learningStore = new LearningStore(join(dataDir, 'learning.sqlite'));
+    this.learningQueue = new LearningQueue({
+      runner: (job) => this.runLearningReviewJob(job),
+    });
     this.accessControl = new AccessControl(dataDir);
 
     // Rate limiter (optional — only created when config.rate_limit is set)
@@ -961,6 +989,10 @@ export class Gateway {
     }
     this.profileRateLimiters.clear();
     this.queueManager.stop();
+    this.learningQueue?.stop();
+    this.learningQueue = null;
+    this.learningStore?.close();
+    this.learningStore = null;
     this.warmQueries.closeAll();
     this.controlRegistry.clear();
     this.fileOwnershipRegistry.clear();
@@ -2711,6 +2743,75 @@ export class Gateway {
     return this.approvalBroker;
   }
 
+  private async runLearningReviewJob(job: LearningReviewJob): Promise<void> {
+    const agent = this.agents.get(job.agentId);
+    if (!agent || !this.dataDir || !this.learningStore) return;
+    await runLearningReview({
+      job,
+      agent,
+      dataDir: this.dataDir,
+      store: this.learningStore,
+      defaultModel: this.globalConfig?.defaults.model,
+    });
+  }
+
+  private enqueueLearningReviewAfterResponse(params: {
+    agent: Agent;
+    msg: InboundMessage;
+    response: string;
+    sessionKey: string;
+    compressionOrLcmActivity: boolean;
+  }): void {
+    if (!this.learningQueue || !this.sdkReady) return;
+    const config = params.agent.config.learning;
+    if (!config.enabled || config.mode === 'off') return;
+    const userText = params.msg.text || params.msg.transcript || '';
+    if (!userText.trim() || !params.response.trim()) return;
+
+    const rawMeta = params.msg.raw && typeof params.msg.raw === 'object'
+      ? params.msg.raw as Record<string, unknown>
+      : {};
+    const toolCalls = readNumberMeta(rawMeta, 'agentToolCalls');
+    const recoveredToolErrors = readNumberMeta(rawMeta, 'agentRecoveredToolErrors');
+    const skillOrMemoryActivity = rawMeta.agentSkillOrMemoryActivity === true;
+    const triggers = detectLearningTriggers({
+      reviewIntervalTurns: config.review_interval_turns,
+      turnCount: params.agent.getMessageCount(params.sessionKey),
+      userText,
+      recoveredToolErrors,
+      toolCalls,
+      toolCallThreshold: config.skill_review_min_tool_calls,
+      skillOrMemoryActivity,
+      compressionOrLcmActivity: params.compressionOrLcmActivity,
+    });
+    if (triggers.length === 0) return;
+
+    const result = this.learningQueue.enqueueAfterResponse({
+      agentId: params.agent.id,
+      sessionKey: params.sessionKey,
+      runId: readStringMeta(rawMeta, 'agentRunId'),
+      sdkSessionId: readStringMeta(rawMeta, 'agentSdkSessionId'),
+      trigger: triggers[0],
+      triggers,
+      metadata: {
+        userText,
+        assistantText: params.response,
+        channel: params.msg.channel,
+        peerHash: hashIdentifier(params.msg.peerId),
+        toolCalls,
+        recoveredToolErrors,
+        skillOrMemoryActivity,
+        compressionOrLcmActivity: params.compressionOrLcmActivity,
+      },
+    });
+    logger.debug({
+      agentId: params.agent.id,
+      sessionKey: params.sessionKey,
+      status: result.status,
+      triggers,
+    }, 'Learning review queued after response');
+  }
+
   /**
    * Dispatch an inbound message through routing, access control, and agent query.
    * Exposed as package-internal for testing (not part of public API contract).
@@ -3146,6 +3247,7 @@ export class Gateway {
       replyToId: resolveReplyToId(msg, channelContext.replyToMode),
       threadId: msg.threadId,
     };
+    let compressionOrLcmActivity = false;
 
     try {
       // Hook: on_before_query
@@ -3235,12 +3337,23 @@ export class Gateway {
               });
             }
           }
+          compressionOrLcmActivity = true;
         }
       }
 
       // Background memory prefetch for next turn
       if (response && response.length > 0) {
         void this.prefetchCache.prefetch(sessionKey, response, agent.memoryStore);
+      }
+
+      if (response && response.length > 0) {
+        this.enqueueLearningReviewAfterResponse({
+          agent,
+          msg,
+          response,
+          sessionKey,
+          compressionOrLcmActivity,
+        });
       }
     } finally {
       if (typingInterval) clearInterval(typingInterval);
@@ -3387,6 +3500,9 @@ export class Gateway {
     let runId: string | undefined;
     let observedSessionId = existingSessionId;
     let runUsage: StoredAgentRunUsage = {};
+    let toolCallsForLearning = 0;
+    let recoveredToolErrorsForLearning = 0;
+    let skillOrMemoryActivityForLearning = false;
     const rawMeta = msg.raw && typeof msg.raw === 'object' ? msg.raw as Record<string, unknown> : {};
     const source = rawMeta.cron === true ? 'cron' : 'channel';
     const routeDecisionId = typeof rawMeta.routeDecisionId === 'string' ? rawMeta.routeDecisionId : undefined;
@@ -3395,6 +3511,14 @@ export class Gateway {
       error?: unknown,
     ) => {
       if (!runId) return;
+      withMessageRawMeta(msg, {
+        agentRunId: runId,
+        agentSdkSessionId: observedSessionId,
+        agentRunStatus: status,
+        agentToolCalls: toolCallsForLearning,
+        agentRecoveredToolErrors: recoveredToolErrorsForLearning,
+        agentSkillOrMemoryActivity: skillOrMemoryActivityForLearning,
+      });
       metrics.recordAgentRunFinish({
         runId,
         status,
@@ -3650,6 +3774,10 @@ export class Gateway {
             break;
           } else if (evt.type === 'tool_use') {
             const toolName = typeof evt.name === 'string' ? evt.name : 'unknown';
+            toolCallsForLearning += 1;
+            if (isLearningRelevantToolName(toolName)) {
+              skillOrMemoryActivityForLearning = true;
+            }
             metrics.increment('tool_calls');
             metrics.recordToolEvent({
               agentId: agent.id,
@@ -3679,6 +3807,14 @@ export class Gateway {
                 try { result.interrupt(); } catch {}
                 break;
               }
+            }
+          } else if (evt.type === 'tool_result') {
+            const toolName = typeof evt.name === 'string' ? evt.name : 'unknown';
+            if (isLearningRelevantToolName(toolName)) {
+              skillOrMemoryActivityForLearning = true;
+            }
+            if (evt.is_error === true || evt.status === 'error') {
+              recoveredToolErrorsForLearning += 1;
             }
           }
 
@@ -3966,47 +4102,15 @@ export class Gateway {
         maxCandidates: config.max_candidates,
         maxInputChars: config.max_input_chars,
       });
-      const options: Options = {
+      const raw = await runHeadlessReview({
+        prompt,
         model: agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6',
         cwd: agent.workspacePath,
-        tools: [],
-        allowedTools: [],
-        permissionMode: 'dontAsk',
-        canUseTool: async () => ({ behavior: 'deny', message: 'Tools disabled for memory extraction.' }),
-        settingSources: ['project'],
-        persistSession: false,
-        maxTurns: 1,
-        systemPrompt: {
-          type: 'preset',
-          preset: 'claude_code',
-          excludeDynamicSections: true,
-        },
-      };
-      const result = query({ prompt, options });
-      const parts: string[] = [];
+        purpose: 'memory extraction',
+        toolDenyMessage: 'Tools disabled for memory extraction.',
+      });
 
-      try {
-        for await (const event of result) {
-          const evt = event as Record<string, unknown>;
-          if (evt.type === 'result') {
-            if (typeof evt.result === 'string') parts.push(evt.result);
-            break;
-          }
-          if (evt.type === 'assistant') {
-            const message = evt.message as Record<string, unknown> | undefined;
-            if (!Array.isArray(message?.content)) continue;
-            for (const block of message.content) {
-              if (block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string') {
-                parts.push(block.text);
-              }
-            }
-          }
-        }
-      } finally {
-        result.close?.();
-      }
-
-      const candidates = parseMemoryCandidates(parts.join('\n'), config.max_candidates);
+      const candidates = parseMemoryCandidates(raw, config.max_candidates);
       if (candidates.length === 0) return;
 
       const stored = storePostRunMemoryCandidates(agent.memoryStore, {

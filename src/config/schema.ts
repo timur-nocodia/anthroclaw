@@ -291,6 +291,42 @@ const MemoryExtractionSchema = z.object({
   max_input_chars: z.number().int().min(500).max(20_000).default(6000),
 }).optional();
 
+const LearningConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  mode: z.enum(['off', 'propose', 'auto_private']).default('off'),
+  review_interval_turns: z.number().int().min(1).max(500).default(10),
+  skill_review_min_tool_calls: z.number().int().min(1).max(500).default(8),
+  max_actions_per_review: z.number().int().min(1).max(20).default(8),
+  max_input_chars: z.number().int().min(1_000).max(128_000).default(24_000),
+  artifacts: z.object({
+    max_files: z.number().int().min(0).max(200).default(32),
+    max_file_bytes: z.number().int().min(1_024).max(1_048_576).default(65_536),
+    max_total_bytes: z.number().int().min(1_024).max(4_194_304).default(262_144),
+    max_prompt_chars: z.number().int().min(1_000).max(128_000).default(24_000),
+    max_snippet_chars: z.number().int().min(500).max(64_000).default(4_000),
+  }).default({
+    max_files: 32,
+    max_file_bytes: 65_536,
+    max_total_bytes: 262_144,
+    max_prompt_chars: 24_000,
+    max_snippet_chars: 4_000,
+  }),
+}).default({
+  enabled: false,
+  mode: 'off',
+  review_interval_turns: 10,
+  skill_review_min_tool_calls: 8,
+  max_actions_per_review: 8,
+  max_input_chars: 24_000,
+  artifacts: {
+    max_files: 32,
+    max_file_bytes: 65_536,
+    max_total_bytes: 262_144,
+    max_prompt_chars: 24_000,
+    max_snippet_chars: 4_000,
+  },
+});
+
 const SafetyOverridesSchema = z.object({
   allow_tools: z.array(z.string()).optional(),
   deny_tools: z.array(z.string()).optional(),
@@ -315,6 +351,7 @@ export const AgentYmlSchema = z.object({
   mcp_tools: z.array(z.string()).optional(),
   external_mcp_servers: z.record(z.string(), ExternalMcpServerSchema).optional(),
   memory_extraction: MemoryExtractionSchema,
+  learning: LearningConfigSchema,
   subagents: SubagentPolicySchema,
   cron: z.array(CronJobSchema).optional(),
   hooks: z.array(HookConfigSchema).optional(),
@@ -359,6 +396,21 @@ export const AgentYmlSchema = z.object({
     z.string(),
     z.object({ enabled: z.boolean().optional() }).passthrough(),
   ).optional(),
+}).superRefine((val, ctx) => {
+  if (val.learning.enabled && val.learning.mode === 'off') {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'learning.enabled=true requires learning.mode to be "propose" or "auto_private"',
+      path: ['learning', 'mode'],
+    });
+  }
+  if (val.learning.mode === 'auto_private' && val.safety_profile !== 'private') {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'learning.mode=auto_private is only allowed with safety_profile=private',
+      path: ['learning', 'mode'],
+    });
+  }
 });
 
 // ─── Exported types ────────────────────────────────────────────────
@@ -377,4 +429,5 @@ export type SdkPermissionPolicy = z.infer<typeof SdkPermissionPolicySchema>;
 export type SdkSandboxConfig = z.infer<typeof SdkSandboxSchema>;
 export type SdkAgentConfig = z.infer<typeof SdkAgentConfigSchema>;
 export type MemoryExtractionConfig = z.infer<typeof MemoryExtractionSchema>;
+export type LearningConfig = z.infer<typeof LearningConfigSchema>;
 export type AllowlistConfig = Record<string, string[]>;

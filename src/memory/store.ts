@@ -26,7 +26,7 @@ export interface SearchResult {
 export type MemoryReviewStatus = 'pending' | 'approved' | 'rejected';
 
 export interface MemoryProvenance {
-  source?: 'memory_write' | 'memory_wiki' | 'dreaming' | 'index' | 'import' | 'post_run_candidate' | 'local_note_proposal';
+  source?: 'memory_write' | 'memory_wiki' | 'dreaming' | 'index' | 'import' | 'post_run_candidate' | 'local_note_proposal' | 'learning_candidate';
   reviewStatus?: MemoryReviewStatus;
   runId?: string;
   traceId?: string;

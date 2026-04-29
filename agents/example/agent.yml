@@ -32,6 +32,15 @@ auto_compress:
   enabled: true
   threshold_messages: 15
 
+# ─── Learning loop rollout test ───
+# Propose-only: stores learning actions for operator review via `pnpm learning`.
+# Does not auto-apply memory or skill changes.
+learning:
+  enabled: true
+  mode: propose
+  review_interval_turns: 10
+  skill_review_min_tool_calls: 8
+
 # hooks:
 #   - event: on_after_query
 #     action: webhook

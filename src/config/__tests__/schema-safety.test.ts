@@ -48,4 +48,29 @@ describe('AgentYmlSchema safety_profile', () => {
     });
     expect(r.success).toBe(false);
   });
+
+  it('allows learning.mode=auto_private only for private agents', () => {
+    const trusted = AgentYmlSchema.safeParse({
+      ...baseAgent,
+      safety_profile: 'trusted',
+      learning: { enabled: true, mode: 'auto_private' },
+    });
+    expect(trusted.success).toBe(false);
+
+    const privateAgent = AgentYmlSchema.safeParse({
+      ...baseAgent,
+      safety_profile: 'private',
+      learning: { enabled: true, mode: 'auto_private' },
+    });
+    expect(privateAgent.success).toBe(true);
+  });
+
+  it('rejects learning.enabled=true with mode=off', () => {
+    const r = AgentYmlSchema.safeParse({
+      ...baseAgent,
+      safety_profile: 'private',
+      learning: { enabled: true, mode: 'off' },
+    });
+    expect(r.success).toBe(false);
+  });
 });

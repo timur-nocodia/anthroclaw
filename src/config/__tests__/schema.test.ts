@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { resolve } from 'node:path';
+import { loadAgentYml } from '../loader.js';
 import { GlobalConfigSchema, AgentYmlSchema } from '../schema.js';
 
 describe('plugins config schema', () => {
@@ -58,5 +60,62 @@ describe('plugins config schema', () => {
       plugins: { lcm: { enabled: 'yes' } },     // not a boolean
     });
     expect(result.success).toBe(false);
+  });
+
+  it('AgentYmlSchema defaults learning to disabled/off', () => {
+    const result = AgentYmlSchema.safeParse(minimalValidAgentYml);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.learning).toMatchObject({
+        enabled: false,
+        mode: 'off',
+        review_interval_turns: 10,
+        skill_review_min_tool_calls: 8,
+        max_actions_per_review: 8,
+        max_input_chars: 24_000,
+        artifacts: {
+          max_files: 32,
+          max_file_bytes: 65_536,
+          max_total_bytes: 262_144,
+          max_prompt_chars: 24_000,
+          max_snippet_chars: 4_000,
+        },
+      });
+    }
+  });
+
+  it('AgentYmlSchema accepts learning propose config and artifact limits', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      learning: {
+        enabled: true,
+        mode: 'propose',
+        review_interval_turns: 5,
+        skill_review_min_tool_calls: 12,
+        max_actions_per_review: 4,
+        max_input_chars: 12_000,
+        artifacts: {
+          max_files: 10,
+          max_file_bytes: 32_768,
+          max_total_bytes: 100_000,
+          max_prompt_chars: 10_000,
+          max_snippet_chars: 2_000,
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.learning.mode).toBe('propose');
+      expect(result.data.learning.artifacts.max_files).toBe(10);
+    }
+  });
+
+  it('example private agent is configured for propose-only learning rollout', () => {
+    const config = loadAgentYml(resolve(process.cwd(), 'agents', 'example'));
+    expect(config.safety_profile).toBe('private');
+    expect(config.learning).toMatchObject({
+      enabled: true,
+      mode: 'propose',
+    });
   });
 });

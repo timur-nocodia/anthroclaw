@@ -41,7 +41,7 @@ describe('plugin-framework contract', () => {
     expect(offenders, `Files using Messages API:\n${offenders.join('\n')}`).toHaveLength(0);
   });
 
-  it('runSubagent is the only place that imports @anthropic-ai/claude-agent-sdk', () => {
+  it('does not import @anthropic-ai/claude-agent-sdk directly from plugins', () => {
     const importers: string[] = [];
     for (const file of walkTsFiles(PLUGINS_RUNTIME_DIR)) {
       const src = readFileSync(file, 'utf-8');
@@ -49,11 +49,6 @@ describe('plugin-framework contract', () => {
         importers.push(file);
       }
     }
-    // Allowed: subagent-runner.ts (uses query). Types-only files allowed too if any.
-    const allowed = importers.filter(f =>
-      f.endsWith('subagent-runner.ts') || f.endsWith('types.ts')
-    );
-    const disallowed = importers.filter(f => !allowed.includes(f));
-    expect(disallowed, `Disallowed importers:\n${disallowed.join('\n')}`).toHaveLength(0);
+    expect(importers, `Direct SDK importers:\n${importers.join('\n')}`).toHaveLength(0);
   });
 });

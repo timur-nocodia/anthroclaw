@@ -1186,6 +1186,57 @@ iteration_budget:
 
 - Agents with access to many tools that could loop (file operations, web search)
 - Rate-limited external APIs (prevent wasteful retries)
+
+---
+
+## Learning Loop
+
+AnthroClaw can be configured to propose durable learning actions after completed
+runs. It is disabled by default. Proposed actions are stored for review; automatic
+private application is only valid for `safety_profile: private`.
+
+```yaml
+# agent.yml
+learning:
+  enabled: true
+  mode: propose               # off | propose | auto_private
+  review_interval_turns: 10
+  skill_review_min_tool_calls: 8
+  max_actions_per_review: 8
+  max_input_chars: 24000
+  artifacts:
+    max_files: 32
+    max_file_bytes: 65536
+    max_total_bytes: 262144
+    max_prompt_chars: 24000
+    max_snippet_chars: 4000
+```
+
+Use `mode: propose` for public and trusted agents. `mode: auto_private` is
+rejected unless the agent uses `safety_profile: private`.
+
+### Rollout Guidance
+
+The schema default is disabled:
+
+```yaml
+learning:
+  enabled: false
+  mode: off
+```
+
+Recommended rollout:
+
+1. Start with `mode: propose` on one private test agent.
+2. Review proposal quality with `pnpm learning list` and `pnpm learning show`.
+3. Apply approved actions manually with `pnpm learning apply`.
+4. Keep public and trusted agents on `propose`; they must not auto-apply skill
+   changes.
+5. Enable `auto_private` only for a private agent after proposal quality is
+   manually validated and snapshots/reverts are understood.
+
+The example private agent uses `mode: propose` as a rollout test. It does not
+auto-apply memory or skill changes.
 - Multi-agent setups where one agent shouldn't hog resources
 
 ---

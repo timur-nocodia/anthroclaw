@@ -53,6 +53,7 @@ describe('runSubagent', () => {
   });
 
   it('respects timeoutMs and aborts long-running query', async () => {
+    vi.useFakeTimers();
     const neverEnding = (async function* () {
       await new Promise((r) => setTimeout(r, 5000));
       yield { type: 'result', result: 'too late' };
@@ -62,9 +63,15 @@ describe('runSubagent', () => {
       close: vi.fn(),
     });
 
-    await expect(
-      runSubagent({ prompt: 'p', timeoutMs: 100 })
-    ).rejects.toThrow(/timeout|abort/i);
+    try {
+      const result = expect(
+        runSubagent({ prompt: 'p', timeoutMs: 100 })
+      ).rejects.toThrow(/timeout|abort/i);
+      await vi.advanceTimersByTimeAsync(100);
+      await result;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('throws on empty result', async () => {
