@@ -41,6 +41,7 @@ export const publicProfile: SafetyProfile = {
     requiresApproval: () => false,
   },
   hardBlacklist,
+  allowsPluginTools: false,
   permissionFlow: 'strict-deny',
   sandboxDefaults: { allowUnsandboxedCommands: false, enabled: true },
   rateLimitFloor: { windowMs: 3_600_000, max: 30 },

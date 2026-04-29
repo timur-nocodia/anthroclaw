@@ -39,6 +39,12 @@ export interface SafetyProfile {
     requiresApproval: (meta: ToolMeta) => boolean;
   };
   hardBlacklist: Set<string>;
+  /**
+   * If true, plugin-registered MCP tools (mcp__*-prefixed without explicit META)
+   * are auto-allowed under this profile. Set false for public to avoid leaking
+   * arbitrary plugin tools to anonymous users; trusted/private trust the host.
+   */
+  allowsPluginTools: boolean;
   permissionFlow: PermissionFlow;
   sandboxDefaults: SandboxDefaults;
   rateLimitFloor: RateLimitFloor | null;

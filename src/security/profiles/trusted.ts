@@ -29,6 +29,7 @@ export const trustedProfile: SafetyProfile = {
     requiresApproval: (meta) => meta.safe_in_trusted && meta.destructive,
   },
   hardBlacklist,
+  allowsPluginTools: true,
   permissionFlow: 'interactive',
   sandboxDefaults: { allowUnsandboxedCommands: false, enabled: true },
   rateLimitFloor: { windowMs: 3_600_000, max: 100 },

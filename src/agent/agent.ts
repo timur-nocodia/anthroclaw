@@ -113,8 +113,11 @@ export class Agent {
   readonly safetyProfile: SafetyProfile;
   mcpServer: McpSdkServerConfigWithInstance;
 
-  /** Raw tool definitions for introspection/testing */
-  readonly tools: ToolDefinition[];
+  /** Raw tool definitions for introspection/testing — built-ins + plugin tools (live, mutated by refreshPluginTools). */
+  tools: ToolDefinition[];
+
+  /** Original built-in tools registered at construction time. Plugin tools are layered on top. */
+  private readonly builtinTools: ToolDefinition[];
 
   private sessions: Map<string, string>;
   private sessionLastUsed: Map<string, number>;
@@ -141,7 +144,8 @@ export class Agent {
     this.memoryStore = memoryStore;
     this.safetyProfile = safetyProfile;
     this.mcpServer = mcpServer;
-    this.tools = tools;
+    this.builtinTools = tools;
+    this.tools = [...tools];
     this.sessions = new Map();
     this.sessionLastUsed = new Map();
     this.sessionStarted = new Map();
@@ -197,20 +201,21 @@ export class Agent {
    */
   refreshPluginTools(pluginTools: PluginMcpTool[]): void {
     const agentId = this.id;
-    const allTools: any[] = [
-      ...(this.tools as any[]),
-      ...pluginTools.map((pt) => ({
-        name: pt.name,
-        description: pt.description,
-        inputSchema: pt.inputSchema,
-        // Bind agentId at refresh time. sessionKey is left undefined here —
-        // it varies per dispatch and is reserved for future plumbing.
-        handler: (input: unknown) => pt.handler(input, { agentId }),
-      })),
-    ];
+    const wrapped: ToolDefinition[] = pluginTools.map((pt) => ({
+      name: pt.name,
+      description: pt.description,
+      inputSchema: pt.inputSchema,
+      // Bind agentId at refresh time. sessionKey is left undefined here —
+      // it varies per dispatch and is reserved for future plumbing.
+      handler: (input: unknown) => pt.handler(input, { agentId }),
+    }) as unknown as ToolDefinition);
+    // Reset plugin tools each refresh — exclude any previously-attached plugin
+    // tools so we don't accumulate stale entries across reloads. We keep the
+    // original built-in tools (passed at construction time) intact.
+    this.tools = [...this.builtinTools, ...wrapped];
     this.mcpServer = createSdkMcpServer({
       name: `${this.id}-tools`,
-      tools: allTools,
+      tools: this.tools as unknown as any[],
     });
   }
 

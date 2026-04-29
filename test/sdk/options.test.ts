@@ -120,7 +120,10 @@ describe('buildSdkOptions', () => {
     const options = buildSdkOptions({ agent });
 
     expect(options.permissionMode).toBe('dontAsk');
-    expect(options.disallowedTools).toEqual(['WebSearch']);
+    // disallowedTools merges HARNESS_BLOCKLIST (RemoteTrigger/CronCreate/etc.)
+    // with agent's sdk.disallowedTools.
+    expect(options.disallowedTools).toContain('WebSearch');
+    expect(options.disallowedTools).toContain('RemoteTrigger');
     expect(options.allowedTools).not.toContain('WebSearch');
   });
 

@@ -15,6 +15,7 @@ import { ApprovalBroker } from '../security/approval-broker.js';
 import type { ChannelAdapter } from '../channels/types.js';
 import type { SandboxDefaults } from '../security/profiles/types.js';
 import type { SdkSandboxConfig } from '../config/schema.js';
+import { HARNESS_BLOCKLIST } from '../security/harness-blocklist.js';
 
 /**
  * Merges profile sandbox defaults with agent-level overrides.
@@ -101,9 +102,13 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
     options.resume = resume;
   }
 
-  if (cfg?.disallowedTools && cfg.disallowedTools.length > 0) {
-    options.disallowedTools = cfg.disallowedTools;
-  }
+  // Always block harness primitives that conflict with our runtime
+  // (RemoteTrigger/CronCreate/TodoWrite/etc.). User can extend with
+  // sdk.disallowedTools per agent. See src/security/harness-blocklist.ts.
+  options.disallowedTools = [
+    ...HARNESS_BLOCKLIST,
+    ...(cfg?.disallowedTools ?? []),
+  ];
 
   if (trustedBypass) {
     options.permissionMode = 'bypassPermissions';

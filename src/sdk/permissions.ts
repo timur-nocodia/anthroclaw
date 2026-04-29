@@ -253,10 +253,14 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
       (overrides.allow_tools ?? []).includes(localName);
 
     // 6. Determine if profile allows the tool
+    // Plugin-registered MCP tools (mcp__*-prefixed without META) get a profile
+    // default: trusted/private auto-allow them; public requires explicit override.
+    const isPluginTool = isMcpPrefixed && meta === undefined;
     const profileAllows =
       profile.builtinTools.allowed.has(toolName) ||
       profile.builtinTools.allowed.has(localName) ||
-      (meta !== undefined && profile.mcpToolPolicy.allowedByMeta(meta));
+      (meta !== undefined && profile.mcpToolPolicy.allowedByMeta(meta)) ||
+      (isPluginTool && profile.allowsPluginTools);
 
     if (!profileAllows && !overrideAllow) {
       return deny(`Tool "${toolName}" is not allowed by safety_profile=${profile.name}`);

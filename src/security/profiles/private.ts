@@ -19,6 +19,7 @@ export const privateProfile: SafetyProfile = {
     requiresApproval: (meta) => meta.destructive,
   },
   hardBlacklist: new Set(),
+  allowsPluginTools: true,
   permissionFlow: 'interactive',
   sandboxDefaults: { allowUnsandboxedCommands: false, enabled: true },
   rateLimitFloor: null,
