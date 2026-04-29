@@ -366,3 +366,4 @@ export type SdkPermissionPolicy = z.infer<typeof SdkPermissionPolicySchema>;
 export type SdkSandboxConfig = z.infer<typeof SdkSandboxSchema>;
 export type SdkAgentConfig = z.infer<typeof SdkAgentConfigSchema>;
 export type MemoryExtractionConfig = z.infer<typeof MemoryExtractionSchema>;
+export type AllowlistConfig = Record<string, string[]>;
