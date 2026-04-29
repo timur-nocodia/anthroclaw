@@ -225,6 +225,18 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
       return allow(input);
     }
 
+    // 1.5. Chat profile short-circuit — allow everything except explicit deny_tools
+    if (profile.name === 'chat_like_openclaw') {
+      const denyList = overrides.deny_tools ?? [];
+      const localName = toolName.startsWith('mcp__')
+        ? (toolName.split('__').at(-1) ?? toolName)
+        : toolName;
+      if (denyList.includes(toolName) || denyList.includes(localName)) {
+        return deny(`Tool "${toolName}" is denied by safety_overrides.deny_tools`);
+      }
+      return allow(input);
+    }
+
     // 2. Resolve meta: for prefixed MCP tools (mcp__server__tool), look up by local name
     const isMcpPrefixed = toolName.startsWith('mcp__');
     const localName = isMcpPrefixed ? (toolName.split('__').at(-1) ?? toolName) : toolName;
