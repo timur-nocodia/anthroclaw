@@ -23,6 +23,20 @@ services:
       # Bind to loopback only — put nginx/caddy in front for TLS + auth.
       - "127.0.0.1:${UI_PORT:-3000}:3000"
     init: true
+    # Sandbox support for the Claude Agent SDK (bubblewrap):
+    # - user 0 + CAP_SYS_ADMIN: bwrap needs to create user namespaces and set up
+    #   uid maps. Docker default (UID 1000, no SYS_ADMIN) blocks both — sandbox
+    #   tool execution then fails silently and the model returns no text.
+    # - seccomp/apparmor unconfined: Docker default seccomp blocks unshare()
+    #   with CLONE_NEWUSER even for root.
+    # Container isolation itself remains the security boundary; bwrap is an
+    # additional layer for tool calls within the SDK.
+    user: "0:0"
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
     working_dir: /app/ui
     # Next.js hosts the UI AND embeds the Gateway runtime (Telegram polling,
     # MCP tools, sessions, cron). One process, one Telegram polling owner,
