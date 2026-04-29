@@ -7,7 +7,7 @@ import { BUILTIN_META } from '../src/security/builtin-tool-meta.js';
 import { MCP_META } from '../src/security/mcp-meta-registry.js';
 
 export interface InferResult {
-  profile: 'public' | 'trusted' | 'private' | null;
+  profile: 'public' | 'trusted' | 'private' | 'chat_like_openclaw' | null;
   reason: string;
   toolConflicts: string[];
   hardBlacklistConflicts: string[];
@@ -18,8 +18,9 @@ export function inferProfile(cfg: Partial<AgentYml> & Record<string, unknown>): 
   const allowlist = cfg.allowlist ?? {};
   const pairing = cfg.pairing ?? {};
   const tools: string[] = cfg.mcp_tools ?? [];
+  const overrides = (cfg.safety_overrides ?? {}) as { permission_mode?: string };
 
-  let profile: 'public' | 'trusted' | 'private' | null = null;
+  let profile: 'public' | 'trusted' | 'private' | 'chat_like_openclaw' | null = null;
   let reason = '';
 
   const allLists = [allowlist.telegram, allowlist.whatsapp].filter((l): l is string[] => Array.isArray(l));
@@ -27,45 +28,55 @@ export function inferProfile(cfg: Partial<AgentYml> & Record<string, unknown>): 
   const totalSpecific = peerCounts.reduce((s, n) => s + n, 0);
   const hasWildcard = allLists.some((l) => l.includes('*'));
 
-  // Rule 1: exactly 1 peer per channel that has a list
-  const channelsWithSpecific = peerCounts.filter((n) => n > 0);
-  if (totalSpecific > 0 && channelsWithSpecific.every((n) => n === 1) && !hasWildcard) {
-    profile = 'private';
-    reason = 'allowlist has exactly 1 peer per channel';
-  } else if (pairing.mode === 'open' || hasWildcard) {
-    profile = 'public';
-    reason = pairing.mode === 'open' ? 'pairing.mode=open' : 'allowlist contains "*"';
-  } else if ((pairing.mode === 'approve' || pairing.mode === 'code') && totalSpecific > 0) {
-    profile = 'trusted';
-    reason = `pairing.mode=${pairing.mode} with specific peer_ids`;
-  } else if (pairing.mode === 'off' && totalSpecific === 0) {
-    return {
-      profile: null,
-      reason: '',
-      toolConflicts: [],
-      hardBlacklistConflicts: [],
-      error: 'agent denies everyone (pairing.mode=off, no allowlist) — pick safety_profile manually',
-    };
-  } else {
-    profile = 'trusted';
-    reason = 'fallback (could not classify confidently)';
+  // Rule 0a: explicit bypass → chat (most permissive, clearly personal)
+  if (overrides.permission_mode === 'bypass') {
+    profile = 'chat_like_openclaw';
+    reason = 'safety_overrides.permission_mode=bypass';
+  }
+  // Rule 0b: wildcard with no pairing.open → chat (permissive default for unconstrained inbound)
+  else if (hasWildcard && pairing.mode !== 'open') {
+    profile = 'chat_like_openclaw';
+    reason = 'allowlist contains wildcard "*"';
+  }
+  // Rule 1: exactly 1 peer per channel → private
+  else {
+    const channelsWithSpecific = peerCounts.filter((n) => n > 0);
+    if (totalSpecific > 0 && channelsWithSpecific.every((n) => n === 1) && !hasWildcard) {
+      profile = 'private';
+      reason = 'allowlist has exactly 1 peer per channel';
+    } else if (pairing.mode === 'open' || hasWildcard) {
+      profile = 'public';
+      reason = pairing.mode === 'open' ? 'pairing.mode=open' : 'allowlist contains "*"';
+    } else if ((pairing.mode === 'approve' || pairing.mode === 'code') && totalSpecific > 0) {
+      profile = 'trusted';
+      reason = `pairing.mode=${pairing.mode} with specific peer_ids`;
+    } else if (pairing.mode === 'off' && totalSpecific === 0) {
+      // Empty config — fall back to chat as the project-wide default
+      profile = 'chat_like_openclaw';
+      reason = 'minimal config (no allowlist, no pairing) — default for new agents';
+    } else {
+      profile = 'chat_like_openclaw';
+      reason = 'fallback (could not classify confidently — chat is safest permissive default)';
+    }
   }
 
-  // Tool compatibility check
-  const target = getProfile(profile);
+  // Tool compatibility check (only for non-chat profiles — chat allows everything)
   const toolConflicts: string[] = [];
   const hardBlacklistConflicts: string[] = [];
 
-  for (const t of tools) {
-    const meta = MCP_META[t] ?? BUILTIN_META[t];
-    if (!meta) continue;
-    if (meta.hard_blacklist_in.includes(profile)) {
-      hardBlacklistConflicts.push(t);
-      continue;
+  if (profile !== 'chat_like_openclaw') {
+    const target = getProfile(profile);
+    for (const t of tools) {
+      const meta = MCP_META[t] ?? BUILTIN_META[t];
+      if (!meta) continue;
+      if (meta.hard_blacklist_in.includes(profile)) {
+        hardBlacklistConflicts.push(t);
+        continue;
+      }
+      const allowedNatively =
+        target.builtinTools.allowed.has(t) || target.mcpToolPolicy.allowedByMeta(meta);
+      if (!allowedNatively) toolConflicts.push(t);
     }
-    const allowedNatively =
-      target.builtinTools.allowed.has(t) || target.mcpToolPolicy.allowedByMeta(meta);
-    if (!allowedNatively) toolConflicts.push(t);
   }
 
   return { profile, reason, toolConflicts, hardBlacklistConflicts };

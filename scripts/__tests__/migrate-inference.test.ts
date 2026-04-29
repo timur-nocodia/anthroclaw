@@ -12,9 +12,9 @@ describe('inferProfile', () => {
     expect(inferProfile(cfg).profile).toBe('public');
   });
 
-  it('allowlist [*] → public', () => {
+  it('allowlist [*] → chat_like_openclaw (wildcard without pairing.open)', () => {
     const cfg = { allowlist: { telegram: ['*'] }, pairing: { mode: 'off' } } as any;
-    expect(inferProfile(cfg).profile).toBe('public');
+    expect(inferProfile(cfg).profile).toBe('chat_like_openclaw');
   });
 
   it('pairing.mode=approve with peers → trusted', () => {
@@ -22,11 +22,11 @@ describe('inferProfile', () => {
     expect(inferProfile(cfg).profile).toBe('trusted');
   });
 
-  it('pairing.mode=off without allowlist → fails', () => {
+  it('pairing.mode=off without allowlist → chat_like_openclaw (minimal config default)', () => {
     const cfg = { pairing: { mode: 'off' } } as any;
     const r = inferProfile(cfg);
-    expect(r.profile).toBeNull();
-    expect(r.error).toMatch(/denies everyone/i);
+    expect(r.profile).toBe('chat_like_openclaw');
+    expect(r.error).toBeUndefined();
   });
 
   it('flags incompatible tools (manage_cron in inferred public) for review', () => {
