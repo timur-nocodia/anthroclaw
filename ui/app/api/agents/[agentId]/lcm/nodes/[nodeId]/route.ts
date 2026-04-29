@@ -24,6 +24,12 @@ type DagNodeDetail = {
   token_count: number;
   source_token_count: number;
   source_type: 'messages' | 'nodes';
+  /**
+   * For `source_type: 'messages'`: array of raw message store_ids.
+   * For `source_type: 'nodes'`: ALWAYS EMPTY — child node IDs are surfaced
+   * via the `children` array (with full node info) instead. Use `children`
+   * for both shapes to traverse the DAG uniformly.
+   */
   source_ids: number[];
   earliest_at: number;
   latest_at: number;
@@ -35,8 +41,12 @@ type DagNodeDetail = {
 };
 
 function previewSummary(s: string): string {
-  if (s.length <= CHILD_PREVIEW_CHARS) return s;
-  return s.slice(0, CHILD_PREVIEW_CHARS);
+  // Use Array.from to slice on code points, not UTF-16 code units.
+  // Avoids splitting astral-plane characters (emoji, CJK extension) at the
+  // boundary into a lone surrogate.
+  const codePoints = Array.from(s);
+  if (codePoints.length <= CHILD_PREVIEW_CHARS) return s;
+  return codePoints.slice(0, CHILD_PREVIEW_CHARS).join('') + '…';
 }
 
 export async function GET(

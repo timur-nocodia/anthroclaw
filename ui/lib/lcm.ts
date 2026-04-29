@@ -32,14 +32,13 @@ export function lcmDbPath(agentId: string): string {
 }
 
 /**
- * Open the LCM database for `agentId` in read-only mode and return the
- * `MessageStore` + `SummaryDAG` accessors.
+ * Open the agent's LCM SQLite database in read-only mode.
  *
- * Returns `null` if the SQLite file doesn't exist (fresh agent / LCM never
- * ingested anything). Throws on schema-level corruption — callers that want
- * a graceful empty-state response should fall back to that on errors caught
- * here. The route layer for Task B1 catches schema errors and returns the
- * empty-state shape, so the schema absence case stays a 200.
+ * Returns:
+ * - `null` if the file doesn't exist (agent has never run with LCM)
+ * - `null` if the file exists but the schema is missing/corrupt (caller
+ *   should treat this as "no LCM data" — never throws on this path)
+ * - `{ db, store, dag }` on success
  *
  * IMPORTANT: caller MUST close `db` after use (`db.close()`) — every request
  * opens a fresh handle to avoid lock contention with the running gateway.
@@ -47,11 +46,19 @@ export function lcmDbPath(agentId: string): string {
 export function openLcmReadOnly(agentId: string): LcmHandle | null {
   const dbPath = lcmDbPath(agentId);
   if (!existsSync(dbPath)) return null;
-  const db = new Database(dbPath, { readonly: true });
-  // Both constructors prepare statements eagerly; if the schema doesn't
-  // exist the prepare() throws synchronously and we propagate. Routes
-  // handle the empty-state fallback explicitly.
-  const store = new MessageStore(db);
-  const dag = new SummaryDAG(db);
-  return { db, store, dag };
+
+  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  try {
+    // Both constructors prepare statements eagerly; if the schema doesn't
+    // exist the prepare() throws synchronously.
+    const store = new MessageStore(db);
+    const dag = new SummaryDAG(db);
+    return { db, store, dag };
+  } catch {
+    // Schema not bootstrapped, missing tables, or other construction error.
+    // Close the handle to avoid leaking the file descriptor, then surface as
+    // "no LCM data" so callers can render an empty state instead of 500.
+    try { db.close(); } catch { /* ignore double-close */ }
+    return null;
+  }
 }

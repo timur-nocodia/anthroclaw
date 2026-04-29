@@ -273,6 +273,82 @@ describe('GET /api/agents/[agentId]/lcm/dag', () => {
     expect(json.nodes[0].summary.startsWith('xxx')).toBe(true);
   });
 
+  it('returns empty state when LCM file exists but schema was never bootstrapped', async () => {
+    writeAgent('alpha');
+    // Create the SQLite file but DO NOT call bootstrap() — drop in some
+    // unrelated schema so the file is a valid SQLite DB but missing the
+    // dag/store tables.
+    const dbPath = join(lcmDbDir, 'alpha.sqlite');
+    const db = new Database(dbPath);
+    db.exec('CREATE TABLE foo (x INTEGER)');
+    db.close();
+
+    const { GET } = await import('@/app/api/agents/[agentId]/lcm/dag/route');
+    const res = await GET(
+      getReq('http://localhost:3000/api/agents/alpha/lcm/dag'),
+      { params: Promise.resolve({ agentId: 'alpha' }) },
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.nodes).toEqual([]);
+    expect(json.totalNodes).toBe(0);
+    expect(json.totalSessions).toBe(0);
+    expect(json.countsByDepth).toEqual({});
+  });
+
+  it('does not leak DB handles when schema is missing', async () => {
+    writeAgent('alpha');
+    const dbPath = join(lcmDbDir, 'alpha.sqlite');
+    const db = new Database(dbPath);
+    // Empty DB file: no tables at all → MessageStore/SummaryDAG construction
+    // throws when preparing statements.
+    db.close();
+
+    const closeSpy = vi.spyOn(Database.prototype, 'close');
+    closeSpy.mockClear();
+
+    const { GET } = await import('@/app/api/agents/[agentId]/lcm/dag/route');
+    const res = await GET(
+      getReq('http://localhost:3000/api/agents/alpha/lcm/dag'),
+      { params: Promise.resolve({ agentId: 'alpha' }) },
+    );
+    expect(res.status).toBe(200);
+    // The empty-state path closes the DB exactly once (in openLcmReadOnly's
+    // catch). If the leak comes back, this assertion will catch it.
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    closeSpy.mockRestore();
+  });
+
+  it('truncates summary at code-point boundary (emoji-safe)', async () => {
+    writeAgent('alpha');
+    // Place an emoji (astral-plane code point, 2 UTF-16 code units) at
+    // boundary index 199. A naive `s.slice(0, 200)` would split it into a
+    // lone surrogate; `Array.from(s).slice(0, 200)` keeps it whole.
+    const longSummary = 'a'.repeat(199) + '\u{1F4A1}' + 'b'.repeat(50);
+    await seedLcmDb('alpha', ({ dag }) => {
+      dag.create({
+        session_id: 's1', depth: 0, summary: longSummary, token_count: 1, source_token_count: 1,
+        source_ids: [1], source_type: 'messages', earliest_at: 1, latest_at: 1,
+      });
+    });
+
+    const { GET } = await import('@/app/api/agents/[agentId]/lcm/dag/route');
+    const res = await GET(
+      getReq('http://localhost:3000/api/agents/alpha/lcm/dag'),
+      { params: Promise.resolve({ agentId: 'alpha' }) },
+    );
+    const json = await res.json();
+    const summary: string = json.nodes[0].summary;
+    // No lone surrogate (codepoint 0xD800-0xDFFF) anywhere in the output.
+    for (const ch of Array.from(summary)) {
+      const code = ch.codePointAt(0)!;
+      expect(
+        code < 0xD800 || code > 0xDFFF,
+        `lone surrogate at codepoint 0x${code.toString(16)} in: ${JSON.stringify(summary)}`,
+      ).toBe(true);
+    }
+  });
+
   it('closes DB handle after the request', async () => {
     writeAgent('alpha');
     await seedLcmDb('alpha', ({ dag }) => {

@@ -52,8 +52,12 @@ function emptyResponse(agentId: string, session: string | null, depth: number | 
 }
 
 function previewSummary(s: string): string {
-  if (s.length <= SUMMARY_PREVIEW_CHARS) return s;
-  return s.slice(0, SUMMARY_PREVIEW_CHARS);
+  // Use Array.from to slice on code points, not UTF-16 code units.
+  // Avoids splitting astral-plane characters (emoji, CJK extension) at the
+  // boundary into a lone surrogate.
+  const codePoints = Array.from(s);
+  if (codePoints.length <= SUMMARY_PREVIEW_CHARS) return s;
+  return codePoints.slice(0, SUMMARY_PREVIEW_CHARS).join('') + '…';
 }
 
 function parseDepth(raw: string | null): number | null {
