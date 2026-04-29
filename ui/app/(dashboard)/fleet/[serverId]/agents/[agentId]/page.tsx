@@ -54,6 +54,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { PluginsPanel } from "@/components/plugins/PluginsPanel";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -706,6 +707,13 @@ export default function AgentEditorPage() {
             <Sparkles className="mr-1.5 h-3.5 w-3.5" />
             Skills
           </TabsTrigger>
+          <TabsTrigger
+            value="plugins"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <Plug className="mr-1.5 h-3.5 w-3.5" />
+            Plugins
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="config" className="mt-0 flex-1 overflow-auto">
@@ -722,6 +730,9 @@ export default function AgentEditorPage() {
         </TabsContent>
         <TabsContent value="skills" className="mt-0 flex-1 overflow-auto">
           <SkillsTab serverId={serverId} agentId={agentId} />
+        </TabsContent>
+        <TabsContent value="plugins" className="mt-0 flex-1 overflow-auto">
+          <PluginsPanel agentId={agentId} />
         </TabsContent>
       </Tabs>
     </div>
