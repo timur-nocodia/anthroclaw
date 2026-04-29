@@ -26,7 +26,7 @@ export interface BuildSdkOptionsParams {
   fileOwnership?: FileOwnershipPermissionHooks;
   onElicitation?: OnElicitation;
   modelOverride?: string;
-  /** Wired in T16. When provided, enables profile-aware canUseTool with interactive approval. */
+  /** Required for profile-aware canUseTool with interactive approval. */
   approvalBroker?: ApprovalBroker;
   channel?: ChannelAdapter;
   sessionContext?: { peerId: string; accountId?: string; threadId?: string };
@@ -36,6 +36,17 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
   const { agent, resume, subagents, trustedBypass = false, includeMcpServer = true, modelOverride } = params;
   const cfg = agent.config.sdk;
   const hasSubagents = Boolean(subagents && Object.keys(subagents).length > 0);
+  const profile = agent.safetyProfile;
+
+  const systemPrompt: Options['systemPrompt'] =
+    profile.systemPrompt.mode === 'string'
+      ? { type: 'string', text: profile.systemPrompt.text }
+      : {
+          type: 'preset',
+          preset: profile.systemPrompt.preset,
+          excludeDynamicSections: profile.systemPrompt.excludeDynamicSections,
+        };
+
   const options: Options = {
     model: modelOverride ?? agent.config.model ?? 'claude-sonnet-4-6',
     cwd: agent.workspacePath,
@@ -50,12 +61,8 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
     includeHookEvents: cfg?.includeHookEvents,
     enableFileCheckpointing: cfg?.enableFileCheckpointing,
     sandbox: normalizeSandboxSettings(cfg?.sandbox),
-    settingSources: ['project'],
-    systemPrompt: {
-      type: 'preset',
-      preset: 'claude_code',
-      excludeDynamicSections: true,
-    },
+    settingSources: profile.settingSources,
+    systemPrompt,
     sessionStore: params.sessionStore,
     loadTimeoutMs: params.loadTimeoutMs,
     onElicitation: params.onElicitation,

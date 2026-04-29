@@ -1034,6 +1034,8 @@ export class Gateway {
     resume?: string,
     onElicitation?: (request: ElicitationRequest) => void,
     sessionKey?: string,
+    msg?: InboundMessage,
+    channel?: ChannelAdapter,
   ) {
     return buildSdkOptions({
       agent,
@@ -1072,6 +1074,11 @@ export class Gateway {
             return { action: 'cancel' } as ElicitationResult;
           }
         : undefined,
+      approvalBroker: this.approvalBroker,
+      channel,
+      sessionContext: msg
+        ? { peerId: msg.peerId, accountId: msg.accountId, threadId: msg.threadId }
+        : { peerId: '__headless__' },
       ...this.sdkSessionService?.getQueryOptions(),
     });
   }
@@ -2169,7 +2176,14 @@ export class Gateway {
     };
 
     try {
-      const options = this.buildUserQueryOptions(agent, existingSessionId, callbacks.onElicitation, sessionKey);
+      const options = this.buildUserQueryOptions(
+        agent,
+        existingSessionId,
+        callbacks.onElicitation,
+        sessionKey,
+        undefined,
+        undefined,
+      );
       runId = randomUUID();
       metrics.recordAgentRunStart({
         runId,
@@ -3277,7 +3291,14 @@ export class Gateway {
     const abort = new AbortController();
 
     try {
-      const options = this.buildUserQueryOptions(agent, existingSessionId, undefined, sessionKey);
+      const options = this.buildUserQueryOptions(
+        agent,
+        existingSessionId,
+        undefined,
+        sessionKey,
+        msg,
+        this.channels.get(msg.channel),
+      );
       runId = randomUUID();
       metrics.recordAgentRunStart({
         runId,
