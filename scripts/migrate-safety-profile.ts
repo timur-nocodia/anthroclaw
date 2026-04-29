@@ -84,7 +84,7 @@ export function inferProfile(cfg: Partial<AgentYml> & Record<string, unknown>): 
 
 export interface MigrationResult {
   agentId: string;
-  profile: 'public' | 'trusted' | 'private' | null;
+  profile: 'public' | 'trusted' | 'private' | 'chat_like_openclaw' | null;
   reason: string;
   toolConflicts: string[];
   hardBlacklistConflicts: string[];

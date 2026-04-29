@@ -31,7 +31,7 @@ side projects. Anyone who can DM the bot has full trust.
 **Don't use when:** the bot accepts inbound DMs from strangers
 (public WhatsApp/Telegram). Use `public` for that case.
 
-## Three profiles
+## Other profiles
 
 ### `public`
 For bots that anyone can DM (open WhatsApp, public Telegram). Anonymous-user threat model.
