@@ -993,6 +993,61 @@ export class Gateway {
   }
 
   /**
+   * Refresh an agent's MCP tools to match the current plugin registry state.
+   * Used by the UI plugin toggle endpoint for snappy feedback — without this,
+   * the running agent keeps its old tool set until the agents-dir watcher
+   * fires (~500ms debounce) and the full reload path calls refreshPluginTools.
+   *
+   * Safe to call when no agent with the given id exists — silently no-ops.
+   */
+  refreshAgentPluginTools(agentId: string): void {
+    const agent = this.agents.get(agentId);
+    if (!agent) return;
+    agent.refreshPluginTools(this.pluginRegistry.getMcpToolsForAgent(agentId));
+  }
+
+  /**
+   * Returns the plugins directory resolved at gateway.start() — either the
+   * `pluginsDir` argument or the `<dataDir>/../plugins` convention default.
+   * Returns null if the gateway hasn't been started yet.
+   *
+   * Used by the UI route handlers (config-schema, per-agent config validation)
+   * to load a plugin's compiled config-schema module from the same directory
+   * the live gateway uses, rather than re-deriving the convention path from
+   * process.cwd() (which may differ between gateway and UI workspaces).
+   */
+  getResolvedPluginsDir(): string | null {
+    return this.resolvedPluginsDir;
+  }
+
+  /**
+   * Notify all loaded plugins that a specific agent's plugin config has
+   * changed (e.g. UI PUT /agents/:id/plugins/:name/config or enable toggle).
+   *
+   * Plugins implementing the optional `onAgentConfigChanged` lifecycle hook
+   * should invalidate any per-agent caches (configs, DB handles, runtime
+   * objects) so the next tool/hook invocation re-reads from agent.yml via
+   * `ctx.getAgentConfig(agentId)`.
+   *
+   * Errors are caught + logged per-plugin so a single misbehaving plugin
+   * cannot break notification for the others. Never rethrows.
+   */
+  async notifyAgentConfigChanged(agentId: string): Promise<void> {
+    for (const entry of this.pluginRegistry.listPlugins()) {
+      const onChange = entry.instance.onAgentConfigChanged;
+      if (typeof onChange !== 'function') continue;
+      try {
+        await onChange.call(entry.instance, agentId);
+      } catch (err) {
+        logger.warn(
+          { err: redactSecrets(String(err)), pluginName: entry.manifest.name, agentId },
+          'plugin onAgentConfigChanged threw',
+        );
+      }
+    }
+  }
+
+  /**
    * Creates a PluginContext and registers a discovered plugin in pluginRegistry.
    * Extracted to avoid duplicating context-construction logic between initial
    * discovery and hot-reload onAdd.

@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { StatusIndicator } from "@/components/status-indicator";
+import { ContextPressureChip } from "@/components/lcm/ContextPressureChip";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -249,6 +250,7 @@ export default function AgentsListPage() {
                     >
                       {a.id}
                     </span>
+                    <ContextPressureChip agentId={a.id} />
                   </div>
                   {a.description && (
                     <span

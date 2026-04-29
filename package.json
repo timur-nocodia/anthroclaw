@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "whatsapp:pair": "tsx src/cli/whatsapp-pair.ts",
-    "build": "tsc",
+    "build": "tsc && pnpm --filter \"@anthroclaw/plugin-*\" build",
     "test": "vitest run",
     "test:watch": "vitest",
     "release:check": "node scripts/release.mjs --check",

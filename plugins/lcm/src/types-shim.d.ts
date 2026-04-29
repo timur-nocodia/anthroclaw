@@ -71,6 +71,13 @@ export interface PluginContext {
 
 export interface PluginInstance {
   shutdown?(): Promise<void> | void;
+  /**
+   * Optional: called when this agent's plugin config changes (UI edit, etc).
+   * Plugins caching per-agent state should drop the cache for `agentId` so
+   * the next tool/hook invocation re-reads from ctx.getAgentConfig(agentId).
+   * Errors are caught + logged by the gateway.
+   */
+  onAgentConfigChanged?(agentId: string): void | Promise<void>;
 }
 
 // ── ContextEngine surface (LCM implements this interface) ──────────────────

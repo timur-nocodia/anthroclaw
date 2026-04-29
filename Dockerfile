@@ -19,6 +19,12 @@ RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY ui/package.json ./ui/
+# Plugin workspace package.jsons are needed before `pnpm install` so the
+# workspace resolver registers them — without this, `pnpm --filter
+# "@anthroclaw/plugin-*" build` matches nothing and the UI's runtime imports
+# of `plugins/lcm/dist/*` 404 at next build time.
+COPY plugins/lcm/package.json ./plugins/lcm/
+COPY plugins/__example/package.json ./plugins/__example/
 
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
@@ -33,6 +39,7 @@ RUN rm -rf /app/node_modules/.pnpm/@anthropic-ai+claude-agent-sdk-linux-*-musl@*
 COPY tsconfig.json ./
 COPY src ./src
 COPY ui ./ui
+COPY plugins ./plugins
 
 # Local dev uses ui/.env.local symlinked to ../.env. The image doesn't
 # bake secrets, but Next.js expects the file to exist during build.
@@ -74,6 +81,9 @@ COPY --from=build --chown=node:node /app/ui/.next ./ui/.next
 COPY --from=build --chown=node:node /app/ui/public ./ui/public
 COPY --from=build --chown=node:node /app/ui/next.config.ts ./ui/next.config.ts
 COPY --from=build --chown=node:node /app/ui/tsconfig.json ./ui/tsconfig.json
+# Plugin runtime artifacts: package.json, manifest, dist (compiled JS), skills,
+# and per-plugin node_modules (workspace symlinks live here).
+COPY --from=build --chown=node:node /app/plugins ./plugins
 
 # Persistent state mount points (overridden by compose volumes).
 # Only chown the directories we just created — the COPY --from=build above

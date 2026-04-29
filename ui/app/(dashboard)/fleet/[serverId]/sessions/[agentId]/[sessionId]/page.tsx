@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MessageBubble, type ChatMessage } from "@/components/chat-message";
+import { DagPanel } from "@/components/lcm/DagPanel";
 import { storedEntriesToChatMessages, type StoredSessionEntry } from "@/lib/normalize-session";
 import { cn } from "@/lib/utils";
 
@@ -575,26 +576,31 @@ export default function SessionDetailPage() {
         )}
       </div>
 
-      {/* Transcript */}
-      <div className="flex flex-1 justify-center overflow-auto">
-        <div className="w-full max-w-[720px] px-5 py-4">
-          {loading && messages.length === 0 && <TranscriptSkeleton />}
-          {error && (
-            <div className="text-[12px]" style={{ color: "#f87171" }}>
-              {error}
+      {/* Transcript + DAG side-by-side. DagPanel hides itself when there's
+          no LCM data, so the transcript stays full-width as it was before
+          this commit. */}
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 justify-center overflow-auto">
+          <div className="w-full max-w-[720px] px-5 py-4">
+            {loading && messages.length === 0 && <TranscriptSkeleton />}
+            {error && (
+              <div className="text-[12px]" style={{ color: "#f87171" }}>
+                {error}
+              </div>
+            )}
+            {!loading && !error && messages.length === 0 && (
+              <div className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
+                No messages in this session.
+              </div>
+            )}
+            <div className={cn("flex flex-col gap-3", loading && "opacity-60")}>
+              {messages.map((m) => (
+                <MessageBubble key={m.id} m={m} toolCallDefaultOpen={false} />
+              ))}
             </div>
-          )}
-          {!loading && !error && messages.length === 0 && (
-            <div className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-              No messages in this session.
-            </div>
-          )}
-          <div className={cn("flex flex-col gap-3", loading && "opacity-60")}>
-            {messages.map((m) => (
-              <MessageBubble key={m.id} m={m} toolCallDefaultOpen={false} />
-            ))}
           </div>
         </div>
+        <DagPanel agentId={agentId} sessionId={sessionId} />
       </div>
     </div>
   );
