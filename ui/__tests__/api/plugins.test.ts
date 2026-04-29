@@ -66,6 +66,7 @@ function makeFakeGateway(plugins: FakePluginEntry[]) {
     enableForAgentSpy: vi.fn(),
     disableForAgentSpy: vi.fn(),
     refreshAgentPluginTools: vi.fn(),
+    notifyAgentConfigChanged: vi.fn().mockResolvedValue(undefined),
     pluginRegistry: {
       listPlugins: vi.fn(() =>
         plugins.map((p) => ({ manifest: p.manifest, instance: p.instance })),
@@ -248,6 +249,8 @@ describe('PUT /api/agents/[agentId]/plugins/[name]', () => {
     expect(fakeGw.pluginRegistry.disableForAgent).not.toHaveBeenCalled();
     // Verify agent MCP server was refreshed immediately (no watcher debounce)
     expect(fakeGw.refreshAgentPluginTools).toHaveBeenCalledWith('alpha');
+    // Verify plugins caching per-agent state were notified to invalidate.
+    expect(fakeGw.notifyAgentConfigChanged).toHaveBeenCalledWith('alpha');
   });
 
   it('preserves YAML comments and blank lines on toggle', async () => {
@@ -324,6 +327,9 @@ describe('PUT /api/agents/[agentId]/plugins/[name]', () => {
 
     expect(fakeGw.pluginRegistry.disableForAgent).toHaveBeenCalledWith('alpha', 'lcm');
     expect(fakeGw.refreshAgentPluginTools).toHaveBeenCalledWith('alpha');
+    // Disable also flips per-agent runtime state (LCM tears down its DB
+    // handle when disabled), so plugins must be notified on disable too.
+    expect(fakeGw.notifyAgentConfigChanged).toHaveBeenCalledWith('alpha');
   });
 
   it('returns 400 on missing/invalid body', async () => {

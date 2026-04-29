@@ -179,4 +179,16 @@ export interface PluginEntryModule {
 export interface PluginInstance {
   /** Освобождает ресурсы при unload (закрывает SQLite, etc). */
   shutdown?(): Promise<void> | void;
+
+  /**
+   * Optional: invoked when a specific agent's plugin config or enable state
+   * changes (UI edit, hot-reload, etc). Plugins that cache per-agent state
+   * (configs, DB handles, runtime objects) should invalidate their cache for
+   * the given agentId so the next tool/hook invocation rebuilds with fresh
+   * config from `ctx.getAgentConfig(agentId)`.
+   *
+   * Called AFTER the new config is persisted in agent.yml. May run async.
+   * Errors are caught + logged by the gateway; never rethrown.
+   */
+  onAgentConfigChanged?(agentId: string): void | Promise<void>;
 }

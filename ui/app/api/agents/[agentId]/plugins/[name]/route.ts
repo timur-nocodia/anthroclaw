@@ -36,6 +36,10 @@ export async function PUT(
     // Refresh the agent's MCP server immediately — otherwise the running
     // agent keeps the old tool set until the watcher debounce expires.
     gw.refreshAgentPluginTools(agentId);
+    // Toggling enable also changes per-agent runtime state for plugins that
+    // cache it (e.g. LCM tears down its DB handle when disabled). Notify so
+    // those caches invalidate before the next dispatch.
+    await gw.notifyAgentConfigChanged(agentId);
 
     return NextResponse.json({ ok: true, enabled });
   });

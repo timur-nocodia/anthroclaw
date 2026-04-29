@@ -90,6 +90,11 @@ export async function PUT(
     // Mirror A1's eager refresh — the running agent picks up the new config
     // on its next dispatch without waiting on the watcher debounce.
     gw.refreshAgentPluginTools(agentId);
+    // Plugins that cache per-agent state (e.g. LCM holds an LCMEngine + DB
+    // handle keyed by agentId) need an explicit invalidation hook —
+    // refreshAgentPluginTools only rebuilds the MCP tool list, not the
+    // plugin instance's internal Maps.
+    await gw.notifyAgentConfigChanged(agentId);
 
     return NextResponse.json({ ok: true });
   });

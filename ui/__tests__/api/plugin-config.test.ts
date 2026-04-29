@@ -111,6 +111,7 @@ function makeFakeGateway(plugins: FakePluginEntry[], resolvedPluginsDir?: string
   const enabled = new Map<string, Set<string>>();
   return {
     refreshAgentPluginTools: vi.fn(),
+    notifyAgentConfigChanged: vi.fn().mockResolvedValue(undefined),
     resolvedPluginsDir: resolvedPluginsDir ?? pluginsDir,
     getResolvedPluginsDir: vi.fn(() => resolvedPluginsDir ?? pluginsDir),
     pluginRegistry: {
@@ -530,5 +531,42 @@ describe('PUT /api/agents/[agentId]/plugins/[name]/config', () => {
       { params: Promise.resolve({ agentId: 'alpha', name: 'lcm' }) },
     );
     expect(fakeGw.refreshAgentPluginTools).toHaveBeenCalledWith('alpha');
+    // Plugins that cache per-agent state (like LCM) need to invalidate after
+    // a config change — the route must notify them in addition to refreshing
+    // tools.
+    expect(fakeGw.notifyAgentConfigChanged).toHaveBeenCalledWith('alpha');
+  });
+
+  it('preserves existing enabled when PUT config omits the enabled field', async () => {
+    // Pre-state: agent.yml has plugins.lcm = { enabled: true, triggers.threshold: 1000 }
+    writeAgentYml('alpha', {
+      model: 'claude-sonnet-4-6',
+      routes: [{ channel: 'telegram', scope: 'dm' }],
+      plugins: { lcm: { enabled: true, triggers: { threshold: 1000 } } },
+    });
+    writePluginSchemaModule('lcm', 'default', SAMPLE_SCHEMA_SOURCE);
+
+    const fakeGw = makeFakeGateway([
+      { manifest: { name: 'lcm', version: '0.1.0', configSchema: 'dist/config.js' } },
+    ]);
+    vi.doMock('@/lib/gateway', () => ({
+      getGateway: vi.fn().mockResolvedValue(fakeGw),
+    }));
+
+    const { PUT } = await import('@/app/api/agents/[agentId]/plugins/[name]/config/route');
+    // PUT a config block that does NOT include `enabled` — the route /
+    // setAgentPluginConfig must preserve the prior `enabled: true` rather
+    // than dropping it.
+    const res = await PUT(
+      jsonRequest('http://localhost:3000/api/agents/alpha/plugins/lcm/config', {
+        config: { triggers: { threshold: 2000 } },
+      }),
+      { params: Promise.resolve({ agentId: 'alpha', name: 'lcm' }) },
+    );
+    expect(res.status).toBe(200);
+
+    const yml = parseYaml(readFileSync(join(agentsDir, 'alpha', 'agent.yml'), 'utf-8'));
+    expect(yml.plugins.lcm.enabled).toBe(true);
+    expect(yml.plugins.lcm.triggers.threshold).toBe(2000);
   });
 });

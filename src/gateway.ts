@@ -999,6 +999,47 @@ export class Gateway {
   }
 
   /**
+   * Returns the plugins directory resolved at gateway.start() — either the
+   * `pluginsDir` argument or the `<dataDir>/../plugins` convention default.
+   * Returns null if the gateway hasn't been started yet.
+   *
+   * Used by the UI route handlers (config-schema, per-agent config validation)
+   * to load a plugin's compiled config-schema module from the same directory
+   * the live gateway uses, rather than re-deriving the convention path from
+   * process.cwd() (which may differ between gateway and UI workspaces).
+   */
+  getResolvedPluginsDir(): string | null {
+    return this.resolvedPluginsDir;
+  }
+
+  /**
+   * Notify all loaded plugins that a specific agent's plugin config has
+   * changed (e.g. UI PUT /agents/:id/plugins/:name/config or enable toggle).
+   *
+   * Plugins implementing the optional `onAgentConfigChanged` lifecycle hook
+   * should invalidate any per-agent caches (configs, DB handles, runtime
+   * objects) so the next tool/hook invocation re-reads from agent.yml via
+   * `ctx.getAgentConfig(agentId)`.
+   *
+   * Errors are caught + logged per-plugin so a single misbehaving plugin
+   * cannot break notification for the others. Never rethrows.
+   */
+  async notifyAgentConfigChanged(agentId: string): Promise<void> {
+    for (const entry of this.pluginRegistry.listPlugins()) {
+      const onChange = entry.instance.onAgentConfigChanged;
+      if (typeof onChange !== 'function') continue;
+      try {
+        await onChange.call(entry.instance, agentId);
+      } catch (err) {
+        logger.warn(
+          { err: redactSecrets(String(err)), pluginName: entry.manifest.name, agentId },
+          'plugin onAgentConfigChanged threw',
+        );
+      }
+    }
+  }
+
+  /**
    * Creates a PluginContext and registers a discovered plugin in pluginRegistry.
    * Extracted to avoid duplicating context-construction logic between initial
    * discovery and hot-reload onAdd.
