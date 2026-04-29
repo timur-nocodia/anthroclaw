@@ -2,6 +2,35 @@
 
 Every agent in `agents/<id>/agent.yml` MUST declare a `safety_profile`. This determines which tools the agent can use, how the system prompt is built, and how destructive operations are gated.
 
+## chat_like_openclaw — friendly conversational mode (default)
+
+Personal/single-user mode. The default for newly scaffolded agents.
+
+**System prompt:** pure-string mode (no `claude_code` preset). Combines a
+project-wide personality baseline with the agent's `CLAUDE.md`. The
+baseline encourages a warm, conversational tone — not the terse CLI
+persona that `claude_code` preset injects.
+
+**Tools:** all built-in (Read, Write, Edit, Bash, WebFetch, …) and all
+MCP tools auto-allowed. No approval flow. No sandbox by default.
+
+**Allowlist:** any shape accepted, including wildcard `*`.
+
+**Override:** `personality` field in `agent.yml` replaces the baseline:
+
+```yaml
+safety_profile: chat_like_openclaw
+personality: |
+  You are an extremely formal British butler. Address the user as "Sir."
+  Never use contractions. Never use emoji.
+```
+
+**Use when:** your personal assistant bot, family-shared bot, single-user
+side projects. Anyone who can DM the bot has full trust.
+
+**Don't use when:** the bot accepts inbound DMs from strangers
+(public WhatsApp/Telegram). Use `public` for that case.
+
 ## Three profiles
 
 ### `public`

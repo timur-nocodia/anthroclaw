@@ -12,11 +12,34 @@ All notable changes to AnthroClaw are documented here.
 
 ### Added
 
+- **`chat_like_openclaw` safety profile** — friendly conversational mode for
+  personal/single-user bots. Pure-string system prompt with embedded
+  personality baseline (no `claude_code` preset). All tools auto-allowed,
+  no approval flow, wildcard allowlist permitted, no sandbox.
+- **`personality` field** in `agent.yml` — overrides the profile's default
+  personality baseline. Editable in dashboard via Personality textarea
+  (visible only on chat profile).
+- `GET /api/security/profiles/chat_like_openclaw/baseline` — returns the
+  default baseline string (read-only, used by UI placeholder).
 - `src/security/profiles/` — `public`, `trusted`, `private` profile definitions
 - `src/security/approval-broker.ts` — in-memory approval queue for interactive permission flow
 - `pnpm migrate:safety-profile` — utility to add `safety_profile` to existing agents
 - Telegram inline-button approval for destructive tool calls in `trusted`/`private` profiles
 - Per-tool `META` exports across all MCP tools
+
+### Changed
+
+- **Default `safety_profile` for new agents is now `chat_like_openclaw`**
+  (UI scaffold and `createAgent` API). Existing agents are unaffected.
+- `agents/example` (Klavdia) migrated to `chat_like_openclaw`. CLAUDE.md
+  rewritten to remove "be concise"-style instructions; soul.md rewritten
+  for warm conversational tone.
+- `inferProfile()` migration helper now suggests `chat_like_openclaw` for
+  configs with `permission_mode: bypass`, wildcard allowlists, or empty
+  configs.
+- Validator no longer errors on `permission_mode: bypass` with
+  `safety_profile: chat_like_openclaw` (in addition to existing `private`
+  exception).
 
 ### Fixed
 

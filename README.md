@@ -351,6 +351,13 @@ Before adding powerful tools to an agent, verify:
 - which MCP tools it can access
 - whether the session is personal, group, or channel-facing
 
+Available profiles:
+
+- **`chat_like_openclaw`** (default) — friendly conversational, all tools, single-user.
+- **`public`** — anonymous-user threat model, read-only tools, rate-limited.
+- **`trusted`** — known users, approval flow for destructive operations.
+- **`private`** — single owner, all tools, optional bypass.
+
 See [Safety Profiles](docs/safety-profiles.md) for how `safety_profile` controls tool access and system prompt selection.
 
 ## Project Layout
