@@ -87,26 +87,50 @@ export function PluginsPanel({ agentId }: PluginsPanelProps) {
   const refresh = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
-    try {
-      const [pluginsRes, agentRes] = await Promise.all([
-        fetch("/api/plugins"),
-        fetch(`/api/agents/${encodeURIComponent(agentId)}/plugins`),
-      ]);
-      if (!pluginsRes.ok) {
-        throw new Error(`Failed to load plugins (${pluginsRes.status})`);
-      }
-      if (!agentRes.ok) {
-        throw new Error(`Failed to load agent plugin state (${agentRes.status})`);
-      }
-      const pluginsJson = (await pluginsRes.json()) as PluginsListResponse;
-      const agentJson = (await agentRes.json()) as AgentPluginsResponse;
-      setInstalled(pluginsJson.plugins ?? []);
-      setAgentEntries(agentJson.plugins ?? []);
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Failed to load plugins");
-    } finally {
-      setLoading(false);
+
+    // Use allSettled so a single failing fetch doesn't block both halves of the UI.
+    // Each branch independently exits the loading skeleton.
+    const [pluginsResult, agentResult] = await Promise.allSettled([
+      (async () => {
+        const r = await fetch("/api/plugins");
+        if (!r.ok) throw new Error(`Failed to load plugins (${r.status})`);
+        return (await r.json()) as PluginsListResponse;
+      })(),
+      (async () => {
+        const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/plugins`);
+        if (!r.ok) throw new Error(`Failed to load agent plugin state (${r.status})`);
+        return (await r.json()) as AgentPluginsResponse;
+      })(),
+    ]);
+
+    let firstError: string | null = null;
+
+    if (pluginsResult.status === "fulfilled") {
+      setInstalled(pluginsResult.value.plugins ?? []);
+    } else {
+      const msg =
+        pluginsResult.reason instanceof Error
+          ? pluginsResult.reason.message
+          : "Failed to load plugins";
+      firstError = msg;
+      toast.error(msg);
+      setInstalled([]); // exit loading state
     }
+
+    if (agentResult.status === "fulfilled") {
+      setAgentEntries(agentResult.value.plugins ?? []);
+    } else {
+      const msg =
+        agentResult.reason instanceof Error
+          ? agentResult.reason.message
+          : "Failed to load agent plugin state";
+      firstError = firstError ?? msg;
+      toast.error(msg);
+      setAgentEntries([]); // exit loading state
+    }
+
+    if (firstError) setLoadError(firstError);
+    setLoading(false);
   }, [agentId]);
 
   useEffect(() => {
@@ -117,9 +141,7 @@ export function PluginsPanel({ agentId }: PluginsPanelProps) {
 
   const handleToggle = useCallback(
     async (name: string, nextEnabled: boolean) => {
-      // Snapshot for rollback
-      const previous = agentEntries;
-      // Optimistic update
+      // Optimistic per-row update (functional setter avoids snapshotting other in-flight toggles)
       setAgentEntries((prev) =>
         prev
           ? prev.map((e) => (e.name === name ? { ...e, enabled: nextEnabled } : e))
@@ -143,8 +165,12 @@ export function PluginsPanel({ agentId }: PluginsPanelProps) {
           nextEnabled ? `Enabled "${name}" for this agent` : `Disabled "${name}" for this agent`,
         );
       } catch (err) {
-        // Roll back
-        setAgentEntries(previous);
+        // Per-row rollback: invert just this row's enabled flag, leave siblings alone
+        setAgentEntries((prev) =>
+          prev
+            ? prev.map((e) => (e.name === name ? { ...e, enabled: !nextEnabled } : e))
+            : prev,
+        );
         toast.error(
           err instanceof Error
             ? `Failed to toggle ${name}: ${err.message}`
@@ -157,7 +183,7 @@ export function PluginsPanel({ agentId }: PluginsPanelProps) {
         });
       }
     },
-    [agentId, agentEntries],
+    [agentId],
   );
 
   /* ----- Expand + load schema ------------------------------------- */
@@ -262,11 +288,37 @@ export function PluginsPanel({ agentId }: PluginsPanelProps) {
         );
 
         if (res.ok) {
+          // Re-fetch canonical config so subsequent edits see server-normalized state
+          // (Zod defaults / type coercion). Soft failure: keep user values on refetch error.
+          let canonicalValues: Record<string, unknown> | null = null;
+          try {
+            const freshRes = await fetch(
+              `/api/agents/${encodeURIComponent(agentId)}/plugins/${encodeURIComponent(name)}/config`,
+            );
+            if (freshRes.ok) {
+              const fresh = (await freshRes.json()) as AgentConfigResponse;
+              if (isPlainObject(fresh.config)) {
+                canonicalValues = fresh.config;
+              }
+            }
+          } catch {
+            // soft failure — keep user-submitted values
+          }
           toast.success(`Saved "${name}" config`);
-          setConfigState((prev) => ({
-            ...prev,
-            [name]: { ...cur, saving: false, fieldErrors: {}, formError: null },
-          }));
+          setConfigState((prev) => {
+            const existing = prev[name];
+            if (!existing) return prev;
+            return {
+              ...prev,
+              [name]: {
+                ...existing,
+                saving: false,
+                fieldErrors: {},
+                formError: null,
+                values: canonicalValues ?? existing.values,
+              },
+            };
+          });
           return;
         }
 

@@ -384,6 +384,153 @@ describe("<PluginsPanel />", () => {
     expect(screen.queryByTestId("plugin-configure-lcm")).not.toBeInTheDocument();
   });
 
+  it("handles partial fetch failure on mount: list ok but per-agent state errors", async () => {
+    on("GET", /\/api\/plugins$/, () => ({
+      body: { plugins: [PLUGIN_LCM] },
+    }));
+    on("GET", /\/api\/agents\/.+\/plugins$/, () => ({
+      status: 500,
+      body: { error: "server_error" },
+    }));
+
+    render(<PluginsPanel agentId="alpha" />);
+
+    // Should NOT remain in loading skeleton forever — partial failure exits loading
+    await waitFor(() => {
+      expect(screen.queryByTestId("plugin-skeleton")).not.toBeInTheDocument();
+    });
+
+    // Failure surfaces via error toast
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalled();
+    });
+
+    // Plugin list still rendered (since /api/plugins succeeded)
+    expect(screen.getByTestId("plugin-card-lcm")).toBeInTheDocument();
+  });
+
+  it("concurrent toggles: failing toggle on plugin B does not clobber successful toggle on plugin A", async () => {
+    on("GET", /\/api\/plugins$/, () => ({
+      body: { plugins: [PLUGIN_LCM, PLUGIN_EXAMPLE] },
+    }));
+    on("GET", /\/api\/agents\/.+\/plugins$/, () => ({
+      body: {
+        agentId: "alpha",
+        plugins: [
+          { name: "lcm", enabled: false, config: {} },
+          { name: "example", enabled: false, config: {} },
+        ],
+      },
+    }));
+
+    // Plugin A (lcm) PUT: delayed success, so it's still in flight when B fires
+    let resolveA: (v: Response) => void = () => {};
+    on("PUT", /\/api\/agents\/.+\/plugins\/lcm$/, () => {
+      return new Promise<Response>((resolve) => {
+        resolveA = resolve;
+      });
+    });
+    // Plugin B (example) PUT: immediate failure
+    on("PUT", /\/api\/agents\/.+\/plugins\/example$/, () => ({
+      status: 500,
+      body: { error: "boom" },
+    }));
+
+    const user = userEvent.setup();
+    render(<PluginsPanel agentId="alpha" />);
+
+    await waitFor(() => screen.getByTestId("plugin-toggle-lcm"));
+    const toggleA = screen.getByTestId("plugin-toggle-lcm") as HTMLInputElement;
+    const toggleB = screen.getByTestId("plugin-toggle-example") as HTMLInputElement;
+
+    // Click A first → optimistic enabled=true, PUT in flight
+    await user.click(toggleA);
+    expect(toggleA.checked).toBe(true);
+
+    // Now click B before A's PUT resolves → optimistic enabled=true, PUT will fail
+    await user.click(toggleB);
+
+    // Wait for B's failure to roll back B
+    await waitFor(() => expect(toggleB.checked).toBe(false));
+
+    // Critical assertion: A's optimistic state must NOT have been clobbered
+    // by B's rollback (the bug was that B captured pre-A snapshot and restored it)
+    expect(toggleA.checked).toBe(true);
+
+    // Now resolve A's PUT successfully
+    resolveA(jsonResponse({ ok: true, enabled: true }));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(toggleA.checked).toBe(true);
+  });
+
+  it("after successful save, re-fetches canonical config and updates local values", async () => {
+    on("GET", /\/api\/plugins$/, () => ({ body: { plugins: [PLUGIN_LCM] } }));
+    on("GET", /\/api\/agents\/.+\/plugins$/, () => ({
+      body: {
+        agentId: "alpha",
+        plugins: [{ name: "lcm", enabled: true, config: {} }],
+      },
+    }));
+    on("GET", /\/api\/plugins\/lcm\/config-schema$/, () => ({
+      body: { name: "lcm", jsonSchema: LCM_SCHEMA, defaults: LCM_DEFAULTS },
+    }));
+
+    // Track GET /config calls — first call returns user value, second (refetch) returns canonical
+    let getConfigCalls = 0;
+    on("GET", /\/api\/agents\/.+\/plugins\/lcm\/config$/, () => {
+      getConfigCalls++;
+      if (getConfigCalls === 1) {
+        // initial load — user-supplied value
+        return {
+          body: {
+            agentId: "alpha",
+            pluginName: "lcm",
+            config: { triggers: { threshold: 12345 } },
+          },
+        };
+      }
+      // refetch after save — server normalized to canonical value
+      return {
+        body: {
+          agentId: "alpha",
+          pluginName: "lcm",
+          config: { triggers: { threshold: 77777 } },
+        },
+      };
+    });
+    on("PUT", /\/api\/agents\/.+\/plugins\/lcm\/config$/, () => ({
+      body: { ok: true },
+    }));
+
+    const user = userEvent.setup();
+    render(<PluginsPanel agentId="alpha" />);
+    await waitFor(() => screen.getByTestId("plugin-configure-lcm"));
+    await user.click(screen.getByTestId("plugin-configure-lcm"));
+    await waitFor(() => screen.getByTestId("plugin-save-lcm"));
+
+    // Initially, threshold = 12345 from first GET
+    await waitFor(() => {
+      const numInputs = document.querySelectorAll('input[type="number"]');
+      const vals = Array.from(numInputs).map((n) => (n as HTMLInputElement).value);
+      expect(vals).toContain("12345");
+    });
+
+    await user.click(screen.getByTestId("plugin-save-lcm"));
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+
+    // After save, the refetch should populate canonical 77777 into the form
+    await waitFor(() => {
+      const numInputs = document.querySelectorAll('input[type="number"]');
+      const vals = Array.from(numInputs).map((n) => (n as HTMLInputElement).value);
+      expect(vals).toContain("77777");
+      expect(vals).not.toContain("12345");
+    });
+
+    // Sanity: GET /config was called twice (initial load + post-save refetch)
+    expect(getConfigCalls).toBe(2);
+  });
+
   it("Reset button restores defaults from schema", async () => {
     on("GET", /\/api\/plugins$/, () => ({ body: { plugins: [PLUGIN_LCM] } }));
     on("GET", /\/api\/agents\/.+\/plugins$/, () => ({
