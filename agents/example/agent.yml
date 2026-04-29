@@ -1,6 +1,8 @@
 model: claude-sonnet-4-6
 timezone: Asia/Almaty
 
+safety_profile: chat_like_openclaw
+
 routes:
   - channel: telegram
     scope: dm
@@ -11,8 +13,6 @@ pairing:
 allowlist:
   telegram: [ "48705953" ]
 
-# NOTE: manage_skills + access_control are allowed because safety_profile=private.
-# Switching to trusted or public would HARD_BLACKLIST these tools and fail to load.
 mcp_tools:
   - memory_search
   - memory_write
@@ -41,18 +41,6 @@ learning:
   review_interval_turns: 10
   skill_review_min_tool_calls: 8
 
-# hooks:
-#   - event: on_after_query
-#     action: webhook
-#     url: "https://example.com/hook"
-#     timeout_ms: 5000
-
-# subagents:
-#   allow: ["other-agent"]
-
-# maxSessions: 100
-
-# ─── Quick Commands (zero-LLM, instant execution) ───
 quick_commands:
   status:
     command: "echo '✅ Bot is running'; echo \"PID: $$\"; echo \"Node: $(node -v)\";
@@ -67,7 +55,6 @@ quick_commands:
       head -20); [ -n \"$out\" ] && echo \"$out\" || echo 'No memory files yet'"
     timeout: 10
 
-# ─── Cron with silent suppression test ───
 cron:
   - id: silent-test
     schedule: "*/2 * * * *"
@@ -77,4 +64,3 @@ cron:
       channel: telegram
       peer_id: "48705953"
     enabled: false
-safety_profile: private
