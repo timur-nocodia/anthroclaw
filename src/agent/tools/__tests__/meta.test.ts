@@ -26,9 +26,9 @@ describe('MCP tool META', () => {
     expect(memoryWriteMeta.destructive).toBe(false);
   });
 
-  it('manage_cron: forbidden in public via hard_blacklist, destructive in trusted', () => {
+  it('manage_cron: soft-forbidden in public (openable via override), destructive in trusted', () => {
     expect(manageCronMeta.safe_in_public).toBe(false);
-    expect(manageCronMeta.hard_blacklist_in).toContain('public');
+    expect(manageCronMeta.hard_blacklist_in).not.toContain('public');
     expect(manageCronMeta.safe_in_trusted).toBe(true);
     expect(manageCronMeta.destructive).toBe(true);
   });
