@@ -3162,11 +3162,24 @@ export class Gateway {
       const response = await this.queryAgent(agent, msg, sessionKey);
 
       // Hook: on_after_query
+      // newMessages: [user, assistant] — consumed by plugin mirror hooks
+      // (e.g. LCM) to ingest the turn into their own stores. Empty entries are
+      // omitted so handlers can short-circuit on `newMessages.length === 0`.
       if (emitter) {
+        const now = Date.now();
+        const newMessages: Array<{ role: 'user' | 'assistant'; content: string; ts: number }> = [];
+        if (msg.text) {
+          newMessages.push({ role: 'user', content: msg.text, ts: now });
+        }
+        if (response) {
+          newMessages.push({ role: 'assistant', content: response, ts: now });
+        }
         void emitter.emit('on_after_query', {
           agentId: route.agentId,
           sessionKey,
           response,
+          source: msg.channel,
+          newMessages,
         });
       }
 
