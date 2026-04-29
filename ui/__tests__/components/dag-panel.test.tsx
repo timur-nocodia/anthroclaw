@@ -219,7 +219,7 @@ describe("<DagPanel />", () => {
     });
   });
 
-  it("clicking a node card fetches detail and shows full summary + children", async () => {
+  it("clicking a node card opens the MessageDrillModal (B4) and fetches detail", async () => {
     on("GET", /\/api\/agents\/.+\/lcm\/dag$/, () => ({ body: POPULATED_DAG }));
     const detailSpy = vi.fn(() => ({ body: NODE_DETAIL_D2 }));
     on("GET", /\/api\/agents\/.+\/lcm\/nodes\/n-d2-1$/, detailSpy);
@@ -231,20 +231,24 @@ describe("<DagPanel />", () => {
       expect(screen.getByTestId("dag-node-n-d2-1")).toBeInTheDocument();
     });
 
+    // Modal is not open initially.
+    expect(screen.queryByTestId("message-drill-modal")).not.toBeInTheDocument();
+
     await user.click(screen.getByTestId("dag-node-button-n-d2-1"));
 
     await waitFor(() => expect(detailSpy).toHaveBeenCalledTimes(1));
-
     await waitFor(() => {
-      expect(screen.getByTestId("dag-node-detail-n-d2-1")).toBeInTheDocument();
+      expect(screen.getByTestId("message-drill-modal")).toBeInTheDocument();
     });
 
-    const detail = screen.getByTestId("dag-node-detail-n-d2-1");
-    expect(
-      within(detail).getByText(/Full top-level summary text/),
-    ).toBeInTheDocument();
-    expect(within(detail).getByText(/child summary preview/)).toBeInTheDocument();
-    expect(within(detail).getByText(/Try drilling into the children/)).toBeInTheDocument();
+    // The drill modal renders the node summary + child node row for D1.
+    expect(screen.getByText(/Full top-level summary text/)).toBeInTheDocument();
+    expect(screen.getByText(/Try drilling into the children/)).toBeInTheDocument();
+    expect(screen.getByTestId("message-drill-child-n-d1-1")).toBeInTheDocument();
+
+    // Inline detail (the old B3 behavior) is gone — no longer rendered in
+    // the side panel.
+    expect(screen.queryByTestId("dag-node-detail-n-d2-1")).not.toBeInTheDocument();
   });
 
   it("search submits correctly and shows results", async () => {

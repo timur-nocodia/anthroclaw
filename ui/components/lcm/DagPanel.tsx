@@ -27,6 +27,8 @@ import {
   X,
 } from "lucide-react";
 
+import { MessageDrillModal } from "./MessageDrillModal";
+
 /* ------------------------------------------------------------------ */
 /*  Types — mirror API shapes                                          */
 /* ------------------------------------------------------------------ */
@@ -52,38 +54,6 @@ interface DagListResponse {
   totalNodes: number;
   countsByDepth: Record<number, number>;
   nodes: DagNodeSummary[];
-}
-
-type DagNodeChild =
-  | {
-      kind: "message";
-      store_id: number;
-      role: string;
-      content: string;
-      ts: number;
-      source: string;
-    }
-  | {
-      kind: "node";
-      node_id: string;
-      depth: number;
-      summary_preview: string;
-      child_count: number;
-    };
-
-interface DagNodeDetail {
-  node_id: string;
-  session_id: string;
-  depth: number;
-  summary: string;
-  token_count: number;
-  source_token_count: number;
-  source_type: "messages" | "nodes";
-  source_ids: number[];
-  earliest_at: number;
-  latest_at: number;
-  expand_hint?: string;
-  children: DagNodeChild[];
 }
 
 type GrepHit =
@@ -123,12 +93,6 @@ export interface DagPanelProps {
   sessionId: string;
 }
 
-interface NodeDetailState {
-  loading: boolean;
-  error: string | null;
-  detail: DagNodeDetail | null;
-}
-
 export function DagPanel({ agentId, sessionId }: DagPanelProps) {
   const [data, setData] = useState<DagListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -136,8 +100,8 @@ export function DagPanel({ agentId, sessionId }: DagPanelProps) {
 
   const [collapsed, setCollapsed] = useState(false);
   const [depthOpen, setDepthOpen] = useState<Record<number, boolean>>({});
-  const [expandedNode, setExpandedNode] = useState<string | null>(null);
-  const [nodeDetails, setNodeDetails] = useState<Record<string, NodeDetailState>>({});
+  // Track which node opened the drill modal (null = closed).
+  const [drillNodeId, setDrillNodeId] = useState<string | null>(null);
 
   // Search state
   const [searchInput, setSearchInput] = useState("");
@@ -153,8 +117,7 @@ export function DagPanel({ agentId, sessionId }: DagPanelProps) {
     setLoading(true);
     setLoadError(null);
     setData(null);
-    setExpandedNode(null);
-    setNodeDetails({});
+    setDrillNodeId(null);
     setSearchActive(false);
     setSearchResults(null);
     setSearchInput("");
@@ -188,55 +151,15 @@ export function DagPanel({ agentId, sessionId }: DagPanelProps) {
     };
   }, [agentId, sessionId]);
 
-  /* ----- Per-node detail (lazy) ---------------------------------- */
+  /* ----- Node drill (opens MessageDrillModal) -------------------- */
 
-  const loadNodeDetail = useCallback(
-    async (nodeId: string) => {
-      // already loaded? skip
-      const existing = nodeDetails[nodeId];
-      if (existing && existing.detail) return;
+  const handleNodeClick = useCallback((nodeId: string) => {
+    setDrillNodeId(nodeId);
+  }, []);
 
-      setNodeDetails((prev) => ({
-        ...prev,
-        [nodeId]: { loading: true, error: null, detail: null },
-      }));
-
-      try {
-        const url = `/api/agents/${encodeURIComponent(agentId)}/lcm/nodes/${encodeURIComponent(nodeId)}`;
-        const res = await fetch(url);
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-        const json = (await res.json()) as DagNodeDetail;
-        setNodeDetails((prev) => ({
-          ...prev,
-          [nodeId]: { loading: false, error: null, detail: json },
-        }));
-      } catch (err) {
-        setNodeDetails((prev) => ({
-          ...prev,
-          [nodeId]: {
-            loading: false,
-            error: err instanceof Error ? err.message : "Failed to load node",
-            detail: null,
-          },
-        }));
-      }
-    },
-    [agentId, nodeDetails],
-  );
-
-  const handleNodeClick = useCallback(
-    (nodeId: string) => {
-      if (expandedNode === nodeId) {
-        setExpandedNode(null);
-        return;
-      }
-      setExpandedNode(nodeId);
-      void loadNodeDetail(nodeId);
-    },
-    [expandedNode, loadNodeDetail],
-  );
+  const handleDrillOpenChange = useCallback((open: boolean) => {
+    if (!open) setDrillNodeId(null);
+  }, []);
 
   /* ----- Search -------------------------------------------------- */
 
@@ -384,6 +307,7 @@ export function DagPanel({ agentId, sessionId }: DagPanelProps) {
   const totalNodes = data.totalNodes;
 
   return (
+    <>
     <aside
       data-testid="dag-panel"
       className="flex h-full flex-col border-l"
@@ -592,8 +516,7 @@ export function DagPanel({ agentId, sessionId }: DagPanelProps) {
                             key={node.node_id}
                             node={node}
                             maxDepth={maxDepth}
-                            expanded={expandedNode === node.node_id}
-                            detailState={nodeDetails[node.node_id]}
+                            active={drillNodeId === node.node_id}
                             onClick={() => handleNodeClick(node.node_id)}
                           />
                         ))}
@@ -607,6 +530,15 @@ export function DagPanel({ agentId, sessionId }: DagPanelProps) {
         </>
       )}
     </aside>
+    {drillNodeId && (
+      <MessageDrillModal
+        agentId={agentId}
+        rootNodeId={drillNodeId}
+        open={true}
+        onOpenChange={handleDrillOpenChange}
+      />
+    )}
+    </>
   );
 }
 
@@ -642,18 +574,17 @@ function DepthBadge({ depth, maxDepth }: { depth: number; maxDepth: number }) {
 interface NodeCardProps {
   node: DagNodeSummary;
   maxDepth: number;
-  expanded: boolean;
-  detailState: NodeDetailState | undefined;
+  active: boolean;
   onClick: () => void;
 }
 
-function NodeCard({ node, maxDepth, expanded, detailState, onClick }: NodeCardProps) {
+function NodeCard({ node, maxDepth, active, onClick }: NodeCardProps) {
   return (
     <div
       className="rounded border p-2.5"
       style={{
         background: "var(--oc-bg2)",
-        borderColor: expanded ? "var(--oc-accent)" : "var(--oc-border)",
+        borderColor: active ? "var(--oc-accent)" : "var(--oc-border)",
       }}
       data-testid={`dag-node-${node.node_id}`}
     >
@@ -661,7 +592,7 @@ function NodeCard({ node, maxDepth, expanded, detailState, onClick }: NodeCardPr
         onClick={onClick}
         className="flex w-full flex-col items-stretch gap-1.5 text-left"
         data-testid={`dag-node-button-${node.node_id}`}
-        aria-expanded={expanded}
+        aria-haspopup="dialog"
       >
         <div className="flex items-center gap-1.5">
           <DepthBadge depth={node.depth} maxDepth={maxDepth} />
@@ -699,159 +630,6 @@ function NodeCard({ node, maxDepth, expanded, detailState, onClick }: NodeCardPr
           <span className="truncate">{node.node_id.slice(0, 12)}…</span>
         </div>
       </button>
-
-      {expanded && (
-        <div
-          className="mt-2 border-t pt-2"
-          style={{ borderColor: "var(--oc-border)" }}
-          data-testid={`dag-node-detail-${node.node_id}`}
-        >
-          {!detailState || detailState.loading ? (
-            <div
-              className="flex items-center gap-1.5 text-[11px]"
-              style={{ color: "var(--oc-text-muted)" }}
-            >
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Loading…
-            </div>
-          ) : detailState.error ? (
-            <div
-              className="text-[11px]"
-              style={{ color: "#f87171" }}
-              role="alert"
-            >
-              {detailState.error}
-            </div>
-          ) : detailState.detail ? (
-            <NodeDetailView detail={detailState.detail} />
-          ) : null}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function NodeDetailView({ detail }: { detail: DagNodeDetail }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div>
-        <div
-          className="mb-1 text-[10px] uppercase tracking-[0.5px]"
-          style={{ color: "var(--oc-text-muted)" }}
-        >
-          Summary
-        </div>
-        <div
-          className="whitespace-pre-wrap text-[11.5px]"
-          style={{ color: "var(--color-foreground)" }}
-        >
-          {detail.summary}
-        </div>
-      </div>
-      {detail.expand_hint && (
-        <div>
-          <div
-            className="mb-1 text-[10px] uppercase tracking-[0.5px]"
-            style={{ color: "var(--oc-text-muted)" }}
-          >
-            Expand hint
-          </div>
-          <div
-            className="text-[11px] italic"
-            style={{ color: "var(--oc-text-dim)" }}
-          >
-            {detail.expand_hint}
-          </div>
-        </div>
-      )}
-      {detail.children.length > 0 && (
-        <div>
-          <div
-            className="mb-1 text-[10px] uppercase tracking-[0.5px]"
-            style={{ color: "var(--oc-text-muted)" }}
-          >
-            {detail.source_type === "messages"
-              ? `${detail.children.length} source ${detail.children.length === 1 ? "message" : "messages"}`
-              : `${detail.children.length} child ${detail.children.length === 1 ? "node" : "nodes"}`}
-          </div>
-          <div className="flex flex-col gap-1">
-            {detail.children.map((c, i) => (
-              <ChildPreview key={i} child={c} />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ChildPreview({ child }: { child: DagNodeChild }) {
-  if (child.kind === "message") {
-    return (
-      <div
-        className="rounded border p-2 text-[11px]"
-        style={{
-          background: "var(--oc-bg1)",
-          borderColor: "var(--oc-border)",
-          color: "var(--oc-text-dim)",
-        }}
-      >
-        <div
-          className="mb-0.5 text-[10px]"
-          style={{
-            color: "var(--oc-text-muted)",
-            fontFamily: "var(--oc-mono)",
-          }}
-        >
-          {child.role} · {child.source}
-        </div>
-        <div
-          className="line-clamp-3"
-          style={{
-            display: "-webkit-box",
-            WebkitLineClamp: 3,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-          }}
-        >
-          {child.content}
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div
-      className="rounded border p-2 text-[11px]"
-      style={{
-        background: "var(--oc-bg1)",
-        borderColor: "var(--oc-border)",
-        color: "var(--oc-text-dim)",
-      }}
-    >
-      <div
-        className="mb-0.5 flex items-center gap-1.5 text-[10px]"
-        style={{
-          color: "var(--oc-text-muted)",
-          fontFamily: "var(--oc-mono)",
-        }}
-      >
-        <span>D{child.depth}</span>
-        <span>·</span>
-        <span className="truncate">{child.node_id.slice(0, 12)}…</span>
-        <span>·</span>
-        <span>{child.child_count} src</span>
-      </div>
-      <div
-        className="line-clamp-2"
-        style={{
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-        }}
-      >
-        {child.summary_preview}
-      </div>
     </div>
   );
 }
