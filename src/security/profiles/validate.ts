@@ -30,20 +30,45 @@ export function validateSafetyProfile(config: AgentYml): ValidationResult {
   }
   warnings.push(...allowlistResult.warnings);
 
+  // personality field info-warning on non-chat profiles
+  if (config.personality && config.safety_profile !== 'chat_like_openclaw') {
+    warnings.push(
+      `personality field is set but has no effect on safety_profile=${config.safety_profile} (only applies to chat_like_openclaw)`,
+    );
+  }
+
   // Check overrides
   const overrides = config.safety_overrides ?? {};
-  if (overrides.permission_mode === 'bypass' && config.safety_profile !== 'private') {
+
+  // bypass: chat permits, private permits, others reject
+  if (
+    overrides.permission_mode === 'bypass' &&
+    config.safety_profile !== 'private' &&
+    config.safety_profile !== 'chat_like_openclaw'
+  ) {
     return {
       ok: false,
       warnings: [],
-      error: `safety_overrides.permission_mode=bypass is only allowed with safety_profile=private (got ${config.safety_profile})`,
+      error: `safety_overrides.permission_mode=bypass is only allowed with safety_profile=private or chat_like_openclaw (got ${config.safety_profile})`,
     };
   }
-  if (overrides.permission_mode === 'bypass') {
+  if (overrides.permission_mode === 'bypass' && config.safety_profile !== 'chat_like_openclaw') {
+    // chat already runs without approval — no need to log "running without approval" warning twice.
     warnings.push('safety_overrides.permission_mode=bypass: all tools will run without approval');
   }
 
-  // Check mcp_tools compat
+  // chat profile: most overrides are no-op (everything is already allowed)
+  if (config.safety_profile === 'chat_like_openclaw') {
+    if (overrides.allow_tools && overrides.allow_tools.length > 0) {
+      warnings.push(
+        'safety_overrides.allow_tools have no effect on safety_profile=chat_like_openclaw — all tools are already allowed',
+      );
+    }
+    // deny_tools and permission_mode=default DO have effect on chat — don't warn.
+    return { ok: true, warnings };
+  }
+
+  // Existing tool-compat check (kept verbatim from current validator) for non-chat profiles
   const tools = config.mcp_tools ?? [];
   const allowOverrides = new Set(overrides.allow_tools ?? []);
 
