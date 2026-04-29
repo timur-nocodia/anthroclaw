@@ -8,7 +8,7 @@ import {
   existsSync,
   statSync,
 } from 'node:fs';
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml, parseDocument } from 'yaml';
 import { AgentYmlSchema } from '@backend/config/schema.js';
 
 const AGENTS_DIR = resolve(process.cwd(), '..', 'agents');
@@ -170,22 +170,15 @@ export function setAgentPluginEnabled(
   const dir = ensureAgentExists(agentId);
   const ymlPath = join(dir, 'agent.yml');
   const raw = readFileSync(ymlPath, 'utf-8');
-  const parsed = (parseYaml(raw) ?? {}) as Record<string, unknown>;
 
-  const plugins = (parsed.plugins && typeof parsed.plugins === 'object' && !Array.isArray(parsed.plugins))
-    ? { ...(parsed.plugins as Record<string, unknown>) }
-    : {};
+  // parseDocument preserves comments, blank lines, key ordering, and anchors —
+  // unlike the plain parse/stringify round-trip which strips all of these.
+  // Operators hand-edit agent.yml with documentation comments; toggling a
+  // plugin from the UI must not erase that work.
+  const doc = parseDocument(raw);
+  doc.setIn(['plugins', pluginName, 'enabled'], enabled);
 
-  const existing = plugins[pluginName];
-  const block = (existing && typeof existing === 'object' && !Array.isArray(existing))
-    ? { ...(existing as Record<string, unknown>) }
-    : {};
-
-  block.enabled = enabled;
-  plugins[pluginName] = block;
-  parsed.plugins = plugins;
-
-  writeFileSync(ymlPath, stringifyYaml(parsed), 'utf-8');
+  writeFileSync(ymlPath, doc.toString(), 'utf-8');
 }
 
 /**

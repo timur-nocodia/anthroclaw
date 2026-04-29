@@ -985,6 +985,20 @@ export class Gateway {
   }
 
   /**
+   * Refresh an agent's MCP tools to match the current plugin registry state.
+   * Used by the UI plugin toggle endpoint for snappy feedback — without this,
+   * the running agent keeps its old tool set until the agents-dir watcher
+   * fires (~500ms debounce) and the full reload path calls refreshPluginTools.
+   *
+   * Safe to call when no agent with the given id exists — silently no-ops.
+   */
+  refreshAgentPluginTools(agentId: string): void {
+    const agent = this.agents.get(agentId);
+    if (!agent) return;
+    agent.refreshPluginTools(this.pluginRegistry.getMcpToolsForAgent(agentId));
+  }
+
+  /**
    * Creates a PluginContext and registers a discovered plugin in pluginRegistry.
    * Extracted to avoid duplicating context-construction logic between initial
    * discovery and hot-reload onAdd.

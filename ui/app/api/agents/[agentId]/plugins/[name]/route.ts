@@ -33,6 +33,10 @@ export async function PUT(
       gw.pluginRegistry.disableForAgent(agentId, name);
     }
 
+    // Refresh the agent's MCP server immediately — otherwise the running
+    // agent keeps the old tool set until the watcher debounce expires.
+    gw.refreshAgentPluginTools(agentId);
+
     return NextResponse.json({ ok: true, enabled });
   });
 }

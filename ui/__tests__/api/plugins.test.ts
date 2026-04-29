@@ -21,27 +21,25 @@ vi.mock('@/lib/require-auth', async () => {
 // ─── Per-test agents-dir fixture ──────────────────────────────────────
 // `lib/agents.ts` resolves AGENTS_DIR from process.cwd()/../agents at module
 // import time. The UI test runner runs with cwd=ui/, so we need to redirect
-// agents to a tmp dir. Simplest path: chdir into a tmp parent before importing
-// the route modules, and reset between tests.
+// agents to a tmp dir. We use vi.spyOn(process, 'cwd') (instead of mutating
+// global state via process.chdir) so the test stays safe under threaded
+// vitest pools.
 
 let tmpRoot: string;
 let agentsDir: string;
-let originalCwd: string;
 
 beforeEach(() => {
-  originalCwd = process.cwd();
   tmpRoot = mkdtempSync(join(tmpdir(), 'plugins-api-test-'));
   // Mimic real layout: cwd is .../ui, agents resolves to ../agents
   const fakeUi = join(tmpRoot, 'ui');
   mkdirSync(fakeUi, { recursive: true });
   agentsDir = join(tmpRoot, 'agents');
   mkdirSync(agentsDir, { recursive: true });
-  process.chdir(fakeUi);
+  vi.spyOn(process, 'cwd').mockReturnValue(fakeUi);
   vi.resetModules();
 });
 
 afterEach(() => {
-  process.chdir(originalCwd);
   rmSync(tmpRoot, { recursive: true, force: true });
   vi.restoreAllMocks();
   vi.resetModules();
@@ -67,6 +65,7 @@ function makeFakeGateway(plugins: FakePluginEntry[]) {
   return {
     enableForAgentSpy: vi.fn(),
     disableForAgentSpy: vi.fn(),
+    refreshAgentPluginTools: vi.fn(),
     pluginRegistry: {
       listPlugins: vi.fn(() =>
         plugins.map((p) => ({ manifest: p.manifest, instance: p.instance })),
@@ -247,6 +246,53 @@ describe('PUT /api/agents/[agentId]/plugins/[name]', () => {
     // Verify gateway hot-toggled
     expect(fakeGw.pluginRegistry.enableForAgent).toHaveBeenCalledWith('alpha', 'lcm');
     expect(fakeGw.pluginRegistry.disableForAgent).not.toHaveBeenCalled();
+    // Verify agent MCP server was refreshed immediately (no watcher debounce)
+    expect(fakeGw.refreshAgentPluginTools).toHaveBeenCalledWith('alpha');
+  });
+
+  it('preserves YAML comments and blank lines on toggle', async () => {
+    // Hand-edited agent.yml with comments + blank lines that operators care about.
+    const yml =
+      [
+        '# Top comment',
+        'model: claude-sonnet-4-6  # inline comment',
+        'routes:',
+        '  - channel: telegram',
+        '    scope: dm',
+        '',
+        '# About plugins',
+        'plugins:',
+        '  lcm:',
+        '    enabled: false',
+        '    threshold: 0.5',
+      ].join('\n') + '\n';
+    const dir = join(agentsDir, 'alpha');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'agent.yml'), yml, 'utf-8');
+
+    const fakeGw = makeFakeGateway([
+      { manifest: { name: 'lcm', version: '0.1.0' }, instance: {}, tools: [], hasEngine: true },
+    ]);
+    vi.doMock('@/lib/gateway', () => ({
+      getGateway: vi.fn().mockResolvedValue(fakeGw),
+    }));
+
+    const { PUT } = await import('@/app/api/agents/[agentId]/plugins/[name]/route');
+    const res = await PUT(
+      jsonRequest('http://localhost:3000/api/agents/alpha/plugins/lcm', { enabled: true }),
+      { params: Promise.resolve({ agentId: 'alpha', name: 'lcm' }) },
+    );
+    expect(res.status).toBe(200);
+
+    const after = readFileSync(join(agentsDir, 'alpha', 'agent.yml'), 'utf-8');
+    // Comments preserved
+    expect(after).toContain('# Top comment');
+    expect(after).toContain('# About plugins');
+    expect(after).toContain('# inline comment');
+    // Toggled
+    expect(after).toMatch(/enabled:\s*true/);
+    // Sibling config keys preserved
+    expect(after).toMatch(/threshold:\s*0\.5/);
   });
 
   it('disables a plugin: persists to agent.yml + calls disableForAgent', async () => {
@@ -277,6 +323,7 @@ describe('PUT /api/agents/[agentId]/plugins/[name]', () => {
     expect(yml.plugins.lcm.threshold).toBe(0.5);
 
     expect(fakeGw.pluginRegistry.disableForAgent).toHaveBeenCalledWith('alpha', 'lcm');
+    expect(fakeGw.refreshAgentPluginTools).toHaveBeenCalledWith('alpha');
   });
 
   it('returns 400 on missing/invalid body', async () => {
