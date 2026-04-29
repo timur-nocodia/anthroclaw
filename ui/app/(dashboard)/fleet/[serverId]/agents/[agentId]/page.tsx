@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PluginsPanel } from "@/components/plugins/PluginsPanel";
 import { DoctorPanel } from "@/components/lcm/DoctorPanel";
+import { ANTHROPIC_MODELS as MODELS } from "@/lib/anthropic-models";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -378,14 +379,6 @@ interface MemoryInfluenceEvent {
   query?: string;
   refs: MemoryInfluenceRef[];
 }
-
-const MODELS = [
-  "claude-sonnet-4-6",
-  "claude-opus-4-6",
-  "claude-haiku-4-5",
-  "claude-sonnet-4-5",
-  "claude-opus-4-7",
-];
 
 const EFFORT_LEVELS = [
   { value: "low", label: "low — minimal thinking, fastest" },
