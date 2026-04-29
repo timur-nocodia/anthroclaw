@@ -152,3 +152,10 @@ interface ExaResponse {
     score?: number;
   }>;
 }
+
+import type { ToolMeta } from '../../security/types.js';
+export const META: ToolMeta = {
+  category: 'network',
+  safe_in_public: true, safe_in_trusted: true, safe_in_private: true,
+  destructive: false, reads_only: true, hard_blacklist_in: [],
+};

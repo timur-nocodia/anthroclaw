@@ -104,3 +104,10 @@ function guessMimeType(
       return 'application/octet-stream';
   }
 }
+
+import type { ToolMeta } from '../../security/types.js';
+export const META: ToolMeta = {
+  category: 'messaging',
+  safe_in_public: false, safe_in_trusted: true, safe_in_private: true,
+  destructive: true, reads_only: false, hard_blacklist_in: [],
+};

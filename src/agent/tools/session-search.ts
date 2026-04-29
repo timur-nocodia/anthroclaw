@@ -66,3 +66,10 @@ export function createSessionSearchTool(service: SessionSearchService): ToolDefi
 
   return sdkTool as unknown as ToolDefinition;
 }
+
+import type { ToolMeta } from '../../security/types.js';
+export const META: ToolMeta = {
+  category: 'session-introspect',
+  safe_in_public: false, safe_in_trusted: true, safe_in_private: true,
+  destructive: false, reads_only: true, hard_blacklist_in: [],
+};

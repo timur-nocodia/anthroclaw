@@ -53,3 +53,10 @@ export function createListSkillsTool(
 
   return sdkTool as unknown as ToolDefinition;
 }
+
+import type { ToolMeta } from '../../security/types.js';
+export const META: ToolMeta = {
+  category: 'read-only',
+  safe_in_public: true, safe_in_trusted: true, safe_in_private: true,
+  destructive: false, reads_only: true, hard_blacklist_in: [],
+};

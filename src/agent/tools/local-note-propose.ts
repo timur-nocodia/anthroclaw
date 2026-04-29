@@ -80,3 +80,10 @@ function slugify(value: string): string {
     .slice(0, 60);
   return slug || 'note';
 }
+
+import type { ToolMeta } from '../../security/types.js';
+export const META: ToolMeta = {
+  category: 'memory-write',
+  safe_in_public: false, safe_in_trusted: true, safe_in_private: true,
+  destructive: true, reads_only: false, hard_blacklist_in: [],
+};
