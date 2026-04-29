@@ -13,6 +13,7 @@ describe('SafetyProfile interface', () => {
         requiresApproval: () => false,
       },
       hardBlacklist: new Set(['Bash', 'access_control']),
+      allowsPluginTools: false,
       permissionFlow: 'strict-deny',
       sandboxDefaults: { allowUnsandboxedCommands: false },
       rateLimitFloor: { windowMs: 3_600_000, max: 30 },

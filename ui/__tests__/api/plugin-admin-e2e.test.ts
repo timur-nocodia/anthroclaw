@@ -148,6 +148,7 @@ describe('@e2e: plugin admin full flow', () => {
       [
         '# operator-authored agent',
         'model: claude-sonnet-4-6',
+        'safety_profile: trusted',
         'routes:',
         '  - channel: telegram',
         '    scope: dm',

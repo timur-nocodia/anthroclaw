@@ -151,6 +151,7 @@ describe('updateAgentConfig', () => {
 
     const newYaml = stringifyYaml({
       model: 'claude-opus-4',
+      safety_profile: 'trusted',
       routes: [{ channel: 'whatsapp', scope: 'any' }],
     });
 

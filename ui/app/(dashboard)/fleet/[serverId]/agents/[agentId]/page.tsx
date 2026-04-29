@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PluginsPanel } from "@/components/plugins/PluginsPanel";
 import { DoctorPanel } from "@/components/lcm/DoctorPanel";
+import { ANTHROPIC_MODELS as MODELS } from "@/lib/anthropic-models";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -67,6 +68,8 @@ interface AgentConfig {
   model?: string;
   thinking?: { type: string; budgetTokens?: number };
   effort?: string;
+  safety_profile?: 'public' | 'trusted' | 'private';
+  safety_overrides?: { allow_tools?: string[]; deny_tools?: string[]; permission_mode?: 'default' | 'bypass' };
   maxTurns?: number;
   maxBudgetUsd?: number;
   description?: string;
@@ -377,14 +380,6 @@ interface MemoryInfluenceEvent {
   refs: MemoryInfluenceRef[];
 }
 
-const MODELS = [
-  "claude-sonnet-4-6",
-  "claude-opus-4-6",
-  "claude-haiku-4-5",
-  "claude-sonnet-4-5",
-  "claude-opus-4-7",
-];
-
 const EFFORT_LEVELS = [
   { value: "low", label: "low — minimal thinking, fastest" },
   { value: "medium", label: "medium — moderate thinking" },
@@ -398,6 +393,37 @@ const THINKING_MODES = [
   { value: "enabled", label: "enabled — fixed budget" },
   { value: "disabled", label: "disabled — no extended thinking" },
 ];
+
+const SAFETY_PROFILES = [
+  { value: "public", label: "public — anonymous-user threat model" },
+  { value: "trusted", label: "trusted — known users, TG approval for destructive" },
+  { value: "private", label: "private — single owner, all tools, optional bypass" },
+];
+
+const SAFETY_PROFILE_TOOLTIP: Record<'public' | 'trusted' | 'private', string> = {
+  public:
+    "For bots that anyone can DM (open WhatsApp, public Telegram).\n" +
+    "Read-only tools only, no claude_code preset, no settings loaded.\n" +
+    "No interactive approval (channel may not support it).\n" +
+    "Rate-limited to 30 msg/hour per peer (enforced).\n" +
+    "\n" +
+    "Use when: building a public lead-capture or info bot.",
+  trusted:
+    "For bots serving known users (allowlisted or paired). Not actively hostile.\n" +
+    "Claude Code preset, project .claude/ settings loaded.\n" +
+    "Built-in code-edit tools (Write, Edit) require TG approval.\n" +
+    "manage_cron, memory_write, send_media available.\n" +
+    "Rate-limited to 100 msg/hour per peer.\n" +
+    "\n" +
+    "Use when: small team chat, internal helper bot.",
+  private:
+    "For single-user agents (your personal assistant). One trusted owner.\n" +
+    "Allowlist must contain exactly 1 peer per channel (validated on save).\n" +
+    "All tools available; Bash and WebFetch require TG approval by default.\n" +
+    "Optional safety_overrides.permission_mode: bypass removes all approvals.\n" +
+    "\n" +
+    "Use when: your personal Klavdia/Jarvis-style bot.",
+};
 
 const SDK_PERMISSION_MODES = [
   { value: "default", label: "default" },
@@ -771,6 +797,8 @@ function ConfigTab({
     model: agent.model ?? "claude-sonnet-4-6",
     thinking: agent.thinking ?? { type: "adaptive" as string, budgetTokens: undefined as number | undefined },
     effort: agent.effort ?? "high",
+    safety_profile: (agent.safety_profile ?? 'private') as 'public' | 'trusted' | 'private',
+    safety_overrides: agent.safety_overrides ?? {} as { allow_tools?: string[]; deny_tools?: string[]; permission_mode?: 'default' | 'bypass' },
     maxTurns: agent.maxTurns ?? 0,
     maxBudgetUsd: agent.maxBudgetUsd ?? 0,
     timezone: agent.timezone ?? "UTC",
@@ -849,6 +877,30 @@ function ConfigTab({
   });
   const [rawYaml, setRawYaml] = useState(agent.raw ?? "");
   const [externalMcpPreflight, setExternalMcpPreflight] = useState<Record<string, ExternalMcpPreflightState>>({});
+  const [safetyValidationError, setSafetyValidationError] = useState<string | null>(null);
+  const [safetyValidationWarnings, setSafetyValidationWarnings] = useState<string[]>([]);
+
+  useEffect(() => {
+    const body = JSON.stringify({
+      safety_profile: cfg.safety_profile,
+      safety_overrides: Object.keys(cfg.safety_overrides).length > 0 ? cfg.safety_overrides : undefined,
+    });
+    fetch(`/api/fleet/${serverId}/agents/${agentId}/validate-safety-profile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    })
+      .then((r) => r.json())
+      .then(({ ok, error, warnings }: { ok: boolean; error?: string; warnings?: string[] }) => {
+        setSafetyValidationError(ok ? null : (error ?? 'Validation failed'));
+        setSafetyValidationWarnings(warnings ?? []);
+      })
+      .catch(() => {
+        // validation endpoint unavailable — clear previous state
+        setSafetyValidationError(null);
+        setSafetyValidationWarnings([]);
+      });
+  }, [cfg.safety_profile, cfg.safety_overrides, serverId, agentId]);
 
   const update = (patch: Partial<typeof cfg>) => {
     setCfg((c) => ({ ...c, ...patch }));
@@ -1221,6 +1273,7 @@ function ConfigTab({
           effort,
           maxTurns,
           maxBudgetUsd,
+          safety_overrides,
           sdk: _sdk,
           channel_context: _channelContext,
           external_mcp_servers: _externalMcpServers,
@@ -1232,6 +1285,7 @@ function ConfigTab({
         if (effort && effort !== "high") clean.effort = effort;
         if (maxTurns > 0) clean.maxTurns = maxTurns;
         if (maxBudgetUsd > 0) clean.maxBudgetUsd = maxBudgetUsd;
+        if (Object.keys(safety_overrides).length > 0) clean.safety_overrides = safety_overrides;
         const channelContextPayload = buildChannelContextPayload();
         if (channelContextPayload) clean.channel_context = channelContextPayload;
         const externalMcpPayload = buildExternalMcpPayload();
@@ -1611,6 +1665,78 @@ function ConfigTab({
                       fontFamily: "var(--oc-mono)",
                     }}
                   />
+                </Field>
+              )}
+            </FormGrid>
+          </Section>
+
+          {/* Safety profile */}
+          <Section
+            title="Safety profile"
+            tooltip="Defines the trust level and tool access policy for this agent. Controls which tools are available, rate limits, and whether interactive approval is required."
+            icon={<Shield className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+          >
+            <FormGrid>
+              <Field
+                label="Profile"
+                tooltip={SAFETY_PROFILE_TOOLTIP[cfg.safety_profile]}
+              >
+                <select
+                  value={cfg.safety_profile}
+                  onChange={(e) =>
+                    update({ safety_profile: e.target.value as 'public' | 'trusted' | 'private' })
+                  }
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                >
+                  {SAFETY_PROFILES.map((p) => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
+                  ))}
+                </select>
+                {safetyValidationError && (
+                  <p className="mt-1 text-[11px]" style={{ color: "var(--oc-red, #f87171)" }}>
+                    {safetyValidationError}
+                  </p>
+                )}
+                {safetyValidationWarnings.length > 0 && (
+                  <ul className="mt-1 flex flex-col gap-0.5">
+                    {safetyValidationWarnings.map((w, i) => (
+                      <li key={i} className="text-[11px]" style={{ color: "var(--oc-yellow, #facc15)" }}>
+                        ⚠ {w}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Field>
+              {cfg.safety_profile === 'private' && (
+                <Field
+                  label="Permission mode"
+                  tooltip="bypass removes all interactive approval prompts. Use only for fully-trusted single-owner bots."
+                >
+                  <select
+                    value={cfg.safety_overrides.permission_mode ?? 'default'}
+                    onChange={(e) =>
+                      update({
+                        safety_overrides: {
+                          ...cfg.safety_overrides,
+                          permission_mode: e.target.value as 'default' | 'bypass',
+                        },
+                      })
+                    }
+                    className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                    style={{
+                      background: "var(--oc-bg3)",
+                      borderColor: "var(--oc-border)",
+                      color: "var(--color-foreground)",
+                    }}
+                  >
+                    <option value="default">default — approval prompts enabled</option>
+                    <option value="bypass">bypass — all approvals skipped</option>
+                  </select>
                 </Field>
               )}
             </FormGrid>
