@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AgentYmlSchema } from '../../src/config/schema.js';
 import { buildSdkOptions } from '../../src/sdk/options.js';
 import { FileOwnershipRegistry } from '../../src/sdk/file-ownership.js';
+import { getProfile } from '../../src/security/profiles/index.js';
 
 function makeAgent(overrides?: Record<string, unknown>, workspacePath = '/tmp/test-agent') {
   const config = AgentYmlSchema.parse({
@@ -11,10 +12,14 @@ function makeAgent(overrides?: Record<string, unknown>, workspacePath = '/tmp/te
     ...overrides,
   });
 
+  const profileName = (config.safety_profile ?? 'trusted') as 'public' | 'trusted' | 'private';
+  const safetyProfile = getProfile(profileName);
+
   return {
     id: 'test-agent',
     config,
     workspacePath,
+    safetyProfile,
     mcpServer: { name: 'test-agent-tools' },
     tools: [
       {

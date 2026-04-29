@@ -11,6 +11,8 @@ import {
 } from './permissions.js';
 import { buildExternalMcpServerSpec } from './external-mcp.js';
 import { normalizeSandboxSettings } from './sandbox.js';
+import { ApprovalBroker } from '../security/approval-broker.js';
+import type { ChannelAdapter } from '../channels/types.js';
 
 export interface BuildSdkOptionsParams {
   agent: Agent;
@@ -24,6 +26,10 @@ export interface BuildSdkOptionsParams {
   fileOwnership?: FileOwnershipPermissionHooks;
   onElicitation?: OnElicitation;
   modelOverride?: string;
+  /** Wired in T16. When provided, enables profile-aware canUseTool with interactive approval. */
+  approvalBroker?: ApprovalBroker;
+  channel?: ChannelAdapter;
+  sessionContext?: { peerId: string; accountId?: string; threadId?: string };
 }
 
 export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
@@ -87,7 +93,12 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
     buildPermissionHooks(agent, params.fileOwnership),
     buildSdkHookBridge({ agentId: agent.id, emitter: params.hookEmitter }),
   );
-  options.canUseTool = createCanUseTool(agent, new Set(allowedTools));
+  options.canUseTool = createCanUseTool({
+    agent,
+    approvalBroker: params.approvalBroker ?? new ApprovalBroker(),
+    channel: params.channel,
+    sessionContext: params.sessionContext ?? { peerId: '__headless__' },
+  });
 
   return options;
 }
