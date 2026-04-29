@@ -77,10 +77,16 @@ export async function loadPlugin(
   // 2. Resolve entry path
   const entryAbs = join(discovered.pluginDir, discovered.manifest.entry);
 
-  // 3. Dynamic import via file:// URL for ESM compatibility
+  // 3. Dynamic import via file:// URL for ESM compatibility.
+  // The /* webpackIgnore: true */ comment tells Next.js's webpack bundler to
+  // leave this dynamic import as a runtime call instead of attempting to
+  // bundle the resolved module — plugins live outside the Next.js build
+  // tree and are loaded from /app/plugins/<name>/dist/ at runtime, so
+  // webpack must not pre-resolve them. Without this comment, prod builds
+  // throw "Cannot find module" even when the file exists on disk.
   let mod: unknown;
   try {
-    mod = await import(pathToFileURL(entryAbs).href);
+    mod = await import(/* webpackIgnore: true */ pathToFileURL(entryAbs).href);
   } catch (err) {
     throw new Error(
       `failed to import plugin entry ${entryAbs}: ${(err as Error).message}`
