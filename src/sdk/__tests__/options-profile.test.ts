@@ -21,8 +21,8 @@ describe('buildSdkOptions profile-aware', () => {
       approvalBroker: new ApprovalBroker(),
       sessionContext: { peerId: '1' },
     });
-    expect((opts.systemPrompt as any).type).toBe('string');
-    expect((opts.systemPrompt as any).text).toMatch(/public-facing/i);
+    expect(typeof opts.systemPrompt).toBe('string');
+    expect(opts.systemPrompt as string).toMatch(/public-facing/i);
   });
 
   it('public uses empty settingSources', () => {

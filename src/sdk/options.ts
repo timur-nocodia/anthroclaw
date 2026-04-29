@@ -47,7 +47,7 @@ export interface BuildSdkOptionsParams {
   /** Required for profile-aware canUseTool with interactive approval. */
   approvalBroker?: ApprovalBroker;
   channel?: ChannelAdapter;
-  sessionContext?: { peerId: string; accountId?: string; threadId?: string };
+  sessionContext?: { peerId: string; senderId?: string; accountId?: string; threadId?: string };
 }
 
 export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
@@ -58,7 +58,7 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
 
   const systemPrompt: Options['systemPrompt'] =
     profile.systemPrompt.mode === 'string'
-      ? { type: 'string', text: profile.systemPrompt.text }
+      ? profile.systemPrompt.text
       : {
           type: 'preset',
           preset: profile.systemPrompt.preset,

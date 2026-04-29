@@ -20,7 +20,7 @@ describe('canUseTool profile gating', () => {
       channel: undefined,
       sessionContext: { peerId: '1', senderId: '1' },
     });
-    const r = await can('Bash', { command: 'ls' });
+    const r = await can('Bash', { command: 'ls' }, { signal: new AbortController().signal, toolUseID: "test" } as any);
     expect(r.behavior).toBe('deny');
   });
 
@@ -31,7 +31,7 @@ describe('canUseTool profile gating', () => {
       channel: undefined,
       sessionContext: { peerId: '1', senderId: '1' },
     });
-    const r = await can('Read', { file_path: '/tmp/foo' });
+    const r = await can('Read', { file_path: '/tmp/foo' }, { signal: new AbortController().signal, toolUseID: "test" } as any);
     expect(r.behavior).toBe('allow');
   });
 
@@ -45,10 +45,11 @@ describe('canUseTool profile gating', () => {
       channel,
       sessionContext: { peerId: '1', senderId: '1' },
     });
-    const promise = can('Write', { file_path: '/tmp/x', content: 'y' });
+    const promise = can('Write', { file_path: '/tmp/x', content: 'y' }, { signal: new AbortController().signal, toolUseID: "test" } as any);
     // Simulate user clicking allow (same sender as originator)
     setImmediate(() => {
-      const callArgs = promptForApproval.mock.calls[0]?.[0];
+      const calls = promptForApproval.mock.calls as any[];
+      const callArgs = calls[0]?.[0] ?? {};
       if (callArgs?.id) broker.resolveBySender(callArgs.id, '1', 'allow');
     });
     const r = await promise;
@@ -64,7 +65,7 @@ describe('canUseTool profile gating', () => {
       channel,
       sessionContext: { peerId: '1', senderId: '1' },
     });
-    const r = await can('Write', { file_path: '/tmp/x', content: 'y' });
+    const r = await can('Write', { file_path: '/tmp/x', content: 'y' }, { signal: new AbortController().signal, toolUseID: "test" } as any);
     expect(r.behavior).toBe('deny');
     expect((r as any).message).toMatch(/approval|channel/i);
   });
@@ -77,7 +78,7 @@ describe('canUseTool profile gating', () => {
       channel,
       sessionContext: { peerId: '1', senderId: '1' },
     });
-    const r = await can('Bash', { command: 'ls' });
+    const r = await can('Bash', { command: 'ls' }, { signal: new AbortController().signal, toolUseID: "test" } as any);
     expect(r.behavior).toBe('allow');
     expect(channel.promptForApproval).not.toHaveBeenCalled();
   });
@@ -91,7 +92,7 @@ describe('canUseTool profile gating', () => {
       channel: undefined,
       sessionContext: { peerId: '1', senderId: '1' },
     });
-    const r = await can('send_message', { peer_id: '999', text: 'hi' });
+    const r = await can('send_message', { peer_id: '999', text: 'hi' }, { signal: new AbortController().signal, toolUseID: "test" } as any);
     expect(r.behavior).toBe('deny');
     expect((r as any).message).toMatch(/originating peer/i);
   });
@@ -103,7 +104,7 @@ describe('canUseTool profile gating', () => {
       channel: undefined,
       sessionContext: { peerId: '1', senderId: '1' },
     });
-    const r = await can('send_message', { peer_id: '1', text: 'hi' });
+    const r = await can('send_message', { peer_id: '1', text: 'hi' }, { signal: new AbortController().signal, toolUseID: "test" } as any);
     expect(r.behavior).toBe('allow');
   });
 });
