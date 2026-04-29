@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type { AccessControl } from '../../routing/access.js';
 import type { ToolDefinition } from './types.js';
+import type { ToolMeta } from '../../security/types.js';
 
 export function createAccessControlTool(
   agentId: string,
@@ -84,7 +85,6 @@ export function createAccessControlTool(
   return sdkTool as unknown as ToolDefinition;
 }
 
-import type { ToolMeta } from '../../security/types.js';
 export const META: ToolMeta = {
   category: 'agent-config',
   safe_in_public: false, safe_in_trusted: false, safe_in_private: true,

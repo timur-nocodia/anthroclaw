@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type { MemoryProvider } from '../../memory/provider.js';
 import type { ToolDefinition } from './types.js';
+import type { ToolMeta } from '../../security/types.js';
 
 export function createLocalNoteProposeTool(
   workspacePath: string,
@@ -81,7 +82,6 @@ function slugify(value: string): string {
   return slug || 'note';
 }
 
-import type { ToolMeta } from '../../security/types.js';
 export const META: ToolMeta = {
   category: 'memory-write',
   safe_in_public: false, safe_in_trusted: true, safe_in_private: true,

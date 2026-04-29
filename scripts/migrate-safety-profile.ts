@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, copyFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse, parseDocument } from 'yaml';
+import type { AgentYml } from '../src/config/schema.js';
 import { getProfile } from '../src/security/profiles/index.js';
 import { BUILTIN_META } from '../src/security/builtin-tool-meta.js';
 import { MCP_META } from '../src/security/mcp-meta-registry.js';
@@ -13,7 +14,7 @@ export interface InferResult {
   error?: string;
 }
 
-export function inferProfile(cfg: any): InferResult {
+export function inferProfile(cfg: Partial<AgentYml> & Record<string, unknown>): InferResult {
   const allowlist = cfg.allowlist ?? {};
   const pairing = cfg.pairing ?? {};
   const tools: string[] = cfg.mcp_tools ?? [];

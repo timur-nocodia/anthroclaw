@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { readFileSync } from 'node:fs';
 import type { ToolDefinition } from './types.js';
+import type { ToolMeta } from '../../security/types.js';
 import { discoverWorkspaceSkills, readWorkspaceSkill } from '../../skills/workspace.js';
 
 export function createListSkillsTool(
@@ -54,7 +55,6 @@ export function createListSkillsTool(
   return sdkTool as unknown as ToolDefinition;
 }
 
-import type { ToolMeta } from '../../security/types.js';
 export const META: ToolMeta = {
   category: 'read-only',
   safe_in_public: true, safe_in_trusted: true, safe_in_private: true,

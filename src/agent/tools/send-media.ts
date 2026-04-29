@@ -7,6 +7,7 @@ import type {
   SendOptions,
 } from '../../channels/types.js';
 import type { ToolDefinition } from './types.js';
+import type { ToolMeta } from '../../security/types.js';
 
 export function createSendMediaTool(
   workspacePath: string,
@@ -105,7 +106,6 @@ function guessMimeType(
   }
 }
 
-import type { ToolMeta } from '../../security/types.js';
 export const META: ToolMeta = {
   category: 'messaging',
   safe_in_public: false, safe_in_trusted: true, safe_in_private: true,

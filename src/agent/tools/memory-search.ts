@@ -4,6 +4,7 @@ import type { MemoryProvider } from '../../memory/provider.js';
 import type { SearchResult } from '../../memory/store.js';
 import { mergeResults } from '../../memory/search.js';
 import type { ToolDefinition } from './types.js';
+import type { ToolMeta } from '../../security/types.js';
 
 export function createMemorySearchTool(
   store: MemoryProvider,
@@ -85,7 +86,6 @@ export function createMemorySearchTool(
   return sdkTool as unknown as ToolDefinition;
 }
 
-import type { ToolMeta } from '../../security/types.js';
 export const META: ToolMeta = {
   category: 'read-only',
   safe_in_public: true, safe_in_trusted: true, safe_in_private: true,

@@ -3,6 +3,7 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import type { ToolDefinition } from './types.js';
+import type { ToolMeta } from '../../security/types.js';
 
 const DEFAULT_NOTE_DIRS = ['notes', '.claude/notes', 'docs/notes'];
 const NOTE_EXTENSIONS = new Set(['.md', '.mdx', '.txt']);
@@ -129,7 +130,6 @@ function isInside(root: string, target: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !rel.startsWith(sep));
 }
 
-import type { ToolMeta } from '../../security/types.js';
 export const META: ToolMeta = {
   category: 'session-introspect',
   safe_in_public: false, safe_in_trusted: true, safe_in_private: true,

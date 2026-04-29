@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import type { Agent } from '../agent/agent.js';
 import type { ToolDefinition } from '../agent/tools/types.js';
 import { isReadDenied, isWriteDenied } from '../security/file-safety.js';
+import { logger } from '../logger.js';
 import type {
   CanUseTool,
   HookCallback,
@@ -209,9 +210,18 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
   const overrides = agent.config.safety_overrides ?? {};
   const sdkPermissions = agent.config.sdk?.permissions;
 
+  let bypassWarnLogged = false;
+
   return async (toolName, input) => {
     // 1. Bypass mode short-circuit — allow everything without any checks
     if (overrides.permission_mode === 'bypass') {
+      if (!bypassWarnLogged) {
+        logger.warn(
+          { agentId: agent.id, profile: profile.name },
+          'safety_overrides.permission_mode=bypass: tool calls run without approval',
+        );
+        bypassWarnLogged = true;
+      }
       return allow(input);
     }
 

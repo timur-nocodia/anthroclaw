@@ -11,6 +11,8 @@ pairing:
 allowlist:
   telegram: [ "48705953" ]
 
+# NOTE: manage_skills + access_control are allowed because safety_profile=private.
+# Switching to trusted or public would HARD_BLACKLIST these tools and fail to load.
 mcp_tools:
   - memory_search
   - memory_write

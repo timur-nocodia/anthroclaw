@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type { MemoryProvider } from '../../memory/provider.js';
 import type { ToolDefinition } from './types.js';
+import type { ToolMeta } from '../../security/types.js';
 
 const WIKI_DIR = 'memory/wiki';
 
@@ -167,7 +168,6 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-import type { ToolMeta } from '../../security/types.js';
 export const META: ToolMeta = {
   category: 'read-only',
   safe_in_public: true, safe_in_trusted: true, safe_in_private: true,

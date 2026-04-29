@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type { ChannelAdapter, SendOptions } from '../../channels/types.js';
 import type { ToolDefinition } from './types.js';
+import type { ToolMeta } from '../../security/types.js';
 
 export function createSendMessageTool(
   getChannel: (id: string) => ChannelAdapter | undefined,
@@ -58,7 +59,6 @@ export function createSendMessageTool(
   return sdkTool as unknown as ToolDefinition;
 }
 
-import type { ToolMeta } from '../../security/types.js';
 export const META: ToolMeta = {
   category: 'messaging',
   safe_in_public: true, safe_in_trusted: true, safe_in_private: true,
