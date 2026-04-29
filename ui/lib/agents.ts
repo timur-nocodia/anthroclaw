@@ -156,6 +156,61 @@ export function updateAgentConfig(agentId: string, yaml: string): void {
 }
 
 /**
+ * Set the `enabled` flag for `plugins.<name>` inside `agent.yml`. Preserves
+ * any other config keys under that plugin block. Creates the `plugins` block
+ * (and the plugin entry) if they don't exist.
+ *
+ * Throws NotFoundError if the agent does not exist.
+ */
+export function setAgentPluginEnabled(
+  agentId: string,
+  pluginName: string,
+  enabled: boolean,
+): void {
+  const dir = ensureAgentExists(agentId);
+  const ymlPath = join(dir, 'agent.yml');
+  const raw = readFileSync(ymlPath, 'utf-8');
+  const parsed = (parseYaml(raw) ?? {}) as Record<string, unknown>;
+
+  const plugins = (parsed.plugins && typeof parsed.plugins === 'object' && !Array.isArray(parsed.plugins))
+    ? { ...(parsed.plugins as Record<string, unknown>) }
+    : {};
+
+  const existing = plugins[pluginName];
+  const block = (existing && typeof existing === 'object' && !Array.isArray(existing))
+    ? { ...(existing as Record<string, unknown>) }
+    : {};
+
+  block.enabled = enabled;
+  plugins[pluginName] = block;
+  parsed.plugins = plugins;
+
+  writeFileSync(ymlPath, stringifyYaml(parsed), 'utf-8');
+}
+
+/**
+ * Read `plugins.<name>` config block from `agent.yml`. Returns the raw config
+ * (including `enabled`) or `{}` if the agent has no config for this plugin.
+ *
+ * Throws NotFoundError if the agent does not exist.
+ */
+export function getAgentPluginConfig(
+  agentId: string,
+  pluginName: string,
+): Record<string, unknown> {
+  const dir = ensureAgentExists(agentId);
+  const ymlPath = join(dir, 'agent.yml');
+  const raw = readFileSync(ymlPath, 'utf-8');
+  const parsed = (parseYaml(raw) ?? {}) as Record<string, unknown>;
+
+  const plugins = parsed.plugins;
+  if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) return {};
+  const block = (plugins as Record<string, unknown>)[pluginName];
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return {};
+  return { ...(block as Record<string, unknown>) };
+}
+
+/**
  * Create a new agent directory with agent.yml, CLAUDE.md, memory/, .claude/skills/.
  */
 export function createAgent(

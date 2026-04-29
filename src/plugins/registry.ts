@@ -84,6 +84,16 @@ export class PluginRegistry {
     this.toolsByPlugin.set(pluginName, tools);
   }
 
+  /** Tools registered by a specific plugin (independent of agent enable state). */
+  getMcpToolsForPlugin(pluginName: string): PluginMcpTool[] {
+    return this.toolsByPlugin.get(pluginName) ?? [];
+  }
+
+  /** True if any plugin has registered a ContextEngine under this name. */
+  hasContextEngineForPlugin(pluginName: string): boolean {
+    return this.engineByPlugin.has(pluginName);
+  }
+
   /** Tools available to a specific agent — aggregated across all enabled plugins. */
   getMcpToolsForAgent(agentId: string): PluginMcpTool[] {
     const enabled = this.enabledByAgent.get(agentId);
