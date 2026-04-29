@@ -69,3 +69,114 @@ export function inferProfile(cfg: any): InferResult {
 
   return { profile, reason, toolConflicts, hardBlacklistConflicts };
 }
+
+export interface MigrationResult {
+  agentId: string;
+  profile: 'public' | 'trusted' | 'private' | null;
+  reason: string;
+  toolConflicts: string[];
+  hardBlacklistConflicts: string[];
+  needsManualReview: boolean;
+  applied: boolean;
+  error?: string;
+}
+
+export interface MigrationOptions {
+  agentsDir: string;
+  apply: boolean;
+}
+
+export interface MigrationOutput {
+  summary: { scanned: number; readyToApply: number; needsReview: number; applied: number };
+  results: MigrationResult[];
+}
+
+export async function runMigration(opts: MigrationOptions): Promise<MigrationOutput> {
+  const entries = readdirSync(opts.agentsDir);
+  const results: MigrationResult[] = [];
+  let applied = 0;
+
+  for (const name of entries) {
+    const dir = join(opts.agentsDir, name);
+    if (!statSync(dir).isDirectory()) continue;
+    const ymlPath = join(dir, 'agent.yml');
+    if (!existsSync(ymlPath)) continue;
+
+    const raw = readFileSync(ymlPath, 'utf-8');
+    let cfg: any;
+    try {
+      cfg = parse(raw);
+    } catch (err) {
+      results.push({
+        agentId: name,
+        profile: null,
+        reason: '',
+        toolConflicts: [],
+        hardBlacklistConflicts: [],
+        needsManualReview: false,
+        applied: false,
+        error: `parse: ${(err as Error).message}`,
+      });
+      continue;
+    }
+
+    if (cfg?.safety_profile) {
+      results.push({
+        agentId: name,
+        profile: cfg.safety_profile,
+        reason: 'already set',
+        toolConflicts: [],
+        hardBlacklistConflicts: [],
+        needsManualReview: false,
+        applied: false,
+      });
+      continue;
+    }
+
+    const inferred = inferProfile(cfg);
+    if (inferred.error) {
+      results.push({
+        agentId: name,
+        profile: null,
+        reason: '',
+        toolConflicts: [],
+        hardBlacklistConflicts: [],
+        needsManualReview: true,
+        applied: false,
+        error: inferred.error,
+      });
+      continue;
+    }
+
+    const needsReview = inferred.hardBlacklistConflicts.length > 0;
+    let didApply = false;
+    if (opts.apply && !needsReview) {
+      didApply = applyToFile(ymlPath, inferred);
+      if (didApply) applied += 1;
+    }
+    results.push({
+      agentId: name,
+      profile: inferred.profile,
+      reason: inferred.reason,
+      toolConflicts: inferred.toolConflicts,
+      hardBlacklistConflicts: inferred.hardBlacklistConflicts,
+      needsManualReview: needsReview,
+      applied: didApply,
+    });
+  }
+
+  return {
+    summary: {
+      scanned: results.length,
+      readyToApply: results.filter((r) => !r.needsManualReview && r.profile && !r.error).length,
+      needsReview: results.filter((r) => r.needsManualReview).length,
+      applied,
+    },
+    results,
+  };
+}
+
+// Stub for T19; not used yet.
+function applyToFile(_path: string, _inferred: InferResult): boolean {
+  return false;
+}
