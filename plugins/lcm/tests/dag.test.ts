@@ -540,6 +540,13 @@ describe('SummaryDAG', () => {
       // T24 review additions — agent-level aggregators
       'countByDepthAcrossSessions',
       'listSessionIds',
+      // Plan 3 B1 — UI drill-down support
+      'listAllNodes',
+      // Plan 3 C1 — UI doctor route helpers
+      'verifyFtsSync',
+      'findBrokenSourceLineages',
+      'deleteOrphans',
+      'rebuildFts',
     ]);
     // No extra public methods
     const unexpectedPublic = methods.filter((m) => !m.startsWith('_') && !expected.has(m));
@@ -569,5 +576,158 @@ describe('SummaryDAG', () => {
     // Different session should return empty
     const otherCounts = dag.countByDepth('other-sess');
     expect(Object.keys(otherCounts)).toHaveLength(0);
+  });
+
+  // ── 32. listAllNodes (Plan 3 B1) ─────────────────────────────────────────
+  describe('listAllNodes', () => {
+    it('lists all nodes across sessions when no filter is given, ordered by latest_at DESC', () => {
+      dag.create(newNode({ session_id: 'sA', depth: 0, latest_at: 1000 }));
+      dag.create(newNode({ session_id: 'sB', depth: 0, latest_at: 3000 }));
+      dag.create(newNode({ session_id: 'sA', depth: 1, source_type: 'nodes', source_ids: [], latest_at: 2000 }));
+
+      const all = dag.listAllNodes();
+      expect(all).toHaveLength(3);
+      expect(all.map((n) => n.latest_at)).toEqual([3000, 2000, 1000]);
+    });
+
+    it('filters by sessionId', () => {
+      dag.create(newNode({ session_id: 'sA', depth: 0 }));
+      dag.create(newNode({ session_id: 'sA', depth: 1, source_type: 'nodes', source_ids: [] }));
+      dag.create(newNode({ session_id: 'sB', depth: 0 }));
+
+      const aOnly = dag.listAllNodes({ sessionId: 'sA' });
+      expect(aOnly).toHaveLength(2);
+      expect(new Set(aOnly.map((n) => n.session_id))).toEqual(new Set(['sA']));
+    });
+
+    it('filters by depth', () => {
+      dag.create(newNode({ session_id: 'sA', depth: 0 }));
+      dag.create(newNode({ session_id: 'sA', depth: 1, source_type: 'nodes', source_ids: [] }));
+      dag.create(newNode({ session_id: 'sB', depth: 1, source_type: 'nodes', source_ids: [] }));
+
+      const d1 = dag.listAllNodes({ depth: 1 });
+      expect(d1).toHaveLength(2);
+      expect(new Set(d1.map((n) => n.depth))).toEqual(new Set([1]));
+    });
+
+    it('combines sessionId + depth filters', () => {
+      dag.create(newNode({ session_id: 'sA', depth: 0 }));
+      dag.create(newNode({ session_id: 'sA', depth: 1, source_type: 'nodes', source_ids: [] }));
+      dag.create(newNode({ session_id: 'sB', depth: 0 }));
+
+      const r = dag.listAllNodes({ sessionId: 'sA', depth: 0 });
+      expect(r).toHaveLength(1);
+      expect(r[0].session_id).toBe('sA');
+      expect(r[0].depth).toBe(0);
+    });
+
+    it('returns empty array when no nodes match', () => {
+      dag.create(newNode({ session_id: 'sA', depth: 0 }));
+      expect(dag.listAllNodes({ sessionId: 'unknown' })).toEqual([]);
+      expect(dag.listAllNodes({ depth: 99 })).toEqual([]);
+    });
+  });
+
+  // ── 33. verifyFtsSync (Plan 3 C1) ────────────────────────────────────────
+  describe('verifyFtsSync', () => {
+    it('reports both FTS tables in sync on a fresh DB', () => {
+      store.append({ session_id: 's1', source: 'cli', role: 'user', content: 'hello', ts: 1 });
+      dag.create(newNode({ session_id: 's1', depth: 0, source_ids: [1], source_type: 'messages' }));
+
+      const r = dag.verifyFtsSync();
+      expect(r.messagesOk).toBe(true);
+      expect(r.nodesOk).toBe(true);
+      expect(r.msgCount).toBe(1);
+      expect(r.msgFtsCount).toBe(1);
+      expect(r.nodeCount).toBe(1);
+      expect(r.nodeFtsCount).toBe(1);
+    });
+
+    it('reports messagesOk=false after manual delete from FTS shadow', () => {
+      store.append({ session_id: 's1', source: 'cli', role: 'user', content: 'hello', ts: 1 });
+      // Drop the FTS index entry without removing the message → out of sync
+      db.prepare(`INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', 1, 'hello')`).run();
+
+      const r = dag.verifyFtsSync();
+      expect(r.messagesOk).toBe(false);
+      expect(r.msgCount).toBe(1);
+      expect(r.msgFtsCount).toBe(0);
+    });
+
+    it('returns all-zero counts for an empty DB', () => {
+      const r = dag.verifyFtsSync();
+      expect(r).toEqual({
+        messagesOk: true,
+        nodesOk: true,
+        msgCount: 0,
+        msgFtsCount: 0,
+        nodeCount: 0,
+        nodeFtsCount: 0,
+      });
+    });
+  });
+
+  // ── 34. findBrokenSourceLineages (Plan 3 C1) ─────────────────────────────
+  describe('findBrokenSourceLineages', () => {
+    it('returns [] when all message references are valid', () => {
+      store.append({ session_id: 's1', source: 'cli', role: 'user', content: 'a', ts: 1 });
+      dag.create(newNode({ session_id: 's1', depth: 0, source_type: 'messages', source_ids: [1] }));
+      expect(dag.findBrokenSourceLineages()).toEqual([]);
+    });
+
+    it('detects nodes referencing non-existent message store_ids', () => {
+      // Node referencing store_id 999 which does not exist
+      const id = dag.create(newNode({ session_id: 's1', depth: 0, source_type: 'messages', source_ids: [999] }));
+      const broken = dag.findBrokenSourceLineages();
+      expect(broken).toHaveLength(1);
+      expect(broken[0].node_id).toBe(id);
+      expect(String(broken[0].missing_store_id)).toBe('999');
+    });
+
+    it('respects the limit argument', () => {
+      for (let i = 100; i < 105; i++) {
+        dag.create(newNode({ session_id: 's1', depth: 0, source_type: 'messages', source_ids: [i] }));
+      }
+      const broken = dag.findBrokenSourceLineages(2);
+      expect(broken).toHaveLength(2);
+    });
+  });
+
+  // ── 35. deleteOrphans (Plan 3 C1) ────────────────────────────────────────
+  describe('deleteOrphans', () => {
+    it('returns 0 for empty input', () => {
+      expect(dag.deleteOrphans([])).toBe(0);
+    });
+
+    it('returns 0 when ids do not exist as rows (typical orphan case)', () => {
+      // Orphans returned by findOrphans are missing IDs; deleting them is a no-op
+      expect(dag.deleteOrphans(['NEVEREXISTED00000000000001'])).toBe(0);
+    });
+
+    it('actually deletes existing nodes by id', () => {
+      const id = dag.create(newNode({ session_id: 's1', depth: 0, source_type: 'messages', source_ids: [1] }));
+      expect(dag.deleteOrphans([id])).toBe(1);
+      expect(dag.get(id)).toBeNull();
+    });
+  });
+
+  // ── 36. rebuildFts (Plan 3 C1) ───────────────────────────────────────────
+  describe('rebuildFts', () => {
+    it('restores FTS sync after manual desync', () => {
+      store.append({ session_id: 's1', source: 'cli', role: 'user', content: 'hello', ts: 1 });
+      // Force desync
+      db.prepare(`INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', 1, 'hello')`).run();
+      expect(dag.verifyFtsSync().messagesOk).toBe(false);
+
+      dag.rebuildFts();
+      expect(dag.verifyFtsSync().messagesOk).toBe(true);
+    });
+
+    it('is idempotent on a clean DB', () => {
+      expect(() => {
+        dag.rebuildFts();
+        dag.rebuildFts();
+      }).not.toThrow();
+    });
   });
 });

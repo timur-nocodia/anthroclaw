@@ -8,7 +8,7 @@ import {
   existsSync,
   statSync,
 } from 'node:fs';
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml, parseDocument } from 'yaml';
 import { AgentYmlSchema } from '@backend/config/schema.js';
 
 const AGENTS_DIR = resolve(process.cwd(), '..', 'agents');
@@ -153,6 +153,90 @@ export function updateAgentConfig(agentId: string, yaml: string): void {
   }
 
   writeFileSync(join(dir, 'agent.yml'), yaml, 'utf-8');
+}
+
+/**
+ * Set the `enabled` flag for `plugins.<name>` inside `agent.yml`. Preserves
+ * any other config keys under that plugin block. Creates the `plugins` block
+ * (and the plugin entry) if they don't exist.
+ *
+ * Throws NotFoundError if the agent does not exist.
+ */
+export function setAgentPluginEnabled(
+  agentId: string,
+  pluginName: string,
+  enabled: boolean,
+): void {
+  const dir = ensureAgentExists(agentId);
+  const ymlPath = join(dir, 'agent.yml');
+  const raw = readFileSync(ymlPath, 'utf-8');
+
+  // parseDocument preserves comments, blank lines, key ordering, and anchors —
+  // unlike the plain parse/stringify round-trip which strips all of these.
+  // Operators hand-edit agent.yml with documentation comments; toggling a
+  // plugin from the UI must not erase that work.
+  const doc = parseDocument(raw);
+  doc.setIn(['plugins', pluginName, 'enabled'], enabled);
+
+  writeFileSync(ymlPath, doc.toString(), 'utf-8');
+}
+
+/**
+ * Replace the per-plugin config block under `plugins.<name>` in the agent's
+ * `agent.yml`, preserving comments and blank lines (via `parseDocument`).
+ *
+ * The replacement is a full overwrite of the keys *inside* `plugins.<name>` —
+ * any keys not present in `config` are dropped. Comments / blank lines on the
+ * surrounding document survive. The `enabled` flag is *not* special-cased
+ * here: callers either include it in `config` or omit it (the A1 toggle
+ * surface owns it).
+ *
+ * Throws NotFoundError if the agent does not exist.
+ */
+export function setAgentPluginConfig(
+  agentId: string,
+  pluginName: string,
+  config: Record<string, unknown>,
+): void {
+  const dir = ensureAgentExists(agentId);
+  const ymlPath = join(dir, 'agent.yml');
+  const raw = readFileSync(ymlPath, 'utf-8');
+
+  const doc = parseDocument(raw);
+  // Preserve the existing `enabled` flag if the new block doesn't include it,
+  // so the A1 toggle surface and the A2 config surface don't clobber each
+  // other when used independently.
+  if (!('enabled' in config)) {
+    const existingEnabled = doc.getIn(['plugins', pluginName, 'enabled']);
+    if (typeof existingEnabled === 'boolean') {
+      config = { enabled: existingEnabled, ...config };
+    }
+  }
+  doc.setIn(['plugins', pluginName], config);
+
+  writeFileSync(ymlPath, doc.toString(), 'utf-8');
+}
+
+/**
+ * Read `plugins.<name>` config block from `agent.yml`. Returns the raw config
+ * (including `enabled`) or `{}` if the agent has no config for this plugin.
+ *
+ * Throws NotFoundError if the agent does not exist.
+ */
+export function getAgentPluginConfig(
+  agentId: string,
+  pluginName: string,
+): Record<string, unknown> {
+  const dir = ensureAgentExists(agentId);
+  const ymlPath = join(dir, 'agent.yml');
+  const raw = readFileSync(ymlPath, 'utf-8');
+  const parsed = (parseYaml(raw) ?? {}) as Record<string, unknown>;
+
+  const plugins = parsed.plugins;
+  if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) return {};
+  const block = (plugins as Record<string, unknown>)[pluginName];
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return {};
+  return { ...(block as Record<string, unknown>) };
 }
 
 /**

@@ -226,5 +226,30 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
       }
       perAgent.clear();
     },
+    /**
+     * Drop the cached PerAgentState for `agentId` so the next tool/hook
+     * invocation re-reads agent.yml via ctx.getAgentConfig(agentId) and
+     * rebuilds engine/store/dag/lifecycle with fresh config.
+     *
+     * Without this, UI config edits (PUT /agents/:id/plugins/lcm/config)
+     * would update agent.yml but the running engine would keep the stale
+     * config that was captured at first cache miss.
+     */
+    onAgentConfigChanged(agentId: string) {
+      const state = perAgent.get(agentId);
+      if (!state) return;
+      try {
+        state.db.close();
+      } catch {
+        // Closing a healthy SQLite handle should never throw, but if a
+        // broken handle does, swallow it — we only care about getting the
+        // entry out of the cache so the next call rebuilds cleanly.
+      }
+      perAgent.delete(agentId);
+      ctx.logger.info(
+        { agentId },
+        'lcm: per-agent state invalidated due to config change',
+      );
+    },
   };
 }
