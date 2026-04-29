@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type { ToolDefinition } from './types.js';
+import type { ToolMeta } from '../../security/types.js';
 import type { SessionSearchService } from '../../session/session-search.js';
 
 export function createSessionSearchTool(service: SessionSearchService): ToolDefinition {
@@ -66,3 +67,9 @@ export function createSessionSearchTool(service: SessionSearchService): ToolDefi
 
   return sdkTool as unknown as ToolDefinition;
 }
+
+export const META: ToolMeta = {
+  category: 'session-introspect',
+  safe_in_public: false, safe_in_trusted: true, safe_in_private: true,
+  destructive: false, reads_only: true, hard_blacklist_in: [],
+};

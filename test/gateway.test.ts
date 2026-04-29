@@ -66,6 +66,9 @@ class MockChannel implements ChannelAdapter {
   async start(): Promise<void> {}
   async stop(): Promise<void> {}
 
+  readonly supportsApproval = false;
+  async promptForApproval(): Promise<void> { /* no-op for tests */ }
+
   /** Test helper to simulate an incoming message */
   async simulateMessage(msg: InboundMessage): Promise<void> {
     await this.handler?.(msg);
@@ -89,7 +92,9 @@ function minimalConfig(): GlobalConfig {
 
 /** Write an agent.yml into the given directory */
 function writeAgentYml(dir: string, content: string): void {
-  writeFileSync(join(dir, 'agent.yml'), content);
+  // Prepend safety_profile if not already present so all test fixtures are valid
+  const yaml = content.includes('safety_profile:') ? content : `safety_profile: trusted\n${content}`;
+  writeFileSync(join(dir, 'agent.yml'), yaml);
 }
 
 /** Create a standard InboundMessage for testing */
@@ -487,6 +492,8 @@ pairing:
       async sendTyping(peerId) {
         events.push(`typing:${peerId}`);
       },
+      supportsApproval: false,
+      async promptForApproval() {},
     };
     gw._setChannel('telegram', mockTg);
 

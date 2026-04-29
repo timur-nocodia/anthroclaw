@@ -9,6 +9,7 @@ import {
 describe('channel context resolver', () => {
   it('uses telegram topic behavior before peer and wildcard behavior', () => {
     const config = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' }],
       channel_context: {
         reply_to_mode: 'incoming_reply_only',
@@ -40,6 +41,7 @@ describe('channel context resolver', () => {
 
   it('uses whatsapp group behavior and falls back to global reply mode', () => {
     const config = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'whatsapp' }],
       channel_context: {
         reply_to_mode: 'incoming_reply_only',
@@ -66,6 +68,7 @@ describe('channel context resolver', () => {
 
   it('uses whatsapp direct behavior before wildcard behavior', () => {
     const config = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'whatsapp' }],
       channel_context: {
         whatsapp: {
@@ -92,6 +95,7 @@ describe('channel context resolver', () => {
 
   it('uses telegram wildcard behavior when no peer or topic rule matches', () => {
     const config = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' }],
       channel_context: {
         telegram: {

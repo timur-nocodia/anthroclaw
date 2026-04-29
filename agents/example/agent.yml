@@ -9,8 +9,10 @@ pairing:
   mode: off
 
 allowlist:
-  telegram: ["48705953"]
+  telegram: [ "48705953" ]
 
+# NOTE: manage_skills + access_control are allowed because safety_profile=private.
+# Switching to trusted or public would HARD_BLACKLIST these tools and fail to load.
 mcp_tools:
   - memory_search
   - memory_write
@@ -44,21 +46,26 @@ auto_compress:
 # ─── Quick Commands (zero-LLM, instant execution) ───
 quick_commands:
   status:
-    command: "echo '✅ Bot is running'; echo \"PID: $$\"; echo \"Node: $(node -v)\"; echo \"PWD: $(pwd)\"; echo \"Started: $(ps -p $PPID -o lstart= 2>/dev/null || echo unknown)\""
+    command: "echo '✅ Bot is running'; echo \"PID: $$\"; echo \"Node: $(node -v)\";
+      echo \"PWD: $(pwd)\"; echo \"Started: $(ps -p $PPID -o lstart= 2>/dev/null
+      || echo unknown)\""
     timeout: 10
   disk:
     command: "df -h / | tail -1"
     timeout: 10
   memory:
-    command: "out=$(find agents/example/memory -name '*.md' -type f 2>/dev/null | head -20); [ -n \"$out\" ] && echo \"$out\" || echo 'No memory files yet'"
+    command: "out=$(find agents/example/memory -name '*.md' -type f 2>/dev/null |
+      head -20); [ -n \"$out\" ] && echo \"$out\" || echo 'No memory files yet'"
     timeout: 10
 
 # ─── Cron with silent suppression test ───
 cron:
   - id: silent-test
     schedule: "*/2 * * * *"
-    prompt: "Check if everything is OK. If all is fine, respond with exactly [SILENT]. If something is wrong, describe the problem."
+    prompt: "Check if everything is OK. If all is fine, respond with exactly
+      [SILENT]. If something is wrong, describe the problem."
     deliver_to:
       channel: telegram
       peer_id: "48705953"
     enabled: false
+safety_profile: private

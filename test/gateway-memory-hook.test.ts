@@ -48,13 +48,7 @@ describe('Gateway memory write hook', () => {
   it('emits on_memory_write from the memory_write tool without exposing memory text', async () => {
     const agentDir = join(agentsDir, 'memory-agent');
     mkdirSync(agentDir);
-    writeFileSync(join(agentDir, 'agent.yml'), `
-routes:
-  - channel: telegram
-    scope: dm
-mcp_tools:
-  - memory_write
-`);
+    writeFileSync(join(agentDir, 'agent.yml'), `safety_profile: trusted\nroutes:\n  - channel: telegram\n    scope: dm\nmcp_tools:\n  - memory_write\n`);
 
     const gw = new Gateway();
     await gw.start(minimalConfig(), agentsDir, dataDir);
@@ -86,13 +80,7 @@ mcp_tools:
   it('records memory_search influence refs from SDK hook output', async () => {
     const agentDir = join(agentsDir, 'memory-agent');
     mkdirSync(agentDir);
-    writeFileSync(join(agentDir, 'agent.yml'), `
-routes:
-  - channel: telegram
-    scope: dm
-mcp_tools:
-  - memory_search
-`);
+    writeFileSync(join(agentDir, 'agent.yml'), `safety_profile: trusted\nroutes:\n  - channel: telegram\n    scope: dm\nmcp_tools:\n  - memory_search\n`);
 
     const gw = new Gateway();
     await gw.start(minimalConfig(), agentsDir, dataDir);

@@ -242,6 +242,7 @@ describe('PairingSchema', () => {
 describe('AgentYmlSchema', () => {
   it('accepts a valid minimal agent (just routes)', () => {
     const input = {
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' as const }],
     };
     const result = AgentYmlSchema.parse(input);
@@ -257,6 +258,7 @@ describe('AgentYmlSchema', () => {
 
   it('accepts a full agent with all fields', () => {
     const input = {
+      safety_profile: 'trusted' as const,
       model: 'claude-opus-4-6',
       routes: [
         { channel: 'telegram', scope: 'dm' },
@@ -293,6 +295,7 @@ describe('AgentYmlSchema', () => {
   it('rejects an agent with invalid channel in route', () => {
     expect(() =>
       AgentYmlSchema.parse({
+        safety_profile: 'trusted',
         routes: [{ channel: 'discord' }],
       }),
     ).toThrow();
@@ -301,6 +304,7 @@ describe('AgentYmlSchema', () => {
   it('rejects an agent with invalid pairing mode', () => {
     expect(() =>
       AgentYmlSchema.parse({
+        safety_profile: 'trusted',
         routes: [{ channel: 'telegram' }],
         pairing: { mode: 'magic' },
       }),
@@ -309,6 +313,7 @@ describe('AgentYmlSchema', () => {
 
   it('accepts session_policy field', () => {
     const result = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' }],
       session_policy: 'daily',
     });
@@ -317,6 +322,7 @@ describe('AgentYmlSchema', () => {
 
   it('accepts subagent role policy fields', () => {
     const result = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' }],
       subagents: {
         allow: ['researcher', 'coder'],
@@ -342,6 +348,7 @@ describe('AgentYmlSchema', () => {
 
   it('defaults session_policy to never', () => {
     const result = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' }],
     });
     expect(result.session_policy).toBe('never');
@@ -349,6 +356,7 @@ describe('AgentYmlSchema', () => {
 
   it('accepts auto_compress config', () => {
     const result = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' }],
       auto_compress: { enabled: true, threshold_messages: 20 },
     });
@@ -358,6 +366,7 @@ describe('AgentYmlSchema', () => {
 
   it('accepts iteration_budget config', () => {
     const result = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' }],
       iteration_budget: { max_tool_calls: 50, timeout_ms: 60000, grace_message: false },
     });
@@ -368,6 +377,7 @@ describe('AgentYmlSchema', () => {
 
   it('accepts post-run memory extraction config with defaults', () => {
     const result = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' }],
       memory_extraction: { enabled: true },
     });
@@ -380,6 +390,7 @@ describe('AgentYmlSchema', () => {
 
   it('ignores legacy skills config in strict-native mode', () => {
     const result = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' }],
       skills: { config: { 'api.key': 'test' }, disabled: ['heavy-skill'] },
     });
@@ -388,6 +399,7 @@ describe('AgentYmlSchema', () => {
 
   it('ignores legacy fallbacks config in strict-native mode', () => {
     const result = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' }],
       fallbacks: ['claude-sonnet-4-6', 'claude-haiku-3-5'],
     });
@@ -396,6 +408,7 @@ describe('AgentYmlSchema', () => {
 
   it('accepts sdk config for native agent-sdk features', () => {
     const result = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' }],
       sdk: {
         allowedTools: ['Read', 'Bash'],
@@ -443,6 +456,7 @@ describe('AgentYmlSchema', () => {
 
   it('accepts SDK lifecycle hook events', () => {
     const result = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
       routes: [{ channel: 'telegram' }],
       hooks: [
         {
@@ -466,6 +480,7 @@ describe('AgentYmlSchema', () => {
 
   it('rejects invalid session_policy', () => {
     expect(() => AgentYmlSchema.parse({
+      safety_profile: 'trusted',
       routes: [{ channel: 'telegram' }],
       session_policy: 'biweekly',
     })).toThrow();
@@ -483,6 +498,7 @@ describe('Type inference (compile-time checks)', () => {
 
   it('AgentYml type is assignable from parse result', () => {
     const _agent: AgentYml = AgentYmlSchema.parse({
+      safety_profile: 'trusted',
       routes: [{ channel: 'telegram' }],
     });
     void _agent;

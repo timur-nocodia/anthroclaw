@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import type { Agent } from '../agent/agent.js';
 import type { ToolDefinition } from '../agent/tools/types.js';
 import { isReadDenied, isWriteDenied } from '../security/file-safety.js';
+import { logger } from '../logger.js';
 import type {
   CanUseTool,
   HookCallback,
@@ -18,6 +19,11 @@ import {
 import type { FileOwnershipRegistry } from './file-ownership.js';
 import type { StoredFileOwnershipEvent } from '../metrics/store.js';
 import { buildExternalMcpToolNames } from './external-mcp.js';
+import { BUILTIN_META } from '../security/builtin-tool-meta.js';
+import { MCP_META } from '../security/mcp-meta-registry.js';
+import type { ToolMeta } from '../security/types.js';
+import { ApprovalBroker } from '../security/approval-broker.js';
+import type { ChannelAdapter } from '../channels/types.js';
 
 const DEFAULT_ALLOWED_TOOLS = [
   'Read',
@@ -191,50 +197,130 @@ export function buildAllowedTools(
   return Array.from(out);
 }
 
-export function createCanUseTool(
-  agent: Pick<Agent, 'config' | 'mcpServer' | 'tools'>,
-  allowedTools: ReadonlySet<string>,
-): CanUseTool {
-  const cfg = agent.config.sdk;
-  const defaultBehavior = cfg?.permissions?.default_behavior ?? 'deny';
-  const disallowed = new Set(cfg?.disallowedTools ?? []);
-  const ownMcpPrefix = `mcp__${agent.mcpServer.name}__`;
+export interface CanUseToolDeps {
+  agent: Pick<Agent, 'config' | 'safetyProfile' | 'id'>;
+  approvalBroker: ApprovalBroker;
+  channel?: ChannelAdapter;
+  sessionContext: { peerId: string; senderId?: string; accountId?: string; threadId?: string };
+}
+
+export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
+  const { agent, approvalBroker, channel, sessionContext } = deps;
+  const profile = agent.safetyProfile;
+  const overrides = agent.config.safety_overrides ?? {};
+  const sdkPermissions = agent.config.sdk?.permissions;
+
+  let bypassWarnLogged = false;
 
   return async (toolName, input) => {
-    if (disallowed.has(toolName)) {
-      return deny(`Tool ${toolName} is disallowed by agent config.`);
-    }
-
-    if (toolName.startsWith('mcp__') && cfg?.permissions?.allow_mcp === false) {
-      return deny(`MCP tool ${toolName} is disabled by agent config.`);
-    }
-
-    if (toolName === 'Bash' && cfg?.permissions?.allow_bash === false) {
-      return deny('Bash is disabled by agent config.');
-    }
-
-    if (WEB_TOOLS.includes(toolName as (typeof WEB_TOOLS)[number]) && cfg?.permissions?.allow_web === false) {
-      return deny(`Web tool ${toolName} is disabled by agent config.`);
-    }
-
-    if (allowedTools.has(toolName)) {
+    // 1. Bypass mode short-circuit — allow everything without any checks
+    if (overrides.permission_mode === 'bypass') {
+      if (!bypassWarnLogged) {
+        logger.warn(
+          { agentId: agent.id, profile: profile.name },
+          'safety_overrides.permission_mode=bypass: tool calls run without approval',
+        );
+        bypassWarnLogged = true;
+      }
       return allow(input);
     }
 
+    // 2. Resolve meta: for prefixed MCP tools (mcp__server__tool), look up by local name
+    const isMcpPrefixed = toolName.startsWith('mcp__');
+    const localName = isMcpPrefixed ? (toolName.split('__').at(-1) ?? toolName) : toolName;
+    const meta = lookupMeta(localName);
+
+    // 3. HARD_BLACKLIST — cannot be opened even with overrides
     if (
-      toolName.startsWith(ownMcpPrefix)
-      && cfg?.permissions?.allow_mcp !== false
-      && isLocalMcpToolApproved(cfg?.permissions?.allowed_mcp_tools, toolName)
+      profile.hardBlacklist.has(toolName) ||
+      profile.hardBlacklist.has(localName) ||
+      (meta && meta.hard_blacklist_in.includes(profile.name))
     ) {
+      return deny(`Tool "${toolName}" is hard-blacklisted in safety_profile=${profile.name}`);
+    }
+
+    // 4. For prefixed MCP tools, apply sdk.permissions.allowed_mcp_tools filter
+    if (isMcpPrefixed && sdkPermissions?.allowed_mcp_tools) {
+      const approved = isLocalMcpToolApproved(sdkPermissions.allowed_mcp_tools, toolName);
+      if (!approved) {
+        return deny(`MCP tool "${toolName}" is not in allowed_mcp_tools list`);
+      }
+    }
+
+    // 5. Explicit override allow_tools takes effect (after blacklist and filter checks)
+    const overrideAllow =
+      (overrides.allow_tools ?? []).includes(toolName) ||
+      (overrides.allow_tools ?? []).includes(localName);
+
+    // 6. Determine if profile allows the tool
+    const profileAllows =
+      profile.builtinTools.allowed.has(toolName) ||
+      profile.builtinTools.allowed.has(localName) ||
+      (meta !== undefined && profile.mcpToolPolicy.allowedByMeta(meta));
+
+    if (!profileAllows && !overrideAllow) {
+      return deny(`Tool "${toolName}" is not allowed by safety_profile=${profile.name}`);
+    }
+
+    // 7. Public profile: send_message is restricted to the originating peer only.
+    // This prevents prompt-injected public agents from spamming arbitrary recipients.
+    if (profile.name === 'public' && (toolName === 'send_message' || localName === 'send_message')) {
+      const targetPeer = (input as any)?.peer_id ?? (input as any)?.peerId;
+      if (typeof targetPeer === 'string' && targetPeer !== sessionContext.peerId) {
+        return deny(
+          `safety_profile=public: send_message can only target the originating peer (got "${targetPeer}", expected "${sessionContext.peerId}")`,
+        );
+      }
+    }
+
+    // 8. Approval flow — check if tool requires interactive approval
+    const requiresApproval =
+      profile.builtinTools.requiresApproval.has(toolName) ||
+      profile.builtinTools.requiresApproval.has(localName) ||
+      (meta !== undefined && profile.mcpToolPolicy.requiresApproval(meta));
+
+    if (!requiresApproval) {
       return allow(input);
     }
 
-    if (defaultBehavior === 'allow') {
-      return allow(input);
+    // Channel must support interactive approval
+    if (!channel || !channel.supportsApproval) {
+      return deny(
+        `Tool "${toolName}" requires approval; channel does not support interactive approval`,
+      );
     }
 
-    return deny(`Tool ${toolName} is not approved for headless execution.`);
+    // Generate unique id for this approval request
+    const id = `${agent.id}:${toolName}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    await channel.promptForApproval({
+      id,
+      toolName,
+      argsPreview: previewArgs(input),
+      argsFull: JSON.stringify(input),
+      peerId: sessionContext.peerId,
+      accountId: sessionContext.accountId,
+      threadId: sessionContext.threadId,
+    });
+    // Pass senderId (originating user) and the original input so they are
+    // verified and preserved when the broker resolves.
+    return approvalBroker.request(
+      id,
+      60_000,
+      sessionContext.senderId ?? sessionContext.peerId,
+      input,
+    );
   };
+}
+
+function lookupMeta(localToolName: string): ToolMeta | undefined {
+  return (MCP_META as Record<string, ToolMeta>)[localToolName] ??
+    (BUILTIN_META as Record<string, ToolMeta>)[localToolName];
+}
+
+function previewArgs(input: unknown): string {
+  const json = JSON.stringify(input, null, 2);
+  if (json.length <= 500) return json;
+  return json.slice(0, 480) + '\n...(truncated)';
 }
 
 function createDenyDangerousOperationsHook(

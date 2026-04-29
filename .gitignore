@@ -25,6 +25,7 @@ openclaw-path-alias-*/
 --code/
 docs/*
 !docs/superpowers/
+!docs/safety-profiles.md
 
 # Git worktrees (used by superpowers subagent-driven workflow)
 .worktrees/

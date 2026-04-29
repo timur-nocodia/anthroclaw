@@ -11,6 +11,26 @@ import {
 } from './permissions.js';
 import { buildExternalMcpServerSpec } from './external-mcp.js';
 import { normalizeSandboxSettings } from './sandbox.js';
+import { ApprovalBroker } from '../security/approval-broker.js';
+import type { ChannelAdapter } from '../channels/types.js';
+import type { SandboxDefaults } from '../security/profiles/types.js';
+import type { SdkSandboxConfig } from '../config/schema.js';
+
+/**
+ * Merges profile sandbox defaults with agent-level overrides.
+ * Agent yml values always win; profile fills in missing defaults.
+ */
+function applySandboxProfile(
+  profile: SandboxDefaults,
+  agentSandbox: SdkSandboxConfig | undefined,
+): SdkSandboxConfig {
+  return {
+    enabled: agentSandbox?.enabled ?? profile.enabled,
+    allowUnsandboxedCommands: agentSandbox?.allowUnsandboxedCommands ?? profile.allowUnsandboxedCommands,
+    // Spread remaining agent-level fields so nothing is lost
+    ...agentSandbox,
+  };
+}
 
 export interface BuildSdkOptionsParams {
   agent: Agent;
@@ -24,12 +44,27 @@ export interface BuildSdkOptionsParams {
   fileOwnership?: FileOwnershipPermissionHooks;
   onElicitation?: OnElicitation;
   modelOverride?: string;
+  /** Required for profile-aware canUseTool with interactive approval. */
+  approvalBroker?: ApprovalBroker;
+  channel?: ChannelAdapter;
+  sessionContext?: { peerId: string; accountId?: string; threadId?: string };
 }
 
 export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
   const { agent, resume, subagents, trustedBypass = false, includeMcpServer = true, modelOverride } = params;
   const cfg = agent.config.sdk;
   const hasSubagents = Boolean(subagents && Object.keys(subagents).length > 0);
+  const profile = agent.safetyProfile;
+
+  const systemPrompt: Options['systemPrompt'] =
+    profile.systemPrompt.mode === 'string'
+      ? { type: 'string', text: profile.systemPrompt.text }
+      : {
+          type: 'preset',
+          preset: profile.systemPrompt.preset,
+          excludeDynamicSections: profile.systemPrompt.excludeDynamicSections,
+        };
+
   const options: Options = {
     model: modelOverride ?? agent.config.model ?? 'claude-sonnet-4-6',
     cwd: agent.workspacePath,
@@ -43,13 +78,9 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
     includePartialMessages: cfg?.includePartialMessages,
     includeHookEvents: cfg?.includeHookEvents,
     enableFileCheckpointing: cfg?.enableFileCheckpointing,
-    sandbox: normalizeSandboxSettings(cfg?.sandbox),
-    settingSources: ['project'],
-    systemPrompt: {
-      type: 'preset',
-      preset: 'claude_code',
-      excludeDynamicSections: true,
-    },
+    sandbox: normalizeSandboxSettings(applySandboxProfile(profile.sandboxDefaults, cfg?.sandbox)),
+    settingSources: profile.settingSources,
+    systemPrompt,
     sessionStore: params.sessionStore,
     loadTimeoutMs: params.loadTimeoutMs,
     onElicitation: params.onElicitation,
@@ -87,7 +118,12 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
     buildPermissionHooks(agent, params.fileOwnership),
     buildSdkHookBridge({ agentId: agent.id, emitter: params.hookEmitter }),
   );
-  options.canUseTool = createCanUseTool(agent, new Set(allowedTools));
+  options.canUseTool = createCanUseTool({
+    agent,
+    approvalBroker: params.approvalBroker ?? new ApprovalBroker(),
+    channel: params.channel,
+    sessionContext: params.sessionContext ?? { peerId: '__headless__' },
+  });
 
   return options;
 }

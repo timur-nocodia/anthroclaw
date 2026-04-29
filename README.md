@@ -351,6 +351,8 @@ Before adding powerful tools to an agent, verify:
 - which MCP tools it can access
 - whether the session is personal, group, or channel-facing
 
+See [Safety Profiles](docs/safety-profiles.md) for how `safety_profile` controls tool access and system prompt selection.
+
 ## Project Layout
 
 ```text

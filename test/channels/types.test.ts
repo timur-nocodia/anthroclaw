@@ -35,6 +35,8 @@ describe('Channel types', () => {
       async editText() {},
       async sendMedia() { return ''; },
       async sendTyping() {},
+      supportsApproval: false,
+      async promptForApproval() {},
     };
     expect(typeof adapter.editText).toBe('function');
   });
@@ -52,6 +54,8 @@ describe('Channel types', () => {
       },
       async sendMedia() { return ''; },
       async sendTyping() {},
+      supportsApproval: false,
+      async promptForApproval() {},
     };
 
     await adapter.editText('peer-1', 'msg-42', 'updated text');

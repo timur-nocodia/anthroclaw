@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type { ToolDefinition } from './types.js';
+import type { ToolMeta } from '../../security/types.js';
 import {
   assertSkillExists,
   assertSkillMissing,
@@ -90,3 +91,9 @@ export function createManageSkillsTool(workspacePath: string): ToolDefinition {
 
   return sdkTool as unknown as ToolDefinition;
 }
+
+export const META: ToolMeta = {
+  category: 'agent-config',
+  safe_in_public: false, safe_in_trusted: false, safe_in_private: true,
+  destructive: true, reads_only: false, hard_blacklist_in: ['public', 'trusted'],
+};

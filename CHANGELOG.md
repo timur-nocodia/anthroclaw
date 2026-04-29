@@ -4,6 +4,24 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+### BREAKING
+
+- `safety_profile` is now required in `agents/<id>/agent.yml`. Existing configs without this field fail to load. Run `pnpm migrate:safety-profile --apply` to add it. See `docs/safety-profiles.md`.
+- The hardcoded `claude_code` SDK preset and `settingSources: ['project']` are no longer applied by default. Profile-driven; see `docs/safety-profiles.md`.
+- `DEFAULT_ALLOWED_TOOLS` no longer auto-includes `Bash`, `Write`, `Edit`, `MultiEdit`, `WebFetch` for every agent. Per-profile gating replaces it.
+
+### Added
+
+- `src/security/profiles/` — `public`, `trusted`, `private` profile definitions
+- `src/security/approval-broker.ts` — in-memory approval queue for interactive permission flow
+- `pnpm migrate:safety-profile` — utility to add `safety_profile` to existing agents
+- Telegram inline-button approval for destructive tool calls in `trusted`/`private` profiles
+- Per-tool `META` exports across all MCP tools
+
+### Fixed
+
+- Klavdia (and any other agent under `claude_code` preset) was instructed by SDK to use `/tmp/claude-resume-.../memory/` and harness primitives `RemoteTrigger`/`CronCreate`. This is replaced for `public` profile (custom prompt) and gated for others.
+
 ## [0.4.1] - 2026-04-28
 
 Polish pass on the Sessions surface shipped in 0.4.0: shape-matched

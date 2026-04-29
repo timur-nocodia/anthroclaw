@@ -23,6 +23,7 @@ import type {
   InboundMedia,
   OutboundMedia,
   SendOptions,
+  ApprovalRequest,
 } from './types.js';
 import { logger } from '../logger.js';
 import { chunkText, mimeToExtension } from './utils.js';
@@ -89,6 +90,8 @@ const baileysLogger = pino({ level: 'silent' });
 
 export class WhatsAppChannel implements ChannelAdapter {
   readonly id = 'whatsapp' as const;
+  static readonly supportsApproval = false;
+  readonly supportsApproval = false as const;
 
   private config: WhatsAppConfig;
   private sockets = new Map<string, WASocket>();
@@ -534,4 +537,11 @@ export class WhatsAppChannel implements ChannelAdapter {
     return null;
   }
 
+  async promptForApproval(_req: ApprovalRequest): Promise<void> {
+    throw new Error('WhatsApp channel does not support interactive approval');
+  }
+
 }
+
+/** Alias for consistency with camelCase naming conventions. */
+export const WhatsappChannel = WhatsAppChannel;

@@ -1,3 +1,13 @@
+export interface ApprovalRequest {
+  id: string;                  // ApprovalBroker id
+  toolName: string;
+  argsPreview: string;          // human-readable summary
+  argsFull?: string;             // full JSON
+  peerId: string;
+  accountId?: string;
+  threadId?: string;
+}
+
 export interface InboundMessage {
   channel: 'telegram' | 'whatsapp';
   accountId: string;
@@ -72,4 +82,6 @@ export interface ChannelAdapter {
   sendMedia(peerId: string, media: OutboundMedia, opts?: SendOptions): Promise<string>;
   sendTyping(peerId: string, accountId?: string, threadId?: string): Promise<void>;
   setReaction?(peerId: string, messageId: string, emoji: string, accountId?: string): Promise<void>;
+  readonly supportsApproval: boolean;
+  promptForApproval(req: ApprovalRequest): Promise<void>;
 }

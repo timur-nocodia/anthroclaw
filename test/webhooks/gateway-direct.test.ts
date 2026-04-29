@@ -17,6 +17,8 @@ class MockChannel implements ChannelAdapter {
   async editText(_peerId: string, _messageId: string, _text: string, _opts?: SendOptions): Promise<void> {}
   async sendMedia(_peerId: string, _media: OutboundMedia, _opts?: SendOptions): Promise<string> { return 'msg-1'; }
   async sendTyping(_peerId: string, _accountId?: string): Promise<void> {}
+  readonly supportsApproval = false;
+  async promptForApproval(): Promise<void> { /* no-op for tests */ }
 }
 
 function headers(secret: string) {

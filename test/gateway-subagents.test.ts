@@ -37,7 +37,8 @@ function minimalConfig(): GlobalConfig {
 }
 
 function writeAgentYml(dir: string, content: string): void {
-  writeFileSync(join(dir, 'agent.yml'), content);
+  const yaml = content.includes('safety_profile:') ? content : `safety_profile: trusted\n${content}`;
+  writeFileSync(join(dir, 'agent.yml'), yaml);
 }
 
 /* ------------------------------------------------------------------ */
