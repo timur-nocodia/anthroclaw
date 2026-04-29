@@ -17,6 +17,9 @@ import { existsSync } from 'node:fs';
 import { SummaryDAG } from '../../plugins/lcm/dist/dag.js';
 import { MessageStore } from '../../plugins/lcm/dist/store.js';
 
+export { SummaryDAG } from '../../plugins/lcm/dist/dag.js';
+export { MessageStore } from '../../plugins/lcm/dist/store.js';
+
 export type LcmHandle = {
   db: Database.Database;
   store: MessageStore;

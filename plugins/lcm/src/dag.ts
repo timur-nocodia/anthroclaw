@@ -409,6 +409,85 @@ export class SummaryDAG {
   }
 
   /**
+   * Verify FTS5 shadow tables (messages_fts, nodes_fts) are in sync with their
+   * external content tables. Plan 3 C1 — used by the UI lcm/doctor route to
+   * check FTS health without going through the lcm_doctor MCP tool's rate
+   * limiter.
+   *
+   * For FTS5 external-content tables, COUNT(*) on the virtual table reads from
+   * the source table (always equal). We compare against the FTS5 _docsize
+   * shadow table, which tracks documents actually indexed.
+   */
+  verifyFtsSync(): {
+    messagesOk: boolean;
+    nodesOk: boolean;
+    msgCount: number;
+    msgFtsCount: number;
+    nodeCount: number;
+    nodeFtsCount: number;
+  } {
+    const msgCount = (this._db.prepare('SELECT COUNT(*) AS c FROM messages').get() as { c: number }).c;
+    const msgFtsCount = (this._db
+      .prepare('SELECT COUNT(*) AS c FROM messages_fts_docsize')
+      .get() as { c: number }).c;
+    const nodeCount = (this._db
+      .prepare('SELECT COUNT(*) AS c FROM summary_nodes')
+      .get() as { c: number }).c;
+    const nodeFtsCount = (this._db
+      .prepare('SELECT COUNT(*) AS c FROM nodes_fts_docsize')
+      .get() as { c: number }).c;
+    return {
+      messagesOk: msgCount === msgFtsCount,
+      nodesOk: nodeCount === nodeFtsCount,
+      msgCount,
+      msgFtsCount,
+      nodeCount,
+      nodeFtsCount,
+    };
+  }
+
+  /**
+   * Find nodes whose source_type='messages' source_ids reference message
+   * store_ids that no longer exist in the messages table. Returns up to
+   * `limit` rows (default 20) — matches lcm_doctor's source_lineage_hygiene
+   * check.
+   */
+  findBrokenSourceLineages(limit = 20): Array<{ node_id: string; missing_store_id: string }> {
+    return this._db
+      .prepare(
+        `SELECT n.node_id, j.value AS missing_store_id
+         FROM summary_nodes n, json_each(n.source_ids_json) j
+         WHERE n.source_type = 'messages'
+           AND NOT EXISTS (SELECT 1 FROM messages WHERE store_id = CAST(j.value AS INTEGER))
+         LIMIT ?`,
+      )
+      .all(limit) as Array<{ node_id: string; missing_store_id: string }>;
+  }
+
+  /**
+   * Delete summary_nodes by node_id. Used during lcm_doctor cleanup. Returns
+   * the number of rows actually removed (may be 0 when ids are pure phantoms).
+   * Matches the cleanup behaviour in the lcm_doctor MCP tool.
+   */
+  deleteOrphans(nodeIds: string[]): number {
+    if (nodeIds.length === 0) return 0;
+    const placeholders = nodeIds.map(() => '?').join(',');
+    const result = this._db
+      .prepare(`DELETE FROM summary_nodes WHERE node_id IN (${placeholders})`)
+      .run(...nodeIds);
+    return result.changes;
+  }
+
+  /**
+   * Rebuild both FTS5 shadow tables. Idempotent — safe to call when already in
+   * sync. Used by the UI doctor route after applying cleanup.
+   */
+  rebuildFts(): void {
+    this._db.prepare(`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`).run();
+    this._db.prepare(`INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')`).run();
+  }
+
+  /**
    * CRITICAL for lossless drill-down: walk down the subtree from nodeId
    * until reaching nodes with source_type='messages', then collect all
    * message store_ids. Returns a deduplicated, sorted ASC number array.
