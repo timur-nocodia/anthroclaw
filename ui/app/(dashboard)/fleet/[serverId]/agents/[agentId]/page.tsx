@@ -100,6 +100,7 @@ interface AgentConfig {
     max_candidates?: number;
     max_input_chars?: number;
   };
+  learning?: LearningConfig;
   external_mcp_servers?: Record<string, ExternalMcpServerConfig>;
   allowlist?: Record<string, string[]>;
   quick_commands?: Record<string, { command: string; timeout: number }>;
@@ -380,6 +381,90 @@ interface MemoryInfluenceEvent {
   refs: MemoryInfluenceRef[];
 }
 
+interface LearningConfig {
+  enabled?: boolean;
+  mode?: "off" | "propose" | "auto_private";
+  review_interval_turns?: number;
+  skill_review_min_tool_calls?: number;
+  max_actions_per_review?: number;
+  max_input_chars?: number;
+  artifacts?: {
+    max_files?: number;
+    max_file_bytes?: number;
+    max_total_bytes?: number;
+    max_prompt_chars?: number;
+    max_snippet_chars?: number;
+  };
+}
+
+type LearningActionStatus = "proposed" | "approved" | "rejected" | "applied" | "failed";
+type LearningActionType = "memory_candidate" | "skill_patch" | "skill_create" | "skill_update_full" | "none";
+
+interface LearningActionRecord {
+  id: string;
+  reviewId: string;
+  agentId: string;
+  actionType: LearningActionType;
+  status: LearningActionStatus;
+  confidence?: number;
+  title: string;
+  rationale: string;
+  payload: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+  appliedAt?: number;
+  error?: string;
+}
+
+interface LearningReviewRecord {
+  id: string;
+  agentId: string;
+  sessionKey?: string;
+  runId?: string;
+  sdkSessionId?: string;
+  trigger: string;
+  status: "running" | "completed" | "failed";
+  mode: "off" | "propose" | "auto_private";
+  startedAt: number;
+  completedAt?: number;
+  error?: string;
+}
+
+interface LearningArtifactRecord {
+  id: string;
+  reviewId: string;
+  agentId: string;
+  runId?: string;
+  kind: string;
+  path: string;
+  contentHash: string;
+  sizeBytes: number;
+  reason?: string;
+  createdAt: number;
+}
+
+interface LearningSummary {
+  pending: number;
+  lastReviewAt?: number;
+  lastFailure?: string;
+  reviewsByStatus: Record<string, number>;
+  actionsByStatus: Record<string, number>;
+  actionsByType: Record<string, number>;
+  artifactCount: number;
+  skillSnapshotCount: number;
+}
+
+interface LearningPayload {
+  config: {
+    safety_profile?: "public" | "trusted" | "private";
+    learning: Required<LearningConfig> & { artifacts: Required<NonNullable<LearningConfig["artifacts"]>> };
+  };
+  summary: LearningSummary;
+  actions: LearningActionRecord[];
+  reviews: LearningReviewRecord[];
+  artifacts: LearningArtifactRecord[];
+}
+
 const EFFORT_LEVELS = [
   { value: "low", label: "low — minimal thinking, fastest" },
   { value: "medium", label: "medium — moderate thinking" },
@@ -456,6 +541,24 @@ function envTextToMap(value: string): Record<string, string> | undefined {
     })
     .filter(([key]) => key.length > 0);
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function normalizeLearningConfig(value?: LearningConfig): Required<LearningConfig> & { artifacts: Required<NonNullable<LearningConfig["artifacts"]>> } {
+  return {
+    enabled: value?.enabled ?? false,
+    mode: value?.mode ?? "off",
+    review_interval_turns: value?.review_interval_turns ?? 10,
+    skill_review_min_tool_calls: value?.skill_review_min_tool_calls ?? 8,
+    max_actions_per_review: value?.max_actions_per_review ?? 8,
+    max_input_chars: value?.max_input_chars ?? 24000,
+    artifacts: {
+      max_files: value?.artifacts?.max_files ?? 32,
+      max_file_bytes: value?.artifacts?.max_file_bytes ?? 65536,
+      max_total_bytes: value?.artifacts?.max_total_bytes ?? 262144,
+      max_prompt_chars: value?.artifacts?.max_prompt_chars ?? 24000,
+      max_snippet_chars: value?.artifacts?.max_snippet_chars ?? 4000,
+    },
+  };
 }
 
 const TIMEZONES = [
@@ -729,6 +832,13 @@ export default function AgentEditorPage() {
             Memory
           </TabsTrigger>
           <TabsTrigger
+            value="learning"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <Brain className="mr-1.5 h-3.5 w-3.5" />
+            Learning
+          </TabsTrigger>
+          <TabsTrigger
             value="skills"
             className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
           >
@@ -762,6 +872,9 @@ export default function AgentEditorPage() {
         </TabsContent>
         <TabsContent value="memory" className="mt-0 flex-1 overflow-auto">
           <MemoryReviewTab serverId={serverId} agentId={agentId} />
+        </TabsContent>
+        <TabsContent value="learning" className="mt-0 flex-1 overflow-auto">
+          {agent && <LearningTab serverId={serverId} agentId={agentId} agent={agent} />}
         </TabsContent>
         <TabsContent value="skills" className="mt-0 flex-1 overflow-auto">
           <SkillsTab serverId={serverId} agentId={agentId} />
@@ -822,6 +935,7 @@ function ConfigTab({
       max_candidates: agent.memory_extraction?.max_candidates ?? 5,
       max_input_chars: agent.memory_extraction?.max_input_chars ?? 6000,
     },
+    learning: normalizeLearningConfig(agent.learning),
     external_mcp_servers: agent.external_mcp_servers ?? {},
     allowlist: agent.allowlist ?? {},
     quick_commands: agent.quick_commands ?? {},
@@ -3143,6 +3257,367 @@ function ExternalMcpPreflightResult({ state }: { state: ExternalMcpPreflightStat
       )}
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Learning Tab                                                       */
+/* ------------------------------------------------------------------ */
+
+function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: string; agent: AgentConfig }) {
+  const [data, setData] = useState<LearningPayload | null>(null);
+  const [cfg, setCfg] = useState(normalizeLearningConfig(agent.learning));
+  const [status, setStatus] = useState<LearningActionStatus | "all">("proposed");
+  const [type, setType] = useState<LearningActionType | "all">("all");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [selected, setSelected] = useState<LearningActionRecord | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const loadLearning = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "100" });
+      if (status !== "all") params.set("status", status);
+      if (type !== "all") params.set("type", type);
+      const res = await fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/learning?${params.toString()}`);
+      if (!res.ok) throw new Error(`learning ${res.status}`);
+      const payload = await res.json() as LearningPayload;
+      setData(payload);
+      setCfg(normalizeLearningConfig(payload.config.learning));
+    } finally {
+      setLoading(false);
+    }
+  }, [serverId, agentId, status, type]);
+
+  useEffect(() => {
+    void loadLearning();
+  }, [loadLearning]);
+
+  const updateConfig = (patch: Partial<typeof cfg>) => {
+    setCfg((current) => ({ ...current, ...patch }));
+  };
+
+  const updateArtifacts = (patch: Partial<typeof cfg.artifacts>) => {
+    setCfg((current) => ({ ...current, artifacts: { ...current.artifacts, ...patch } }));
+  };
+
+  const saveLearningConfig = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/learning`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operation: "update_config", learning: cfg }),
+      });
+      if (!res.ok) throw new Error(`save learning ${res.status}`);
+      await loadLearning();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runAction = async (operation: "approve" | "reject" | "apply", action: LearningActionRecord) => {
+    const reason = operation === "reject" ? window.prompt("Reject reason") ?? undefined : undefined;
+    if (operation === "reject" && reason === undefined) return;
+    const res = await fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/learning`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operation, actionId: action.id, reason }),
+    });
+    if (!res.ok) return;
+    setSelected(null);
+    await loadLearning();
+  };
+
+  const safetyProfile = data?.config.safety_profile ?? agent.safety_profile ?? "private";
+  const autoPrivateBlocked = cfg.mode === "auto_private" && safetyProfile !== "private";
+  const summary = data?.summary;
+
+  return (
+    <div className="flex max-w-[1180px] flex-col gap-3.5 p-5">
+      <div className="grid gap-2.5 md:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr]">
+        <LearningMetric label="Mode" value={cfg.enabled ? cfg.mode : "off"} tone={cfg.mode === "auto_private" ? "warn" : cfg.enabled ? "good" : "muted"} />
+        <LearningMetric label="Safety profile" value={safetyProfile} tone={safetyProfile === "private" ? "good" : "muted"} />
+        <LearningMetric label="Pending proposals" value={String(summary?.pending ?? 0)} tone={(summary?.pending ?? 0) > 0 ? "warn" : "muted"} />
+        <LearningMetric label="Last review" value={summary?.lastReviewAt ? formatRuntimeTime(summary.lastReviewAt) : "none"} tone={summary?.lastFailure ? "bad" : "muted"} />
+      </div>
+
+      {summary?.lastFailure && (
+        <div className="rounded-[6px] border px-3 py-2 text-[11.5px]" style={{ borderColor: "rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.08)", color: "var(--oc-red)" }}>
+          Last learning failure: {summary.lastFailure}
+        </div>
+      )}
+
+      <Section
+        title="Learning settings"
+        subtitle="background reviews after response delivery"
+        icon={<Brain className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+        action={(
+          <Button size="sm" onClick={saveLearningConfig} disabled={saving || autoPrivateBlocked}>
+            <Save className="h-3.5 w-3.5" />
+            {saving ? "Saving..." : "Save learning"}
+          </Button>
+        )}
+      >
+        <div className="grid gap-3.5 lg:grid-cols-[0.95fr_1.05fr]">
+          <div className="space-y-3">
+            <ToggleField
+              label="Enable learning"
+              checked={cfg.enabled}
+              onChange={(enabled) => updateConfig({ enabled, mode: enabled && cfg.mode === "off" ? "propose" : cfg.mode })}
+              tooltip="When enabled, AnthroClaw reviews completed turns in the background after response delivery."
+            />
+            <Field label="Mode" hint={autoPrivateBlocked ? "Auto-private requires safety_profile=private." : "Propose mode stores actions for manual review."}>
+              <select
+                value={cfg.mode}
+                onChange={(event) => updateConfig({ mode: event.target.value as typeof cfg.mode })}
+                className="h-8 rounded-[5px] border px-2 text-xs outline-none"
+                style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+              >
+                <option value="off">Off</option>
+                <option value="propose">Propose only</option>
+                <option value="auto_private">Auto apply for private</option>
+              </select>
+            </Field>
+            <FormGrid>
+              <LearningNumberField label="Review interval turns" value={cfg.review_interval_turns} onChange={(value) => updateConfig({ review_interval_turns: value })} />
+              <LearningNumberField label="Tool-call threshold" value={cfg.skill_review_min_tool_calls} onChange={(value) => updateConfig({ skill_review_min_tool_calls: value })} />
+              <LearningNumberField label="Max actions" value={cfg.max_actions_per_review} onChange={(value) => updateConfig({ max_actions_per_review: value })} />
+              <LearningNumberField label="Max input chars" value={cfg.max_input_chars} onChange={(value) => updateConfig({ max_input_chars: value })} />
+            </FormGrid>
+          </div>
+          <div className="rounded-[6px] border p-3" style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)" }}>
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+              Active triggers
+            </div>
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              {["user corrections", "recovered tool errors", "tool-call threshold", "memory/skill activity", "compression/LCM", "turn interval"].map((label) => (
+                <div key={label} className="flex items-center justify-between rounded-[5px] border px-2 py-1.5 text-[11.5px]" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+                  <span>{label}</span>
+                  <span className="rounded px-1.5 py-px text-[10px]" style={{ background: "var(--oc-accent-soft)", color: "var(--oc-accent)" }}>
+                    on
+                  </span>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen((open) => !open)}
+              className="mt-3 text-[11.5px] underline-offset-4 hover:underline"
+              style={{ color: "var(--oc-text-muted)" }}
+            >
+              {advancedOpen ? "Hide artifact limits" : "Show artifact limits"}
+            </button>
+            {advancedOpen && (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <LearningNumberField label="Max files" value={cfg.artifacts.max_files} onChange={(value) => updateArtifacts({ max_files: value })} />
+                <LearningNumberField label="Max file bytes" value={cfg.artifacts.max_file_bytes} onChange={(value) => updateArtifacts({ max_file_bytes: value })} />
+                <LearningNumberField label="Max total bytes" value={cfg.artifacts.max_total_bytes} onChange={(value) => updateArtifacts({ max_total_bytes: value })} />
+                <LearningNumberField label="Max prompt chars" value={cfg.artifacts.max_prompt_chars} onChange={(value) => updateArtifacts({ max_prompt_chars: value })} />
+                <LearningNumberField label="Max snippet chars" value={cfg.artifacts.max_snippet_chars} onChange={(value) => updateArtifacts({ max_snippet_chars: value })} />
+              </div>
+            )}
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        title="Proposals"
+        subtitle={`${data?.actions.length ?? 0} shown`}
+        icon={<List className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+        action={<Button variant="outline" size="sm" onClick={loadLearning} disabled={loading}><RefreshCw className="h-3.5 w-3.5" />Refresh</Button>}
+      >
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)} className="h-8 rounded-[5px] border px-2 text-xs" style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+            <option value="all">all statuses</option>
+            <option value="proposed">proposed</option>
+            <option value="approved">approved</option>
+            <option value="rejected">rejected</option>
+            <option value="applied">applied</option>
+            <option value="failed">failed</option>
+          </select>
+          <select value={type} onChange={(event) => setType(event.target.value as typeof type)} className="h-8 rounded-[5px] border px-2 text-xs" style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+            <option value="all">all types</option>
+            <option value="memory_candidate">memory</option>
+            <option value="skill_patch">skill patch</option>
+            <option value="skill_create">skill create</option>
+            <option value="skill_update_full">skill full update</option>
+            <option value="none">none</option>
+          </select>
+        </div>
+        <div className="overflow-hidden rounded-[6px] border" style={{ borderColor: "var(--oc-border)" }}>
+          {loading ? (
+            <LearningSkeletonRows />
+          ) : data?.actions.length === 0 ? (
+            <div className="px-3.5 py-8 text-center text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
+              No learning proposals match this filter.
+            </div>
+          ) : (
+            data?.actions.map((action) => (
+              <LearningActionRow
+                key={action.id}
+                action={action}
+                onOpen={() => setSelected(action)}
+                onApprove={() => runAction("approve", action)}
+                onReject={() => runAction("reject", action)}
+                onApply={() => runAction("apply", action)}
+              />
+            ))
+          )}
+        </div>
+      </Section>
+
+      <Section title="Diagnostics" icon={<Stethoscope className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
+        <div className="grid gap-2.5 md:grid-cols-4">
+          <LearningMetric label="Reviews failed" value={String(summary?.reviewsByStatus.failed ?? 0)} tone={(summary?.reviewsByStatus.failed ?? 0) > 0 ? "bad" : "muted"} />
+          <LearningMetric label="Actions applied" value={String(summary?.actionsByStatus.applied ?? 0)} tone="good" />
+          <LearningMetric label="Artifacts" value={String(summary?.artifactCount ?? 0)} tone="muted" />
+          <LearningMetric label="Snapshots" value={String(summary?.skillSnapshotCount ?? 0)} tone="muted" />
+        </div>
+      </Section>
+
+      <LearningActionDialog action={selected} onClose={() => setSelected(null)} />
+    </div>
+  );
+}
+
+function LearningNumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  return (
+    <Field label={label}>
+      <input
+        type="number"
+        value={value}
+        min={0}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="h-8 rounded-[5px] border px-2 text-xs outline-none"
+        style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+      />
+    </Field>
+  );
+}
+
+function LearningMetric({ label, value, tone = "muted" }: { label: string; value: string; tone?: "good" | "warn" | "bad" | "muted" }) {
+  const color = tone === "good" ? "var(--oc-green)" : tone === "warn" ? "var(--oc-yellow)" : tone === "bad" ? "var(--oc-red)" : "var(--color-foreground)";
+  return (
+    <div className="rounded-[6px] border px-3 py-2.5" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}>
+      <div className="text-[10px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>{label}</div>
+      <div className="mt-1 truncate text-[16px] font-semibold" style={{ color, fontFamily: "var(--oc-mono)" }}>{value}</div>
+    </div>
+  );
+}
+
+function LearningActionRow({
+  action,
+  onOpen,
+  onApprove,
+  onReject,
+  onApply,
+}: {
+  action: LearningActionRecord;
+  onOpen: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+  onApply: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b px-3.5 py-3 last:border-b-0" style={{ borderColor: "var(--oc-border)" }}>
+      <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[12.5px] font-medium" style={{ color: "var(--color-foreground)" }}>{action.title || learningActionTypeLabel(action.actionType)}</span>
+          <span className="rounded px-1.5 py-px text-[10px]" style={learningStatusStyle(action.status)}>{action.status}</span>
+          <span className="rounded px-1.5 py-px text-[10px]" style={{ background: "var(--oc-bg3)", color: "var(--oc-text-muted)" }}>{learningActionTypeLabel(action.actionType)}</span>
+        </div>
+        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+          <span>{shortRuntimeId(action.id, 10)}</span>
+          {typeof action.confidence === "number" && <span>confidence {(action.confidence * 100).toFixed(0)}%</span>}
+          <span>{formatRuntimeTime(action.createdAt)}</span>
+        </div>
+      </button>
+      <div className="flex items-center gap-1.5">
+        <Button variant="outline" size="sm" onClick={onApprove} disabled={action.status !== "proposed"}><CheckCircle2 className="h-3.5 w-3.5" />Approve</Button>
+        <Button variant="outline" size="sm" onClick={onReject} disabled={action.status !== "proposed"}><XCircle className="h-3.5 w-3.5" />Reject</Button>
+        <Button variant="outline" size="sm" onClick={onApply} disabled={action.status !== "approved"}><Zap className="h-3.5 w-3.5" />Apply</Button>
+      </div>
+    </div>
+  );
+}
+
+function LearningActionDialog({ action, onClose }: { action: LearningActionRecord | null; onClose: () => void }) {
+  return (
+    <Dialog open={Boolean(action)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[760px]" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border-mid)" }}>
+        <DialogHeader>
+          <DialogTitle>{action?.title ?? "Learning proposal"}</DialogTitle>
+          <DialogDescription>{action ? `${learningActionTypeLabel(action.actionType)} / ${action.status}` : ""}</DialogDescription>
+        </DialogHeader>
+        {action && (
+          <div className="space-y-3">
+            <div className="grid gap-2 text-[11.5px] md:grid-cols-3" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+              <span>action {shortRuntimeId(action.id, 18)}</span>
+              <span>review {shortRuntimeId(action.reviewId, 18)}</span>
+              <span>{formatRuntimeTime(action.updatedAt)}</span>
+            </div>
+            {action.rationale && <p className="text-[12px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>{action.rationale}</p>}
+            {action.error && <p className="rounded-[5px] border px-2 py-1.5 text-[11.5px]" style={{ borderColor: "rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.08)", color: "var(--oc-red)" }}>{action.error}</p>}
+            <pre className="max-h-[360px] overflow-auto rounded-[6px] border p-3 text-[11px]" style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
+              {formatLearningPayload(action)}
+            </pre>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function LearningSkeletonRows() {
+  return (
+    <>
+      {[0, 1, 2].map((item) => (
+        <div key={item} className="border-b px-3.5 py-3 last:border-b-0" style={{ borderColor: "var(--oc-border)" }}>
+          <div className="h-3.5 w-2/3 animate-pulse rounded" style={{ background: "var(--oc-bg3)" }} />
+          <div className="mt-2 h-2.5 w-1/2 animate-pulse rounded" style={{ background: "var(--oc-bg3)" }} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function learningActionTypeLabel(type: LearningActionType): string {
+  switch (type) {
+    case "memory_candidate":
+      return "memory";
+    case "skill_patch":
+      return "skill patch";
+    case "skill_create":
+      return "skill create";
+    case "skill_update_full":
+      return "skill update";
+    case "none":
+      return "none";
+  }
+}
+
+function learningStatusStyle(status: LearningActionStatus): React.CSSProperties {
+  if (status === "approved" || status === "applied") {
+    return { background: "rgba(74,222,128,0.13)", border: "1px solid rgba(74,222,128,0.32)", color: "var(--oc-green)" };
+  }
+  if (status === "rejected" || status === "failed") {
+    return { background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.32)", color: "var(--oc-red)" };
+  }
+  return { background: "rgba(250,204,21,0.12)", border: "1px solid rgba(250,204,21,0.32)", color: "var(--oc-yellow)" };
+}
+
+function formatLearningPayload(action: LearningActionRecord): string {
+  if (action.actionType === "skill_patch") {
+    return [
+      "oldText:",
+      String(action.payload.oldText ?? ""),
+      "",
+      "newText:",
+      String(action.payload.newText ?? ""),
+    ].join("\n");
+  }
+  return JSON.stringify(action.payload, null, 2);
 }
 
 function RoutesTable({

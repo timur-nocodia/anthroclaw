@@ -239,6 +239,19 @@ export function getAgentPluginConfig(
   return { ...(block as Record<string, unknown>) };
 }
 
+export function setAgentLearningConfig(
+  agentId: string,
+  learning: Record<string, unknown>,
+): void {
+  const dir = ensureAgentExists(agentId);
+  const ymlPath = join(dir, 'agent.yml');
+  const raw = readFileSync(ymlPath, 'utf-8');
+  const doc = parseDocument(raw);
+  doc.setIn(['learning'], learning);
+
+  updateAgentConfig(agentId, doc.toString());
+}
+
 /**
  * Create a new agent directory with agent.yml, CLAUDE.md, memory/, .claude/skills/.
  */

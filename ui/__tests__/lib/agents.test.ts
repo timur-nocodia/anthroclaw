@@ -178,6 +178,43 @@ describe('updateAgentConfig', () => {
   });
 });
 
+describe('setAgentLearningConfig', () => {
+  it('updates only learning config and keeps the rest of agent.yml valid', () => {
+    createTestAgent('learning-test', {
+      model: 'claude-sonnet-4-6',
+      safety_profile: 'private',
+      routes: [{ channel: 'telegram', scope: 'dm' }],
+      learning: { enabled: false, mode: 'off' },
+      mcp_tools: ['memory_search'],
+    });
+
+    agentsModule.setAgentLearningConfig('learning-test', {
+      enabled: true,
+      mode: 'propose',
+      review_interval_turns: 10,
+      skill_review_min_tool_calls: 8,
+      max_actions_per_review: 8,
+      max_input_chars: 24000,
+      artifacts: {
+        max_files: 32,
+        max_file_bytes: 65536,
+        max_total_bytes: 262144,
+        max_prompt_chars: 24000,
+        max_snippet_chars: 4000,
+      },
+    });
+
+    const result = agentsModule.getAgentConfig('learning-test');
+    expect(result.parsed.model).toBe('claude-sonnet-4-6');
+    expect(result.parsed.mcp_tools).toEqual(['memory_search']);
+    expect(result.parsed.learning).toMatchObject({
+      enabled: true,
+      mode: 'propose',
+      review_interval_turns: 10,
+    });
+  });
+});
+
 describe('file CRUD', () => {
   it('listAgentFiles returns files in agent directory', () => {
     const dir = createTestAgent('file-test');
