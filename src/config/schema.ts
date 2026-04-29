@@ -344,8 +344,12 @@ export const AgentYmlSchema = z.object({
   maxBudgetUsd: z.number().min(0.01).optional().describe('Maximum USD budget per query'),
   timezone: z.string().default('UTC').describe('IANA timezone for timestamps, e.g. "Asia/Almaty"'),
   routes: z.array(RouteSchema).min(1),
-  safety_profile: z.enum(['public', 'trusted', 'private']),
+  safety_profile: z.enum(['public', 'trusted', 'private', 'chat_like_openclaw']),
   safety_overrides: SafetyOverridesSchema.optional(),
+  personality: z
+    .string()
+    .optional()
+    .describe('Personality baseline override for chat_like_openclaw profile. Empty/missing → uses CHAT_PERSONALITY_BASELINE. Has no effect on other profiles (info-warning emitted by validator).'),
   pairing: PairingSchema.optional(),
   allowlist: z.record(z.string(), z.array(z.string())).optional(),
   mcp_tools: z.array(z.string()).optional(),

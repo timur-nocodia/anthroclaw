@@ -17,7 +17,7 @@ import { metrics } from '../metrics/collector.js';
 import type { LearningMode, LearningActionRecord } from './types.js';
 import { LearningStore } from './store.js';
 
-export type SkillApplierSafetyProfile = 'public' | 'trusted' | 'private';
+export type SkillApplierSafetyProfile = 'public' | 'trusted' | 'private' | 'chat_like_openclaw';
 
 export interface ApplySkillActionParams {
   workspacePath: string;
