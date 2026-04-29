@@ -182,6 +182,42 @@ export function setAgentPluginEnabled(
 }
 
 /**
+ * Replace the per-plugin config block under `plugins.<name>` in the agent's
+ * `agent.yml`, preserving comments and blank lines (via `parseDocument`).
+ *
+ * The replacement is a full overwrite of the keys *inside* `plugins.<name>` —
+ * any keys not present in `config` are dropped. Comments / blank lines on the
+ * surrounding document survive. The `enabled` flag is *not* special-cased
+ * here: callers either include it in `config` or omit it (the A1 toggle
+ * surface owns it).
+ *
+ * Throws NotFoundError if the agent does not exist.
+ */
+export function setAgentPluginConfig(
+  agentId: string,
+  pluginName: string,
+  config: Record<string, unknown>,
+): void {
+  const dir = ensureAgentExists(agentId);
+  const ymlPath = join(dir, 'agent.yml');
+  const raw = readFileSync(ymlPath, 'utf-8');
+
+  const doc = parseDocument(raw);
+  // Preserve the existing `enabled` flag if the new block doesn't include it,
+  // so the A1 toggle surface and the A2 config surface don't clobber each
+  // other when used independently.
+  if (!('enabled' in config)) {
+    const existingEnabled = doc.getIn(['plugins', pluginName, 'enabled']);
+    if (typeof existingEnabled === 'boolean') {
+      config = { enabled: existingEnabled, ...config };
+    }
+  }
+  doc.setIn(['plugins', pluginName], config);
+
+  writeFileSync(ymlPath, doc.toString(), 'utf-8');
+}
+
+/**
  * Read `plugins.<name>` config block from `agent.yml`. Returns the raw config
  * (including `enabled`) or `{}` if the agent has no config for this plugin.
  *
