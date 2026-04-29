@@ -18,7 +18,7 @@ describe('canUseTool profile gating', () => {
       agent: fakeAgent(publicProfile),
       approvalBroker: new ApprovalBroker(),
       channel: undefined,
-      sessionContext: { peerId: '1' },
+      sessionContext: { peerId: '1', senderId: '1' },
     });
     const r = await can('Bash', { command: 'ls' });
     expect(r.behavior).toBe('deny');
@@ -29,7 +29,7 @@ describe('canUseTool profile gating', () => {
       agent: fakeAgent(publicProfile),
       approvalBroker: new ApprovalBroker(),
       channel: undefined,
-      sessionContext: { peerId: '1' },
+      sessionContext: { peerId: '1', senderId: '1' },
     });
     const r = await can('Read', { file_path: '/tmp/foo' });
     expect(r.behavior).toBe('allow');
@@ -43,13 +43,13 @@ describe('canUseTool profile gating', () => {
       agent: fakeAgent(trustedProfile),
       approvalBroker: broker,
       channel,
-      sessionContext: { peerId: '1' },
+      sessionContext: { peerId: '1', senderId: '1' },
     });
     const promise = can('Write', { file_path: '/tmp/x', content: 'y' });
-    // Simulate user clicking allow
+    // Simulate user clicking allow (same sender as originator)
     setImmediate(() => {
       const callArgs = promptForApproval.mock.calls[0]?.[0];
-      if (callArgs?.id) broker.resolve(callArgs.id, 'allow');
+      if (callArgs?.id) broker.resolveBySender(callArgs.id, '1', 'allow');
     });
     const r = await promise;
     expect(r.behavior).toBe('allow');
@@ -62,7 +62,7 @@ describe('canUseTool profile gating', () => {
       agent: fakeAgent(trustedProfile),
       approvalBroker: new ApprovalBroker(),
       channel,
-      sessionContext: { peerId: '1' },
+      sessionContext: { peerId: '1', senderId: '1' },
     });
     const r = await can('Write', { file_path: '/tmp/x', content: 'y' });
     expect(r.behavior).toBe('deny');
@@ -75,10 +75,35 @@ describe('canUseTool profile gating', () => {
       agent: fakeAgent(privateProfile, [], { permission_mode: 'bypass' }),
       approvalBroker: new ApprovalBroker(),
       channel,
-      sessionContext: { peerId: '1' },
+      sessionContext: { peerId: '1', senderId: '1' },
     });
     const r = await can('Bash', { command: 'ls' });
     expect(r.behavior).toBe('allow');
     expect(channel.promptForApproval).not.toHaveBeenCalled();
+  });
+
+  // ─── Issue #2: send_message peer-only restriction in public profile ──────────
+
+  it('public + send_message to third party → deny', async () => {
+    const can = createCanUseTool({
+      agent: fakeAgent(publicProfile, ['send_message']),
+      approvalBroker: new ApprovalBroker(),
+      channel: undefined,
+      sessionContext: { peerId: '1', senderId: '1' },
+    });
+    const r = await can('send_message', { peer_id: '999', text: 'hi' });
+    expect(r.behavior).toBe('deny');
+    expect((r as any).message).toMatch(/originating peer/i);
+  });
+
+  it('public + send_message to same peer → allow', async () => {
+    const can = createCanUseTool({
+      agent: fakeAgent(publicProfile, ['send_message']),
+      approvalBroker: new ApprovalBroker(),
+      channel: undefined,
+      sessionContext: { peerId: '1', senderId: '1' },
+    });
+    const r = await can('send_message', { peer_id: '1', text: 'hi' });
+    expect(r.behavior).toBe('allow');
   });
 });

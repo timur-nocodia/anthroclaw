@@ -200,7 +200,7 @@ export interface CanUseToolDeps {
   agent: Pick<Agent, 'config' | 'safetyProfile' | 'id'>;
   approvalBroker: ApprovalBroker;
   channel?: ChannelAdapter;
-  sessionContext: { peerId: string; accountId?: string; threadId?: string };
+  sessionContext: { peerId: string; senderId?: string; accountId?: string; threadId?: string };
 }
 
 export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
@@ -252,7 +252,18 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
       return deny(`Tool "${toolName}" is not allowed by safety_profile=${profile.name}`);
     }
 
-    // 7. Approval flow — check if tool requires interactive approval
+    // 7. Public profile: send_message is restricted to the originating peer only.
+    // This prevents prompt-injected public agents from spamming arbitrary recipients.
+    if (profile.name === 'public' && (toolName === 'send_message' || localName === 'send_message')) {
+      const targetPeer = (input as any)?.peer_id ?? (input as any)?.peerId;
+      if (typeof targetPeer === 'string' && targetPeer !== sessionContext.peerId) {
+        return deny(
+          `safety_profile=public: send_message can only target the originating peer (got "${targetPeer}", expected "${sessionContext.peerId}")`,
+        );
+      }
+    }
+
+    // 8. Approval flow — check if tool requires interactive approval
     const requiresApproval =
       profile.builtinTools.requiresApproval.has(toolName) ||
       profile.builtinTools.requiresApproval.has(localName) ||
@@ -280,7 +291,14 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
       accountId: sessionContext.accountId,
       threadId: sessionContext.threadId,
     });
-    return approvalBroker.request(id, 60_000);
+    // Pass senderId (originating user) and the original input so they are
+    // verified and preserved when the broker resolves.
+    return approvalBroker.request(
+      id,
+      60_000,
+      sessionContext.senderId ?? sessionContext.peerId,
+      input,
+    );
   };
 }
 
