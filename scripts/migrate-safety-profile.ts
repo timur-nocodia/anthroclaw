@@ -176,7 +176,28 @@ export async function runMigration(opts: MigrationOptions): Promise<MigrationOut
   };
 }
 
-// Stub for T19; not used yet.
-function applyToFile(_path: string, _inferred: InferResult): boolean {
-  return false;
+function applyToFile(path: string, inferred: InferResult): boolean {
+  if (!inferred.profile) return false;
+
+  const raw = readFileSync(path, 'utf-8');
+  const doc = parseDocument(raw);
+
+  // Backup
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const bakPath = `${path}.bak-${ts}`;
+  copyFileSync(path, bakPath);
+
+  // Add safety_profile
+  doc.set('safety_profile', inferred.profile);
+
+  // Add safety_overrides for tool conflicts (non-HARD_BLACKLIST)
+  if (inferred.toolConflicts.length > 0) {
+    const existing = doc.get('safety_overrides') as any;
+    const allowList = (existing?.allow_tools ?? []) as string[];
+    const merged = Array.from(new Set([...allowList, ...inferred.toolConflicts]));
+    doc.set('safety_overrides', { allow_tools: merged });
+  }
+
+  writeFileSync(path, doc.toString(), 'utf-8');
+  return true;
 }
