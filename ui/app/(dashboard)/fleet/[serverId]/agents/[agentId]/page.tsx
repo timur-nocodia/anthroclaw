@@ -68,7 +68,8 @@ interface AgentConfig {
   model?: string;
   thinking?: { type: string; budgetTokens?: number };
   effort?: string;
-  safety_profile?: 'public' | 'trusted' | 'private';
+  safety_profile?: 'public' | 'trusted' | 'private' | 'chat_like_openclaw';
+  personality?: string;
   safety_overrides?: { allow_tools?: string[]; deny_tools?: string[]; permission_mode?: 'default' | 'bypass' };
   maxTurns?: number;
   maxBudgetUsd?: number;
@@ -480,12 +481,19 @@ const THINKING_MODES = [
 ];
 
 const SAFETY_PROFILES = [
+  { value: "chat_like_openclaw", label: "chat — friendly conversational, all tools" },
   { value: "public", label: "public — anonymous-user threat model" },
   { value: "trusted", label: "trusted — known users, TG approval for destructive" },
   { value: "private", label: "private — single owner, all tools, optional bypass" },
 ];
 
-const SAFETY_PROFILE_TOOLTIP: Record<'public' | 'trusted' | 'private', string> = {
+const SAFETY_PROFILE_TOOLTIP: Record<'public' | 'trusted' | 'private' | 'chat_like_openclaw', string> = {
+  chat_like_openclaw:
+    "Personal/single-user mode. Warm conversational tone (not a CLI helper).\n" +
+    "All tools allowed without approval. Wildcard allowlist OK. No sandbox.\n" +
+    "Per-agent personality override editable below.\n" +
+    "\n" +
+    "Use when: your personal Klavdia/Jarvis-style bot. Default for new agents.",
   public:
     "For bots that anyone can DM (open WhatsApp, public Telegram).\n" +
     "Read-only tools only, no claude_code preset, no settings loaded.\n" +
@@ -910,8 +918,9 @@ function ConfigTab({
     model: agent.model ?? "claude-sonnet-4-6",
     thinking: agent.thinking ?? { type: "adaptive" as string, budgetTokens: undefined as number | undefined },
     effort: agent.effort ?? "high",
-    safety_profile: (agent.safety_profile ?? 'private') as 'public' | 'trusted' | 'private',
+    safety_profile: (agent.safety_profile ?? 'chat_like_openclaw') as 'public' | 'trusted' | 'private' | 'chat_like_openclaw',
     safety_overrides: agent.safety_overrides ?? {} as { allow_tools?: string[]; deny_tools?: string[]; permission_mode?: 'default' | 'bypass' },
+    personality: agent.personality ?? '',
     maxTurns: agent.maxTurns ?? 0,
     maxBudgetUsd: agent.maxBudgetUsd ?? 0,
     timezone: agent.timezone ?? "UTC",
@@ -1798,7 +1807,7 @@ function ConfigTab({
                 <select
                   value={cfg.safety_profile}
                   onChange={(e) =>
-                    update({ safety_profile: e.target.value as 'public' | 'trusted' | 'private' })
+                    update({ safety_profile: e.target.value as 'public' | 'trusted' | 'private' | 'chat_like_openclaw' })
                   }
                   className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
                   style={{
