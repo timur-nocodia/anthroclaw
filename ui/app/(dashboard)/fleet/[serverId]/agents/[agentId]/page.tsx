@@ -28,6 +28,7 @@ import {
   Settings2,
   Shield,
   Sparkles,
+  Stethoscope,
   Terminal,
   Trash2,
   Upload,
@@ -55,6 +56,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { PluginsPanel } from "@/components/plugins/PluginsPanel";
+import { DoctorPanel } from "@/components/lcm/DoctorPanel";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -714,6 +716,13 @@ export default function AgentEditorPage() {
             <Plug className="mr-1.5 h-3.5 w-3.5" />
             Plugins
           </TabsTrigger>
+          <TabsTrigger
+            value="diagnostics"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <Stethoscope className="mr-1.5 h-3.5 w-3.5" />
+            Diagnostics
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="config" className="mt-0 flex-1 overflow-auto">
@@ -733,6 +742,9 @@ export default function AgentEditorPage() {
         </TabsContent>
         <TabsContent value="plugins" className="mt-0 flex-1 overflow-auto">
           <PluginsPanel agentId={agentId} />
+        </TabsContent>
+        <TabsContent value="diagnostics" className="mt-0 flex-1 overflow-auto">
+          <DoctorPanel agentId={agentId} />
         </TabsContent>
       </Tabs>
     </div>
