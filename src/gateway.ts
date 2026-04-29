@@ -78,6 +78,7 @@ import { logger } from './logger.js';
 import { nowInTimezone, formatDateTime, dailyMemoryPath } from './util/time.js';
 import { redactSecrets } from './security/redact.js';
 import { ApprovalBroker } from './security/approval-broker.js';
+import { sessionContextStore } from './agent/session-context.js';
 import { isSilentResponse, processNoReplySentinel } from './cron/scheduler.js';
 import { SessionMirror } from './session/mirror.js';
 import { buildGroupSessionKey, type GroupSessionMode } from './session/group-isolation.js';
@@ -3288,6 +3289,27 @@ export class Gateway {
    *
    */
   private async queryAgent(
+    agent: Agent,
+    msg: InboundMessage,
+    sessionKey: string,
+  ): Promise<string> {
+    // Bind dispatch context to the async stack so MCP tool handlers
+    // (e.g. manage_cron) can default args to the originating chat without
+    // forcing the agent to re-ask the user for their own peer_id.
+    return sessionContextStore.run(
+      {
+        agentId: agent.id,
+        peerId: msg.peerId,
+        senderId: msg.senderId,
+        channel: msg.channel,
+        accountId: msg.accountId,
+        threadId: msg.threadId,
+      },
+      () => this.queryAgentInner(agent, msg, sessionKey),
+    );
+  }
+
+  private async queryAgentInner(
     agent: Agent,
     msg: InboundMessage,
     sessionKey: string,

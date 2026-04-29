@@ -3,6 +3,7 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type { DynamicCronStore } from '../../cron/dynamic-store.js';
 import type { ToolDefinition } from './types.js';
 import type { ToolMeta } from '../../security/types.js';
+import { sessionContextStore } from '../session-context.js';
 
 export function createManageCronTool(
   agentId: string,
@@ -21,7 +22,7 @@ export function createManageCronTool(
         channel: z.string(),
         peer_id: z.string(),
         account_id: z.string().optional(),
-      }).optional().describe('Where to deliver the response'),
+      }).optional().describe('Where to deliver the response. If omitted, defaults to the chat where the user requested the cron — do NOT ask the user for their peer_id when creating a cron in DM with them.'),
       enabled: z.boolean().optional().describe('For toggle: set enabled state'),
     },
     async (args: Record<string, unknown>) => {
@@ -49,7 +50,20 @@ export function createManageCronTool(
               isError: true,
             };
           }
-          const deliverTo = args.deliver_to as { channel: string; peer_id: string; account_id?: string } | undefined;
+          // Default deliver_to to the originating chat if the agent didn't
+          // pass one explicitly. Avoids forcing the user to repeat their own
+          // peer_id when scheduling a cron in their own DM.
+          let deliverTo = args.deliver_to as { channel: string; peer_id: string; account_id?: string } | undefined;
+          if (!deliverTo) {
+            const ctx = sessionContextStore.getStore();
+            if (ctx) {
+              deliverTo = {
+                channel: ctx.channel,
+                peer_id: ctx.peerId,
+                ...(ctx.accountId ? { account_id: ctx.accountId } : {}),
+              };
+            }
+          }
           const job = store.create({
             id,
             agentId,
