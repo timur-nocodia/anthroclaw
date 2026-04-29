@@ -1002,6 +1002,16 @@ function ConfigTab({
   const [externalMcpPreflight, setExternalMcpPreflight] = useState<Record<string, ExternalMcpPreflightState>>({});
   const [safetyValidationError, setSafetyValidationError] = useState<string | null>(null);
   const [safetyValidationWarnings, setSafetyValidationWarnings] = useState<string[]>([]);
+  const [chatBaseline, setChatBaseline] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (cfg.safety_profile !== 'chat_like_openclaw') return;
+    if (chatBaseline !== null) return;
+    fetch(`/api/fleet/${serverId}/security/profiles/chat_like_openclaw/baseline`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.baseline) setChatBaseline(d.baseline); })
+      .catch(() => { /* silently fall back to "Loading default…" placeholder */ });
+  }, [cfg.safety_profile, chatBaseline, serverId]);
 
   useEffect(() => {
     const body = JSON.stringify({
@@ -1835,6 +1845,30 @@ function ConfigTab({
                   </ul>
                 )}
               </Field>
+              {cfg.safety_profile === 'chat_like_openclaw' && (
+                <Field
+                  label="Personality"
+                  tooltip={
+                    "Personality baseline for this agent. Empty = use profile default.\n" +
+                    "Edits hot-reload (next message picks up new prompt without restart).\n" +
+                    "\n" +
+                    "Tip: keep it under 100 words. The agent's CLAUDE.md is appended after this."
+                  }
+                >
+                  <textarea
+                    value={cfg.personality ?? ''}
+                    placeholder={chatBaseline ?? 'Loading default…'}
+                    onChange={(e) => update({ personality: e.target.value })}
+                    rows={10}
+                    className="w-full rounded-[5px] border px-2 py-1 text-xs"
+                    style={{
+                      background: "var(--oc-bg3)",
+                      borderColor: "var(--oc-border)",
+                      color: "var(--color-foreground)",
+                    }}
+                  />
+                </Field>
+              )}
               {cfg.safety_profile === 'private' && (
                 <Field
                   label="Permission mode"
