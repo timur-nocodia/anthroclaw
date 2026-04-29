@@ -64,7 +64,7 @@ describe('@e2e: LCM sessions surface (full stack: seed → API → drill → byt
     tmpRoot = mkdtempSync(join(tmpdir(), 'p3-b5-'));
     const fakeUi = join(tmpRoot, 'ui');
     mkdirSync(fakeUi, { recursive: true });
-    lcmDbDir = join(tmpRoot, 'data', 'lcm-db');
+    lcmDbDir = join(tmpRoot, 'data', 'lcm', 'lcm-db');
     mkdirSync(lcmDbDir, { recursive: true });
 
     const agentDir = join(tmpRoot, 'agents', AGENT_ID);
@@ -89,7 +89,7 @@ describe('@e2e: LCM sessions surface (full stack: seed → API → drill → byt
   });
 
   /**
-   * Seed an LCM SQLite DB at <tmpRoot>/data/lcm-db/<AGENT_ID>.sqlite,
+   * Seed an LCM SQLite DB at <tmpRoot>/data/lcm/lcm-db/<AGENT_ID>.sqlite,
    * then run the engine's compress pipeline so D0/D1/D2 nodes emerge.
    * Returns the seeded messages with their store_ids so the test can
    * assert byte-exact recovery later.

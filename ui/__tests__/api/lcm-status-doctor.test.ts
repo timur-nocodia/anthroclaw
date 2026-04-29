@@ -29,7 +29,7 @@ vi.mock('@/lib/require-auth', async () => {
   };
 });
 
-// ─── Fixture: fake repo layout (ui/, agents/, data/lcm-db/) ────────────
+// ─── Fixture: fake repo layout (ui/, agents/, data/lcm/lcm-db/) ───────
 
 let tmpRoot: string;
 let agentsDir: string;
@@ -43,7 +43,7 @@ beforeEach(() => {
   agentsDir = join(tmpRoot, 'agents');
   mkdirSync(agentsDir, { recursive: true });
   dataDir = join(tmpRoot, 'data');
-  lcmDbDir = join(dataDir, 'lcm-db');
+  lcmDbDir = join(dataDir, 'lcm', 'lcm-db');
   mkdirSync(lcmDbDir, { recursive: true });
   vi.spyOn(process, 'cwd').mockReturnValue(fakeUi);
   vi.resetModules();
@@ -397,7 +397,7 @@ describe('POST /api/agents/[agentId]/lcm/doctor', () => {
     expect(json.cleanup).toBeUndefined();
 
     // No backup file written
-    const backupsDir = join(dataDir, 'lcm-db', 'backups');
+    const backupsDir = join(dataDir, 'lcm', 'lcm-backups');
     expect(existsSync(backupsDir) ? readdirSync(backupsDir) : []).toEqual([]);
   });
 
@@ -417,7 +417,7 @@ describe('POST /api/agents/[agentId]/lcm/doctor', () => {
     expect(json.error).toBe('confirm_required');
 
     // No backup file created
-    const backupsDir = join(dataDir, 'lcm-db', 'backups');
+    const backupsDir = join(dataDir, 'lcm', 'lcm-backups');
     expect(existsSync(backupsDir) ? readdirSync(backupsDir) : []).toEqual([]);
   });
 
@@ -443,7 +443,7 @@ describe('POST /api/agents/[agentId]/lcm/doctor', () => {
     const json = await res.json();
     expect(json.cleanup).toBeDefined();
     expect(typeof json.cleanup.backupPath).toBe('string');
-    expect(json.cleanup.backupPath).toContain(join('lcm-db', 'backups'));
+    expect(json.cleanup.backupPath).toContain(join('lcm', 'lcm-backups'));
     expect(existsSync(json.cleanup.backupPath)).toBe(true);
     expect(Array.isArray(json.cleanup.actions)).toBe(true);
   });

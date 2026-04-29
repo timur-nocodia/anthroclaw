@@ -50,7 +50,7 @@ interface DoctorReport {
 }
 
 function backupsDir(): string {
-  return resolve(process.cwd(), '..', 'data', 'lcm-db', 'backups');
+  return resolve(process.cwd(), '..', 'data', 'lcm', 'lcm-backups');
 }
 
 function timestamp(): string {

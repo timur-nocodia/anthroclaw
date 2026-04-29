@@ -197,7 +197,7 @@ export function DoctorPanel({ agentId }: DoctorPanelProps) {
 
   // Use a placeholder backup path string in the confirm dialog — the real one
   // comes back in the response. The path scheme is documented + stable.
-  const backupHint = `data/lcm-db/backups/${agentId}-<ts>.sqlite`;
+  const backupHint = `data/lcm/lcm-backups/${agentId}-<ts>.sqlite`;
 
   return (
     <div className="flex flex-col gap-4 p-5" data-testid="doctor-panel">

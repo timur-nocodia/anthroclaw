@@ -29,7 +29,7 @@ vi.mock('@/lib/require-auth', async () => {
   };
 });
 
-// ─── Fixture: fake repo layout (ui/, agents/, data/lcm-db/) ────────────
+// ─── Fixture: fake repo layout (ui/, agents/, data/lcm/lcm-db/) ───────
 
 let tmpRoot: string;
 let agentsDir: string;
@@ -43,7 +43,7 @@ beforeEach(() => {
   agentsDir = join(tmpRoot, 'agents');
   mkdirSync(agentsDir, { recursive: true });
   dataDir = join(tmpRoot, 'data');
-  lcmDbDir = join(dataDir, 'lcm-db');
+  lcmDbDir = join(dataDir, 'lcm', 'lcm-db');
   mkdirSync(lcmDbDir, { recursive: true });
   vi.spyOn(process, 'cwd').mockReturnValue(fakeUi);
   vi.resetModules();

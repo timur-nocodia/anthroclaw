@@ -6,9 +6,11 @@
  * read-only for drill-down views. Each request opens + closes its own handle
  * so we don't keep file locks across requests.
  *
- * Path layout: `<repoRoot>/data/lcm-db/<agentId>.sqlite`. The UI process
- * runs at `<repoRoot>/ui`, so we resolve via `process.cwd()/../data` to
- * stay symmetric with `ui/lib/agents.ts` and `ui/lib/gateway.ts`.
+ * Path layout: `<repoRoot>/data/lcm/lcm-db/<agentId>.sqlite`. The plugin
+ * writes under `<dataDir>/<pluginName>/lcm-db/...` because the gateway
+ * scopes every plugin's data dir as `join(dataDir, pluginName)` (see
+ * `gateway.ts:pluginDataDir`). The UI process runs at `<repoRoot>/ui`,
+ * so we resolve via `process.cwd()/../data/lcm/lcm-db` to match.
  */
 
 import Database from 'better-sqlite3';
@@ -31,7 +33,7 @@ export type LcmHandle = {
  * existence — callers should use `existsSync` or `openLcmReadOnly`.
  */
 export function lcmDbPath(agentId: string): string {
-  return resolve(process.cwd(), '..', 'data', 'lcm-db', `${agentId}.sqlite`);
+  return resolve(process.cwd(), '..', 'data', 'lcm', 'lcm-db', `${agentId}.sqlite`);
 }
 
 /**

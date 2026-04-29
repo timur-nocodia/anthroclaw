@@ -30,7 +30,7 @@ vi.mock('@/lib/require-auth', async () => {
   };
 });
 
-// ─── Fixture: fake repo layout (ui/, agents/, data/lcm-db/) ────────────
+// ─── Fixture: fake repo layout (ui/, agents/, data/lcm/lcm-db/) ───────
 
 let tmpRoot: string;
 let agentsDir: string;
@@ -44,7 +44,7 @@ beforeEach(() => {
   agentsDir = join(tmpRoot, 'agents');
   mkdirSync(agentsDir, { recursive: true });
   dataDir = join(tmpRoot, 'data');
-  lcmDbDir = join(dataDir, 'lcm-db');
+  lcmDbDir = join(dataDir, 'lcm', 'lcm-db');
   mkdirSync(lcmDbDir, { recursive: true });
   vi.spyOn(process, 'cwd').mockReturnValue(fakeUi);
   vi.resetModules();
@@ -516,6 +516,6 @@ describe('GET /api/agents/[agentId]/lcm/nodes/[nodeId]', () => {
   it('uses the lcmDbPath helper to resolve the SQLite location', async () => {
     // Sanity check on the helper: ensures the route + tests agree on path layout.
     const { lcmDbPath } = await import('@/lib/lcm');
-    expect(lcmDbPath('alpha')).toBe(resolve(dataDir, 'lcm-db', 'alpha.sqlite'));
+    expect(lcmDbPath('alpha')).toBe(resolve(dataDir, 'lcm', 'lcm-db', 'alpha.sqlite'));
   });
 });

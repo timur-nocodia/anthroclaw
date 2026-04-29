@@ -232,7 +232,7 @@ const REPORT_AFTER_CLEANUP = {
   health: "yellow",
   issues: REPORT_WITH_ISSUES.issues,
   cleanup: {
-    backupPath: "/srv/data/lcm-db/backups/alpha-2026-04-28T12-00-00-000Z.sqlite",
+    backupPath: "/srv/data/lcm/lcm-backups/alpha-2026-04-28T12-00-00-000Z.sqlite",
     actions: [
       "delete_orphans: removed 3 row(s)",
       "rebuild_fts: messages_fts + nodes_fts",
