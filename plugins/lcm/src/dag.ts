@@ -365,6 +365,37 @@ export class SummaryDAG {
   }
 
   /**
+   * List nodes across the whole DAG, optionally filtered by session_id and/or
+   * depth. Ordered by latest_at DESC (most-recently-touched first) so UI
+   * drill-downs show fresh nodes at the top. Used by the UI introspection
+   * routes (Plan 3 Task B1) — keeps `dag` as the single source of truth and
+   * stops route handlers from reaching into private internals.
+   */
+  listAllNodes(opts: { sessionId?: string; depth?: number } = {}): SummaryNode[] {
+    const whereClauses: string[] = [];
+    const args: unknown[] = [];
+    if (opts.sessionId !== undefined) {
+      whereClauses.push('session_id = ?');
+      args.push(opts.sessionId);
+    }
+    if (opts.depth !== undefined) {
+      whereClauses.push('depth = ?');
+      args.push(opts.depth);
+    }
+    const whereStr = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const rows = this._db
+      .prepare(
+        `SELECT node_id, session_id, depth, summary, token_count, source_token_count,
+                source_ids_json, source_type, earliest_at, latest_at, created_at, expand_hint
+         FROM summary_nodes
+         ${whereStr}
+         ORDER BY latest_at DESC, created_at DESC`,
+      )
+      .all(...args) as NodeRow[];
+    return rows.map((r) => this._rowToNode(r));
+  }
+
+  /**
    * List distinct session_ids present in the DAG, ordered by most-recently-touched
    * (max(latest_at) DESC). Used by agent-level introspection tools.
    */

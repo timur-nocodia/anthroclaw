@@ -540,6 +540,8 @@ describe('SummaryDAG', () => {
       // T24 review additions — agent-level aggregators
       'countByDepthAcrossSessions',
       'listSessionIds',
+      // Plan 3 B1 — UI drill-down support
+      'listAllNodes',
     ]);
     // No extra public methods
     const unexpectedPublic = methods.filter((m) => !m.startsWith('_') && !expected.has(m));
@@ -569,5 +571,55 @@ describe('SummaryDAG', () => {
     // Different session should return empty
     const otherCounts = dag.countByDepth('other-sess');
     expect(Object.keys(otherCounts)).toHaveLength(0);
+  });
+
+  // ── 32. listAllNodes (Plan 3 B1) ─────────────────────────────────────────
+  describe('listAllNodes', () => {
+    it('lists all nodes across sessions when no filter is given, ordered by latest_at DESC', () => {
+      dag.create(newNode({ session_id: 'sA', depth: 0, latest_at: 1000 }));
+      dag.create(newNode({ session_id: 'sB', depth: 0, latest_at: 3000 }));
+      dag.create(newNode({ session_id: 'sA', depth: 1, source_type: 'nodes', source_ids: [], latest_at: 2000 }));
+
+      const all = dag.listAllNodes();
+      expect(all).toHaveLength(3);
+      expect(all.map((n) => n.latest_at)).toEqual([3000, 2000, 1000]);
+    });
+
+    it('filters by sessionId', () => {
+      dag.create(newNode({ session_id: 'sA', depth: 0 }));
+      dag.create(newNode({ session_id: 'sA', depth: 1, source_type: 'nodes', source_ids: [] }));
+      dag.create(newNode({ session_id: 'sB', depth: 0 }));
+
+      const aOnly = dag.listAllNodes({ sessionId: 'sA' });
+      expect(aOnly).toHaveLength(2);
+      expect(new Set(aOnly.map((n) => n.session_id))).toEqual(new Set(['sA']));
+    });
+
+    it('filters by depth', () => {
+      dag.create(newNode({ session_id: 'sA', depth: 0 }));
+      dag.create(newNode({ session_id: 'sA', depth: 1, source_type: 'nodes', source_ids: [] }));
+      dag.create(newNode({ session_id: 'sB', depth: 1, source_type: 'nodes', source_ids: [] }));
+
+      const d1 = dag.listAllNodes({ depth: 1 });
+      expect(d1).toHaveLength(2);
+      expect(new Set(d1.map((n) => n.depth))).toEqual(new Set([1]));
+    });
+
+    it('combines sessionId + depth filters', () => {
+      dag.create(newNode({ session_id: 'sA', depth: 0 }));
+      dag.create(newNode({ session_id: 'sA', depth: 1, source_type: 'nodes', source_ids: [] }));
+      dag.create(newNode({ session_id: 'sB', depth: 0 }));
+
+      const r = dag.listAllNodes({ sessionId: 'sA', depth: 0 });
+      expect(r).toHaveLength(1);
+      expect(r[0].session_id).toBe('sA');
+      expect(r[0].depth).toBe(0);
+    });
+
+    it('returns empty array when no nodes match', () => {
+      dag.create(newNode({ session_id: 'sA', depth: 0 }));
+      expect(dag.listAllNodes({ sessionId: 'unknown' })).toEqual([]);
+      expect(dag.listAllNodes({ depth: 99 })).toEqual([]);
+    });
   });
 });
