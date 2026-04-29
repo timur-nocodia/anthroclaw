@@ -20,6 +20,7 @@
     "release:minor": "node scripts/release.mjs minor",
     "release:major": "node scripts/release.mjs major",
     "reset-password": "tsx src/cli/reset-password.ts",
+    "migrate:safety-profile": "tsx scripts/migrate-safety-profile.ts",
     "ui": "cd ui && pnpm dev",
     "ui:build": "cd ui && pnpm build"
   },

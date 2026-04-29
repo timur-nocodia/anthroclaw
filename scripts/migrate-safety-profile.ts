@@ -92,9 +92,17 @@ export interface MigrationOutput {
 }
 
 export async function runMigration(opts: MigrationOptions): Promise<MigrationOutput> {
-  const entries = readdirSync(opts.agentsDir);
   const results: MigrationResult[] = [];
   let applied = 0;
+
+  if (!existsSync(opts.agentsDir)) {
+    return {
+      summary: { scanned: 0, readyToApply: 0, needsReview: 0, applied: 0 },
+      results: [],
+    };
+  }
+
+  const entries = readdirSync(opts.agentsDir);
 
   for (const name of entries) {
     const dir = join(opts.agentsDir, name);
@@ -200,4 +208,38 @@ function applyToFile(path: string, inferred: InferResult): boolean {
 
   writeFileSync(path, doc.toString(), 'utf-8');
   return true;
+}
+
+// CLI entrypoint
+const isMain = import.meta.url === `file://${process.argv[1]}`;
+if (isMain) {
+  const apply = process.argv.includes('--apply');
+  const dirIdx = process.argv.indexOf('--dir');
+  const agentsDir = dirIdx > 0 ? process.argv[dirIdx + 1] : 'agents';
+
+  const out = await runMigration({ agentsDir, apply });
+
+  console.log(`\nScanning ${agentsDir}/...\n`);
+  for (const r of out.results) {
+    console.log(`[${r.agentId}] ${r.error ? `❌ ${r.error}` : `inferred: ${r.profile} (${r.reason})`}`);
+    if (r.toolConflicts.length > 0) {
+      console.log(`  ⚠ tool conflicts: ${r.toolConflicts.join(', ')}`);
+      console.log(`    ${apply ? 'Added' : 'Would add'} safety_overrides.allow_tools (review needed!)`);
+    }
+    if (r.hardBlacklistConflicts.length > 0) {
+      console.log(`  ❗ HARD_BLACKLIST: ${r.hardBlacklistConflicts.join(', ')}`);
+      console.log(`    Cannot be auto-migrated. Manually decide: remove or change safety_profile.`);
+    }
+    if (r.applied) console.log(`  ✅ applied`);
+    console.log('');
+  }
+
+  console.log(`Summary:`);
+  console.log(`  ${out.summary.scanned} agents scanned`);
+  console.log(`  ${out.summary.readyToApply} ready to apply${apply ? '' : ' (--apply)'}`);
+  console.log(`  ${out.summary.needsReview} need manual review`);
+  if (apply) console.log(`  ${out.summary.applied} applied`);
+  if (!apply && out.summary.readyToApply > 0) {
+    console.log(`\nNo changes written. Re-run with --apply to commit.`);
+  }
 }
