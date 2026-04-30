@@ -38,16 +38,9 @@ import { DynamicCronStore } from './cron/dynamic-store.js';
 import { formatCronDeliveryContract } from './cron/delivery-contract.js';
 import {
   buildRuntimeReminderId,
-  extractRuntimeReminderMessage,
-  formatReminderText,
   formatRuntimeReminderAck,
   formatRuntimeReminderPrompt,
-  formatRuntimeReminderStatus,
-  isRuntimeReminderJobId,
-  isRuntimeReminderStatusQuery,
-  parseRuntimeReminderFireAt,
   parseRuntimeReminderIntent,
-  stripRuntimeReminderJobId,
 } from './cron/reminder-primitive.js';
 import { ConfigWatcher } from './config/watcher.js';
 import { runDreaming } from './memory/dreaming.js';
@@ -3213,46 +3206,6 @@ export class Gateway {
     // Runtime reminders are a first-class primitive: the agent supplies no
     // delivery target and does not need manage_cron in its tool surface.
     if (this.dynamicCronStore && channel && msg.chatType === 'dm') {
-      if (isRuntimeReminderStatusQuery(msg.text)) {
-        const pending = this.dynamicCronStore
-          .list(agent.id)
-          .filter((job) =>
-            job.enabled &&
-            isRuntimeReminderJobId(job.id) &&
-            job.deliverTo?.channel === msg.channel &&
-            job.deliverTo.peer_id === msg.peerId &&
-            (job.deliverTo.account_id ?? msg.accountId) === msg.accountId,
-          )
-          .map((job) => {
-            const fireAt = parseRuntimeReminderFireAt(job.id);
-            return fireAt ? {
-              id: job.id,
-              fireAt,
-              message: extractRuntimeReminderMessage(job.prompt),
-            } : null;
-          })
-          .filter((job): job is NonNullable<typeof job> => job !== null);
-        if (pending.length > 0) {
-          await channel.sendText(
-            msg.peerId,
-            formatRuntimeReminderStatus(pending, agent.config.timezone ?? 'UTC'),
-            {
-              accountId: msg.accountId,
-              threadId: msg.threadId,
-              replyToId: resolveReplyToId(msg, resolveChannelContext(agent.config.channel_context, msg).replyToMode),
-            },
-          );
-          recordRouteDecision({
-            outcome: 'runtime_reminder_status',
-            candidates: routeCandidates,
-            winnerAgentId: route.agentId,
-            accessAllowed: true,
-            sessionKey,
-          });
-          return;
-        }
-      }
-
       const reminder = parseRuntimeReminderIntent(msg.text, {
         timezone: agent.config.timezone ?? 'UTC',
       });
@@ -4023,42 +3976,6 @@ export class Gateway {
       return;
     }
 
-    if (this.dynamicCronStore && isRuntimeReminderJobId(job.id)) {
-      try {
-        if (job.deliverTo) {
-          const channel = this.channels.get(job.deliverTo.channel);
-          const reminderMessage = extractRuntimeReminderMessage(job.prompt);
-          const text = reminderMessage ? formatReminderText(reminderMessage) : job.prompt;
-          if (channel) {
-            await channel.sendText(job.deliverTo.peer_id, text, {
-              accountId: job.deliverTo.account_id,
-            });
-            logger.info(
-              { agentId: job.agentId, jobId: job.id, channel: job.deliverTo.channel, peerId: job.deliverTo.peer_id },
-              'Runtime reminder delivered',
-            );
-          } else {
-            logger.warn(
-              { agentId: job.agentId, jobId: job.id, channel: job.deliverTo.channel },
-              'Runtime reminder channel not available',
-            );
-          }
-        } else {
-          logger.warn({ agentId: job.agentId, jobId: job.id }, 'Runtime reminder has no deliver_to');
-        }
-      } finally {
-        const removed = this.dynamicCronStore.delete(job.agentId, stripRuntimeReminderJobId(job.id));
-        if (removed) {
-          this.reloadDynamicCron();
-          logger.info(
-            { agentId: job.agentId, jobId: job.id },
-            'Runtime reminder removed after firing',
-          );
-        }
-      }
-      return;
-    }
-
     const agent = this.agents.get(job.agentId);
     if (!agent) {
       logger.warn({ agentId: job.agentId, jobId: job.id }, 'Cron job references unknown agent');
@@ -4117,7 +4034,6 @@ export class Gateway {
         'Cron response (no deliver_to)',
       );
     }
-
   }
 
   // ─── Dynamic cron reload ────────────────────────────────────────────

@@ -4,22 +4,14 @@ export interface RuntimeReminderIntent {
   message: string;
 }
 
-export interface RuntimeReminderView {
-  id: string;
-  fireAt: Date;
-  message?: string;
-}
-
 interface ParseReminderOptions {
   nowMs?: number;
   timezone?: string;
 }
 
-const RUNTIME_REMINDER_PREFIX = 'runtime-reminder-';
 const REMINDER_TRIGGER_RE = /(напомни|напомнить|напоминан(?:ие|ия|ию|ием)?|remind(?:er)?)/i;
 const RELATIVE_TIME_RE = /(?:через|спустя)\s+(\d{1,4})\s*(минут(?:у|ы)?|мин\.?|м\b|час(?:а|ов)?|ч\b|д(?:ень|ня|ней)?|дн(?:я|ей)?)/i;
 const ABSOLUTE_TIME_RE = /(?:^|\s)(?:в|на)\s+(\d{1,2})[:.](\d{2})(?:\s|$|[,.!?;:])/i;
-const REMINDER_STATUS_RE = /^(?:жду|ждем|ожидаю|waiting|wait|статус|что с напоминанием|напоминание создано\??)$/i;
 
 export function parseRuntimeReminderIntent(
   text: string,
@@ -78,11 +70,6 @@ export function formatRuntimeReminderPrompt(message: string): string {
   return `Return exactly this reminder text and nothing else: "${formatReminderText(message)}"`;
 }
 
-export function extractRuntimeReminderMessage(prompt: string): string | undefined {
-  const match = /"⏰ Напоминание:\s*([^"]+)"/.exec(prompt);
-  return match?.[1]?.trim() || undefined;
-}
-
 export function formatReminderText(message: string): string {
   return `⏰ Напоминание: ${message}`;
 }
@@ -103,56 +90,7 @@ export function formatRuntimeReminderAck(
 export function buildRuntimeReminderId(fireAt: Date, nonce: string): string {
   const stamp = fireAt.toISOString().replace(/[-:TZ.]/g, '').slice(0, 12);
   const safeNonce = nonce.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'runtime';
-  return `${RUNTIME_REMINDER_PREFIX}${stamp}-${safeNonce}`;
-}
-
-export function isRuntimeReminderJobId(id: string): boolean {
-  const normalized = id.startsWith('dyn:') ? id.slice(4) : id;
-  return normalized.startsWith(RUNTIME_REMINDER_PREFIX);
-}
-
-export function stripRuntimeReminderJobId(id: string): string {
-  return id.startsWith('dyn:') ? id.slice(4) : id;
-}
-
-export function parseRuntimeReminderFireAt(id: string): Date | null {
-  const normalized = stripRuntimeReminderJobId(id);
-  if (!normalized.startsWith(RUNTIME_REMINDER_PREFIX)) return null;
-  const stamp = normalized.slice(RUNTIME_REMINDER_PREFIX.length, RUNTIME_REMINDER_PREFIX.length + 12);
-  if (!/^\d{12}$/.test(stamp)) return null;
-  const year = Number(stamp.slice(0, 4));
-  const month = Number(stamp.slice(4, 6));
-  const day = Number(stamp.slice(6, 8));
-  const hour = Number(stamp.slice(8, 10));
-  const minute = Number(stamp.slice(10, 12));
-  return new Date(Date.UTC(year, month - 1, day, hour, minute));
-}
-
-export function isRuntimeReminderStatusQuery(text: string): boolean {
-  return REMINDER_STATUS_RE.test(text.trim());
-}
-
-export function formatRuntimeReminderStatus(
-  reminders: RuntimeReminderView[],
-  timezone = 'UTC',
-  nowMs = Date.now(),
-): string {
-  const pending = reminders
-    .filter((reminder) => reminder.fireAt.getTime() > nowMs - 30_000)
-    .sort((a, b) => a.fireAt.getTime() - b.fireAt.getTime());
-
-  if (pending.length === 0) {
-    return 'Сейчас нет ожидающих runtime-напоминаний для этого чата.';
-  }
-
-  const first = pending[0];
-  const fire = getZonedParts(first.fireAt, timezone);
-  const time = `${pad2(fire.hour)}:${pad2(fire.minute)}`;
-  const suffix = first.message ? `: ${first.message}` : '';
-  if (pending.length === 1) {
-    return `Напоминание уже создано кодом. Ждем ${time}${suffix}`;
-  }
-  return `Напоминания уже созданы кодом. Ближайшее в ${time}${suffix}. Всего ожидает: ${pending.length}.`;
+  return `runtime-reminder-${stamp}-${safeNonce}`;
 }
 
 function unitToMs(unit: string): number {
