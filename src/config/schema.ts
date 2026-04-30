@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_HEARTBEAT_EVERY, DEFAULT_HEARTBEAT_PROMPT, HEARTBEAT_ACK_TOKEN } from '../heartbeat/constants.js';
 
 // ─── Telegram / WhatsApp account schemas ───────────────────────────
 
@@ -327,6 +328,16 @@ const LearningConfigSchema = z.object({
   },
 });
 
+const HeartbeatConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  every: z.string().default(DEFAULT_HEARTBEAT_EVERY).describe('Heartbeat cadence, e.g. "10m", "1h", "1d"'),
+  target: z.enum(['last', 'none']).default('last'),
+  isolated_session: z.boolean().default(true),
+  show_ok: z.boolean().default(false),
+  ack_token: z.string().min(1).default(HEARTBEAT_ACK_TOKEN),
+  prompt: z.string().min(1).default(DEFAULT_HEARTBEAT_PROMPT),
+}).optional();
+
 const SafetyOverridesSchema = z.object({
   allow_tools: z.array(z.string()).optional(),
   deny_tools: z.array(z.string()).optional(),
@@ -356,6 +367,7 @@ export const AgentYmlSchema = z.object({
   external_mcp_servers: z.record(z.string(), ExternalMcpServerSchema).optional(),
   memory_extraction: MemoryExtractionSchema,
   learning: LearningConfigSchema,
+  heartbeat: HeartbeatConfigSchema,
   subagents: SubagentPolicySchema,
   cron: z.array(CronJobSchema).optional(),
   hooks: z.array(HookConfigSchema).optional(),
@@ -434,4 +446,5 @@ export type SdkSandboxConfig = z.infer<typeof SdkSandboxSchema>;
 export type SdkAgentConfig = z.infer<typeof SdkAgentConfigSchema>;
 export type MemoryExtractionConfig = z.infer<typeof MemoryExtractionSchema>;
 export type LearningConfig = z.infer<typeof LearningConfigSchema>;
+export type HeartbeatConfig = NonNullable<z.infer<typeof HeartbeatConfigSchema>>;
 export type AllowlistConfig = Record<string, string[]>;

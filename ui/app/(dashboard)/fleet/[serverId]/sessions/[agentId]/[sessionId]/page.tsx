@@ -35,7 +35,7 @@ interface SessionMessageView {
 }
 
 interface SessionProvenance {
-  source: "channel" | "web" | "cron";
+  source: "channel" | "web" | "cron" | "heartbeat";
   channel: string;
   peerId?: string;
   threadId?: string;

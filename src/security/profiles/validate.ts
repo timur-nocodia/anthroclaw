@@ -39,6 +39,7 @@ export function validateSafetyProfile(config: AgentYml): ValidationResult {
 
   // Check overrides
   const overrides = config.safety_overrides ?? {};
+  const allowOverrides = new Set(overrides.allow_tools ?? []);
 
   // bypass: chat permits, private permits, others reject
   if (
@@ -57,6 +58,18 @@ export function validateSafetyProfile(config: AgentYml): ValidationResult {
     warnings.push('safety_overrides.permission_mode=bypass: all tools will run without approval');
   }
 
+  if (config.heartbeat?.enabled === true && config.safety_profile === 'public') {
+    if (!allowOverrides.has('heartbeat')) {
+      return {
+        ok: false,
+        warnings: [],
+        error:
+          'heartbeat.enabled=true is not allowed with safety_profile=public unless explicitly opened via safety_overrides.allow_tools: ["heartbeat"]',
+      };
+    }
+    warnings.push('safety_overrides.allow_tools opens "heartbeat" in safety_profile=public');
+  }
+
   // chat profile: most overrides are no-op (everything is already allowed)
   if (config.safety_profile === 'chat_like_openclaw') {
     if (overrides.allow_tools && overrides.allow_tools.length > 0) {
@@ -70,7 +83,6 @@ export function validateSafetyProfile(config: AgentYml): ValidationResult {
 
   // Existing tool-compat check (kept verbatim from current validator) for non-chat profiles
   const tools = config.mcp_tools ?? [];
-  const allowOverrides = new Set(overrides.allow_tools ?? []);
 
   const incompatible: { name: string; reason: string }[] = [];
   for (const toolName of tools) {

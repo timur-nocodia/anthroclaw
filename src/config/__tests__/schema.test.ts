@@ -84,6 +84,27 @@ describe('plugins config schema', () => {
     }
   });
 
+  it('AgentYmlSchema accepts heartbeat config and applies defaults', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      heartbeat: {
+        enabled: true,
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.heartbeat).toMatchObject({
+        enabled: true,
+        every: '30m',
+        target: 'last',
+        isolated_session: true,
+        show_ok: false,
+        ack_token: 'HEARTBEAT_OK',
+      });
+      expect(result.data.heartbeat?.prompt).toContain('HEARTBEAT.md');
+    }
+  });
+
   it('AgentYmlSchema accepts learning propose config and artifact limits', () => {
     const result = AgentYmlSchema.safeParse({
       ...minimalValidAgentYml,

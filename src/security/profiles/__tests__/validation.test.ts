@@ -72,6 +72,39 @@ describe('validateSafetyProfile', () => {
     expect(r.error).toMatch(/bypass.*private/i);
   });
 
+  it('public + heartbeat enabled without override → fatal', () => {
+    const r = validateSafetyProfile(base({
+      heartbeat: {
+        enabled: true,
+        every: '30m',
+        target: 'last',
+        isolated_session: true,
+        show_ok: false,
+        ack_token: 'HEARTBEAT_OK',
+        prompt: 'Read HEARTBEAT.md and run due tasks only.',
+      },
+    }));
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/heartbeat\.enabled=true/);
+  });
+
+  it('public + heartbeat enabled with explicit override → ok with WARN', () => {
+    const r = validateSafetyProfile(base({
+      heartbeat: {
+        enabled: true,
+        every: '30m',
+        target: 'last',
+        isolated_session: true,
+        show_ok: false,
+        ack_token: 'HEARTBEAT_OK',
+        prompt: 'Read HEARTBEAT.md and run due tasks only.',
+      },
+      safety_overrides: { allow_tools: ['heartbeat'] },
+    }));
+    expect(r.ok).toBe(true);
+    expect(r.warnings.some((w) => w.includes('heartbeat'))).toBe(true);
+  });
+
   it('private + bypass permission_mode → ok with WARN', () => {
     const r = validateSafetyProfile(base({
       safety_profile: 'private',

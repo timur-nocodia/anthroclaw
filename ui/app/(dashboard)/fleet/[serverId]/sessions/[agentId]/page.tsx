@@ -19,6 +19,7 @@ import {
   Timer,
   Trash2,
   X,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -47,7 +48,7 @@ interface AgentSummary {
 }
 
 interface SessionProvenance {
-  source: "channel" | "web" | "cron";
+  source: "channel" | "web" | "cron" | "heartbeat";
   channel: string;
   peerId?: string;
   threadId?: string;
@@ -68,7 +69,7 @@ interface AgentSession {
   lastMessage?: { type: string; uuid: string; text: string };
 }
 
-const SOURCE_OPTIONS = ["all", "web", "channel", "cron"] as const;
+const SOURCE_OPTIONS = ["all", "web", "channel", "cron", "heartbeat"] as const;
 const STATUS_OPTIONS = ["all", "running", "succeeded", "failed", "interrupted"] as const;
 type SourceFilter = (typeof SOURCE_OPTIONS)[number];
 type StatusFilter = (typeof STATUS_OPTIONS)[number];
@@ -88,6 +89,7 @@ function formatRelative(ms: number): string {
 function sourceIcon(source: string | undefined) {
   if (source === "web") return Globe;
   if (source === "cron") return Timer;
+  if (source === "heartbeat") return Zap;
   return Smartphone;
 }
 

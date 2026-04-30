@@ -253,6 +253,19 @@ export function setAgentLearningConfig(
   updateAgentConfig(agentId, doc.toString());
 }
 
+export function setAgentHeartbeatConfig(
+  agentId: string,
+  heartbeat: Record<string, unknown>,
+): void {
+  const dir = ensureAgentExists(agentId);
+  const ymlPath = join(dir, 'agent.yml');
+  const raw = readFileSync(ymlPath, 'utf-8');
+  const doc = parseDocument(raw);
+  doc.setIn(['heartbeat'], heartbeat);
+
+  updateAgentConfig(agentId, doc.toString());
+}
+
 /**
  * Create a new agent directory with agent.yml, CLAUDE.md, memory/, .claude/skills/.
  */

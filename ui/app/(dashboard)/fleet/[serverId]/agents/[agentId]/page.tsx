@@ -102,6 +102,7 @@ interface AgentConfig {
     max_input_chars?: number;
   };
   learning?: LearningConfig;
+  heartbeat?: HeartbeatConfig;
   external_mcp_servers?: Record<string, ExternalMcpServerConfig>;
   allowlist?: Record<string, string[]>;
   quick_commands?: Record<string, { command: string; timeout: number }>;
@@ -174,6 +175,33 @@ interface AgentConfig {
     includeHookEvents?: boolean;
     enableFileCheckpointing?: boolean;
     fallbackModel?: string;
+  };
+}
+
+interface HeartbeatConfig {
+  enabled?: boolean;
+  every?: string;
+  target?: "last" | "none";
+  isolated_session?: boolean;
+  show_ok?: boolean;
+  ack_token?: string;
+  prompt?: string;
+}
+
+interface HeartbeatRunLogEntry {
+  timestamp: number;
+  runId: string;
+  agentId: string;
+  taskName: string;
+  status: string;
+  delivered?: boolean;
+  outputPath?: string;
+  script?: {
+    command: string;
+    exitCode: number | null;
+    timedOut: boolean;
+    wakeAgent?: boolean;
+    error?: string;
   };
 }
 
@@ -267,7 +295,7 @@ interface AgentRunRecord {
   agentId: string;
   sessionKey: string;
   sdkSessionId?: string;
-  source: "channel" | "web" | "cron";
+  source: "channel" | "web" | "cron" | "heartbeat";
   channel: string;
   accountId?: string;
   peerId?: string;
@@ -847,6 +875,13 @@ export default function AgentEditorPage() {
             Learning
           </TabsTrigger>
           <TabsTrigger
+            value="routines"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <Zap className="mr-1.5 h-3.5 w-3.5" />
+            Routines
+          </TabsTrigger>
+          <TabsTrigger
             value="skills"
             className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
           >
@@ -883,6 +918,9 @@ export default function AgentEditorPage() {
         </TabsContent>
         <TabsContent value="learning" className="mt-0 flex-1 overflow-auto">
           {agent && <LearningTab serverId={serverId} agentId={agentId} agent={agent} />}
+        </TabsContent>
+        <TabsContent value="routines" className="mt-0 flex-1 overflow-auto">
+          {agent && <RoutinesTab serverId={serverId} agentId={agentId} agent={agent} />}
         </TabsContent>
         <TabsContent value="skills" className="mt-0 flex-1 overflow-auto">
           <SkillsTab serverId={serverId} agentId={agentId} />
@@ -945,6 +983,7 @@ function ConfigTab({
       max_input_chars: agent.memory_extraction?.max_input_chars ?? 6000,
     },
     learning: normalizeLearningConfig(agent.learning),
+    heartbeat: agent.heartbeat,
     external_mcp_servers: agent.external_mcp_servers ?? {},
     allowlist: agent.allowlist ?? {},
     quick_commands: agent.quick_commands ?? {},
@@ -1407,6 +1446,7 @@ function ConfigTab({
           maxTurns,
           maxBudgetUsd,
           safety_overrides,
+          heartbeat,
           sdk: _sdk,
           channel_context: _channelContext,
           external_mcp_servers: _externalMcpServers,
@@ -1419,6 +1459,7 @@ function ConfigTab({
         if (maxTurns > 0) clean.maxTurns = maxTurns;
         if (maxBudgetUsd > 0) clean.maxBudgetUsd = maxBudgetUsd;
         if (Object.keys(safety_overrides).length > 0) clean.safety_overrides = safety_overrides;
+        if (heartbeat) clean.heartbeat = heartbeat;
         const channelContextPayload = buildChannelContextPayload();
         if (channelContextPayload) clean.channel_context = channelContextPayload;
         const externalMcpPayload = buildExternalMcpPayload();
@@ -3298,6 +3339,243 @@ function ExternalMcpPreflightResult({ state }: { state: ExternalMcpPreflightStat
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Routines Tab                                                       */
+/* ------------------------------------------------------------------ */
+
+function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: string; agent: AgentConfig }) {
+  const [cfg, setCfg] = useState<Required<HeartbeatConfig>>({
+    enabled: agent.heartbeat?.enabled ?? false,
+    every: agent.heartbeat?.every ?? "30m",
+    target: agent.heartbeat?.target ?? "last",
+    isolated_session: agent.heartbeat?.isolated_session ?? true,
+    show_ok: agent.heartbeat?.show_ok ?? false,
+    ack_token: agent.heartbeat?.ack_token ?? "HEARTBEAT_OK",
+    prompt: agent.heartbeat?.prompt ?? "Read HEARTBEAT.md and run due tasks only. If nothing needs attention, reply HEARTBEAT_OK.",
+  });
+  const [heartbeatMd, setHeartbeatMd] = useState("");
+  const [runs, setRuns] = useState<HeartbeatRunLogEntry[]>([]);
+  const [dirtyConfig, setDirtyConfig] = useState(false);
+  const [dirtyFile, setDirtyFile] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const heartbeatFilePath = `/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/files/${encodeURIComponent("HEARTBEAT.md")}`;
+
+  const loadHeartbeat = useCallback(async () => {
+    const [metaRes, fileRes] = await Promise.all([
+      fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/heartbeat?limit=30`).catch(() => null),
+      fetch(heartbeatFilePath).catch(() => null),
+    ]);
+    if (metaRes?.ok) {
+      const meta = await metaRes.json();
+      if (Array.isArray(meta.runs)) setRuns(meta.runs);
+      if (meta.heartbeat) setCfg((current) => ({ ...current, ...meta.heartbeat }));
+    }
+    if (fileRes?.ok) {
+      const file = await fileRes.json();
+      setHeartbeatMd(typeof file.content === "string" ? file.content : "");
+    }
+  }, [agentId, heartbeatFilePath, serverId]);
+
+  useEffect(() => {
+    void loadHeartbeat();
+  }, [loadHeartbeat]);
+
+  const updateHeartbeat = (patch: Partial<Required<HeartbeatConfig>>) => {
+    setCfg((current) => ({ ...current, ...patch }));
+    setDirtyConfig(true);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      if (dirtyConfig) {
+        await fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/heartbeat`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ heartbeat: cfg }),
+        });
+      }
+      if (dirtyFile) {
+        await fetch(heartbeatFilePath, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: heartbeatMd }),
+        });
+      }
+      setDirtyConfig(false);
+      setDirtyFile(false);
+      await loadHeartbeat();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const insertSample = () => {
+    setHeartbeatMd(`tasks:
+  - name: metrics-watch
+    interval: 10m
+    prompt: Analyze the latest metrics and send a short report only if something needs attention.
+    script: scripts/check-metrics.js
+    skills: metrics, reporting
+    timeout_ms: 30000
+`);
+    setDirtyFile(true);
+  };
+
+  return (
+    <div className="flex max-w-[1100px] flex-col gap-3.5 p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold" style={{ color: "var(--color-foreground)" }}>Routines</h2>
+          <p className="text-xs" style={{ color: "var(--oc-text-muted)" }}>Heartbeat wakes the agent through the SDK path and runs due tasks from HEARTBEAT.md.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => void loadHeartbeat()}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Reload
+          </Button>
+          <Button size="sm" disabled={saving || (!dirtyConfig && !dirtyFile)} onClick={() => void save()}>
+            <Save className="h-3.5 w-3.5" />
+            {saving ? "Saving..." : "Save"}
+          </Button>
+        </div>
+      </div>
+
+      <Section
+        title="Heartbeat"
+        subtitle={cfg.enabled ? `${cfg.every} · ${cfg.target}` : "disabled"}
+        icon={<Zap className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+        tooltip="Gateway-managed periodic wake loop for routines."
+      >
+        <FormGrid>
+          <Field label="Enabled">
+            <button
+              onClick={() => updateHeartbeat({ enabled: !cfg.enabled })}
+              className="flex h-7 w-[44px] items-center rounded-full p-0.5"
+              style={{
+                background: cfg.enabled ? "var(--oc-accent)" : "var(--oc-bg3)",
+                justifyContent: cfg.enabled ? "flex-end" : "flex-start",
+              }}
+            >
+              <div className="h-5 w-5 rounded-full" style={{ background: cfg.enabled ? "#0b0d12" : "var(--oc-text-muted)" }} />
+            </button>
+          </Field>
+          <Field label="Cadence">
+            <input
+              value={cfg.every}
+              onChange={(e) => updateHeartbeat({ every: e.target.value })}
+              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+              placeholder="10m"
+            />
+          </Field>
+          <Field label="Target">
+            <select
+              value={cfg.target}
+              onChange={(e) => updateHeartbeat({ target: e.target.value as "last" | "none" })}
+              className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+            >
+              <option value="last">last chat</option>
+              <option value="none">log only</option>
+            </select>
+          </Field>
+          <Field label="Session">
+            <select
+              value={cfg.isolated_session ? "isolated" : "stable"}
+              onChange={(e) => updateHeartbeat({ isolated_session: e.target.value === "isolated" })}
+              className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+            >
+              <option value="isolated">isolated per run</option>
+              <option value="stable">stable heartbeat session</option>
+            </select>
+          </Field>
+          <Field label="Ack token">
+            <input
+              value={cfg.ack_token}
+              onChange={(e) => updateHeartbeat({ ack_token: e.target.value })}
+              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+            />
+          </Field>
+          <Field label="Show OK">
+            <button
+              onClick={() => updateHeartbeat({ show_ok: !cfg.show_ok })}
+              className="flex h-7 w-[44px] items-center rounded-full p-0.5"
+              style={{
+                background: cfg.show_ok ? "var(--oc-accent)" : "var(--oc-bg3)",
+                justifyContent: cfg.show_ok ? "flex-end" : "flex-start",
+              }}
+            >
+              <div className="h-5 w-5 rounded-full" style={{ background: cfg.show_ok ? "#0b0d12" : "var(--oc-text-muted)" }} />
+            </button>
+          </Field>
+        </FormGrid>
+        <div className="mt-3 flex flex-col gap-1.5">
+          <label className="text-[10px] font-medium uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+            Base prompt
+          </label>
+          <textarea
+            value={cfg.prompt}
+            onChange={(e) => updateHeartbeat({ prompt: e.target.value })}
+            rows={3}
+            className="w-full resize-none rounded-[5px] border px-2 py-1.5 text-[11.5px] leading-relaxed outline-none"
+            style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+          />
+        </div>
+      </Section>
+
+      <Section
+        title="HEARTBEAT.md"
+        subtitle={dirtyFile ? "modified" : undefined}
+        icon={<FileText className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+        action={<Button variant="outline" size="sm" onClick={insertSample}><Plus className="h-3 w-3" />Sample</Button>}
+      >
+        <textarea
+          value={heartbeatMd}
+          onChange={(e) => {
+            setHeartbeatMd(e.target.value);
+            setDirtyFile(true);
+          }}
+          rows={14}
+          className="w-full resize-y rounded-[5px] border px-3 py-2 text-[12px] leading-relaxed outline-none"
+          style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+          placeholder={"tasks:\n  - name: daily-standup\n    interval: 1d\n    prompt: Prepare the daily standup from metrics and docs."}
+        />
+      </Section>
+
+      <Section
+        title="Run history"
+        subtitle={runs.length > 0 ? `${runs.length} recent` : "empty"}
+        icon={<Clock className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+      >
+        {runs.length === 0 ? (
+          <div className="py-6 text-center text-xs" style={{ color: "var(--oc-text-muted)" }}>No heartbeat runs recorded.</div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {runs.map((run) => (
+              <div key={`${run.runId}-${run.taskName}`} className="flex items-center gap-2 rounded-md border px-3 py-2 text-xs" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}>
+                <span className="w-[150px] truncate" style={{ color: "var(--color-foreground)" }}>{run.taskName}</span>
+                <span className="rounded px-1.5 py-px text-[10px]" style={{ background: "var(--oc-bg3)", color: "var(--oc-text-muted)" }}>{run.status}</span>
+                {run.script && (
+                  <span className="truncate text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
+                    {run.script.command} · exit {run.script.exitCode}{run.script.wakeAgent === false ? " · gated" : ""}
+                  </span>
+                )}
+                <span className="ml-auto text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+                  {new Date(run.timestamp).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
     </div>
   );
 }

@@ -81,7 +81,7 @@ export interface StoredSubagentEvent {
 }
 
 export type StoredAgentRunStatus = 'running' | 'succeeded' | 'failed' | 'interrupted';
-export type StoredAgentRunSource = 'channel' | 'web' | 'cron';
+export type StoredAgentRunSource = 'channel' | 'web' | 'cron' | 'heartbeat';
 
 export interface StoredAgentRunUsage {
   inputTokens?: number;

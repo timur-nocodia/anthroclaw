@@ -3,7 +3,7 @@ import { withAuth } from '@/lib/route-handler';
 import { getGateway } from '@/lib/gateway';
 
 const RUN_STATUSES = new Set(['running', 'succeeded', 'failed', 'interrupted']);
-const RUN_SOURCES = new Set(['web', 'channel', 'cron']);
+const RUN_SOURCES = new Set(['web', 'channel', 'cron', 'heartbeat']);
 const ACTIVE_FILTERS = new Set(['active', 'inactive', 'all']);
 
 function optionalBoolean(value: string | null): boolean | undefined {
@@ -37,7 +37,7 @@ export async function GET(
       limit,
       offset,
       search: url.searchParams.get('search') ?? undefined,
-      source: source && RUN_SOURCES.has(source) ? source as 'web' | 'channel' | 'cron' : undefined,
+      source: source && RUN_SOURCES.has(source) ? source as 'web' | 'channel' | 'cron' | 'heartbeat' : undefined,
       channel: url.searchParams.get('channel') ?? undefined,
       status: status && RUN_STATUSES.has(status) ? status as 'running' | 'succeeded' | 'failed' | 'interrupted' : undefined,
       active: active && ACTIVE_FILTERS.has(active) ? active as 'active' | 'inactive' | 'all' : undefined,

@@ -6,6 +6,28 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Heartbeat routines**: per-agent `heartbeat` config plus `HEARTBEAT.md`
+  task files create a Gateway-managed periodic wake loop through the native
+  Claude Agent SDK query path.
+- Heartbeat task parsing with `interval`, `prompt`, optional `script`, `skills`,
+  and `timeout_ms` fields.
+- Workspace-local heartbeat scripts with path traversal protection, timeout
+  handling, stdout/stderr injection, and `{"wakeAgent": false}` wake gates that
+  skip unnecessary model calls.
+- Durable heartbeat state, last-chat delivery target capture, response output
+  history under `data/heartbeat-output/`, and JSONL run history in
+  `data/heartbeat-runs.jsonl`.
+- Agent UI **Routines** tab for heartbeat settings, `HEARTBEAT.md` editing, and
+  recent run history.
+
+### Changed
+
+- Agent run/session source filters now include `heartbeat`.
+- Safety validation rejects `heartbeat.enabled=true` on `safety_profile=public`
+  unless explicitly opened with `safety_overrides.allow_tools: ["heartbeat"]`.
+
 ## [0.5.0] - 2026-04-30
 
 This release is the large post-0.4.1 integration release: plugin framework,

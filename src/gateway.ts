@@ -38,6 +38,10 @@ import { CronScheduler } from './cron/scheduler.js';
 import { DynamicCronStore, type DynamicCronJob } from './cron/dynamic-store.js';
 import { formatCronDeliveryContract } from './cron/delivery-contract.js';
 import { looksLikeOneShotSchedule, oneShotScheduleTimeUtc } from './cron/one-shot.js';
+import { HeartbeatRunner, type HeartbeatRunRequest } from './heartbeat/runner.js';
+import { HeartbeatStateStore } from './heartbeat/state-store.js';
+import { formatHeartbeatDeliveryContract, isHeartbeatAckResponse } from './heartbeat/delivery-contract.js';
+import { HeartbeatHistoryStore } from './heartbeat/history.js';
 import { ConfigWatcher } from './config/watcher.js';
 import { runDreaming } from './memory/dreaming.js';
 import {
@@ -681,6 +685,9 @@ export class Gateway {
   private hookEmitterUnsubscribes = new Map<string, Array<() => void>>();
   private queueManager = new QueueManager();
   private dynamicCronStore: DynamicCronStore | null = null;
+  private heartbeatStateStore: HeartbeatStateStore | null = null;
+  private heartbeatHistoryStore: HeartbeatHistoryStore | null = null;
+  private heartbeatRunner: HeartbeatRunner | null = null;
   private prefetchCache = new PrefetchCache();
   private globalConfig: GlobalConfig | null = null;
   private sdkReady = false;
@@ -738,6 +745,11 @@ export class Gateway {
 
     // Dynamic cron store
     this.dynamicCronStore = new DynamicCronStore(join(dataDir, 'dynamic-cron.json'));
+    this.heartbeatStateStore = new HeartbeatStateStore(join(dataDir, 'heartbeat-state.json'));
+    this.heartbeatHistoryStore = new HeartbeatHistoryStore(
+      join(dataDir, 'heartbeat-output'),
+      join(dataDir, 'heartbeat-runs.jsonl'),
+    );
 
     const agentDirs = this.discoverAgentDirs(agentsDir);
     logger.info({ agentsDir, count: agentDirs.length }, 'Discovered agent directories');
@@ -940,6 +952,15 @@ export class Gateway {
       logger.info({ jobs: this.scheduler.listJobs() }, 'Cron jobs registered');
     }
 
+    this.heartbeatRunner = new HeartbeatRunner({
+      listAgents: () => [...this.agents.values()],
+      stateStore: this.heartbeatStateStore!,
+      isSessionActive: (sessionKey) => this.queueManager.isActive(sessionKey),
+      runHeartbeat: (request) => this.runHeartbeat(request),
+      historyStore: this.heartbeatHistoryStore ?? undefined,
+    });
+    this.heartbeatRunner.start();
+
     // ─── Session pruning (every hour, evict sessions older than 24h) ──
     const SESSION_PRUNE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
     const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;   // 24 hours
@@ -994,6 +1015,9 @@ export class Gateway {
     this.clearHookEmitters();
     this.scheduler?.stop();
     this.scheduler = null;
+    this.heartbeatRunner?.stop();
+    this.heartbeatRunner = null;
+    this.heartbeatHistoryStore = null;
 
     // Close plugin hot-reload watcher first so no new add events fire during shutdown
     await this.pluginsWatcher?.close();
@@ -2680,6 +2704,8 @@ export class Gateway {
       enabled: true,
     });
 
+    this.heartbeatRunner?.reload();
+
     logger.info(
       { added, removed, reloaded, totalAgents: this.agents.size },
       'Hot reload complete',
@@ -3037,6 +3063,14 @@ export class Gateway {
       const groupMode: GroupSessionMode = agent.config.group_sessions ?? 'shared';
       sessionKey = buildGroupSessionKey(sessionKey, msg.senderId, groupMode);
     }
+
+    this.heartbeatStateStore?.recordTarget(route.agentId, {
+      channel: msg.channel,
+      peer_id: msg.peerId,
+      account_id: msg.accountId,
+      ...(msg.threadId ? { thread_id: msg.threadId } : {}),
+      session_key: sessionKey,
+    });
 
     // ─── Queue conflict resolution ──────────────────────────────
     const queueMode = agent.config.queue_mode ?? 'collect';
@@ -3440,7 +3474,7 @@ export class Gateway {
     const senderLabel = msg.senderName ?? msg.senderId;
     const existingSessionId = agent.getSessionId(sessionKey);
     const rawMeta = msg.raw && typeof msg.raw === 'object' ? msg.raw as Record<string, unknown> : {};
-    const source = rawMeta.cron === true ? 'cron' : 'channel';
+    const source = rawMeta.cron === true ? 'cron' : rawMeta.heartbeat === true ? 'heartbeat' : 'channel';
     const routeDecisionId = typeof rawMeta.routeDecisionId === 'string' ? rawMeta.routeDecisionId : undefined;
 
     // Session context — channel info on first message, datetime always
@@ -3471,6 +3505,15 @@ export class Gateway {
         peerId: msg.peerId,
         threadId: msg.threadId,
       })}\n`;
+    }
+    if (source === 'heartbeat') {
+      const ackToken = typeof rawMeta.heartbeatAckToken === 'string' ? rawMeta.heartbeatAckToken : undefined;
+      sessionCtx += `${formatHeartbeatDeliveryContract({
+        channel: msg.channel,
+        account_id: msg.accountId,
+        peer_id: msg.peerId,
+        ...(msg.threadId ? { thread_id: msg.threadId } : {}),
+      }, ackToken)}\n`;
     }
 
     let prompt: string;
@@ -3917,6 +3960,58 @@ export class Gateway {
       // Fallback on error
       return `Agent ${agent.id} received: ${msg.text}`;
     }
+  }
+
+  /**
+   * Handle a cron job firing: query the agent and optionally deliver the response.
+   */
+  private async runHeartbeat(request: HeartbeatRunRequest): Promise<{ response: string | null; delivered: boolean }> {
+    const target = request.target;
+    const syntheticMsg: InboundMessage = {
+      channel: target?.channel ?? 'telegram',
+      accountId: target?.account_id ?? 'default',
+      chatType: 'dm',
+      peerId: target?.peer_id ?? 'heartbeat',
+      senderId: 'heartbeat',
+      senderName: 'heartbeat',
+      text: request.prompt,
+      messageId: request.runId,
+      threadId: target?.thread_id,
+      mentionedBot: false,
+      raw: {
+        heartbeat: true,
+        heartbeatAckToken: request.ackToken,
+        runId: request.runId,
+        taskNames: request.taskNames,
+      },
+    };
+
+    const response = await this.queryAgent(request.agent, syntheticMsg, request.sessionKey);
+    if (!response || isSilentResponse(response) || (!request.showOk && isHeartbeatAckResponse(response, request.ackToken))) {
+      logger.info({ agentId: request.agent.id, runId: request.runId }, 'Heartbeat response suppressed');
+      return { response, delivered: false };
+    }
+
+    if (!target) {
+      logger.info(
+        { agentId: request.agent.id, runId: request.runId, response: response.slice(0, 200) },
+        'Heartbeat response (no delivery target)',
+      );
+      return { response, delivered: false };
+    }
+
+    const channel = this.channels.get(target.channel);
+    if (!channel) {
+      logger.warn({ agentId: request.agent.id, runId: request.runId, channel: target.channel }, 'Heartbeat delivery channel not available');
+      return { response, delivered: false };
+    }
+
+    await channel.sendText(target.peer_id, response, {
+      accountId: target.account_id,
+      threadId: target.thread_id,
+    });
+    logger.info({ agentId: request.agent.id, runId: request.runId, channel: target.channel, peerId: target.peer_id }, 'Heartbeat response delivered');
+    return { response, delivered: true };
   }
 
   /**

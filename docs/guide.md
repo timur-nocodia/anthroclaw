@@ -55,19 +55,20 @@ AnthroClaw is inspired by OpenClaw and Hermes-style agent infrastructure, but it
 22. [Memory Context Fencing](#memory-context-fencing)
 23. [YAML Frontmatter in Skills](#yaml-frontmatter-in-skills)
 24. [Agent Self-Scheduling (Dynamic Cron)](#agent-self-scheduling-dynamic-cron)
-25. [Background Memory Prefetch](#background-memory-prefetch)
-26. [Subagents](#subagents)
-27. [Media Enrichment](#media-enrichment)
-28. [Message Debouncing](#message-debouncing)
-29. [Logging](#logging)
-30. [Quick Commands](#quick-commands)
-31. [Context References](#context-references)
-32. [Group Chat Session Isolation](#group-chat-session-isolation)
-33. [Cron Silent Suppression](#cron-silent-suppression)
-34. [Error Classification & Smart Retry](#error-classification--smart-retry)
-35. [Native SDK Auth & Retries](#native-sdk-auth--retries)
-36. [Budget Pressure Warnings](#budget-pressure-warnings)
-37. [Context Pressure Indicator](#context-pressure-indicator)
+25. [Heartbeat Routines](#heartbeat-routines)
+26. [Background Memory Prefetch](#background-memory-prefetch)
+27. [Subagents](#subagents)
+28. [Media Enrichment](#media-enrichment)
+29. [Message Debouncing](#message-debouncing)
+30. [Logging](#logging)
+31. [Quick Commands](#quick-commands)
+32. [Context References](#context-references)
+33. [Group Chat Session Isolation](#group-chat-session-isolation)
+34. [Cron Silent Suppression](#cron-silent-suppression)
+35. [Error Classification & Smart Retry](#error-classification--smart-retry)
+36. [Native SDK Auth & Retries](#native-sdk-auth--retries)
+37. [Budget Pressure Warnings](#budget-pressure-warnings)
+38. [Context Pressure Indicator](#context-pressure-indicator)
 38. [Security](#security)
     - [Secret Redaction](#secret-redaction)
     - [File Write Safety](#file-write-safety)
@@ -324,6 +325,17 @@ queue_mode: collect                       # What happens when a new message arri
 #   enabled: true
 #   mode: propose                          # off | propose | auto_private
 #   review_interval_turns: 10
+
+# ─── Heartbeat Routines ─────────────────────────────────
+# Periodic SDK-native wake loop that reads HEARTBEAT.md.
+# heartbeat:
+#   enabled: true
+#   every: 10m                              # 10m, 1h, 1d, 1w
+#   target: last                            # last | none
+#   isolated_session: true
+#   show_ok: false
+#   ack_token: HEARTBEAT_OK
+#   prompt: Read HEARTBEAT.md and run due tasks only. If nothing needs attention, reply HEARTBEAT_OK.
 
 # ─── Session Policies ─────────────────────────────────────
 session_policy: never                     # Auto-reset sessions on schedule
@@ -1570,6 +1582,88 @@ Agent: manage_cron(action: "toggle", id: "weekly-report", enabled: false)
 - Dynamic jobs run alongside static jobs from `agent.yml`
 - Dynamic jobs fire by sending the saved prompt back through the agent; the gateway then delivers the final assistant response
 - Job IDs are prefixed with `dyn:` internally to avoid conflicts with static jobs
+
+---
+
+## Heartbeat Routines
+
+Heartbeat routines are gateway-managed periodic wakes for an agent. They do not
+use Anthropic's hosted scheduled-task runtime. AnthroClaw reads the agent's
+`HEARTBEAT.md`, selects due tasks, sends a synthetic heartbeat turn through the
+same Claude Agent SDK query path as normal chat, and then delivers the final
+assistant response through the Gateway.
+
+### Enable
+
+```yaml
+# agent.yml
+heartbeat:
+  enabled: true
+  every: 10m
+  target: last
+  isolated_session: true
+  show_ok: false
+  ack_token: HEARTBEAT_OK
+  prompt: Read HEARTBEAT.md and run due tasks only. If nothing needs attention, reply HEARTBEAT_OK.
+```
+
+`target: last` delivers meaningful heartbeat responses to the last chat that
+successfully talked to the agent. `target: none` runs the routine and records
+history without sending a chat message. `safety_profile: public` cannot enable
+heartbeat unless `safety_overrides.allow_tools` explicitly includes
+`heartbeat`.
+
+### HEARTBEAT.md
+
+Create `agents/<id>/HEARTBEAT.md`:
+
+```yaml
+tasks:
+  - name: daily-standup
+    interval: 1d
+    prompt: Prepare the daily standup from metrics and docs.
+
+  - name: metrics-watch
+    interval: 10m
+    prompt: Analyze changed metrics and report only if action is needed.
+    script: scripts/check-metrics.js
+    skills: metrics, reporting
+    timeout_ms: 30000
+```
+
+The gateway skips the model call when `HEARTBEAT.md` is missing, effectively
+empty, or no task is due. Non-task markdown is preserved as context and injected
+into due heartbeat turns.
+
+### Scripts and Wake Gates
+
+`script` must point to a file inside the agent workspace. AnthroClaw resolves
+the path, rejects traversal outside the workspace, runs JavaScript files through
+Node, applies `timeout_ms`, and injects stdout/stderr/exit status into the
+heartbeat prompt.
+
+If the final non-empty stdout line is JSON with `{"wakeAgent": false}`, the
+gateway records the run and skips the LLM call:
+
+```js
+console.log("no relevant metric changes");
+console.log(JSON.stringify({ wakeAgent: false }));
+```
+
+If the script exits nonzero or times out, the model still wakes with the script
+error context so it can decide what to report.
+
+### Delivery and History
+
+- Heartbeat turns are recorded with run source `heartbeat`.
+- A delivery contract tells the model not to call `send_message` or ask for
+  `peer_id`; Gateway delivery owns routing.
+- Responses equal to the configured ack token, and `[SILENT]`, are suppressed.
+- Real responses are written to
+  `data/heartbeat-output/<agentId>/<taskName>/<runId>.md`.
+- Structured run history is appended to `data/heartbeat-runs.jsonl`.
+- The Web UI has an agent-level **Routines** tab for heartbeat settings,
+  `HEARTBEAT.md`, and recent run history.
 
 ---
 

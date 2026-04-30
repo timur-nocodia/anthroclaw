@@ -57,7 +57,7 @@ interface AgentSession {
   messageCount?: number;
   provenance?: {
     runId: string;
-    source: "channel" | "web" | "cron";
+    source: "channel" | "web" | "cron" | "heartbeat";
     channel: string;
     accountId?: string;
     peerId?: string;
@@ -276,7 +276,7 @@ export default function ChatPage() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionSearchFilter, setSessionSearchFilter] = useState("");
   const [sessionLabelFilter, setSessionLabelFilter] = useState("");
-  const [sessionSourceFilter, setSessionSourceFilter] = useState<"all" | "web" | "channel" | "cron">("all");
+  const [sessionSourceFilter, setSessionSourceFilter] = useState<"all" | "web" | "channel" | "cron" | "heartbeat">("all");
   const [sessionStatusFilter, setSessionStatusFilter] = useState<"all" | "running" | "succeeded" | "failed" | "interrupted">("all");
   const [sessionActiveFilter, setSessionActiveFilter] = useState<"all" | "active" | "inactive">("all");
   const [sessionChannelFilter, setSessionChannelFilter] = useState("");
@@ -1299,6 +1299,7 @@ export default function ChatPage() {
                 <option value="web">source: web</option>
                 <option value="channel">source: channel</option>
                 <option value="cron">source: cron</option>
+                <option value="heartbeat">source: heartbeat</option>
               </ToolbarSelect>
 
               <ToolbarSelect
@@ -2658,4 +2659,3 @@ function formatDuration(value: number): string {
   const rest = seconds % 60;
   return `${minutes}m ${rest}s`;
 }
-
