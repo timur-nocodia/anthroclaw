@@ -35,6 +35,7 @@ import { TelegramChannel } from './channels/telegram.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import { CronScheduler } from './cron/scheduler.js';
 import { DynamicCronStore } from './cron/dynamic-store.js';
+import { formatCronDeliveryContract } from './cron/delivery-contract.js';
 import { ConfigWatcher } from './config/watcher.js';
 import { runDreaming } from './memory/dreaming.js';
 import {
@@ -3435,6 +3436,9 @@ export class Gateway {
     // Build prompt from message
     const senderLabel = msg.senderName ?? msg.senderId;
     const existingSessionId = agent.getSessionId(sessionKey);
+    const rawMeta = msg.raw && typeof msg.raw === 'object' ? msg.raw as Record<string, unknown> : {};
+    const source = rawMeta.cron === true ? 'cron' : 'channel';
+    const routeDecisionId = typeof rawMeta.routeDecisionId === 'string' ? rawMeta.routeDecisionId : undefined;
 
     // Session context — channel info on first message, datetime always
     const tz = agent.config.timezone ?? 'UTC';
@@ -3455,6 +3459,15 @@ export class Gateway {
     const operatorContext = formatChannelOperatorContext(resolveChannelContext(agent.config.channel_context, msg));
     if (operatorContext) {
       sessionCtx += `${operatorContext}\n`;
+    }
+
+    if (source === 'cron') {
+      sessionCtx += `${formatCronDeliveryContract({
+        channel: msg.channel,
+        accountId: msg.accountId,
+        peerId: msg.peerId,
+        threadId: msg.threadId,
+      })}\n`;
     }
 
     let prompt: string;
@@ -3503,9 +3516,6 @@ export class Gateway {
     let toolCallsForLearning = 0;
     let recoveredToolErrorsForLearning = 0;
     let skillOrMemoryActivityForLearning = false;
-    const rawMeta = msg.raw && typeof msg.raw === 'object' ? msg.raw as Record<string, unknown> : {};
-    const source = rawMeta.cron === true ? 'cron' : 'channel';
-    const routeDecisionId = typeof rawMeta.routeDecisionId === 'string' ? rawMeta.routeDecisionId : undefined;
     const finishRun = (
       status: Exclude<StoredAgentRunStatus, 'running'>,
       error?: unknown,
