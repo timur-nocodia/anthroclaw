@@ -1171,7 +1171,7 @@ export class Gateway {
       approvalBroker: this.approvalBroker,
       channel,
       sessionContext: msg
-        ? { peerId: msg.peerId, senderId: msg.senderId, accountId: msg.accountId, threadId: msg.threadId }
+        ? { channel: msg.channel, peerId: msg.peerId, senderId: msg.senderId, accountId: msg.accountId, threadId: msg.threadId }
         : { peerId: '__headless__' },
       ...this.sdkSessionService?.getQueryOptions(),
     });

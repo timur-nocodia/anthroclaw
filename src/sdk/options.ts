@@ -78,7 +78,7 @@ export interface BuildSdkOptionsParams {
   /** Required for profile-aware canUseTool with interactive approval. */
   approvalBroker?: ApprovalBroker;
   channel?: ChannelAdapter;
-  sessionContext?: { peerId: string; senderId?: string; accountId?: string; threadId?: string };
+  sessionContext?: { channel?: string; peerId: string; senderId?: string; accountId?: string; threadId?: string };
 }
 
 export function buildSdkOptions(params: BuildSdkOptionsParams): Options {

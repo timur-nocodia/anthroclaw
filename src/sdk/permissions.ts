@@ -201,7 +201,7 @@ export interface CanUseToolDeps {
   agent: Pick<Agent, 'config' | 'safetyProfile' | 'id'>;
   approvalBroker: ApprovalBroker;
   channel?: ChannelAdapter;
-  sessionContext: { peerId: string; senderId?: string; accountId?: string; threadId?: string };
+  sessionContext: { channel?: string; peerId: string; senderId?: string; accountId?: string; threadId?: string };
 }
 
 export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
@@ -213,6 +213,10 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
   let bypassWarnLogged = false;
 
   return async (toolName, input) => {
+    const isMcpPrefixed = toolName.startsWith('mcp__');
+    const localName = isMcpPrefixed ? (toolName.split('__').at(-1) ?? toolName) : toolName;
+    const normalizedInput = maybeFillManageCronDeliverTo(localName, input, sessionContext);
+
     // 1. Bypass mode short-circuit — allow everything without any checks
     if (overrides.permission_mode === 'bypass') {
       if (!bypassWarnLogged) {
@@ -222,24 +226,19 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
         );
         bypassWarnLogged = true;
       }
-      return allow(input);
+      return allow(normalizedInput);
     }
 
     // 1.5. Chat profile short-circuit — allow everything except explicit deny_tools
     if (profile.name === 'chat_like_openclaw') {
       const denyList = overrides.deny_tools ?? [];
-      const localName = toolName.startsWith('mcp__')
-        ? (toolName.split('__').at(-1) ?? toolName)
-        : toolName;
       if (denyList.includes(toolName) || denyList.includes(localName)) {
         return deny(`Tool "${toolName}" is denied by safety_overrides.deny_tools`);
       }
-      return allow(input);
+      return allow(normalizedInput);
     }
 
     // 2. Resolve meta: for prefixed MCP tools (mcp__server__tool), look up by local name
-    const isMcpPrefixed = toolName.startsWith('mcp__');
-    const localName = isMcpPrefixed ? (toolName.split('__').at(-1) ?? toolName) : toolName;
     const meta = lookupMeta(localName);
 
     // 3. HARD_BLACKLIST — cannot be opened even with overrides
@@ -281,7 +280,7 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
     // 7. Public profile: send_message is restricted to the originating peer only.
     // This prevents prompt-injected public agents from spamming arbitrary recipients.
     if (profile.name === 'public' && (toolName === 'send_message' || localName === 'send_message')) {
-      const targetPeer = (input as any)?.peer_id ?? (input as any)?.peerId;
+      const targetPeer = (normalizedInput as any)?.peer_id ?? (normalizedInput as any)?.peerId;
       if (typeof targetPeer === 'string' && targetPeer !== sessionContext.peerId) {
         return deny(
           `safety_profile=public: send_message can only target the originating peer (got "${targetPeer}", expected "${sessionContext.peerId}")`,
@@ -296,7 +295,7 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
       (meta !== undefined && profile.mcpToolPolicy.requiresApproval(meta));
 
     if (!requiresApproval) {
-      return allow(input);
+      return allow(normalizedInput);
     }
 
     // Channel must support interactive approval
@@ -311,8 +310,8 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
     await channel.promptForApproval({
       id,
       toolName,
-      argsPreview: previewArgs(input),
-      argsFull: JSON.stringify(input),
+      argsPreview: previewArgs(normalizedInput),
+      argsFull: JSON.stringify(normalizedInput),
       peerId: sessionContext.peerId,
       accountId: sessionContext.accountId,
       threadId: sessionContext.threadId,
@@ -323,8 +322,28 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
       id,
       60_000,
       sessionContext.senderId ?? sessionContext.peerId,
-      input,
+      normalizedInput,
     );
+  };
+}
+
+function maybeFillManageCronDeliverTo(
+  localName: string,
+  input: Record<string, unknown>,
+  sessionContext: CanUseToolDeps['sessionContext'],
+): Record<string, unknown> {
+  if (localName !== 'manage_cron') return input;
+  if (input.action !== 'create') return input;
+  if (input.deliver_to !== undefined) return input;
+  if (!sessionContext.channel || !sessionContext.peerId || sessionContext.peerId === '__headless__') return input;
+
+  return {
+    ...input,
+    deliver_to: {
+      channel: sessionContext.channel,
+      peer_id: sessionContext.peerId,
+      ...(sessionContext.accountId ? { account_id: sessionContext.accountId } : {}),
+    },
   };
 }
 
