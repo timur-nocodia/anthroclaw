@@ -334,14 +334,34 @@ function maybeFillManageCronDeliverTo(
 ): Record<string, unknown> {
   if (localName !== 'manage_cron') return input;
   if (input.action !== 'create') return input;
-  if (input.deliver_to !== undefined) return input;
   if (!sessionContext.channel || !sessionContext.peerId || sessionContext.peerId === '__headless__') return input;
+
+  const currentTarget = toRecord(input.deliver_to);
+  const targetChannel = typeof currentTarget.channel === 'string'
+    ? currentTarget.channel
+    : sessionContext.channel;
+  const targetPeerId = typeof currentTarget.peer_id === 'string'
+    ? currentTarget.peer_id
+    : undefined;
+  const targetAccountId = typeof currentTarget.account_id === 'string'
+    ? currentTarget.account_id
+    : undefined;
+  const shouldRepairTelegramPeer =
+    targetChannel === 'telegram' &&
+    (targetPeerId === undefined || !/^-?\d+$/.test(targetPeerId));
+  const shouldFillCurrentChat =
+    input.deliver_to === undefined ||
+    shouldRepairTelegramPeer ||
+    (targetChannel === sessionContext.channel && !targetAccountId && Boolean(sessionContext.accountId));
+
+  if (!shouldFillCurrentChat) return input;
 
   return {
     ...input,
     deliver_to: {
-      channel: sessionContext.channel,
-      peer_id: sessionContext.peerId,
+      ...currentTarget,
+      channel: targetChannel,
+      peer_id: shouldRepairTelegramPeer ? sessionContext.peerId : (targetPeerId ?? sessionContext.peerId),
       ...(sessionContext.accountId ? { account_id: sessionContext.accountId } : {}),
     },
   };

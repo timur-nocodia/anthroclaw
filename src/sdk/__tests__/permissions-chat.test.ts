@@ -14,7 +14,7 @@ function makeAgent(overrides?: Record<string, unknown>) {
   } as any;
 }
 
-const ctx = { channel: 'telegram', peerId: 'peer-1', accountId: 'content_sm' };
+const ctx = { channel: 'telegram', peerId: '48705953', accountId: 'content_sm' };
 const signal = new AbortController().signal;
 
 describe('createCanUseTool on chat profile', () => {
@@ -50,16 +50,16 @@ describe('createCanUseTool on chat profile', () => {
       updatedInput: {
         deliver_to: {
           channel: 'telegram',
-          peer_id: 'peer-1',
+          peer_id: '48705953',
           account_id: 'content_sm',
         },
       },
     });
   });
 
-  it('does not overwrite explicit manage_cron deliver_to', async () => {
+  it('does not overwrite valid explicit manage_cron deliver_to', async () => {
     const fn = createCanUseTool({ agent: makeAgent(), approvalBroker: new ApprovalBroker(), sessionContext: ctx });
-    const deliverTo = { channel: 'telegram', peer_id: 'other-peer', account_id: 'default' };
+    const deliverTo = { channel: 'telegram', peer_id: '-1001234567890', account_id: 'default' };
     const result = await fn(
       'mcp__test__manage_cron',
       { action: 'create', id: 'daily', schedule: '0 9 * * *', prompt: 'hello', deliver_to: deliverTo },
@@ -69,6 +69,31 @@ describe('createCanUseTool on chat profile', () => {
       behavior: 'allow',
       updatedInput: {
         deliver_to: deliverTo,
+      },
+    });
+  });
+
+  it('repairs explicit invalid Telegram manage_cron deliver_to from dispatch context', async () => {
+    const fn = createCanUseTool({ agent: makeAgent(), approvalBroker: new ApprovalBroker(), sessionContext: ctx });
+    const result = await fn(
+      'mcp__test__manage_cron',
+      {
+        action: 'create',
+        id: 'daily',
+        schedule: '0 9 * * *',
+        prompt: 'hello',
+        deliver_to: { channel: 'telegram', peer_id: 'timur@nocodia.dev' },
+      },
+      { signal, toolUseID: 't-cron-repair' },
+    );
+    expect(result).toMatchObject({
+      behavior: 'allow',
+      updatedInput: {
+        deliver_to: {
+          channel: 'telegram',
+          peer_id: '48705953',
+          account_id: 'content_sm',
+        },
       },
     });
   });
