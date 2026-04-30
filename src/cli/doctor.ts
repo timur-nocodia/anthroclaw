@@ -1,4 +1,5 @@
 import { existsSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 export interface CheckResult {
@@ -27,8 +28,8 @@ export async function runDiagnostics(opts: {
   // 4. Config file
   results.push(checkConfig(opts.globalConfig));
 
-  // 5. API key
-  results.push(checkApiKey());
+  // 5. Native SDK auth
+  results.push(checkNativeSdkAuth());
 
   // 6. Memory store
   results.push(checkMemoryStore(opts.dataDir));
@@ -117,15 +118,20 @@ function checkConfig(globalConfig: unknown): CheckResult {
   };
 }
 
-function checkApiKey(): CheckResult {
-  if (process.env.ANTHROPIC_API_KEY) {
-    return { name: 'API key', status: 'ok', message: 'ANTHROPIC_API_KEY is set' };
+function checkNativeSdkAuth(): CheckResult {
+  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+    return { name: 'Native SDK auth', status: 'ok', message: 'CLAUDE_CODE_OAUTH_TOKEN is set' };
   }
+
+  if (existsSync(join(homedir(), '.claude'))) {
+    return { name: 'Native SDK auth', status: 'ok', message: '~/.claude exists' };
+  }
+
   return {
-    name: 'API key',
+    name: 'Native SDK auth',
     status: 'error',
-    message: 'ANTHROPIC_API_KEY not set',
-    fix: 'Set ANTHROPIC_API_KEY',
+    message: 'Claude Code OAuth credentials not found',
+    fix: 'Run claude login or set CLAUDE_CODE_OAUTH_TOKEN',
   };
 }
 

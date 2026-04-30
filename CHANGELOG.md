@@ -4,46 +4,104 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-30
+
+This release is the large post-0.4.1 integration release: plugin framework,
+Lossless Context Management, secure-by-default safety profiles, the
+`chat_like_openclaw` conversational profile, SDK-native learning loop, and
+the corresponding UI surfaces. It also removes internal planning docs from the
+public docs tree; the maintained operator reference is now `docs/guide.md`.
+
 ### BREAKING
 
-- `safety_profile` is now required in `agents/<id>/agent.yml`. Existing configs without this field fail to load. Run `pnpm migrate:safety-profile --apply` to add it. See `docs/safety-profiles.md`.
-- The hardcoded `claude_code` SDK preset and `settingSources: ['project']` are no longer applied by default. Profile-driven; see `docs/safety-profiles.md`.
-- `DEFAULT_ALLOWED_TOOLS` no longer auto-includes `Bash`, `Write`, `Edit`, `MultiEdit`, `WebFetch` for every agent. Per-profile gating replaces it.
+- `safety_profile` is now required in every `agents/<id>/agent.yml`. Existing
+  configs without it fail to load. Run `pnpm migrate:safety-profile --apply`
+  and review the result before deploying.
+- Tool permission defaults are now profile-driven. The old broad
+  `DEFAULT_ALLOWED_TOOLS` behavior no longer implicitly exposes `Bash`,
+  `Write`, `Edit`, `MultiEdit`, or `WebFetch` to every agent.
+- The default SDK prompt/settings behavior is no longer one global
+  `claude_code` preset. `buildSdkOptions()` now resolves system prompt,
+  setting sources, sandbox defaults, and tool policy from the agent's
+  `safety_profile`.
 
 ### Added
 
-- **`chat_like_openclaw` safety profile** — friendly conversational mode for
-  personal/single-user bots. Pure-string system prompt with embedded
-  personality baseline (no `claude_code` preset). All tools auto-allowed,
-  no approval flow, wildcard allowlist permitted, no sandbox.
-- **`personality` field** in `agent.yml` — overrides the profile's default
-  personality baseline. Editable in dashboard via Personality textarea
-  (visible only on chat profile).
-- `GET /api/security/profiles/chat_like_openclaw/baseline` — returns the
-  default baseline string (read-only, used by UI placeholder).
-- `src/security/profiles/` — `public`, `trusted`, `private` profile definitions
-- `src/security/approval-broker.ts` — in-memory approval queue for interactive permission flow
-- `pnpm migrate:safety-profile` — utility to add `safety_profile` to existing agents
-- Telegram inline-button approval for destructive tool calls in `trusted`/`private` profiles
-- Per-tool `META` exports across all MCP tools
+- **Plugin framework** using the Claude Code plugin layout:
+  `plugins/<name>/.claude-plugin/plugin.json`, typed `register(ctx)`, hooks,
+  context engines, config schemas, per-agent enablement, and MCP tool
+  auto-namespacing.
+- **LCM plugin (`plugins/lcm`)** for lossless hierarchical context management:
+  immutable per-agent SQLite log, FTS5/LIKE search, D0/D1/D2+ summary DAG,
+  source-lineage recovery, L1/L2/L3 summarization escalation, carry-over
+  across session resets, and optional large-output externalization.
+- **Six LCM tools**: `lcm_grep`, `lcm_describe`, `lcm_expand`,
+  `lcm_expand_query`, `lcm_status`, and `lcm_doctor`.
+- **LCM UI surfaces** in agent/session views: context-pressure chip, DAG panel,
+  node/message drill-down, grep bridge, and doctor panel with double-gated
+  cleanup.
+- **Safety profiles**: `public`, `trusted`, `private`, and
+  `chat_like_openclaw`, backed by tool metadata, validation, rate-limit floors,
+  sandbox defaults, hard blacklists, and profile-aware SDK options.
+- **Interactive approval flow** for destructive tool calls where the profile
+  and channel support it, including Telegram callback handling.
+- **`chat_like_openclaw` profile** for personal conversational bots: warm
+  pure-string baseline prompt, optional `personality` override, wildcard
+  allowlists accepted, all configured tools allowed, and no approval flow.
+- **Learning loop** with SDK-native headless reviewer, artifact export,
+  durable proposal store, memory/skill action types, CLI review/apply commands,
+  observability counters, and a dashboard Learning tab.
+- **Native learning skill** at `.claude/skills/anthroclaw-learning/SKILL.md`
+  so the reviewer has stable guidance for memory-vs-skill improvements.
+- **Migration tooling**: `pnpm migrate:safety-profile` dry-run/apply, including
+  profile inference and chat-profile suggestions.
+- **Production Docker support for Agent SDK sandboxing**, including bubblewrap,
+  socat, plugin workspace build/copy, and runtime compose settings needed for
+  SDK tool execution in containers.
 
 ### Changed
 
-- **Default `safety_profile` for new agents is now `chat_like_openclaw`**
-  (UI scaffold and `createAgent` API). Existing agents are unaffected.
-- `agents/example` (Klavdia) migrated to `chat_like_openclaw`. CLAUDE.md
-  rewritten to remove "be concise"-style instructions; soul.md rewritten
-  for warm conversational tone.
-- `inferProfile()` migration helper now suggests `chat_like_openclaw` for
-  configs with `permission_mode: bypass`, wildcard allowlists, or empty
-  configs.
-- Validator no longer errors on `permission_mode: bypass` with
-  `safety_profile: chat_like_openclaw` (in addition to existing `private`
-  exception).
+- New agents scaffold with `safety_profile: chat_like_openclaw` by default.
+- `agents/example` (Klavdia) moved to `chat_like_openclaw` with warmer prompt
+  files and learning rollout config.
+- `buildSdkOptions()` and `canUseTool()` are profile-aware and short-circuit
+  chat profile permissions while preserving explicit deny tools.
+- Plugin MCP handlers receive `agentId`, making per-agent plugin state and
+  LCM databases reliable.
+- Auto-compression can delegate to plugin context engines; prompt assembly can
+  inject plugin-managed context before `query()`, with size caps, soft
+  timeouts, and silent fallback to native SDK behavior.
+- Gateway post-query payloads now include `newMessages`, enabling reliable
+  plugin mirroring and learning review triggers.
+- Plugin config UI now reads Zod-derived JSON schema and persists per-agent
+  overlay config while preserving YAML comments.
+- Dynamic cron `manage_cron` defaults delivery to the originating chat through
+  async session context.
+- `docs/guide.md` is the consolidated public operator guide for safety
+  profiles, plugin/LCM operation, learning loop rollout, and production
+  deployment notes.
 
 ### Fixed
 
-- Klavdia (and any other agent under `claude_code` preset) was instructed by SDK to use `/tmp/claude-resume-.../memory/` and harness primitives `RemoteTrigger`/`CronCreate`. This is replaced for `public` profile (custom prompt) and gated for others.
+- Docker production builds now include plugin workspaces and compiled LCM
+  assets, preventing missing runtime imports in Next.js.
+- Dynamic plugin imports use `webpackIgnore`, so production builds do not try
+  to prebundle arbitrary plugin entry files.
+- LCM SQLite path resolution now matches plugin `pluginDataDir` scoping in
+  production.
+- Context-engine failures and overlarge assembled prompts fall back safely
+  instead of breaking dispatch.
+- LCM doctor/cleanup paths close SQLite handles correctly and back up before
+  mutation.
+- Plugin hot reload now invalidates per-agent caches and reconciles disabled
+  plugins without leaving stale tools attached.
+- `public` and `trusted` profiles block harness primitives and unsafe tool
+  combinations that previously leaked through broad MCP/tool defaults.
+
+### Removed
+
+- Internal implementation plans/specs were removed from the public docs tree.
+- The standalone safety-profile reference was folded into `docs/guide.md`.
 
 ## [0.4.1] - 2026-04-28
 

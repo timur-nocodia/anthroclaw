@@ -113,30 +113,33 @@ describe('runDiagnostics', () => {
     expect(check.fix).toBe('Create config.yml');
   });
 
-  // ─── API key ───────────────────────────────────────────────────
+  // ─── Native SDK auth ───────────────────────────────────────────
 
-  it('reports API key status based on env var', async () => {
+  it('reports native SDK auth status based on env var', async () => {
     mkdirSync(dataDir, { recursive: true });
     mkdirSync(join(agentsDir, 'agent'), { recursive: true });
 
-    const originalKey = process.env.ANTHROPIC_API_KEY;
+    const originalToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
 
-    // Test with key set
-    process.env.ANTHROPIC_API_KEY = 'test-key';
+    // Test with token set
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = 'test-token';
     let results = await runDiagnostics({ dataDir, agentsDir, globalConfig: true });
-    let check = findCheck(results, 'API key');
+    let check = findCheck(results, 'Native SDK auth');
     expect(check.status).toBe('ok');
 
-    // Test with key unset
-    delete process.env.ANTHROPIC_API_KEY;
+    // Test with token unset. This may still be ok if ~/.claude exists locally,
+    // so assert only the check shape and failure guidance when it errors.
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
     results = await runDiagnostics({ dataDir, agentsDir, globalConfig: true });
-    check = findCheck(results, 'API key');
-    expect(check.status).toBe('error');
-    expect(check.fix).toBe('Set ANTHROPIC_API_KEY');
+    check = findCheck(results, 'Native SDK auth');
+    expect(['ok', 'error']).toContain(check.status);
+    if (check.status === 'error') {
+      expect(check.fix).toBe('Run claude login or set CLAUDE_CODE_OAUTH_TOKEN');
+    }
 
     // Restore
-    if (originalKey !== undefined) {
-      process.env.ANTHROPIC_API_KEY = originalKey;
+    if (originalToken !== undefined) {
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = originalToken;
     }
   });
 
@@ -212,7 +215,7 @@ describe('runDiagnostics', () => {
     expect(names).toContain('Data directory');
     expect(names).toContain('Agents directory');
     expect(names).toContain('Config file');
-    expect(names).toContain('API key');
+    expect(names).toContain('Native SDK auth');
     expect(names).toContain('Memory store');
     expect(names).toContain('Rate limits');
     expect(names).toContain('Dependency: pino');

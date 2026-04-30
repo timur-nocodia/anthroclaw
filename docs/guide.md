@@ -26,62 +26,69 @@ AnthroClaw is inspired by OpenClaw and Hermes-style agent infrastructure, but it
    - [Allowlist](#allowlist)
    - [Pairing Modes](#pairing-modes)
    - [Managing Access via Chat](#managing-access-via-chat)
-7. [Memory System](#memory-system)
+7. [Safety Profiles](#safety-profiles)
+   - [`chat_like_openclaw`](#chat_like_openclaw)
+   - [`public`](#public)
+   - [`trusted`](#trusted)
+   - [`private`](#private)
+   - [Migration](#migration)
+8. [Memory System](#memory-system)
    - [Daily Memory](#daily-memory)
    - [Wiki](#wiki)
    - [Search (memory_search)](#search-memory_search)
    - [Session Recall (session_search)](#session-recall-session_search)
    - [Auto-Summary on /newsession](#auto-summary-on-newsession)
    - [Dreaming (Auto-Consolidation)](#dreaming-auto-consolidation)
-8. [Skills](#skills)
-9. [MCP Tools](#mcp-tools)
-10. [Cron Jobs](#cron-jobs)
-11. [Telegram Commands](#telegram-commands)
-12. [Queue Modes](#queue-modes)
-13. [Hooks](#hooks)
-14. [Rate Limiting](#rate-limiting)
-15. [Hot Reload](#hot-reload)
-16. [Session Management](#session-management)
-17. [Session Reset Policies](#session-reset-policies)
-18. [Auto Context Compression](#auto-context-compression)
-19. [Iteration Budget](#iteration-budget)
-20. [Memory Context Fencing](#memory-context-fencing)
-21. [YAML Frontmatter in Skills](#yaml-frontmatter-in-skills)
-22. [Agent Self-Scheduling (Dynamic Cron)](#agent-self-scheduling-dynamic-cron)
-23. [Background Memory Prefetch](#background-memory-prefetch)
-24. [Subagents](#subagents)
-25. [Media Enrichment](#media-enrichment)
-26. [Message Debouncing](#message-debouncing)
-27. [Logging](#logging)
-28. [Quick Commands](#quick-commands)
-29. [Context References](#context-references)
-30. [Group Chat Session Isolation](#group-chat-session-isolation)
-31. [Cron Silent Suppression](#cron-silent-suppression)
-32. [Error Classification & Smart Retry](#error-classification--smart-retry)
-33. [Native SDK Auth & Retries](#native-sdk-auth--retries)
-34. [Budget Pressure Warnings](#budget-pressure-warnings)
-35. [Context Pressure Indicator](#context-pressure-indicator)
-36. [Security](#security)
+9. [Skills](#skills)
+10. [MCP Tools](#mcp-tools)
+11. [Cron Jobs](#cron-jobs)
+12. [Telegram Commands](#telegram-commands)
+13. [Queue Modes](#queue-modes)
+14. [Hooks](#hooks)
+15. [Rate Limiting](#rate-limiting)
+16. [Hot Reload](#hot-reload)
+17. [Session Management](#session-management)
+18. [Session Reset Policies](#session-reset-policies)
+19. [Auto Context Compression](#auto-context-compression)
+20. [Iteration Budget](#iteration-budget)
+21. [Learning Loop](#learning-loop)
+22. [Memory Context Fencing](#memory-context-fencing)
+23. [YAML Frontmatter in Skills](#yaml-frontmatter-in-skills)
+24. [Agent Self-Scheduling (Dynamic Cron)](#agent-self-scheduling-dynamic-cron)
+25. [Background Memory Prefetch](#background-memory-prefetch)
+26. [Subagents](#subagents)
+27. [Media Enrichment](#media-enrichment)
+28. [Message Debouncing](#message-debouncing)
+29. [Logging](#logging)
+30. [Quick Commands](#quick-commands)
+31. [Context References](#context-references)
+32. [Group Chat Session Isolation](#group-chat-session-isolation)
+33. [Cron Silent Suppression](#cron-silent-suppression)
+34. [Error Classification & Smart Retry](#error-classification--smart-retry)
+35. [Native SDK Auth & Retries](#native-sdk-auth--retries)
+36. [Budget Pressure Warnings](#budget-pressure-warnings)
+37. [Context Pressure Indicator](#context-pressure-indicator)
+38. [Security](#security)
     - [Secret Redaction](#secret-redaction)
     - [File Write Safety](#file-write-safety)
     - [SSRF Protection](#ssrf-protection)
     - [Prompt Injection Protection](#prompt-injection-protection)
     - [PII Redaction](#pii-redaction)
-37. [Per-Platform Display Config](#per-platform-display-config)
-38. [Gateway Streaming](#gateway-streaming)
-39. [Session Branching](#session-branching)
-40. [Cross-Session Message Mirroring](#cross-session-message-mirroring)
-41. [Auto Session Title](#auto-session-title)
-42. [Channel Directory](#channel-directory)
-43. [Doctor Command](#doctor-command)
-44. [Usage Insights](#usage-insights)
-45. [Runtime Observability](#runtime-observability)
-46. [Prompt Caching](#prompt-caching)
-47. [Releases](#releases)
-48. [Running in Production](#running-in-production)
-49. [FAQ](#faq)
-50. [Plugin Framework](#plugin-framework)
-51. [LCM Plugin (Lossless Context Management)](#lcm-plugin-lossless-context-management)
+39. [Per-Platform Display Config](#per-platform-display-config)
+40. [Gateway Streaming](#gateway-streaming)
+41. [Session Branching](#session-branching)
+42. [Cross-Session Message Mirroring](#cross-session-message-mirroring)
+43. [Auto Session Title](#auto-session-title)
+44. [Channel Directory](#channel-directory)
+45. [Doctor Command](#doctor-command)
+46. [Usage Insights](#usage-insights)
+47. [Runtime Observability](#runtime-observability)
+48. [Prompt Caching](#prompt-caching)
+49. [Releases](#releases)
+50. [Running in Production](#running-in-production)
+51. [FAQ](#faq)
+52. [Plugin Framework](#plugin-framework)
+53. [LCM Plugin (Lossless Context Management)](#lcm-plugin-lossless-context-management)
 
 ---
 
@@ -232,6 +239,13 @@ Complete reference with all available fields:
 model: claude-sonnet-4-6                  # Claude model to use
                                           # Options: claude-sonnet-4-6, claude-opus-4-6, etc.
 
+# ─── Safety Profile (required) ───────────────────────────
+safety_profile: chat_like_openclaw         # chat_like_openclaw | public | trusted | private
+
+# Optional. Only used by chat_like_openclaw; overrides its warm baseline.
+# personality: |
+#   You are a calm, warm personal assistant. Be direct, practical, and human.
+
 # ─── Timezone ─────────────────────────────────────────────
 timezone: UTC                             # IANA timezone for all timestamps
                                           # Examples: UTC, Europe/London, Asia/Tokyo, America/New_York
@@ -297,6 +311,20 @@ queue_mode: collect                       # What happens when a new message arri
 # subagents:
 #   allow: ["helper-agent", "research-agent"]
 
+# ─── Plugins ──────────────────────────────────────────────
+# Plugins are disabled unless enabled per agent.
+# plugins:
+#   lcm:
+#     enabled: true
+
+# ─── Learning Loop ────────────────────────────────────────
+# Disabled by default. Use propose first; auto_private is valid only with
+# safety_profile: private.
+# learning:
+#   enabled: true
+#   mode: propose                          # off | propose | auto_private
+#   review_interval_turns: 10
+
 # ─── Session Policies ─────────────────────────────────────
 session_policy: never                     # Auto-reset sessions on schedule
                                           # never | hourly | daily | weekly
@@ -352,7 +380,12 @@ group_sessions: shared                    # shared | per_user
 
 ### CLAUDE.md — System Prompt
 
-The SDK reads `CLAUDE.md` from the agent's directory as the system prompt. It supports `@include` syntax to split the prompt across files:
+System-prompt handling is profile-aware. `public`, `trusted`, and `private`
+agents use profile defaults plus the agent's prompt files. `chat_like_openclaw`
+uses a pure-string prompt: the profile's warm personality baseline (or the
+agent's `personality` override) plus `CLAUDE.md`.
+
+`CLAUDE.md` supports `@include` syntax to split the prompt across files:
 
 ```markdown
 @./soul.md
@@ -609,6 +642,126 @@ With the `access_control` MCP tool enabled, the agent can:
 - `revoke` — revoke a user's access
 
 Just talk to your agent: "show me who's pending", "approve user 123456", "revoke access for 789".
+
+---
+
+## Safety Profiles
+
+Every agent must declare `safety_profile` in `agent.yml`. The profile controls
+three things at load time:
+
+- which built-in and MCP tools can be exposed to Claude
+- how `buildSdkOptions()` builds the system prompt, setting sources, sandbox,
+  and permission callback
+- what happens when a tool is destructive, public-facing, or unsupported by a
+  channel approval flow
+
+```yaml
+safety_profile: chat_like_openclaw  # chat_like_openclaw | public | trusted | private
+
+safety_overrides:
+  allow_tools:
+    - manage_cron                   # opens specific tools, logs WARN
+  permission_mode: bypass           # valid for chat_like_openclaw/private only
+  sandbox:
+    allowUnsandboxedCommands: true
+```
+
+The validator fails fast when an agent combines a profile with unsafe tool
+access, unsupported overrides, or an invalid allowlist shape. Profiles also
+enforce rate-limit floors: `public` is capped more aggressively than
+single-user/private agents.
+
+### `chat_like_openclaw`
+
+Default for newly scaffolded agents. Use this for personal bots where every
+allowed peer is trusted.
+
+- System prompt: pure string, no `claude_code` preset. The profile baseline
+  provides a warm conversational tone and is concatenated with `CLAUDE.md`.
+- Optional `personality` field in `agent.yml` replaces the baseline.
+- Tools: all configured built-ins and MCP tools are allowed, except explicitly
+  denied tools.
+- Approval flow: disabled.
+- Allowlist: any shape is accepted, including wildcard `["*"]`.
+- Sandbox: off by default.
+
+```yaml
+safety_profile: chat_like_openclaw
+personality: |
+  You are a warm personal assistant. Be direct, practical, and concise only
+  when it helps the user.
+```
+
+Do not use this for public Telegram or WhatsApp entry points where strangers
+can DM the bot.
+
+### `public`
+
+For public lead-capture/info bots and anonymous-user threat models.
+
+- Custom non-Claude-Code system prompt.
+- No project `.claude` settings are loaded.
+- Read-only built-ins only: `Read`, `Glob`, `Grep`, `LS`.
+- MCP tools must opt into public safety via tool metadata.
+- No interactive approval flow.
+- Rate-limit floor: 30 messages/hour per peer.
+
+Hard-blacklisted examples include `Bash`, `Write`, `Edit`, `MultiEdit`,
+`WebFetch`, `manage_skills`, and `access_control`.
+
+### `trusted`
+
+For known users: allowlisted users, paired users, internal teams, or private
+groups where mistakes are more likely than hostile use.
+
+- Claude Code preset and project settings can be used.
+- Edit-style tools can be available behind channel approval.
+- `manage_cron`, `memory_write`, and `send_media` are available when enabled.
+- Telegram supports inline approval prompts for destructive operations.
+- Rate-limit floor: 100 messages/hour per peer.
+
+Hard-blacklisted examples include `manage_skills`, `access_control`, `Bash`,
+and `NotebookEdit`.
+
+### `private`
+
+For a single-owner assistant.
+
+- Allowlist must contain exactly one peer per configured channel.
+- All configured tools can be available subject to explicit `mcp_tools`.
+- Destructive operations can still require approval depending on overrides.
+- `safety_overrides.permission_mode: bypass` is allowed when you intentionally
+  want no approval flow.
+
+Use `private` for `learning.mode: auto_private`; public/trusted agents can
+propose learning actions but cannot auto-apply skill or memory changes.
+
+### Tool Metadata
+
+Every built-in MCP tool exports `META`. Profile definitions consult that
+metadata during agent load. New tools must declare their safety properties; a
+tool without metadata should not be exposed to any profile.
+
+### Migration
+
+Run the migration utility to add profiles to existing agents:
+
+```bash
+pnpm migrate:safety-profile           # dry-run
+pnpm migrate:safety-profile --apply   # writes agent.yml and creates .bak files
+```
+
+The inference helper suggests:
+
+- `chat_like_openclaw` for wildcard allowlists, `permission_mode: bypass`, or
+  empty personal configs
+- `private` for single-peer personal configs
+- `trusted` for known-user multi-peer agents
+- `public` for open/public-facing bots
+
+Review any HARD_BLACKLIST warning manually before deploying. A public agent
+that enables `access_control`, shell, or write tools is not a safe default.
 
 ---
 
@@ -1237,7 +1390,31 @@ Recommended rollout:
 
 The example private agent uses `mode: propose` as a rollout test. It does not
 auto-apply memory or skill changes.
-- Multi-agent setups where one agent shouldn't hog resources
+
+### Reviewer Contract
+
+The learning reviewer is intentionally outside the main user-facing turn. It
+runs only after response delivery and uses the native Agent SDK `query()` path
+with:
+
+- `tools: []`
+- `allowedTools: []`
+- `canUseTool` hard-deny
+- `persistSession: false`
+- `maxTurns: 1`
+
+It can propose:
+
+- `memory_candidate` — durable facts or preferences for review
+- `skill_patch`, `skill_create`, `skill_update_full` — changes restricted to
+  `.claude/skills/*/SKILL.md`
+- `none` — no learning action
+
+Artifacts are exported under `data/learning-artifacts/{agentId}/{runId}/` with
+secret redaction, size limits, ignored build folders, and a manifest. Proposed
+actions are stored in SQLite and stay pending until approved. The dashboard
+Agent → Learning tab exposes settings, proposal review, approve/reject/apply
+actions, and diagnostics.
 
 ---
 
@@ -1795,7 +1972,7 @@ Different display settings per platform. Telegram gets full features, WhatsApp g
 
 | Setting | Telegram | WhatsApp |
 |---------|----------|----------|
-| `toolProgress` | `all` (show every tool call) | `off` |
+| `toolProgress` | `off` | `off` |
 | `streaming` | `true` (progressive edits) | `false` |
 | `toolPreviewLength` | 40 chars | 0 |
 | `showReasoning` | `false` | `false` |
@@ -1805,11 +1982,14 @@ Different display settings per platform. Telegram gets full features, WhatsApp g
 ```yaml
 # agent.yml
 display:
-  toolProgress: new        # only show new tool calls
+  toolProgress: new        # off | new | all
   streaming: false         # disable even on Telegram
 ```
 
 Resolution order: agent config > platform defaults > global defaults.
+
+`toolProgress` is intentionally off by default on all channels. Enable it for
+debug/dev agents only; `all` can be noisy in production group chats.
 
 ---
 
@@ -1920,7 +2100,7 @@ Diagnostic checks for validating your setup.
 | Data directory | Exists and writable |
 | Agents directory | Exists with agent subdirectories |
 | Config file | Valid and parseable |
-| API key | `ANTHROPIC_API_KEY` env var present |
+| Native SDK auth | Claude Code OAuth credentials or `CLAUDE_CODE_OAUTH_TOKEN` available |
 | Memory store | SQLite database exists |
 | Rate limits | Persistence file exists |
 | Dependencies | pino, zod, better-sqlite3 importable |
@@ -2033,19 +2213,24 @@ GET /api/fleet/:serverId/routing/decisions?agentId=:agentId&limit=50
 
 ## Prompt Caching
 
-Optimizes API costs through native Claude Agent SDK prompt caching.
+Uses native Claude Agent SDK prompt-caching behavior where the active profile
+allows a stable cacheable prefix.
 
 ### Current Behavior
 
-The runtime does not maintain its own prompt-cache engine. Instead it relies on Claude Agent SDK's built-in prompt-caching behavior for the Claude Code preset system prompt.
+The runtime does not maintain its own prompt-cache engine. It relies on the
+Agent SDK's built-in caching for the prompt shape selected by
+`safety_profile`.
 
-`buildSdkOptions()` explicitly enables:
+- `chat_like_openclaw` uses a pure-string prompt: profile baseline or
+  `personality`, then `CLAUDE.md`.
+- `public` uses a custom constrained prompt and avoids project settings.
+- `trusted` and `private` can use the Claude Code preset and project settings
+  when profile validation allows it.
 
-1. Claude Code preset system prompt
-2. `excludeDynamicSections: true`
-3. `settingSources: ['project']`
-
-This lets the SDK keep the system-prompt prefix stable and cacheable while moving dynamic workspace details such as working directory / memory path context out of the globally cached prefix.
+Dynamic context such as memory paths, channel/session metadata, and plugin
+assembled context is kept outside the globally stable profile baseline where
+possible.
 
 ### Benefits
 
@@ -2088,13 +2273,53 @@ The release script updates versions, appends `CHANGELOG.md`, creates a release c
 
 ## Running in Production
 
-### With auto-restart on code changes
+### Docker Compose
+
+Production deployment is a single container that runs Next.js and embeds the
+gateway runtime in-process. Persistent state is mounted from the host:
+
+| Host path | Container path | Purpose |
+|-----------|----------------|---------|
+| `./data` | `/app/data` | SQLite stores, sessions, rate limits, WhatsApp auth, learning artifacts |
+| `./agents` | `/app/agents` | Agent configs, prompts, native skills |
+| `./config.yml` | `/app/config.yml:ro` | Base gateway config |
+| `/home/ubuntu/.claude` | `/home/node/.claude` | Optional Claude Code OAuth credentials |
 
 ```bash
-npx tsx watch src/index.ts
+git clone https://github.com/timur-nocodia/anthroclaw.git
+cd anthroclaw
+cp .env.example .env
+cp config.yml.example config.yml
+mkdir -p data agents
+docker compose up -d --build
+docker compose logs -f app
 ```
 
+The compose file binds UI traffic to `127.0.0.1:${UI_PORT:-3000}:3000`; put
+nginx/Caddy in front for TLS and public access.
+
+The image includes bubblewrap/socat and runs with the Docker capabilities
+needed for the Claude Agent SDK sandbox. Do not remove the compose
+`cap_add`, `security_opt`, or `user: "0:0"` settings unless you have verified
+SDK tool execution inside the container.
+
+### Updating a Server
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+docker compose ps
+curl -fsS http://127.0.0.1:${UI_PORT:-3000}/login >/dev/null
+```
+
+On the current VPS layout, `/home/ubuntu/anthroclaw-build` is the build
+checkout that produces image `anthroclaw:local`; `/home/ubuntu/anthroclaw`
+contains runtime mounts (`data`, `agents`, `config.yml`) and restarts the
+container from that image.
+
 ### With process manager (PM2)
+
+Use this only for development or custom non-Docker deployments.
 
 ```bash
 pm2 start "npx tsx src/index.ts" --name anthroclaw-agent
@@ -2178,7 +2403,7 @@ In your cron prompt, add: "If everything is OK, respond with [SILENT]". The agen
 Not through the main runtime config anymore. Primary agent calls now rely on native Claude Code / Agent SDK authentication and retry behavior only.
 
 **Q: How do I diagnose setup issues?**
-Use `runDiagnostics()` from `src/cli/doctor.ts`. It checks Node version, directories, API keys, dependencies, and database integrity.
+Use `runDiagnostics()` from `src/cli/doctor.ts`. It checks Node version, directories, native SDK auth, dependencies, and database integrity.
 
 **Q: What security measures are built in?**
 Secret redaction (API keys masked in logs), file write safety (denylist for sensitive paths), SSRF protection (blocks private networks), prompt injection scanning (detects override attempts in context files), PII redaction (hashes user IDs in logs).

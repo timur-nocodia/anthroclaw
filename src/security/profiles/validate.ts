@@ -115,7 +115,7 @@ export function validateSafetyProfile(config: AgentYml): ValidationResult {
         `     1. Remove these tools from mcp_tools (safest)\n` +
         `     2. Change safety_profile to a more permissive one\n` +
         `     3. Add to safety_overrides.allow_tools (logged as WARN; HARD_BLACKLIST cannot be overridden)\n\n` +
-        `   See docs/safety-profiles.md`,
+        `   See docs/guide.md#safety-profiles`,
     };
   }
 

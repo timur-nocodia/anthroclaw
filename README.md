@@ -358,7 +358,7 @@ Available profiles:
 - **`trusted`** — known users, approval flow for destructive operations.
 - **`private`** — single owner, all tools, optional bypass.
 
-See [Safety Profiles](docs/safety-profiles.md) for how `safety_profile` controls tool access and system prompt selection.
+See the [Safety Profiles section](docs/guide.md#safety-profiles) for how `safety_profile` controls tool access and system prompt selection.
 
 ## Project Layout
 
