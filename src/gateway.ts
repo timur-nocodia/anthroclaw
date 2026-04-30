@@ -1202,6 +1202,10 @@ export class Gateway {
 
   private prewarmAgent(agent: Agent): Promise<void> {
     if (!this.sdkReady) return Promise.resolve();
+    if (agent.config.mcp_tools?.includes('manage_cron')) {
+      this.warmQueries.discard(agent.id);
+      return Promise.resolve();
+    }
     return this.warmQueries.prewarm(agent.id, this.buildUserQueryOptions(agent));
   }
 
@@ -1210,7 +1214,13 @@ export class Gateway {
     prompt: string | AsyncIterable<SDKUserMessage>,
     options: ReturnType<typeof buildSdkOptions>,
     resume?: string,
+    useWarmQuery = true,
   ): Query {
+    if (!useWarmQuery) {
+      this.warmQueries.discard(agent.id);
+      return query({ prompt, options: options as any }) as Query;
+    }
+
     const warm = resume ? undefined : this.warmQueries.take(agent.id);
     if (!warm) {
       return query({ prompt, options: options as any }) as Query;
@@ -3593,7 +3603,8 @@ export class Gateway {
         prompt = assembledPrompt;
       }
 
-      const result = this.startQuery(agent, prompt, options, existingSessionId);
+      const useWarmQuery = !(this.dynamicCronStore && agent.config.mcp_tools?.includes('manage_cron'));
+      const result = this.startQuery(agent, prompt, options, existingSessionId, useWarmQuery);
       this.queueManager.register(sessionKey, result, abort, {
         traceId: runId,
         channelDeliveryTarget: {
