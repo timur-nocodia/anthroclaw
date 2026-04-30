@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type { DynamicCronStore } from '../../cron/dynamic-store.js';
+import { looksLikeOneShotSchedule } from '../../cron/one-shot.js';
 import type { ToolDefinition } from './types.js';
 import type { ToolMeta } from '../../security/types.js';
 
@@ -156,17 +157,6 @@ function parseExpiresAt(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
-}
-
-function looksLikeOneShotSchedule(schedule: string): boolean {
-  const parts = schedule.trim().split(/\s+/);
-  if (parts.length !== 5) return false;
-  const [, , dayOfMonth, month, dayOfWeek] = parts;
-  return isConcreteCronField(dayOfMonth) && isConcreteCronField(month) && dayOfWeek === '*';
-}
-
-function isConcreteCronField(value: string): boolean {
-  return /^\d+$/.test(value);
 }
 
 export const META: ToolMeta = {

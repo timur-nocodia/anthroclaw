@@ -35,8 +35,9 @@ import { QueueManager, type ActiveQueryView } from './routing/queue-manager.js';
 import { TelegramChannel } from './channels/telegram.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import { CronScheduler } from './cron/scheduler.js';
-import { DynamicCronStore } from './cron/dynamic-store.js';
+import { DynamicCronStore, type DynamicCronJob } from './cron/dynamic-store.js';
 import { formatCronDeliveryContract } from './cron/delivery-contract.js';
+import { looksLikeOneShotSchedule, oneShotScheduleTimeUtc } from './cron/one-shot.js';
 import { ConfigWatcher } from './config/watcher.js';
 import { runDreaming } from './memory/dreaming.js';
 import {
@@ -922,16 +923,7 @@ export class Gateway {
     // Load dynamic cron jobs
     if (this.dynamicCronStore) {
       for (const dj of this.dynamicCronStore.getAll()) {
-        this.scheduler.addJob({
-          id: `dyn:${dj.id}`,
-          agentId: dj.agentId,
-          schedule: dj.schedule,
-          prompt: dj.prompt,
-          deliverTo: dj.deliverTo,
-          runOnce: dj.runOnce,
-          expiresAt: dj.expiresAt,
-          enabled: dj.enabled,
-        });
+        this.registerDynamicCronJob(dj);
       }
     }
 
@@ -2665,16 +2657,7 @@ export class Gateway {
     // Re-add dynamic cron jobs
     if (this.dynamicCronStore) {
       for (const dj of this.dynamicCronStore.getAll()) {
-        this.scheduler.addJob({
-          id: `dyn:${dj.id}`,
-          agentId: dj.agentId,
-          schedule: dj.schedule,
-          prompt: dj.prompt,
-          deliverTo: dj.deliverTo,
-          runOnce: dj.runOnce,
-          expiresAt: dj.expiresAt,
-          enabled: dj.enabled,
-        });
+        this.registerDynamicCronJob(dj);
       }
     }
 
@@ -4033,16 +4016,7 @@ export class Gateway {
     }
 
     for (const dj of this.dynamicCronStore.getAll()) {
-      this.scheduler.addJob({
-        id: `dyn:${dj.id}`,
-        agentId: dj.agentId,
-        schedule: dj.schedule,
-      prompt: dj.prompt,
-      deliverTo: dj.deliverTo,
-      runOnce: dj.runOnce,
-      expiresAt: dj.expiresAt,
-      enabled: dj.enabled,
-    });
+      this.registerDynamicCronJob(dj);
     }
 
     this.scheduler.addJob({
@@ -4054,6 +4028,36 @@ export class Gateway {
     });
 
     logger.info({ dynamicJobs: this.dynamicCronStore.getAll().length }, 'Dynamic cron reloaded');
+  }
+
+  private registerDynamicCronJob(job: DynamicCronJob): void {
+    if (!this.scheduler) return;
+
+    const runOnce = job.runOnce ?? looksLikeOneShotSchedule(job.schedule);
+    const inferredExpiresAt = runOnce
+      ? (job.expiresAt ?? oneShotScheduleTimeUtc(job.schedule))
+      : job.expiresAt;
+
+    if (
+      runOnce &&
+      typeof inferredExpiresAt === 'number' &&
+      inferredExpiresAt <= Date.now() &&
+      this.dynamicCronStore?.delete(job.agentId, job.id)
+    ) {
+      logger.info({ agentId: job.agentId, jobId: job.id }, 'Expired one-shot dynamic cron removed');
+      return;
+    }
+
+    this.scheduler.addJob({
+      id: `dyn:${job.id}`,
+      agentId: job.agentId,
+      schedule: job.schedule,
+      prompt: job.prompt,
+      deliverTo: job.deliverTo,
+      runOnce,
+      expiresAt: inferredExpiresAt,
+      enabled: job.enabled,
+    });
   }
 
   // ─── Memory dreaming ───────────────────────────────────────────────
