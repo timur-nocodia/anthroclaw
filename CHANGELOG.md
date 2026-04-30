@@ -9,8 +9,10 @@ All notable changes to AnthroClaw are documented here.
 This release is the large post-0.4.1 integration release: plugin framework,
 Lossless Context Management, secure-by-default safety profiles, the
 `chat_like_openclaw` conversational profile, SDK-native learning loop, and
-the corresponding UI surfaces. It also removes internal planning docs from the
-public docs tree; the maintained operator reference is now `docs/guide.md`.
+the corresponding UI surfaces. It also finalizes Gateway-managed scheduled
+tasks for chat agents, including context-bound delivery and model-driven
+fire-time execution. Internal planning docs were removed from the public docs
+tree; the maintained operator reference is now `docs/guide.md`.
 
 ### BREAKING
 
@@ -53,6 +55,10 @@ public docs tree; the maintained operator reference is now `docs/guide.md`.
   observability counters, and a dashboard Learning tab.
 - **Native learning skill** at `.claude/skills/anthroclaw-learning/SKILL.md`
   so the reviewer has stable guidance for memory-vs-skill improvements.
+- **Gateway-managed scheduled tasks for chat agents.** `manage_cron` can create
+  durable one-shot or recurring jobs whose payload is a saved prompt. When a
+  job fires, AnthroClaw sends a synthetic cron turn through the model and then
+  delivers the final assistant response back to the originating chat.
 - **Migration tooling**: `pnpm migrate:safety-profile` dry-run/apply, including
   profile inference and chat-profile suggestions.
 - **Production Docker support for Agent SDK sandboxing**, including bubblewrap,
@@ -75,8 +81,13 @@ public docs tree; the maintained operator reference is now `docs/guide.md`.
   plugin mirroring and learning review triggers.
 - Plugin config UI now reads Zod-derived JSON schema and persists per-agent
   overlay config while preserving YAML comments.
-- Dynamic cron `manage_cron` defaults delivery to the originating chat through
-  async session context.
+- Dynamic cron `manage_cron` no longer accepts model-controlled `deliver_to`.
+  Delivery is bound by the Gateway from the inbound dispatch context
+  (`channel`, `peer_id`, `account_id`, and creator metadata), which keeps
+  Telegram/WhatsApp routing outside the model's control.
+- One-shot dynamic cron jobs now carry explicit run-once metadata and are
+  removed after firing; pre-existing concrete day/month jobs are inferred as
+  one-shot and expired reminders are retired on reload.
 - `docs/guide.md` is the consolidated public operator guide for safety
   profiles, plugin/LCM operation, learning loop rollout, and production
   deployment notes.
@@ -97,6 +108,15 @@ public docs tree; the maintained operator reference is now `docs/guide.md`.
   plugins without leaving stale tools attached.
 - `public` and `trusted` profiles block harness primitives and unsafe tool
   combinations that previously leaked through broad MCP/tool defaults.
+- Scheduled task creation no longer fails on the first live message after
+  startup due to an unbound SDK warm query; agents exposing `manage_cron`
+  bypass warm-query reuse so each dispatch gets its context-bound MCP tools.
+- Telegram reminders no longer persist bad string/email chat targets supplied
+  by the model. Existing invalid targets are repaired or rejected in favor of
+  Gateway-derived numeric chat IDs.
+- Cron delivery responses include a delivery contract in the synthetic prompt,
+  preventing the model from calling `send_message` or asking users for
+  `peer_id`/`chat_id` when AnthroClaw will deliver the final response itself.
 
 ### Removed
 
