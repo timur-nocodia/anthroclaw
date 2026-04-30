@@ -37,6 +37,15 @@ describe('CronScheduler', () => {
     expect(scheduler.listJobs()).toEqual([]);
   });
 
+  it('skips expired jobs', () => {
+    const handler = vi.fn(async () => {});
+    scheduler = new CronScheduler(handler);
+
+    scheduler.addJob(makeJob({ expiresAt: Date.now() - 1 }));
+
+    expect(scheduler.listJobs()).toEqual([]);
+  });
+
   it('registers multiple jobs from different agents', () => {
     const handler = vi.fn(async () => {});
     scheduler = new CronScheduler(handler);

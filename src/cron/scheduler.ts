@@ -40,7 +40,9 @@ export interface ScheduledJob {
   agentId: string;
   schedule: string;
   prompt: string;
-  deliverTo?: { channel: string; peer_id: string; account_id?: string };
+  deliverTo?: { channel: string; peer_id: string; account_id?: string; thread_id?: string };
+  runOnce?: boolean;
+  expiresAt?: number;
   enabled: boolean;
 }
 
@@ -54,6 +56,7 @@ export class CronScheduler {
 
   addJob(job: ScheduledJob): void {
     if (!job.enabled) return;
+    if (typeof job.expiresAt === 'number' && job.expiresAt <= Date.now()) return;
 
     const key = `${job.agentId}:${job.id}`;
 

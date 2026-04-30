@@ -11,6 +11,7 @@ function makeAgentStub(opts: {
   workspaceDir: string;
   personality?: string;
   claudeMd?: string;
+  tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown>; handler: () => Promise<any> }>;
 }): Agent {
   if (opts.claudeMd !== undefined) {
     writeFileSync(join(opts.workspaceDir, 'CLAUDE.md'), opts.claudeMd, 'utf-8');
@@ -25,7 +26,7 @@ function makeAgentStub(opts: {
       sdk: undefined,
     },
     mcpServer: { name: 'test-tools' },
-    tools: [],
+    tools: opts.tools ?? [],
   } as unknown as Agent;
 }
 
@@ -81,6 +82,23 @@ describe('buildSdkOptions on chat profile', () => {
   it('disallowedTools still includes harness blocklist', () => {
     const agent = makeAgentStub({ workspaceDir: tmpRoot, claudeMd: '# test' });
     const options = buildSdkOptions({ agent });
+    expect(options.disallowedTools).toContain('CronCreate');
+    expect(options.disallowedTools).toContain('RemoteTrigger');
+  });
+
+  it('keeps manage_cron in allowedTools when registered on the MCP server', () => {
+    const agent = makeAgentStub({
+      workspaceDir: tmpRoot,
+      claudeMd: '# test',
+      tools: [{
+        name: 'manage_cron',
+        description: 'Manage cron',
+        inputSchema: {},
+        handler: async () => ({ content: [{ type: 'text', text: 'ok' }] }),
+      }],
+    });
+    const options = buildSdkOptions({ agent });
+    expect(options.allowedTools).toContain('mcp__test-tools__manage_cron');
     expect(options.disallowedTools).toContain('CronCreate');
     expect(options.disallowedTools).toContain('RemoteTrigger');
   });

@@ -947,7 +947,7 @@ Each tool must be explicitly enabled in `agent.yml` under `mcp_tools`. Only enab
 | `manage_skills` | Safely read/create/update/remove native `.claude/skills/*/SKILL.md` | — |
 | `web_search_brave` | Web search via Brave API | `brave.api_key` in config.yml |
 | `web_search_exa` | Neural search via Exa | `exa.api_key` in config.yml |
-| `manage_cron` | Create/list/delete/toggle cron jobs from chat | — |
+| `manage_cron` | Create/list/delete/toggle scheduled jobs from chat; delivery is bound to the current chat by the gateway | — |
 
 **Principle:** Only enable tools the agent needs. Each tool increases the system prompt size.
 
@@ -1514,7 +1514,7 @@ Skills without frontmatter continue to work exactly as before — the `# Title` 
 
 ## Agent Self-Scheduling (Dynamic Cron)
 
-Agents can create, list, delete, and toggle their own cron jobs from chat — no config file editing needed.
+Agents can create, list, delete, and toggle their own cron jobs from chat — no config file editing needed. Dynamic jobs are delivery-bound by AnthroClaw: the model provides the schedule and prompt, while the gateway stores the current channel, peer, account, and thread from the inbound message.
 
 ### Enable
 
@@ -1526,16 +1526,17 @@ mcp_tools:
 
 ### Usage
 
-The agent gets a `manage_cron` tool with 4 actions:
+The agent gets a `manage_cron` tool with 4 actions. For `create`, do not pass `deliver_to`; that field is intentionally not part of the tool schema.
 
 **Create a job:**
 ```
 User: "Remind me every morning at 9am to check emails"
 Agent: manage_cron(action: "create", id: "morning-email",
-       schedule: "0 4 * * *", prompt: "Check emails and report",
-       deliver_to: { channel: "telegram", peer_id: "123456" })
+       schedule: "0 4 * * *", prompt: "Check emails and report")
 → "Cron job created: morning-email (0 4 * * *)"
 ```
+
+For one-shot reminders, the agent can pass `run_once: true`. AnthroClaw also treats concrete day/month cron expressions like `0 8 30 4 *` as one-shot jobs and removes them after the first fire.
 
 **List jobs:**
 ```
@@ -1564,8 +1565,10 @@ Agent: manage_cron(action: "toggle", id: "weekly-report", enabled: false)
 
 - Dynamic jobs are stored in `data/dynamic-cron.json`
 - Persisted across restarts
+- Delivery target is captured from the chat where the user created the job
 - The scheduler is rebuilt when jobs are added/removed/toggled
 - Dynamic jobs run alongside static jobs from `agent.yml`
+- Dynamic jobs fire by sending the saved prompt back through the agent; the gateway then delivers the final assistant response
 - Job IDs are prefixed with `dyn:` internally to avoid conflicts with static jobs
 
 ---

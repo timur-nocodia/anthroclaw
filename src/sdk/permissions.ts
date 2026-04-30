@@ -215,7 +215,6 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
   return async (toolName, input) => {
     const isMcpPrefixed = toolName.startsWith('mcp__');
     const localName = isMcpPrefixed ? (toolName.split('__').at(-1) ?? toolName) : toolName;
-    const normalizedInput = maybeFillManageCronDeliverTo(localName, input, sessionContext);
 
     // 1. Bypass mode short-circuit — allow everything without any checks
     if (overrides.permission_mode === 'bypass') {
@@ -226,7 +225,7 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
         );
         bypassWarnLogged = true;
       }
-      return allow(normalizedInput);
+      return allow(input);
     }
 
     // 1.5. Chat profile short-circuit — allow everything except explicit deny_tools
@@ -235,7 +234,7 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
       if (denyList.includes(toolName) || denyList.includes(localName)) {
         return deny(`Tool "${toolName}" is denied by safety_overrides.deny_tools`);
       }
-      return allow(normalizedInput);
+      return allow(input);
     }
 
     // 2. Resolve meta: for prefixed MCP tools (mcp__server__tool), look up by local name
@@ -280,7 +279,7 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
     // 7. Public profile: send_message is restricted to the originating peer only.
     // This prevents prompt-injected public agents from spamming arbitrary recipients.
     if (profile.name === 'public' && (toolName === 'send_message' || localName === 'send_message')) {
-      const targetPeer = (normalizedInput as any)?.peer_id ?? (normalizedInput as any)?.peerId;
+      const targetPeer = (input as any)?.peer_id ?? (input as any)?.peerId;
       if (typeof targetPeer === 'string' && targetPeer !== sessionContext.peerId) {
         return deny(
           `safety_profile=public: send_message can only target the originating peer (got "${targetPeer}", expected "${sessionContext.peerId}")`,
@@ -295,7 +294,7 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
       (meta !== undefined && profile.mcpToolPolicy.requiresApproval(meta));
 
     if (!requiresApproval) {
-      return allow(normalizedInput);
+      return allow(input);
     }
 
     // Channel must support interactive approval
@@ -310,8 +309,8 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
     await channel.promptForApproval({
       id,
       toolName,
-      argsPreview: previewArgs(normalizedInput),
-      argsFull: JSON.stringify(normalizedInput),
+      argsPreview: previewArgs(input),
+      argsFull: JSON.stringify(input),
       peerId: sessionContext.peerId,
       accountId: sessionContext.accountId,
       threadId: sessionContext.threadId,
@@ -322,48 +321,8 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
       id,
       60_000,
       sessionContext.senderId ?? sessionContext.peerId,
-      normalizedInput,
+      input,
     );
-  };
-}
-
-function maybeFillManageCronDeliverTo(
-  localName: string,
-  input: Record<string, unknown>,
-  sessionContext: CanUseToolDeps['sessionContext'],
-): Record<string, unknown> {
-  if (localName !== 'manage_cron') return input;
-  if (input.action !== 'create') return input;
-  if (!sessionContext.channel || !sessionContext.peerId || sessionContext.peerId === '__headless__') return input;
-
-  const currentTarget = toRecord(input.deliver_to);
-  const targetChannel = typeof currentTarget.channel === 'string'
-    ? currentTarget.channel
-    : sessionContext.channel;
-  const targetPeerId = typeof currentTarget.peer_id === 'string'
-    ? currentTarget.peer_id
-    : undefined;
-  const targetAccountId = typeof currentTarget.account_id === 'string'
-    ? currentTarget.account_id
-    : undefined;
-  const shouldRepairTelegramPeer =
-    targetChannel === 'telegram' &&
-    (targetPeerId === undefined || !/^-?\d+$/.test(targetPeerId));
-  const shouldFillCurrentChat =
-    input.deliver_to === undefined ||
-    shouldRepairTelegramPeer ||
-    (targetChannel === sessionContext.channel && !targetAccountId && Boolean(sessionContext.accountId));
-
-  if (!shouldFillCurrentChat) return input;
-
-  return {
-    ...input,
-    deliver_to: {
-      ...currentTarget,
-      channel: targetChannel,
-      peer_id: shouldRepairTelegramPeer ? sessionContext.peerId : (targetPeerId ?? sessionContext.peerId),
-      ...(sessionContext.accountId ? { account_id: sessionContext.accountId } : {}),
-    },
   };
 }
 

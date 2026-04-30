@@ -7,7 +7,10 @@ export interface DynamicCronJob {
   agentId: string;
   schedule: string;
   prompt: string;
-  deliverTo?: { channel: string; peer_id: string; account_id?: string };
+  deliverTo?: { channel: string; peer_id: string; account_id?: string; thread_id?: string };
+  createdBy?: { channel: string; sender_id: string; peer_id: string; account_id?: string; thread_id?: string };
+  runOnce?: boolean;
+  expiresAt?: number;
   enabled: boolean;
   createdAt: number;
 }

@@ -38,26 +38,22 @@ describe('createCanUseTool on chat profile', () => {
     }
   });
 
-  it('fills manage_cron create deliver_to from dispatch context', async () => {
+  it('does not mutate manage_cron input in permissions layer', async () => {
     const fn = createCanUseTool({ agent: makeAgent(), approvalBroker: new ApprovalBroker(), sessionContext: ctx });
+    const input = { action: 'create', schedule: '0 9 * * *', prompt: 'hello' };
     const result = await fn(
       'mcp__test__manage_cron',
-      { action: 'create', id: 'daily', schedule: '0 9 * * *', prompt: 'hello' },
+      input,
       { signal, toolUseID: 't-cron-create' },
     );
     expect(result).toMatchObject({
       behavior: 'allow',
-      updatedInput: {
-        deliver_to: {
-          channel: 'telegram',
-          peer_id: '48705953',
-          account_id: 'content_sm',
-        },
-      },
+      updatedInput: input,
     });
+    expect((result as any).updatedInput.deliver_to).toBeUndefined();
   });
 
-  it('does not overwrite valid explicit manage_cron deliver_to', async () => {
+  it('passes through legacy explicit manage_cron deliver_to without repairing it', async () => {
     const fn = createCanUseTool({ agent: makeAgent(), approvalBroker: new ApprovalBroker(), sessionContext: ctx });
     const deliverTo = { channel: 'telegram', peer_id: '-1001234567890', account_id: 'default' };
     const result = await fn(
@@ -69,31 +65,6 @@ describe('createCanUseTool on chat profile', () => {
       behavior: 'allow',
       updatedInput: {
         deliver_to: deliverTo,
-      },
-    });
-  });
-
-  it('repairs explicit invalid Telegram manage_cron deliver_to from dispatch context', async () => {
-    const fn = createCanUseTool({ agent: makeAgent(), approvalBroker: new ApprovalBroker(), sessionContext: ctx });
-    const result = await fn(
-      'mcp__test__manage_cron',
-      {
-        action: 'create',
-        id: 'daily',
-        schedule: '0 9 * * *',
-        prompt: 'hello',
-        deliver_to: { channel: 'telegram', peer_id: 'timur@nocodia.dev' },
-      },
-      { signal, toolUseID: 't-cron-repair' },
-    );
-    expect(result).toMatchObject({
-      behavior: 'allow',
-      updatedInput: {
-        deliver_to: {
-          channel: 'telegram',
-          peer_id: '48705953',
-          account_id: 'content_sm',
-        },
       },
     });
   });

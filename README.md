@@ -325,7 +325,7 @@ subagents:
 | `access_control` | Manage allowlists and pending access |
 | `list_skills` | Inspect available/attached skills |
 | `manage_skills` | Create, update, attach, detach, and remove skills |
-| `manage_cron` | Create and control scheduled agent jobs |
+| `manage_cron` | Create and control scheduled agent jobs bound to the current chat |
 | `web_search_brave` | Search the web through Brave |
 | `web_search_exa` | Search the web through Exa |
 

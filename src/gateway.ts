@@ -22,9 +22,10 @@ const ANTHROCLAW_VERSION = (() => {
     return '0.0.0';
   }
 })();
-import { query, startup } from '@anthropic-ai/claude-agent-sdk';
+import { createSdkMcpServer, query, startup } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent/agent.js';
+import { createManageCronTool } from './agent/tools/manage-cron.js';
 import { RouteTable, type RouteEntry } from './routing/table.js';
 import { AccessControl } from './routing/access.js';
 import { buildSessionKey } from './routing/session-key.js';
@@ -36,12 +37,6 @@ import { WhatsAppChannel } from './channels/whatsapp.js';
 import { CronScheduler } from './cron/scheduler.js';
 import { DynamicCronStore } from './cron/dynamic-store.js';
 import { formatCronDeliveryContract } from './cron/delivery-contract.js';
-import {
-  buildRuntimeReminderId,
-  formatRuntimeReminderAck,
-  formatRuntimeReminderPrompt,
-  parseRuntimeReminderIntent,
-} from './cron/reminder-primitive.js';
 import { ConfigWatcher } from './config/watcher.js';
 import { runDreaming } from './memory/dreaming.js';
 import {
@@ -85,7 +80,6 @@ import { logger } from './logger.js';
 import { nowInTimezone, formatDateTime, dailyMemoryPath } from './util/time.js';
 import { redactSecrets } from './security/redact.js';
 import { ApprovalBroker } from './security/approval-broker.js';
-import { sessionContextStore } from './agent/session-context.js';
 import { isSilentResponse, processNoReplySentinel } from './cron/scheduler.js';
 import { SessionMirror } from './session/mirror.js';
 import { buildGroupSessionKey, type GroupSessionMode } from './session/group-isolation.js';
@@ -934,6 +928,8 @@ export class Gateway {
           schedule: dj.schedule,
           prompt: dj.prompt,
           deliverTo: dj.deliverTo,
+          runOnce: dj.runOnce,
+          expiresAt: dj.expiresAt,
           enabled: dj.enabled,
         });
       }
@@ -1138,7 +1134,7 @@ export class Gateway {
     msg?: InboundMessage,
     channel?: ChannelAdapter,
   ) {
-    return buildSdkOptions({
+    const options = buildSdkOptions({
       agent,
       subagents: this.buildSubagents(agent),
       resume,
@@ -1182,6 +1178,34 @@ export class Gateway {
         : { peerId: '__headless__' },
       ...this.sdkSessionService?.getQueryOptions(),
     });
+
+    if (msg && this.dynamicCronStore && agent.config.mcp_tools?.includes('manage_cron')) {
+      const dispatchManageCron = createManageCronTool(
+        agent.id,
+        this.dynamicCronStore,
+        () => this.reloadDynamicCron(),
+        {
+          agentId: agent.id,
+          channel: msg.channel,
+          peerId: msg.peerId,
+          senderId: msg.senderId,
+          accountId: msg.accountId,
+          threadId: msg.threadId,
+        },
+      );
+      const dispatchTools = agent.tools.map((tool) =>
+        tool.name === 'manage_cron' ? dispatchManageCron : tool,
+      );
+      options.mcpServers = {
+        ...(options.mcpServers ?? {}),
+        [agent.mcpServer.name]: createSdkMcpServer({
+          name: agent.mcpServer.name,
+          tools: dispatchTools as unknown as any[],
+        }),
+      };
+    }
+
+    return options;
   }
 
   private prewarmAgent(agent: Agent): Promise<void> {
@@ -2647,6 +2671,8 @@ export class Gateway {
           schedule: dj.schedule,
           prompt: dj.prompt,
           deliverTo: dj.deliverTo,
+          runOnce: dj.runOnce,
+          expiresAt: dj.expiresAt,
           enabled: dj.enabled,
         });
       }
@@ -3203,51 +3229,6 @@ export class Gateway {
       }
     }
 
-    // Runtime reminders are a first-class primitive: the agent supplies no
-    // delivery target and does not need manage_cron in its tool surface.
-    if (this.dynamicCronStore && channel && msg.chatType === 'dm') {
-      const reminder = parseRuntimeReminderIntent(msg.text, {
-        timezone: agent.config.timezone ?? 'UTC',
-      });
-      if (reminder) {
-        const id = buildRuntimeReminderId(reminder.fireAt, randomUUID());
-        this.dynamicCronStore.create({
-          id,
-          agentId: agent.id,
-          schedule: reminder.schedule,
-          prompt: formatRuntimeReminderPrompt(reminder.message),
-          deliverTo: {
-            channel: msg.channel,
-            peer_id: msg.peerId,
-            account_id: msg.accountId,
-          },
-          enabled: true,
-        });
-        this.reloadDynamicCron();
-        await channel.sendText(
-          msg.peerId,
-          formatRuntimeReminderAck(reminder, agent.config.timezone ?? 'UTC'),
-          {
-            accountId: msg.accountId,
-            threadId: msg.threadId,
-            replyToId: resolveReplyToId(msg, resolveChannelContext(agent.config.channel_context, msg).replyToMode),
-          },
-        );
-        logger.info(
-          { agentId: agent.id, id, schedule: reminder.schedule, channel: msg.channel, peerId: msg.peerId },
-          'Runtime reminder created',
-        );
-        recordRouteDecision({
-          outcome: 'runtime_reminder',
-          candidates: routeCandidates,
-          winnerAgentId: route.agentId,
-          accessAllowed: true,
-          sessionKey,
-        });
-        return;
-      }
-    }
-
     // ─── Session reset policy check ────────────────────────────────
     const sessionPolicy = agent.config.session_policy ?? 'never';
     if (sessionPolicy !== 'never' && agent.isSessionResetDue(sessionKey, sessionPolicy)) {
@@ -3451,30 +3432,8 @@ export class Gateway {
   /**
    * Query an agent using the Claude Agent SDK.
    * Falls back to a stub response if SDK is not initialized.
-   *
    */
   private async queryAgent(
-    agent: Agent,
-    msg: InboundMessage,
-    sessionKey: string,
-  ): Promise<string> {
-    // Bind dispatch context to the async stack so MCP tool handlers
-    // (e.g. manage_cron) can default args to the originating chat without
-    // forcing the agent to re-ask the user for their own peer_id.
-    return sessionContextStore.run(
-      {
-        agentId: agent.id,
-        peerId: msg.peerId,
-        senderId: msg.senderId,
-        channel: msg.channel,
-        accountId: msg.accountId,
-        threadId: msg.threadId,
-      },
-      () => this.queryAgentInner(agent, msg, sessionKey),
-    );
-  }
-
-  private async queryAgentInner(
     agent: Agent,
     msg: InboundMessage,
     sessionKey: string,
@@ -3990,50 +3949,64 @@ export class Gateway {
       void cronEmitter.emit('on_cron_fire', { agentId: job.agentId, jobId: job.id });
     }
 
-    // Build a synthetic InboundMessage for queryAgent
-    const syntheticMsg: InboundMessage = {
-      channel: (job.deliverTo?.channel as 'telegram' | 'whatsapp') ?? 'telegram',
-      accountId: job.deliverTo?.account_id ?? 'default',
-      chatType: 'dm',
-      peerId: job.deliverTo?.peer_id ?? 'cron',
-      senderId: 'cron',
-      senderName: 'cron',
-      text: job.prompt,
-      messageId: `cron-${job.id}-${Date.now()}`,
-      mentionedBot: false,
-      raw: { cron: true, jobId: job.id },
-    };
+    try {
+      // Build a synthetic InboundMessage for queryAgent
+      const syntheticMsg: InboundMessage = {
+        channel: (job.deliverTo?.channel as 'telegram' | 'whatsapp') ?? 'telegram',
+        accountId: job.deliverTo?.account_id ?? 'default',
+        chatType: 'dm',
+        peerId: job.deliverTo?.peer_id ?? 'cron',
+        senderId: 'cron',
+        senderName: 'cron',
+        text: job.prompt,
+        messageId: `cron-${job.id}-${Date.now()}`,
+        threadId: job.deliverTo?.thread_id,
+        mentionedBot: false,
+        raw: { cron: true, jobId: job.id },
+      };
 
-    const response = await this.queryAgent(agent, syntheticMsg, sessionKey);
+      const response = await this.queryAgent(agent, syntheticMsg, sessionKey);
 
-    // Silent suppression: [SILENT] in response skips delivery
-    if (response && isSilentResponse(response)) {
-      logger.info({ agentId: job.agentId, jobId: job.id }, 'Cron response contains [SILENT] — suppressing delivery');
-      return;
-    }
+      // Silent suppression: [SILENT] in response skips delivery
+      if (response && isSilentResponse(response)) {
+        logger.info({ agentId: job.agentId, jobId: job.id }, 'Cron response contains [SILENT] — suppressing delivery');
+        return;
+      }
 
-    if (job.deliverTo) {
-      const channel = this.channels.get(job.deliverTo.channel);
-      if (channel && response !== null) {
-        await channel.sendText(job.deliverTo.peer_id, response, {
-          accountId: job.deliverTo.account_id,
-        });
+      if (job.deliverTo) {
+        const channel = this.channels.get(job.deliverTo.channel);
+        if (channel && response !== null) {
+          await channel.sendText(job.deliverTo.peer_id, response, {
+            accountId: job.deliverTo.account_id,
+            threadId: job.deliverTo.thread_id,
+          });
+          logger.info(
+            { agentId: job.agentId, jobId: job.id, channel: job.deliverTo.channel, peerId: job.deliverTo.peer_id },
+            'Cron response delivered',
+          );
+        } else if (!channel) {
+          logger.warn(
+            { agentId: job.agentId, jobId: job.id, channel: job.deliverTo.channel },
+            'Cron deliver_to channel not available',
+          );
+        }
+      } else {
         logger.info(
-          { agentId: job.agentId, jobId: job.id, channel: job.deliverTo.channel, peerId: job.deliverTo.peer_id },
-          'Cron response delivered',
-        );
-      } else if (!channel) {
-        logger.warn(
-          { agentId: job.agentId, jobId: job.id, channel: job.deliverTo.channel },
-          'Cron deliver_to channel not available',
+          { agentId: job.agentId, jobId: job.id, response: (response ?? '').slice(0, 200) },
+          'Cron response (no deliver_to)',
         );
       }
-    } else {
-      logger.info(
-        { agentId: job.agentId, jobId: job.id, response: (response ?? '').slice(0, 200) },
-        'Cron response (no deliver_to)',
-      );
+    } finally {
+      this.cleanupRunOnceCron(job);
     }
+  }
+
+  private cleanupRunOnceCron(job: ScheduledJob): void {
+    if (!job.runOnce || !this.dynamicCronStore) return;
+    const jobId = job.id.startsWith('dyn:') ? job.id.slice(4) : job.id;
+    if (!this.dynamicCronStore.delete(job.agentId, jobId)) return;
+    this.reloadDynamicCron();
+    logger.info({ agentId: job.agentId, jobId: job.id }, 'Run-once cron removed after firing');
   }
 
   // ─── Dynamic cron reload ────────────────────────────────────────────
@@ -4064,10 +4037,12 @@ export class Gateway {
         id: `dyn:${dj.id}`,
         agentId: dj.agentId,
         schedule: dj.schedule,
-        prompt: dj.prompt,
-        deliverTo: dj.deliverTo,
-        enabled: dj.enabled,
-      });
+      prompt: dj.prompt,
+      deliverTo: dj.deliverTo,
+      runOnce: dj.runOnce,
+      expiresAt: dj.expiresAt,
+      enabled: dj.enabled,
+    });
     }
 
     this.scheduler.addJob({

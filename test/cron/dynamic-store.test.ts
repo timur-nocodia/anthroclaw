@@ -71,13 +71,52 @@ describe('DynamicCronStore', () => {
   it('persists across instances', () => {
     const path = makePath();
     const store1 = new DynamicCronStore(path);
-    store1.create({ id: 'persistent', agentId: 'bot', schedule: '0 12 * * *', prompt: 'lunch', enabled: true });
+    const expiresAt = Date.parse('2026-05-01T00:00:00.000Z');
+    store1.create({
+      id: 'persistent',
+      agentId: 'bot',
+      schedule: '0 12 * * *',
+      prompt: 'lunch',
+      deliverTo: {
+        channel: 'telegram',
+        peer_id: '48705953',
+        account_id: 'content_sm',
+        thread_id: 'topic-1',
+      },
+      createdBy: {
+        channel: 'telegram',
+        sender_id: '48705953',
+        peer_id: '48705953',
+        account_id: 'content_sm',
+        thread_id: 'topic-1',
+      },
+      runOnce: true,
+      expiresAt,
+      enabled: true,
+    });
 
     const store2 = new DynamicCronStore(path);
     const jobs = store2.list('bot');
     expect(jobs).toHaveLength(1);
     expect(jobs[0].id).toBe('persistent');
     expect(jobs[0].prompt).toBe('lunch');
+    expect(jobs[0]).toMatchObject({
+      deliverTo: {
+        channel: 'telegram',
+        peer_id: '48705953',
+        account_id: 'content_sm',
+        thread_id: 'topic-1',
+      },
+      createdBy: {
+        channel: 'telegram',
+        sender_id: '48705953',
+        peer_id: '48705953',
+        account_id: 'content_sm',
+        thread_id: 'topic-1',
+      },
+      runOnce: true,
+      expiresAt,
+    });
   });
 
   it('getAll returns all jobs', () => {
