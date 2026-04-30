@@ -36,6 +36,12 @@ import { WhatsAppChannel } from './channels/whatsapp.js';
 import { CronScheduler } from './cron/scheduler.js';
 import { DynamicCronStore } from './cron/dynamic-store.js';
 import { formatCronDeliveryContract } from './cron/delivery-contract.js';
+import {
+  buildRuntimeReminderId,
+  formatRuntimeReminderAck,
+  formatRuntimeReminderPrompt,
+  parseRuntimeReminderIntent,
+} from './cron/reminder-primitive.js';
 import { ConfigWatcher } from './config/watcher.js';
 import { runDreaming } from './memory/dreaming.js';
 import {
@@ -3188,6 +3194,51 @@ export class Gateway {
         }
         recordRouteDecision({
           outcome: 'quick_command',
+          candidates: routeCandidates,
+          winnerAgentId: route.agentId,
+          accessAllowed: true,
+          sessionKey,
+        });
+        return;
+      }
+    }
+
+    // Runtime reminders are a first-class primitive: the agent supplies no
+    // delivery target and does not need manage_cron in its tool surface.
+    if (this.dynamicCronStore && channel && msg.chatType === 'dm') {
+      const reminder = parseRuntimeReminderIntent(msg.text, {
+        timezone: agent.config.timezone ?? 'UTC',
+      });
+      if (reminder) {
+        const id = buildRuntimeReminderId(reminder.fireAt, randomUUID());
+        this.dynamicCronStore.create({
+          id,
+          agentId: agent.id,
+          schedule: reminder.schedule,
+          prompt: formatRuntimeReminderPrompt(reminder.message),
+          deliverTo: {
+            channel: msg.channel,
+            peer_id: msg.peerId,
+            account_id: msg.accountId,
+          },
+          enabled: true,
+        });
+        this.reloadDynamicCron();
+        await channel.sendText(
+          msg.peerId,
+          formatRuntimeReminderAck(reminder, agent.config.timezone ?? 'UTC'),
+          {
+            accountId: msg.accountId,
+            threadId: msg.threadId,
+            replyToId: resolveReplyToId(msg, resolveChannelContext(agent.config.channel_context, msg).replyToMode),
+          },
+        );
+        logger.info(
+          { agentId: agent.id, id, schedule: reminder.schedule, channel: msg.channel, peerId: msg.peerId },
+          'Runtime reminder created',
+        );
+        recordRouteDecision({
+          outcome: 'runtime_reminder',
           candidates: routeCandidates,
           winnerAgentId: route.agentId,
           accessAllowed: true,
