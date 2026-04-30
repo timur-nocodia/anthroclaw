@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildRuntimeReminderId,
+  extractRuntimeReminderMessage,
   formatReminderText,
   formatRuntimeReminderAck,
   formatRuntimeReminderPrompt,
+  formatRuntimeReminderStatus,
+  isRuntimeReminderJobId,
+  isRuntimeReminderStatusQuery,
+  parseRuntimeReminderFireAt,
   parseRuntimeReminderIntent,
+  stripRuntimeReminderJobId,
 } from '../../src/cron/reminder-primitive.js';
 
 describe('runtime reminder primitive', () => {
@@ -68,9 +74,35 @@ describe('runtime reminder primitive', () => {
     expect(formatRuntimeReminderPrompt(intent.message)).toBe(
       'Return exactly this reminder text and nothing else: "⏰ Напоминание: проверить крон"',
     );
+    expect(extractRuntimeReminderMessage(formatRuntimeReminderPrompt(intent.message))).toBe('проверить крон');
     expect(formatRuntimeReminderAck(intent, timezone, Date.parse('2026-04-30T11:55:00Z'))).toBe(
       'Готово. Напомню в 16:56: проверить крон',
     );
     expect(buildRuntimeReminderId(intent.fireAt, 'abc-123_456')).toBe('runtime-reminder-202604301156-abc12345');
+  });
+
+  it('recognizes runtime reminder IDs and status queries', () => {
+    expect(isRuntimeReminderJobId('runtime-reminder-202604301156-abc12345')).toBe(true);
+    expect(isRuntimeReminderJobId('dyn:runtime-reminder-202604301156-abc12345')).toBe(true);
+    expect(stripRuntimeReminderJobId('dyn:runtime-reminder-202604301156-abc12345')).toBe(
+      'runtime-reminder-202604301156-abc12345',
+    );
+    expect(parseRuntimeReminderFireAt('dyn:runtime-reminder-202604301156-abc12345')?.toISOString()).toBe(
+      '2026-04-30T11:56:00.000Z',
+    );
+    expect(isRuntimeReminderStatusQuery('жду')).toBe(true);
+    expect(isRuntimeReminderStatusQuery('как работает cron?')).toBe(false);
+  });
+
+  it('formats pending runtime reminder status', () => {
+    expect(formatRuntimeReminderStatus([
+      {
+        id: 'runtime-reminder-202604301156-abc12345',
+        fireAt: new Date('2026-04-30T11:56:00.000Z'),
+        message: 'проверить крон',
+      },
+    ], timezone, Date.parse('2026-04-30T11:55:00Z'))).toBe(
+      'Напоминание уже создано кодом. Ждем 16:56: проверить крон',
+    );
   });
 });
