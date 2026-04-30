@@ -71,6 +71,63 @@ AnthroClaw uses `@anthropic-ai/claude-agent-sdk` as the core execution surface. 
 - SDK-compatible `.claude/skills/*/SKILL.md`
 - prompt suggestions, partial messages, progress summaries, and hook events
 
+### Safety profiles (4 profiles, secure-by-default)
+
+Every agent declares a `safety_profile` that controls system prompt mode, tool surface, sandbox defaults, allowlist shape, rate-limit floors, and approval flow:
+
+- **`chat_like_openclaw`** (default for new agents) — friendly conversational, all tools auto-allowed, wildcard allowlist OK, no sandbox. Pure-string system prompt with editable per-agent `personality` baseline. Best for personal single-user bots.
+- **`public`** — anonymous-user threat model. Read-only tools, no claude_code preset, no project settings, rate-limited.
+- **`trusted`** — known users with optional approval flow for destructive operations (Telegram inline buttons).
+- **`private`** — single-owner mode, exactly one peer per channel, all tools available with optional bypass.
+
+Profile is required in `agent.yml`; missing → hard-fail at load. Migration helper (`pnpm migrate:safety-profile`) infers a sensible profile for existing configs. See [Safety Profiles](docs/guide.md#safety-profiles) in the guide.
+
+### Plugin framework
+
+First-class plugin system using the Claude Code plugin layout (`plugins/<name>/.claude-plugin/plugin.json`):
+
+- typed `register(ctx)` entrypoint with hooks, MCP tools, ContextEngine, and config schema
+- per-agent enablement via `agent.yml::plugins.<name>.enabled`
+- MCP tool auto-namespacing (`mcp__<plugin>__<tool>`)
+- hot-reload on filesystem changes
+- isolated per-plugin data directory (`data/<plugin-name>/`)
+- Zod-derived JSON schema for UI-driven config with comment-preserving YAML writes
+
+### Lossless Context Management (LCM plugin)
+
+A first-party plugin (`plugins/lcm`) for **immutable per-agent context with hierarchical summaries**:
+
+- per-agent SQLite log of every message, with FTS5 full-text + LIKE search
+- D0/D1/D2+ summary DAG that compresses older context without erasing it (full source-lineage recovery on demand)
+- L1/L2/L3 summarization escalation when token pressure rises
+- carry-over across `/newsession` resets — agent's long-term memory survives session boundaries
+- optional large-output externalization (tool results that don't fit a context window get stored as artifacts and referenced by ID)
+- six tools: `lcm_grep`, `lcm_describe`, `lcm_expand`, `lcm_expand_query`, `lcm_status`, `lcm_doctor`
+- UI: context-pressure chip, DAG visualizer, node/message drill-down, doctor panel with double-gated cleanup + automatic backups
+
+### Learning loop
+
+SDK-native headless reviewer that proposes memory or skill updates after agent runs:
+
+- triggers on `on_after_query` hook every N turns or after M tool calls
+- runs a separate review prompt against the run transcript (artifacts exported to `data/learning-artifacts/<agent>/<job>/`)
+- emits **typed proposals** (memory write, skill create/update) into a durable queue
+- two modes: `propose` (review-only, requires operator approval) or `auto_private` (auto-apply, only allowed in `private` profile)
+- CLI to review/apply proposals: `pnpm learning`
+- dashboard Learning tab to inspect and act on proposals
+- native learning skill at `.claude/skills/anthroclaw-learning/SKILL.md` for stable reviewer guidance
+
+### Scheduled tasks (cron) as a runtime primitive
+
+`manage_cron` MCP tool creates durable one-shot or recurring jobs whose payload is a saved prompt:
+
+- delivery target is **bound by the gateway** from the inbound dispatch context (channel/peer/account) — model cannot inject arbitrary chat IDs
+- on fire, gateway sends a synthetic cron turn through the model and delivers the assistant response back to the originating chat
+- one-shot jobs auto-retire after firing; concrete day/month patterns are detected and treated as one-shot
+- silent suppression via `[SILENT]` response prefix
+- jobs persist in `data/dynamic-cron.json`, survive restart
+- dashboard Scheduled Tasks panel for static (yml) jobs
+
 ### Agents as workspaces
 
 Each agent is a directory:
@@ -78,12 +135,13 @@ Each agent is a directory:
 ```text
 agents/
   example/
-    agent.yml
-    CLAUDE.md
-    soul.md
+    agent.yml          # config: safety_profile, routes, mcp_tools, learning, cron, ...
+    CLAUDE.md          # main system prompt (with @./soul.md style imports)
+    soul.md            # persona (imported via @./)
+    memory/            # daily memory + MEMORY.md long-term
     .claude/
-      skills/
-        example-skill/
+      skills/          # native Claude Code skill layout
+        my-skill/
           SKILL.md
 ```
 
@@ -245,7 +303,7 @@ Docker is intended for Linux servers only. On macOS, run `pnpm dev` directly.
 # Gateway dev loop
 pnpm dev
 
-# Build TypeScript
+# Build TypeScript (root + plugin workspaces)
 pnpm build
 
 # Backend tests
@@ -265,69 +323,109 @@ pnpm reset-password
 
 # WhatsApp pairing helper
 pnpm whatsapp:pair
+
+# Migration: infer safety_profile for legacy agent configs (dry-run)
+pnpm migrate:safety-profile
+
+# Migration: apply inferred profiles
+pnpm migrate:safety-profile --apply
+
+# Learning loop CLI: review and apply pending proposals
+pnpm learning           # list pending
+pnpm learning review    # interactive review
+pnpm learning apply     # apply approved proposals
 ```
 
 ## Configuration Shape
 
-Minimal agent example:
+Minimal agent example (chat profile, single-user personal bot):
 
 ```yaml
 model: claude-sonnet-4-6
 timezone: UTC
 
+# Required since 0.5.0. New agents default to chat_like_openclaw.
+# Run `pnpm migrate:safety-profile --apply` to add this to legacy configs.
+safety_profile: chat_like_openclaw
+
+# Optional: per-agent personality override (chat profile only).
+# Empty/missing = uses the project-wide CHAT_PERSONALITY_BASELINE.
+# personality: |
+#   You are a formal British butler. Address the user as "Sir."
+
 routes:
   - channel: telegram
     scope: dm
-    peers: ["TELEGRAM_USER_ID"]
-    mention_only: false
-
-pairing:
-  mode: code
-  code: "CHANGE_ME"
 
 allowlist:
   telegram: ["YOUR_TELEGRAM_ID"]
 
 mcp_tools:
   - memory_search
-  - session_search
   - memory_write
   - send_message
   - list_skills
   - manage_skills
+  - manage_cron
 
-queue_mode: collect
-session_policy: never
-
-auto_compress:
-  enabled: true
-  threshold_messages: 30
+queue_mode: steer
 
 iteration_budget:
   max_tool_calls: 30
   timeout_ms: 120000
   grace_message: true
 
-subagents:
-  allow: ["research"]
+auto_compress:
+  enabled: true
+  threshold_messages: 15
+
+# Optional: enable plugins (e.g. LCM for lossless context).
+plugins:
+  lcm:
+    enabled: true
+
+# Optional: enable propose-only learning loop.
+# learning:
+#   enabled: true
+#   mode: propose
+#   review_interval_turns: 10
 ```
+
+For other profiles (`public`, `trusted`, `private`), see the [agent.yml reference](docs/guide.md#agentyml-reference) in the guide.
 
 ## Built-in Tools
 
+### Core MCP tools (registered per agent)
+
 | Tool | Purpose |
 | --- | --- |
-| `memory_search` | Search agent memory using FTS/vector retrieval |
-| `memory_write` | Write durable memory entries |
+| `memory_search` | Search agent memory using FTS5 + optional vector retrieval |
+| `memory_write` | Write durable daily memory entries |
 | `memory_wiki` | Create, read, update, and delete wiki pages |
 | `session_search` | Search prior SDK session transcripts |
-| `send_message` | Send text back through configured channels |
+| `send_message` | Send text back through configured channels (gateway-bound delivery in `public`) |
 | `send_media` | Send media files through channels |
 | `access_control` | Manage allowlists and pending access |
 | `list_skills` | Inspect available/attached skills |
 | `manage_skills` | Create, update, attach, detach, and remove skills |
-| `manage_cron` | Create and control scheduled agent jobs bound to the current chat |
+| `manage_cron` | Create durable scheduled tasks; delivery target is gateway-bound from dispatch context (model cannot inject arbitrary chat IDs) |
 | `web_search_brave` | Search the web through Brave |
 | `web_search_exa` | Search the web through Exa |
+
+### LCM plugin tools (when `plugins.lcm.enabled`)
+
+| Tool | Purpose |
+| --- | --- |
+| `lcm_grep` | Search across all session messages and DAG nodes (FTS5 + LIKE) |
+| `lcm_describe` | Describe a node/message by ID with full source lineage |
+| `lcm_expand` | Expand a summary node into its source children (recursive recovery) |
+| `lcm_expand_query` | Expand a summary node filtered by a query |
+| `lcm_status` | Context pressure metrics (tokens, depth, threshold, ratio) |
+| `lcm_doctor` | Health check + double-gated cleanup with automatic backup |
+
+### Built-in Claude Code tools (profile-gated)
+
+`Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `LS`, `Bash`, `WebFetch`, `WebSearch`, `NotebookEdit`, `TodoWrite` — availability depends on `safety_profile`. `chat_like_openclaw` and `private` allow all; `trusted` requires approval for destructive; `public` allows only read-only set.
 
 ## Security Model
 
@@ -366,31 +464,63 @@ See the [Safety Profiles section](docs/guide.md#safety-profiles) for how `safety
 .
 ├── agents/
 │   └── example/                 # Example agent workspace
+│       ├── agent.yml            # safety_profile, routes, mcp_tools, plugins, learning, cron, ...
+│       ├── CLAUDE.md            # main system prompt (with @./soul.md imports)
+│       ├── soul.md              # persona
+│       ├── memory/              # daily memory + MEMORY.md long-term
+│       └── .claude/skills/      # native skill layout
+├── plugins/                     # First-party plugin workspace (pnpm)
+│   ├── lcm/                     # Lossless Context Management plugin
+│   └── __example/               # Example plugin scaffold
 ├── config.yml                   # Gateway/channel/runtime defaults
-├── docs/                        # Public guide
+├── docs/
+│   ├── guide.md                 # Operator guide (the canonical reference)
+│   └── safety-profiles.md       # Profile reference
+├── scripts/
+│   ├── migrate-safety-profile.ts
+│   └── release.mjs
 ├── Dockerfile                   # Multi-stage Linux server image
 ├── docker-compose.yml           # gateway + ui services
 ├── DOCKER.md                    # Linux server deployment guide
-├── src/                         # Gateway, runtime, tools, channels, memory
+├── src/                         # Gateway, runtime, tools, channels, memory, security
 │   ├── agent/
 │   ├── channels/
 │   ├── config/
+│   ├── learning/                # SDK-native learning loop (reviewer, store, applier)
 │   ├── memory/
 │   ├── metrics/
+│   ├── plugins/                 # Plugin loader + registry + ContextEngine
 │   ├── sdk/
-│   ├── security/
+│   ├── security/                # safety_profiles, builtin/MCP tool meta, validators
 │   └── session/
-├── test/                        # Backend test suite
-├── ui/                          # Next.js control UI
+├── test/                        # Backend test suite (vitest)
+├── ui/                          # Next.js 15 control UI
 │   ├── app/
 │   ├── components/
 │   ├── lib/
 │   └── __tests__/
 ├── package.json
-└── pnpm-workspace.yaml
+└── pnpm-workspace.yaml          # root + ui + plugins/* workspaces
 ```
 
-Runtime data is created under `data/` and intentionally ignored by Git.
+Runtime data is created under `data/` and intentionally ignored by Git:
+
+```text
+data/
+├── auth.json                    # UI admin credentials
+├── memory-db/{agent}.sqlite     # per-agent memory FTS5 + optional vectors
+├── transcript-db/{agent}.sqlite # session transcript index
+├── session-mappings/{agent}.json # sessionKey ↔ SDK sessionId
+├── sdk-sessions/                # SDK SessionStore JSONL
+├── lcm/lcm-db/{agent}.sqlite    # LCM plugin: messages + summary DAG
+├── lcm/lcm-backups/             # LCM doctor backups
+├── learning-artifacts/{agent}/  # learning loop run inputs (frozen)
+├── dynamic-cron.json            # gateway-managed scheduled tasks
+├── runtime-overrides.yml        # config overlay (UI-mutated, deep-merged)
+├── rate-limits-{agent}.json
+├── whatsapp/                    # Baileys auth state
+└── media/                       # downloaded inbound media
+```
 
 ## Development Workflow
 
@@ -501,14 +631,16 @@ If in doubt, open an issue or draft PR before implementing a large change.
 
 ## Roadmap
 
-The original SDK-native migration scope is complete. The next useful work is product hardening:
+The SDK-native migration is complete; v0.5.0 added the plugin framework, LCM, safety profiles, learning loop, and gateway-managed scheduled tasks. Next useful work:
 
-- deeper subagent steering UX
-- richer observability dashboards beyond the current agent Runs tab and chat debug rail
-- stricter reference policies
-- more channel setup polish
-- better deploy/fleet ergonomics
-- more high-quality example agents and skills
+- **`manage_cron` v2 — runtime primitive cleanup.** Move `deliver_to` out of the model-controlled tool input entirely; agent passes only `schedule + prompt + id?`. Closure-based per-dispatch tool factory replaces the AsyncLocalStorage approach so dispatch context propagates reliably across SDK stdio. Add explicit `expiry`, `durable`, `createdBy` fields to `DynamicCronJob`.
+- **Peer-isolated memory for `public` agents.** Currently memory is per-agent; for multi-tenant public bots this needs per-peer scoping.
+- **WhatsApp interactive approval.** Baileys button reliability has been spotty; needs a stable approval UX or a documented "destructive tools blocked on WA" stance.
+- **Persistent approval queue.** In-memory broker survives only within the dispatch; a long-running approval should resume after restart.
+- **Per-route `safety_profile`.** Currently per-agent — splitting an agent into DM/group routes with different profiles would reduce duplication.
+- **Richer observability.** Dashboards beyond the current Runs tab and chat debug rail.
+- **Deploy/fleet polish.** Better operator UX for staged rollout, version pinning, fleet-wide config sync.
+- **More example agents and skills.** Concrete scaffolds for common shapes (lead capture, content scheduling, support triage).
 
 ## Inspiration and Compatibility
 

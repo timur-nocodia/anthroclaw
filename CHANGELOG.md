@@ -2,6 +2,8 @@
 
 All notable changes to AnthroClaw are documented here.
 
+> **Looking for a specific feature?** Most major capabilities (Plugin framework, **LCM** lossless context management, **Safety profiles**, **Learning loop**, **Scheduled tasks** as a runtime primitive, **chat_like_openclaw** conversational profile) shipped in **[v0.5.0](#050---2026-04-30)** below. Earlier releases focused on Sessions UI (0.4.0) and persistent session/channel reliability (0.3.0).
+
 ## [Unreleased]
 
 ## [0.5.0] - 2026-04-30
