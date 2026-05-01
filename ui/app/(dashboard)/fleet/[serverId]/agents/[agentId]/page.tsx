@@ -3392,7 +3392,7 @@ function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: 
   const loadHeartbeat = useCallback(async () => {
     const [metaRes, fileRes] = await Promise.all([
       fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/heartbeat?limit=30`).catch(() => null),
-      fetch(heartbeatFilePath).catch(() => null),
+      fetch(`${heartbeatFilePath}?optional=true`).catch(() => null),
     ]);
     if (metaRes?.ok) {
       const meta = await metaRes.json();

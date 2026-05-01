@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/route-handler';
-import { getAgentFile, writeAgentFile, deleteAgentFile, ValidationError } from '@/lib/agents';
+import { getAgentFile, writeAgentFile, deleteAgentFile, NotFoundError, ValidationError } from '@/lib/agents';
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ agentId: string; filename: string }> },
 ) {
   return withAuth(async () => {
     const { agentId, filename } = await params;
-    return NextResponse.json(getAgentFile(agentId, decodeURIComponent(filename)));
+    const name = decodeURIComponent(filename);
+    try {
+      return NextResponse.json(getAgentFile(agentId, name));
+    } catch (err) {
+      if (err instanceof NotFoundError && req.nextUrl.searchParams.get('optional') === 'true') {
+        return NextResponse.json({ name, content: '', updatedAt: null });
+      }
+      throw err;
+    }
   });
 }
 
