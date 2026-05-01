@@ -182,13 +182,13 @@ export function Sidebar() {
 
   return (
     <aside
-      className="flex w-[216px] shrink-0 flex-col border-r border-[var(--oc-border)]"
+      className="flex w-14 shrink-0 flex-col border-r border-[var(--oc-border)] sm:w-[216px]"
       style={{ background: "var(--oc-bg1)", fontSize: 12 }}
     >
       {/* ---- Brand ---- */}
-      <div className="flex items-center gap-2.5 border-b border-[var(--oc-border)] px-3.5 py-3.5">
+      <div className="flex items-center justify-center gap-2.5 border-b border-[var(--oc-border)] px-3 py-3.5 sm:justify-start sm:px-3.5">
         <Logo />
-        <div className="flex flex-col gap-px">
+        <div className="hidden flex-col gap-px sm:flex">
           <span
             className="text-[12.5px] font-semibold tracking-[0.2px]"
             style={{ color: "var(--color-foreground)" }}
@@ -207,7 +207,7 @@ export function Sidebar() {
       {/* ---- Server context ---- */}
       {isInsideServer && serverInfo && (
         <div
-          className="flex items-center gap-2 border-b px-3.5 py-2.5"
+          className="hidden items-center gap-2 border-b px-3.5 py-2.5 sm:flex"
           style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg0)" }}
         >
           <Server className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--oc-accent)" }} />
@@ -255,7 +255,7 @@ export function Sidebar() {
               onFocus={item.id === "fleet" ? prewarmFleetStatus : undefined}
               onMouseEnter={item.id === "fleet" ? prewarmFleetStatus : undefined}
               className={cn(
-                "flex h-7 items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] transition-colors",
+                "flex h-8 items-center justify-center gap-2.5 rounded-[5px] px-2 text-[12.5px] transition-colors sm:h-7 sm:justify-start",
                 active
                   ? "font-medium"
                   : "font-normal hover:bg-[var(--oc-bg2)]",
@@ -266,8 +266,8 @@ export function Sidebar() {
                 letterSpacing: "0.1px",
               }}
             >
-              <Icon className="h-[15px] w-[15px]" />
-              <span>{item.label}</span>
+              <Icon className="h-[15px] w-[15px] shrink-0" />
+              <span className="hidden sm:inline">{item.label}</span>
             </Link>
           );
         })}
@@ -275,7 +275,7 @@ export function Sidebar() {
 
       {/* ---- Connections footer ---- */}
       {channels.length > 0 && (
-        <div className="flex flex-col gap-1.5 border-t border-[var(--oc-border)] px-3 py-2.5">
+        <div className="hidden flex-col gap-1.5 border-t border-[var(--oc-border)] px-3 py-2.5 sm:flex">
           <div className="mb-0.5 flex items-center justify-between">
             <span
               className="text-[10px] uppercase tracking-[0.5px]"
@@ -314,7 +314,7 @@ export function Sidebar() {
       <div className="border-t border-[var(--oc-border)]">
         <Link
           href="/account"
-          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-[var(--oc-bg2)]"
+          className="flex w-full items-center justify-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-[var(--oc-bg2)] sm:justify-start"
           style={{
             textDecoration: "none",
             color: "var(--color-foreground)",
@@ -329,7 +329,7 @@ export function Sidebar() {
           >
             A
           </div>
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="hidden min-w-0 flex-1 flex-col sm:flex">
             <span
               className="text-[11.5px]"
               style={{ color: "var(--color-foreground)" }}
@@ -347,7 +347,7 @@ export function Sidebar() {
             </span>
           </div>
           <User
-            className="h-3 w-3"
+            className="hidden h-3 w-3 sm:block"
             style={{ color: "var(--oc-text-muted)" }}
           />
         </Link>

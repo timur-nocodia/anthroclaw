@@ -21,7 +21,7 @@ export default async function DashboardLayout({ children }: Props) {
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-[100dvh] min-w-0">
       <Sidebar />
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
       <Toaster />

@@ -827,7 +827,7 @@ export default function AgentEditorPage() {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
           <Button
             variant="outline"
             size="sm"
@@ -844,9 +844,9 @@ export default function AgentEditorPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={tab} onValueChange={setTab} className="flex flex-1 flex-col overflow-hidden">
+      <Tabs value={tab} onValueChange={setTab} className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TabsList
-          className="h-auto w-full justify-start rounded-none border-b px-5"
+          className="h-auto w-full justify-start overflow-x-auto rounded-none border-b px-5"
           style={{
             background: "var(--oc-bg0)",
             borderColor: "var(--oc-border)",
@@ -3021,10 +3021,10 @@ function Section({
       style={{ background: "var(--oc-bg1)", border: "1px solid var(--oc-border)" }}
     >
       <div
-        className="flex items-center justify-between gap-2.5 px-3.5 py-2.5"
+        className="flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2.5"
         style={{ borderBottom: "1px solid var(--oc-border)" }}
       >
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {icon}
           <span className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
             {title}
@@ -3045,7 +3045,7 @@ function Section({
 
 function FormGrid({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-2 gap-3.5">{children}</div>
+    <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">{children}</div>
   );
 }
 
@@ -3485,13 +3485,13 @@ function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: 
   };
 
   return (
-    <div className="flex max-w-[1100px] flex-col gap-3.5 p-5">
-      <div className="flex items-center justify-between gap-3">
+    <div className="flex max-w-[1100px] flex-col gap-3.5 p-3 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-sm font-semibold" style={{ color: "var(--color-foreground)" }}>Routines</h2>
           <p className="text-xs" style={{ color: "var(--oc-text-muted)" }}>Heartbeat wakes the agent through the SDK path and runs due tasks from HEARTBEAT.md.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => void loadHeartbeat()}>
             <RefreshCw className="h-3.5 w-3.5" />
             Reload
@@ -3532,7 +3532,7 @@ function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: 
         icon={<Zap className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
         tooltip="Gateway-managed periodic wake loop for routines."
       >
-        <div className="mb-3 grid grid-cols-3 gap-2">
+        <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-3">
           <HeartbeatMetric label="Last target" value={targetLabel} />
           <HeartbeatMetric label="Last run" value={lastRun ? new Date(lastRun.timestamp).toLocaleString() : "none"} />
           <HeartbeatMetric label="Last status" value={lastRun?.status ?? "none"} />
@@ -3645,15 +3645,15 @@ function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: 
         ) : (
           <div className="flex flex-col gap-2">
             {runs.map((run) => (
-              <div key={`${run.runId}-${run.taskName}`} className="flex items-center gap-2 rounded-md border px-3 py-2 text-xs" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}>
-                <span className="w-[150px] truncate" style={{ color: "var(--color-foreground)" }}>{run.taskName}</span>
+              <div key={`${run.runId}-${run.taskName}`} className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}>
+                <span className="min-w-[120px] truncate" style={{ color: "var(--color-foreground)" }}>{run.taskName}</span>
                 <span className="rounded px-1.5 py-px text-[10px]" style={{ background: "var(--oc-bg3)", color: "var(--oc-text-muted)" }}>{run.status}</span>
                 {run.script && (
                   <span className="truncate text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
                     {run.script.command} · exit {run.script.exitCode}{run.script.wakeAgent === false ? " · gated" : ""}
                   </span>
                 )}
-                <span className="ml-auto text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+                <span className="text-[10.5px] sm:ml-auto" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
                   {new Date(run.timestamp).toLocaleString()}
                 </span>
                 <Button variant="outline" size="sm" onClick={() => void openRun(run)}>
@@ -3673,7 +3673,7 @@ function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: 
           </DialogHeader>
           {selectedRun && (
             <div className="flex max-h-[65vh] flex-col gap-3 overflow-auto text-xs">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <HeartbeatMetric label="Run ID" value={selectedRun.runId} />
                 <HeartbeatMetric label="Timestamp" value={new Date(selectedRun.timestamp).toLocaleString()} />
                 <HeartbeatMetric label="Delivered" value={selectedRun.delivered === undefined ? "unknown" : String(selectedRun.delivered)} />
