@@ -6,6 +6,24 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Channel binding wizard** (#8): new "Where this agent listens" section in
+  agent settings replaces the flat-row Routes editor with a 5-step wizard
+  (Channel → Account → Where → Target → Behavior → Preview). Plain-language
+  summaries on each binding card; Edit pre-populates; Remove confirms;
+  Test panel verifies bindings against `RouteTable.resolve` without dispatching.
+- `POST /api/agents/[id]/route-test` — offline binding verification endpoint;
+  reuses RouteTable.resolve + access-control checks (mention, pairing,
+  allowlist) and returns matched/agent_id/session_key/blockers without
+  dispatching the message.
+
+### Changed
+- "Channel behavior" section renamed to "Per-chat customization (optional)"
+  and collapsed by default — operators were mistaking it for the binding
+  config.
+- Old flat-row Routes editor moved behind an "Advanced (raw routes table)"
+  expandable for power users.
+
 ## [0.6.0] - 2026-05-01
 
 This release adds the **Operator Control Plane** — three orthogonal off-by-default
