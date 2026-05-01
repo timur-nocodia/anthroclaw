@@ -1,0 +1,10 @@
+{
+  "name": "operator-console",
+  "version": "0.1.0",
+  "description": "Cross-agent admin tools — pause/unpause/delegate/summarize peers from another channel.",
+  "entry": "dist/index.js",
+  "configSchema": "dist/config.js",
+  "requires": {
+    "anthroclaw": ">=0.5.0"
+  }
+}
