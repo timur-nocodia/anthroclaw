@@ -38,6 +38,26 @@ describe('MissionStore', () => {
     expect(store.getActiveMission('agent-1')?.mission.id).toBe(snapshot.mission.id);
   });
 
+  it('creating a new mission archives the prior active mission for the same agent', () => {
+    const first = store.createMission({
+      agentId: 'agent-1',
+      title: 'First mission',
+      goal: 'Original scope',
+      mode: 'lightweight',
+    });
+    const second = store.createMission({
+      agentId: 'agent-1',
+      title: 'Second mission',
+      goal: 'Replacement scope',
+      mode: 'lifecycle',
+    });
+
+    expect(store.getActiveMission('agent-1')?.mission.id).toBe(second.mission.id);
+    const archivedFirst = store.getMissionSnapshot(first.mission.id)!;
+    expect(archivedFirst.mission.status).toBe('archived');
+    expect(archivedFirst.recentEvents.some((event) => event.kind === 'mission_archived')).toBe(true);
+  });
+
   it('records objectives, decisions, and session handoffs', () => {
     const snapshot = store.createMission({
       agentId: 'agent-1',

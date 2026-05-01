@@ -128,6 +128,21 @@ export class MissionStore {
     const metadata = input.metadata ?? {};
 
     const create = this.db.transaction(() => {
+      const existingActive = this.db.prepare(`
+        SELECT id FROM missions
+        WHERE agent_id = ? AND status = 'active'
+      `).all(input.agentId) as Array<{ id: string }>;
+      for (const existing of existingActive) {
+        this.db.prepare(`
+          UPDATE missions SET status = 'archived', archived_at = ?, updated_at = ?
+          WHERE id = ? AND status = 'active'
+        `).run(ts, ts, existing.id);
+        this.appendEvent(existing.id, 'mission_archived', {
+          reason: 'superseded_by_new_mission',
+          supersededBy: missionId,
+        }, ts);
+      }
+
       this.db.prepare(`
         INSERT INTO missions(
           id, agent_id, title, goal, mode, phase, status, current_state,
