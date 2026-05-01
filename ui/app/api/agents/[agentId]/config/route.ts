@@ -8,6 +8,7 @@ const ALLOWED_SECTIONS = new Set<ConfigSection>([
   'notifications',
   'human_takeover',
   'operator_console',
+  'routes',
 ]);
 
 /**
