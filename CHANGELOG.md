@@ -8,6 +8,16 @@ All notable changes to AnthroClaw are documented here.
 
 ### Added
 
+- Self-configuration tools (#7): `manage_notifications`, `manage_human_takeover`,
+  `manage_operator_console`, `show_config` MCP tools — operators configure
+  Operator Control Plane subsystems via natural-language conversation in any
+  channel instead of editing YAML or using the UI.
+- `AgentConfigWriter` core service: comment-preserving YAML mutation, per-agent
+  lock, atomic rename, schema validation, automatic backups (last 10).
+- Config audit log at `data/config-audit/<agentId>.jsonl` with rotation; "Last
+  modified" indicators on Handoff tab cards plus a timeline panel.
+- `cross-agent-perm.canManageAgent` extracted from operator-console plugin for
+  reuse by the new self-config tools.
 - **Operator control plane** (PR #6) — three independent off-by-default
   subsystems composed via YAML, packaged so any agent can become an operator
   for any other agent without code changes:
@@ -54,6 +64,9 @@ All notable changes to AnthroClaw are documented here.
 
 ### Changed
 
+- UI save endpoints for OCP config (`PATCH /api/agents/[id]/config`) now go
+  through `AgentConfigWriter` — unified write path with chat-driven changes,
+  single audit log.
 - Agent run/session source filters now include `heartbeat`.
 - Safety validation rejects `heartbeat.enabled=true` on `safety_profile=public`
   unless explicitly opened with `safety_overrides.allow_tools: ["heartbeat"]`.
