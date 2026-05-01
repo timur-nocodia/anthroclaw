@@ -64,9 +64,17 @@ describe("NotificationsCard", () => {
   });
 
   it("test button POSTs to /api/notifications/test and shows ok mark on success", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
-    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      // Audit-log fetch fired by LastModifiedIndicator on mount — return empty.
+      if (url.includes("/config-audit")) {
+        return new Response(JSON.stringify({ entries: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    });
     vi.stubGlobal("fetch", fetchMock);
     render(
       <NotificationsCard
@@ -80,10 +88,14 @@ describe("NotificationsCard", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /^test/i }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit];
-    expect(call[1].method).toBe("POST");
-    expect(call[1].body).toContain("amina");
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit | undefined]>;
+      expect(calls.some((c) => c[1]?.method === "POST")).toBe(true);
+    });
+    const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit | undefined]>;
+    const postCall = calls.find((c) => c[1]?.method === "POST");
+    expect(postCall).toBeDefined();
+    expect(postCall![1]!.body).toContain("amina");
   });
 
   it("invokes onSave with the new config", async () => {

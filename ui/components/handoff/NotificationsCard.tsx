@@ -18,6 +18,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { LastModifiedIndicator } from "./LastModifiedIndicator";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -195,9 +196,12 @@ export function NotificationsCard({
       style={{ background: "var(--oc-bg0)", borderColor: "var(--oc-border)" }}
     >
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-[14px] font-medium">
-          <Bell className="h-4 w-4" />
-          Notifications
+        <CardTitle className="flex items-center justify-between gap-2 text-[14px] font-medium">
+          <span className="flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            Notifications
+          </span>
+          <LastModifiedIndicator agentId={agentId} section="notifications" />
         </CardTitle>
         <CardDescription className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
           Routes are named delivery targets. Subscriptions wire events to one of those routes,

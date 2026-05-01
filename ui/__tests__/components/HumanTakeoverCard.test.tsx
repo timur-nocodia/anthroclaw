@@ -57,14 +57,24 @@ describe("HumanTakeoverCard", () => {
   });
 
   it("PATCHes /api/agents/[id]/config when onSave is not provided", async () => {
+    let patchCalls = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       const method = (init?.method ?? "GET").toUpperCase();
+      // The LastModifiedIndicator on mount issues a GET to /config-audit;
+      // ignore that and only assert on the save PATCH.
+      if (url.includes("/config-audit") && method === "GET") {
+        return new Response(JSON.stringify({ entries: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       expect(method).toBe("PATCH");
       expect(url).toContain("/api/agents/amina/config");
       const body = JSON.parse(init!.body as string) as { section: string; value: Record<string, unknown> };
       expect(body.section).toBe("human_takeover");
       expect(body.value).toMatchObject({ enabled: true });
+      patchCalls++;
       return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -72,7 +82,7 @@ describe("HumanTakeoverCard", () => {
     render(<HumanTakeoverCard agentId="amina" />);
     fireEvent.click(screen.getByLabelText(/enabled/i));
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(patchCalls).toBe(1));
   });
 
   it("shows an error when onSave rejects", async () => {

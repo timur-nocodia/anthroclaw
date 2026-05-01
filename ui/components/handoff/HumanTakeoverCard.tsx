@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { LastModifiedIndicator } from "./LastModifiedIndicator";
 
 const ALL_CHANNELS = ["whatsapp", "telegram"] as const;
 type Channel = (typeof ALL_CHANNELS)[number];
@@ -126,9 +127,12 @@ export function HumanTakeoverCard({
       style={{ background: "var(--oc-bg0)", borderColor: "var(--oc-border)" }}
     >
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-[14px] font-medium">
-          <UserCheck className="h-4 w-4" />
-          Auto-pause on human takeover
+        <CardTitle className="flex items-center justify-between gap-2 text-[14px] font-medium">
+          <span className="flex items-center gap-2">
+            <UserCheck className="h-4 w-4" />
+            Auto-pause on human takeover
+          </span>
+          <LastModifiedIndicator agentId={agentId} section="human_takeover" />
         </CardTitle>
         <CardDescription className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
           When the operator messages a peer directly through their own account, the agent
