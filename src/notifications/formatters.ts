@@ -285,3 +285,20 @@ export function formatForChannel(
 ): string {
   return channel === 'telegram' ? formatTelegram(event, payload, now) : formatPlain(event, payload, now);
 }
+
+/**
+ * One-off "test notification" message used by the manage_notifications
+ * tool's `test` action. Lives outside the strongly-typed event union
+ * (`NotificationEventName`) on purpose — extending the union for a
+ * synthetic, operator-triggered ping would force every event consumer
+ * to handle a pseudo-event they never naturally produce.
+ */
+export function formatTestDispatch(
+  channel: 'telegram' | 'whatsapp',
+  args: { agentId: string; routeName: string },
+): string {
+  if (channel === 'telegram') {
+    return `*Test notification* — \`${args.agentId}\` via route _${args.routeName}_`;
+  }
+  return `Test notification — ${args.agentId} via route ${args.routeName}`;
+}
