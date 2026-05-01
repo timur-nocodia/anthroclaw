@@ -75,6 +75,27 @@ describe('manage_notifications', () => {
     });
   });
 
+  it('action=add_route is idempotent: first call changed=true, second call changed=false', async () => {
+    const writer = createAgentConfigWriter({ agentsDir });
+    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const route = { channel: 'telegram' as const, account_id: 'c', peer_id: 'p' };
+    const r1 = await getHandler(t)({ action: { kind: 'add_route', name: 'operator', route } });
+    expect(JSON.parse(r1.content[0].text)).toMatchObject({ ok: true, changed: true });
+    const r2 = await getHandler(t)({ action: { kind: 'add_route', name: 'operator', route } });
+    expect(JSON.parse(r2.content[0].text)).toMatchObject({ ok: true, changed: false });
+  });
+
+  it('action=set_enabled is idempotent: applying same value reports changed=false', async () => {
+    const writer = createAgentConfigWriter({ agentsDir });
+    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const r1 = await getHandler(t)({ action: { kind: 'set_enabled', enabled: true } });
+    expect(JSON.parse(r1.content[0].text)).toMatchObject({ ok: true, changed: true, enabled: true });
+    const r2 = await getHandler(t)({ action: { kind: 'set_enabled', enabled: true } });
+    expect(JSON.parse(r2.content[0].text)).toMatchObject({ ok: true, changed: false, enabled: true });
+    const r3 = await getHandler(t)({ action: { kind: 'set_enabled', enabled: false } });
+    expect(JSON.parse(r3.content[0].text)).toMatchObject({ ok: true, changed: true, enabled: false });
+  });
+
   it('action=remove_route deletes by name; idempotent', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });

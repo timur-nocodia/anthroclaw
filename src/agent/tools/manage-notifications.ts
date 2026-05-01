@@ -195,21 +195,23 @@ async function runAction(
         },
         patchContext,
       );
-      const prev = (asBlock(result.prevValue).enabled ?? false) === target;
+      const prevEnabled = asBlock(result.prevValue).enabled ?? false;
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({ ok: true, changed: !prev, enabled: target }),
+          text: JSON.stringify({ ok: true, changed: prevEnabled !== target, enabled: target }),
         }],
       };
     }
     case 'add_route': {
       const { name, route } = action;
+      let wasNew = false;
       await writer.patchSection(
         targetId,
         'notifications',
         (current) => {
           const next = ensureBlock(asBlock(current));
+          wasNew = !(name in next.routes);
           next.routes[name] = route;
           return next;
         },
@@ -218,7 +220,7 @@ async function runAction(
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({ ok: true, changed: true, route: { name, ...route } }),
+          text: JSON.stringify({ ok: true, changed: wasNew, route: { name, ...route } }),
         }],
       };
     }

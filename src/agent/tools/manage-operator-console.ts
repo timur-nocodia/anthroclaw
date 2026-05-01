@@ -4,22 +4,7 @@ import type { AgentConfigWriter, PatchContext } from '../../config/writer.js';
 import type { ToolDefinition } from './types.js';
 import type { ToolMeta } from '../../security/types.js';
 import type { CanManageFn } from './manage-notifications.js';
-
-/**
- * Operator-console config schema mirror.
- *
- * The plugin owns the canonical schema in
- * `plugins/operator-console/src/config.ts` but lives outside the backend
- * rootDir; we mirror its shape here so the tool can validate input
- * without crossing the rootDir boundary. Both shapes must stay in sync.
- */
-const CapabilityNameSchema = z.enum([
-  'peer_pause',
-  'delegate',
-  'list_peers',
-  'peer_summary',
-  'escalate',
-]);
+import { CapabilityNameSchema } from '../../security/operator-console-capabilities.js';
 
 const ManagesActionSchema = z.object({
   kind: z.enum(['add', 'remove']),

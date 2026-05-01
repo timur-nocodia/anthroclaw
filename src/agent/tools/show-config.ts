@@ -7,6 +7,10 @@ import type { ConfigSection } from '../../config/writer.js';
 import type { ToolDefinition } from './types.js';
 import type { ToolMeta } from '../../security/types.js';
 import type { CanManageFn } from './manage-notifications.js';
+import {
+  CAPABILITY_NAMES,
+  CapabilityNameSchema,
+} from '../../security/operator-console-capabilities.js';
 
 /**
  * Mirror of the operator-console plugin's `OperatorConsoleConfigSchema`,
@@ -18,8 +22,8 @@ const OperatorConsoleSchemaMirror = z.object({
   enabled: z.boolean().default(false),
   manages: z.union([z.literal('*'), z.array(z.string().min(1))]).default([]),
   capabilities: z
-    .array(z.enum(['peer_pause', 'delegate', 'list_peers', 'peer_summary', 'escalate']))
-    .default(['peer_pause', 'delegate', 'list_peers', 'peer_summary', 'escalate']),
+    .array(CapabilityNameSchema)
+    .default([...CAPABILITY_NAMES]),
 });
 
 const SectionEnum = z.enum(['notifications', 'human_takeover', 'operator_console', 'all']);
