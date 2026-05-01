@@ -30,6 +30,7 @@ import {
   Sparkles,
   Stethoscope,
   Terminal,
+  Target,
   Trash2,
   Upload,
   XCircle,
@@ -57,6 +58,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PluginsPanel } from "@/components/plugins/PluginsPanel";
 import { DoctorPanel } from "@/components/lcm/DoctorPanel";
+import { MissionPanel } from "@/components/mission/MissionPanel";
 import { ANTHROPIC_MODELS as MODELS } from "@/lib/anthropic-models";
 
 /* ------------------------------------------------------------------ */
@@ -902,6 +904,13 @@ export default function AgentEditorPage() {
             Skills
           </TabsTrigger>
           <TabsTrigger
+            value="mission"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <Target className="mr-1.5 h-3.5 w-3.5" />
+            Mission
+          </TabsTrigger>
+          <TabsTrigger
             value="plugins"
             className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
           >
@@ -937,6 +946,9 @@ export default function AgentEditorPage() {
         </TabsContent>
         <TabsContent value="skills" className="mt-0 flex-1 overflow-auto">
           <SkillsTab serverId={serverId} agentId={agentId} />
+        </TabsContent>
+        <TabsContent value="mission" className="mt-0 flex-1 overflow-auto">
+          <MissionPanel agentId={agentId} />
         </TabsContent>
         <TabsContent value="plugins" className="mt-0 flex-1 overflow-auto">
           <PluginsPanel agentId={agentId} />
