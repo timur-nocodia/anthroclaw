@@ -205,13 +205,14 @@ async function runAction(
     }
     case 'add_route': {
       const { name, route } = action;
-      let wasNew = false;
+      let didMutate = false;
       await writer.patchSection(
         targetId,
         'notifications',
         (current) => {
           const next = ensureBlock(asBlock(current));
-          wasNew = !(name in next.routes);
+          const prior = next.routes[name];
+          didMutate = !prior || JSON.stringify(prior) !== JSON.stringify(route);
           next.routes[name] = route;
           return next;
         },
@@ -220,7 +221,7 @@ async function runAction(
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({ ok: true, changed: wasNew, route: { name, ...route } }),
+          text: JSON.stringify({ ok: true, changed: didMutate, route: { name, ...route } }),
         }],
       };
     }

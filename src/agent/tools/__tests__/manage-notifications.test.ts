@@ -85,6 +85,16 @@ describe('manage_notifications', () => {
     expect(JSON.parse(r2.content[0].text)).toMatchObject({ ok: true, changed: false });
   });
 
+  it('action=add_route on existing name with different value reports changed=true', async () => {
+    const writer = createAgentConfigWriter({ agentsDir });
+    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const route1 = { channel: 'telegram' as const, account_id: 'c', peer_id: 'p1' };
+    const route2 = { channel: 'telegram' as const, account_id: 'c', peer_id: 'p2' };
+    await getHandler(t)({ action: { kind: 'add_route', name: 'operator', route: route1 } });
+    const r2 = await getHandler(t)({ action: { kind: 'add_route', name: 'operator', route: route2 } });
+    expect(JSON.parse(r2.content[0].text)).toMatchObject({ ok: true, changed: true });
+  });
+
   it('action=set_enabled is idempotent: applying same value reports changed=false', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
