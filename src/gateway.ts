@@ -45,6 +45,8 @@ import type {
   NotificationEventName,
   NotificationRoute,
 } from './notifications/types.js';
+import { formatTestDispatch } from './notifications/formatters.js';
+import type { OperatorConsoleConfigShape } from './security/cross-agent-perm.js';
 import type { OperatorOutboundEvent } from './channels/types.js';
 import { TelegramChannel } from './channels/telegram.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
@@ -881,6 +883,13 @@ export class Gateway {
         (event) => this.emitMemoryWriteHook(event),
         this.peerPauseStore,
         this.notificationsEmitter,
+        {
+          agentConfigWriter: this.agentConfigWriter,
+          configAuditLog: this.configAuditLog,
+          dispatchTestNotification: (args) => this.dispatchTestNotification(args),
+          getOperatorConsoleConfigForAgent: (callerId) =>
+            this.getOperatorConsoleConfigForAgent(callerId),
+        },
       );
       this.agents.set(agent.id, agent);
       this.registerProfileRateLimiter(agent.id, agent, dataDir);
@@ -2723,7 +2732,26 @@ export class Gateway {
     // Load/reload agents
     for (const dir of agentDirs) {
       try {
-        const agent = await Agent.load(dir, dataDir, getChannel, undefined, config, this.accessControl ?? undefined, this.dynamicCronStore ?? undefined, onCronUpdate, undefined, this.peerPauseStore, this.notificationsEmitter);
+        const agent = await Agent.load(
+          dir,
+          dataDir,
+          getChannel,
+          undefined,
+          config,
+          this.accessControl ?? undefined,
+          this.dynamicCronStore ?? undefined,
+          onCronUpdate,
+          undefined,
+          this.peerPauseStore,
+          this.notificationsEmitter,
+          {
+            agentConfigWriter: this.agentConfigWriter,
+            configAuditLog: this.configAuditLog,
+            dispatchTestNotification: (args) => this.dispatchTestNotification(args),
+            getOperatorConsoleConfigForAgent: (callerId) =>
+              this.getOperatorConsoleConfigForAgent(callerId),
+          },
+        );
         const existed = this.agents.has(agent.id);
 
         if (existed) {
@@ -3012,6 +3040,58 @@ export class Gateway {
    * do not propagate — notifications are best-effort and must never
    * destabilize the gateway.
    */
+  /**
+   * Sends a one-shot "test" notification down a configured route — wired into
+   * the `manage_notifications` tool's `test` action via `Agent.load`. Decoupled
+   * from `deliverNotification`/`NotificationsEmitter` because the test ping is
+   * synthetic and does not belong in the strongly-typed event union.
+   */
+  private async dispatchTestNotification(args: {
+    agentId: string;
+    routeName: string;
+    route: NotificationRoute;
+  }): Promise<void> {
+    const adapter = this.channels.get(args.route.channel);
+    if (!adapter) {
+      throw new Error(
+        `No channel adapter for "${args.route.channel}" (account "${args.route.account_id}")`,
+      );
+    }
+    const text = formatTestDispatch(args.route.channel, {
+      agentId: args.agentId,
+      routeName: args.routeName,
+    });
+    await adapter.sendText(args.route.peer_id, text, {
+      accountId: args.route.account_id,
+      parseMode: args.route.channel === 'telegram' ? 'markdown' : 'plain',
+    });
+  }
+
+  /**
+   * Reads the operator-console section out of the caller agent's parsed config
+   * (top-level `operator_console` block in agent.yml). Used by self-config tools
+   * to authorize cross-agent writes without crossing the rootDir boundary into
+   * the operator-console plugin.
+   */
+  private getOperatorConsoleConfigForAgent(callerId: string): OperatorConsoleConfigShape | undefined {
+    const agent = this.agents.get(callerId);
+    // Agent.yml has `operator_console` as a top-level field. The Zod schema
+    // doesn't declare it (z.object strips), but the YAML loader only validates
+    // known fields — the writer can still read it. Try both paths.
+    const fromConfig = (agent?.config as unknown as { operator_console?: OperatorConsoleConfigShape })
+      ?.operator_console;
+    if (fromConfig && typeof fromConfig === 'object') return fromConfig;
+    if (this.agentConfigWriter) {
+      try {
+        const raw = this.agentConfigWriter.readSection(callerId, 'operator_console');
+        if (raw && typeof raw === 'object') return raw as OperatorConsoleConfigShape;
+      } catch {
+        // unknown agent or read error → no operator-console
+      }
+    }
+    return undefined;
+  }
+
   private async deliverNotification(
     route: NotificationRoute,
     text: string,

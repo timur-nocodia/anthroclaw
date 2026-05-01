@@ -8,6 +8,7 @@ import { createNotificationsEmitter } from '../../notifications/emitter.js';
 import { createManageNotificationsTool } from '../../agent/tools/manage-notifications.js';
 import { canManageAgent } from '../../security/cross-agent-perm.js';
 import type { AgentNotificationsConfig } from '../../notifications/types.js';
+import { Agent } from '../../agent/agent.js';
 
 /**
  * Stage 2 integration test: chat tool → AgentConfigWriter → file mutation →
@@ -224,5 +225,110 @@ describe('self-config tools — Stage 2 integration', () => {
       section: 'human_takeover',
       action: 'ui_save_human_takeover',
     });
+  });
+});
+
+/**
+ * Wiring guard. The 4 self-config tools live in the same switch as every
+ * other built-in tool — but only fire when `Agent.load` receives the
+ * `agentConfigWriter` option. A previous regression had the factories
+ * present and the tests passing, but no agent ever saw the tools because
+ * the gateway forgot to thread the writer through.
+ *
+ * This test uses the real `Agent.load` with `mcp_tools` declaring all four
+ * tools. If any case is missing or its factory args break, this fails.
+ */
+describe('self-config tools — Agent.load wiring guard', () => {
+  let agentsDir: string;
+  let dataDir: string;
+  let auditDir: string;
+
+  beforeEach(() => {
+    agentsDir = mkdtempSync(join(tmpdir(), 'wire-'));
+    dataDir = mkdtempSync(join(tmpdir(), 'wire-data-'));
+    auditDir = mkdtempSync(join(tmpdir(), 'wire-audit-'));
+  });
+  afterEach(() => {
+    rmSync(agentsDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(auditDir, { recursive: true, force: true });
+  });
+
+  it('registers all four self-config tools when listed in mcp_tools and writer is provided', async () => {
+    const agentDir = join(agentsDir, 'klavdia');
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(
+      join(agentDir, 'agent.yml'),
+      [
+        'safety_profile: private',
+        'routes:',
+        '  - { channel: telegram, scope: dm }',
+        'allowlist:',
+        '  telegram:',
+        '    - "1"',
+        'mcp_tools:',
+        '  - manage_notifications',
+        '  - manage_human_takeover',
+        '  - manage_operator_console',
+        '  - show_config',
+        '',
+      ].join('\n'),
+      'utf-8',
+    );
+    writeFileSync(join(agentDir, 'CLAUDE.md'), 'You are klavdia.', 'utf-8');
+
+    const auditLog = createConfigAuditLog({ auditDir });
+    const writer = createAgentConfigWriter({ agentsDir, auditLog });
+
+    const agent = await Agent.load(
+      agentDir,
+      dataDir,
+      () => undefined, // no channel adapter
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      null,
+      null,
+      {
+        agentConfigWriter: writer,
+        configAuditLog: auditLog,
+      },
+    );
+
+    const names = agent.tools.map((t) => t.name);
+    expect(names).toContain('manage_notifications');
+    expect(names).toContain('manage_human_takeover');
+    expect(names).toContain('manage_operator_console');
+    expect(names).toContain('show_config');
+  });
+
+  it('warns and omits self-config tools when agentConfigWriter is missing', async () => {
+    const agentDir = join(agentsDir, 'amina');
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(
+      join(agentDir, 'agent.yml'),
+      [
+        'safety_profile: private',
+        'routes:',
+        '  - { channel: telegram, scope: dm }',
+        'allowlist:',
+        '  telegram:',
+        '    - "1"',
+        'mcp_tools:',
+        '  - manage_notifications',
+        '  - show_config',
+        '',
+      ].join('\n'),
+      'utf-8',
+    );
+    writeFileSync(join(agentDir, 'CLAUDE.md'), 'You are amina.', 'utf-8');
+
+    const agent = await Agent.load(agentDir, dataDir, () => undefined);
+    const names = agent.tools.map((t) => t.name);
+    expect(names).not.toContain('manage_notifications');
+    expect(names).not.toContain('show_config');
   });
 });

@@ -16,6 +16,16 @@ import { createManageCronTool } from './tools/manage-cron.js';
 import { createSessionSearchTool } from './tools/session-search.js';
 import { createLocalNoteSearchTool } from './tools/local-note-search.js';
 import { createLocalNoteProposeTool } from './tools/local-note-propose.js';
+import {
+  createManageNotificationsTool,
+  type DispatchTestNotificationFn,
+} from './tools/manage-notifications.js';
+import { createManageHumanTakeoverTool } from './tools/manage-human-takeover.js';
+import { createManageOperatorConsoleTool } from './tools/manage-operator-console.js';
+import { createShowConfigTool } from './tools/show-config.js';
+import { canManageAgent, type OperatorConsoleConfigShape } from '../security/cross-agent-perm.js';
+import type { AgentConfigWriter } from '../config/writer.js';
+import type { ConfigAuditLog } from '../config/audit.js';
 import type { DynamicCronStore } from '../cron/dynamic-store.js';
 import type { PeerPauseStore } from '../routing/peer-pause.js';
 import type { NotificationsEmitter } from '../notifications/emitter.js';
@@ -277,6 +287,18 @@ export class Agent {
     onMemoryWrite?: (event: MemoryWriteToolEvent & { agentId: string }) => void | Promise<void>,
     peerPauseStore?: PeerPauseStore | null,
     notificationsEmitter?: NotificationsEmitter | null,
+    selfConfig?: {
+      agentConfigWriter?: AgentConfigWriter | null;
+      configAuditLog?: ConfigAuditLog | null;
+      /** Wired by the gateway; sends a one-shot test notification through a configured route. */
+      dispatchTestNotification?: DispatchTestNotificationFn;
+      /**
+       * Reads the operator-console config (top-level `operator_console` block in agent.yml)
+       * for the *caller* agent. Used by self-config tools to authorize cross-agent writes.
+       * Falls back to an empty/disabled object when the writer can't read the section.
+       */
+      getOperatorConsoleConfigForAgent?: (callerId: string) => OperatorConsoleConfigShape | undefined;
+    },
   ): Promise<Agent> {
     const id = basename(agentDir);
     const config = loadAgentYml(agentDir);
@@ -307,6 +329,28 @@ export class Agent {
     // Build tools array based on config.mcp_tools
     const requestedTools = config.mcp_tools ?? [];
     const tools: ToolDefinition[] = [];
+
+    const agentConfigWriter = selfConfig?.agentConfigWriter ?? null;
+    const configAuditLog = selfConfig?.configAuditLog ?? null;
+    const dispatchTestNotification = selfConfig?.dispatchTestNotification;
+    const getOperatorConsoleForCaller = selfConfig?.getOperatorConsoleConfigForAgent
+      ?? ((callerId: string): OperatorConsoleConfigShape | undefined => {
+        // Fallback: read directly from the writer if a custom resolver wasn't supplied.
+        if (!agentConfigWriter) return undefined;
+        try {
+          const raw = agentConfigWriter.readSection(callerId, 'operator_console');
+          if (raw && typeof raw === 'object') return raw as OperatorConsoleConfigShape;
+        } catch {
+          // missing agent or read error — treat as no operator-console
+        }
+        return undefined;
+      });
+    const canManageForSelfConfig = (callerId: string, targetId: string): boolean =>
+      canManageAgent({
+        callerId,
+        targetId,
+        operatorConsoleConfig: getOperatorConsoleForCaller(callerId),
+      });
 
     for (const toolName of requestedTools) {
       switch (toolName) {
@@ -371,6 +415,64 @@ export class Agent {
           break;
         case 'local_note_propose':
           tools.push(createLocalNoteProposeTool(agentDir, memoryStore));
+          break;
+        case 'manage_notifications':
+          if (agentConfigWriter) {
+            tools.push(createManageNotificationsTool({
+              agentId: id,
+              writer: agentConfigWriter,
+              canManage: canManageForSelfConfig,
+              dispatchTest: dispatchTestNotification,
+            }));
+          } else {
+            logger.warn(
+              { agentId: id, tool: 'manage_notifications' },
+              'manage_notifications listed in mcp_tools but agentConfigWriter not available',
+            );
+          }
+          break;
+        case 'manage_human_takeover':
+          if (agentConfigWriter) {
+            tools.push(createManageHumanTakeoverTool({
+              agentId: id,
+              writer: agentConfigWriter,
+              canManage: canManageForSelfConfig,
+            }));
+          } else {
+            logger.warn(
+              { agentId: id, tool: 'manage_human_takeover' },
+              'manage_human_takeover listed in mcp_tools but agentConfigWriter not available',
+            );
+          }
+          break;
+        case 'manage_operator_console':
+          if (agentConfigWriter) {
+            tools.push(createManageOperatorConsoleTool({
+              agentId: id,
+              writer: agentConfigWriter,
+              canManage: canManageForSelfConfig,
+            }));
+          } else {
+            logger.warn(
+              { agentId: id, tool: 'manage_operator_console' },
+              'manage_operator_console listed in mcp_tools but agentConfigWriter not available',
+            );
+          }
+          break;
+        case 'show_config':
+          if (agentConfigWriter) {
+            tools.push(createShowConfigTool({
+              agentId: id,
+              writer: agentConfigWriter,
+              auditLog: configAuditLog ?? undefined,
+              canManage: canManageForSelfConfig,
+            }));
+          } else {
+            logger.warn(
+              { agentId: id, tool: 'show_config' },
+              'show_config listed in mcp_tools but agentConfigWriter not available',
+            );
+          }
           break;
       }
     }
