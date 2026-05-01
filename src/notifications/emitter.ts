@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { logger } from '../logger.js';
 import { formatForChannel } from './formatters.js';
+import type { PeerPauseStore } from '../routing/peer-pause.js';
 import type {
   AgentNotificationsConfig,
   NotificationEventName,
@@ -29,6 +30,13 @@ export interface NotificationsEmitter {
   emit(event: NotificationEventName, payload: NotificationEventPayload): Promise<void>;
   /** Lower-level helper: register a single subscription with a literal route. */
   subscribe(agentId: string, subscription: NotificationSubscription, route: NotificationRoute): void;
+  /**
+   * Fire a scheduled event for a specific agent. The emitter constructs
+   * the payload from current state (e.g., aggregating active pauses for
+   * `peer_pause_summary_daily`). Called by the notifications scheduler
+   * on cron tick.
+   */
+  fireScheduled(event: NotificationEventName, args: { agentId: string }): Promise<void>;
 }
 
 export interface CreateNotificationsEmitterOptions {
@@ -40,6 +48,18 @@ export interface CreateNotificationsEmitterOptions {
    * LRU-style when the cap is exceeded. Default 1000.
    */
   throttleMaxEntries?: number;
+  /**
+   * Optional pause store. When provided, scheduled events that summarize
+   * pauses (e.g. `peer_pause_summary_daily`) build their payload from
+   * `peerPauseStore.list(agentId)`. When absent the summary fires with
+   * an empty `items` array.
+   */
+  peerPauseStore?: Pick<PeerPauseStore, 'list'> | null;
+  /**
+   * Optional resolver for per-agent timezone (used by formatters in
+   * scheduled events). Defaults to UTC.
+   */
+  getAgentTimezone?: (agentId: string) => string | undefined;
 }
 
 interface ResolvedSubscription {
@@ -91,6 +111,8 @@ export function createNotificationsEmitter(
   const sendMessage = opts.sendMessage;
   const clock = opts.clock ?? Date.now;
   const throttleCap = opts.throttleMaxEntries ?? DEFAULT_THROTTLE_CAP;
+  const peerPauseStore = opts.peerPauseStore ?? null;
+  const getAgentTimezone = opts.getAgentTimezone;
 
   const agentConfigs = new Map<string, AgentNotificationsConfig>();
   // (event, routeKey, dedupeKey) → last-emit ms
@@ -174,6 +196,29 @@ export function createNotificationsEmitter(
     }
   }
 
+  function buildScheduledPayload(
+    event: NotificationEventName,
+    agentId: string,
+  ): NotificationEventPayload {
+    const tz = getAgentTimezone?.(agentId);
+    const base: NotificationEventPayload = { agentId };
+    if (tz) base.timezone = tz;
+
+    if (event === 'peer_pause_summary_daily') {
+      const entries = peerPauseStore ? peerPauseStore.list(agentId) : [];
+      const items = entries.map((e) => ({
+        peerKey: e.peerKey,
+        pausedAt: e.pausedAt,
+        expiresAt: e.expiresAt,
+        extendedCount: e.extendedCount,
+        reason: e.reason,
+      }));
+      base.activePauses = items.length;
+      base.items = items;
+    }
+    return base;
+  }
+
   return {
     subscribeAgent: (agentId, cfg) => {
       if (!cfg) {
@@ -201,6 +246,12 @@ export function createNotificationsEmitter(
       const routes = { ...(existing.routes ?? {}), [subscription.route]: route };
       const subscriptions = [...(existing.subscriptions ?? []), subscription];
       agentConfigs.set(agentId, { ...existing, routes, subscriptions });
+    },
+    fireScheduled: async (event, args) => {
+      const payload = buildScheduledPayload(event, args.agentId);
+      const resolved = resolveSubscriptions(args.agentId, event);
+      if (resolved.length === 0) return;
+      await Promise.all(resolved.map((r) => dispatchOne(event, payload, r)));
     },
   };
 }
