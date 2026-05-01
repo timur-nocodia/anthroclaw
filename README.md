@@ -140,6 +140,30 @@ wake loop for recurring agent work:
 
 See [Heartbeat Routines](docs/guide.md#heartbeat-routines) for the full contract.
 
+### Operator control plane
+
+Three independent off-by-default subsystems plus four self-config MCP tools that let an
+operator agent (e.g. a personal Telegram assistant) manage other agents (e.g. a
+WhatsApp lead bot) entirely through configuration:
+
+- **`human_takeover`** — WhatsApp `fromMe` detection auto-pauses the agent for that
+  conversation with a sliding-window TTL, so operator and bot stop replying to clients
+  in parallel
+- **`notifications`** — generic event emitter with cron-scheduled events, per-agent
+  timezone, throttle, and Telegram `parseMode: markdown` end-to-end
+- **`operator-console` plugin** — five cross-agent admin tools (`peer_pause`,
+  `delegate_to_peer`, `list_active_peers`, `peer_summary`, `escalate`) with
+  manager-side `manages` whitelist
+- **Self-config tools** — `manage_notifications`, `manage_human_takeover`,
+  `manage_operator_console`, `show_config` — operators configure all of the above by
+  natural-language conversation in any channel; mutations go through `AgentConfigWriter`
+  (comment-preserving YAML, atomic rename, audit log) so chat and UI saves share one
+  write path
+- **Handoff tab** in the control UI: live active-pauses table with unpause, notifications
+  routes/subscriptions editor, activity log, config audit timeline
+
+See [Operator Control Plane](docs/guide.md#operator-control-plane) for the full contract.
+
 ### Agents as workspaces
 
 Each agent is a directory:

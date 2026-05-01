@@ -1668,6 +1668,260 @@ error context so it can decide what to report.
 
 ---
 
+## Operator Control Plane
+
+Three independent, off-by-default subsystems that let one agent manage another
+agent's runtime behavior across channels — packaged as YAML configuration so
+any agent can become an operator for any other agent without code changes.
+
+The motivating case: a human operator replies to a WhatsApp client from their
+phone while the lead-bot is also responding — clients receive duplicate
+messages. The control plane detects the human takeover, pauses the bot, and
+optionally surfaces the event to a Telegram operator route. Cross-agent admin
+tools then let an operator agent (e.g. a personal Telegram assistant) manage
+multiple lead bots remotely.
+
+Each subsystem is independently useful and ships with `enabled: false`.
+
+### Subsystem 1 — `human_takeover`
+
+Detects WhatsApp `fromMe` messages (operator replied from another device) and
+auto-pauses the agent for that conversation with a sliding-window TTL. Each
+new operator outbound extends the timer.
+
+```yaml
+# agent.yml
+human_takeover:
+  enabled: true
+  pause_ttl_minutes: 30
+  channels: [whatsapp]
+  ignore: [reactions, receipts, typing, protocol]
+  notification_throttle_minutes: 5
+```
+
+While paused, inbound client messages are skipped at dispatch time (no model
+call, no reply). Mid-generation suppression is also enforced — if the operator
+takes over while the model is streaming, the in-flight `send_message` is
+suppressed.
+
+State persists in `data/peer-pauses.json`. Pauses auto-clear on TTL expiry.
+
+### Subsystem 2 — `notifications`
+
+Generic event emitter. Subscribed events dispatch through the existing
+`send_message` infrastructure to a configured operator route. Cron-scheduled
+events honor each agent's timezone; Telegram routes get `parseMode: markdown`
+end-to-end.
+
+```yaml
+# agent.yml
+notifications:
+  enabled: true
+  routes:
+    operator:
+      channel: telegram
+      account_id: control
+      peer_id: "48705953"
+  subscriptions:
+    - { event: peer_pause_started, route: operator }
+    - { event: peer_pause_ended, route: operator }
+    - { event: peer_pause_intervened_during_generation, route: operator }
+    - { event: peer_pause_summary_daily, route: operator, schedule: "0 9 * * *" }
+    - { event: agent_error, route: operator, throttle: 5m }
+```
+
+Supported events: `peer_pause_started`, `peer_pause_ended`,
+`peer_pause_intervened_during_generation`, `peer_pause_summary_daily`,
+`agent_error`, `iteration_budget_exhausted`, `escalation_needed`.
+
+Throttle parser accepts `30s`, `5m`, `1h`. LRU-keyed dedupe by
+`(event, route, payload-hash)`. Scheduled events bypass throttle so cron
+delivery is never silently suppressed across restarts.
+
+### Subsystem 3 — `operator-console` plugin
+
+Built-in plugin (`plugins/operator-console/`) exposing five cross-agent admin
+tools. Permission via manager-side `manages: [...] | "*"` whitelist. Tools
+auto-namespaced as `operator-console_<tool>`.
+
+```yaml
+# agents/klavdia/agent.yml — operator side
+plugins:
+  operator-console:
+    enabled: true
+    manages: [amina]                  # or '*' for super-admin
+    capabilities:
+      - peer_pause
+      - delegate
+      - list_peers
+      - peer_summary
+      - escalate
+
+mcp_tools:
+  - operator-console_peer_pause
+  - operator-console_delegate_to_peer
+  - operator-console_list_active_peers
+  - operator-console_peer_summary
+  - operator-console_escalate
+```
+
+Tools:
+
+- `peer_pause(target, peer, action: pause|unpause|list|status, ttl_minutes?)`
+  — set or release pauses on managed agents. `ttl_minutes: null` makes the
+  pause indefinite (handover).
+- `delegate_to_peer(target, peer, instruction)` — synthesizes a system inbound
+  into the target agent's session. The target agent re-enters its own
+  client-conversation context (memory + persona), composes an outbound, and
+  sends it. Operator persona is never leaked into the client conversation.
+- `list_active_peers(target, since?, limit?)` — lists currently paused peers.
+- `peer_summary(target, peer, since?)` — searches the target's memory for the
+  given peer.
+- `escalate(message, priority?)` — emits `escalation_needed` notification for
+  the calling agent itself (no target).
+
+Cross-agent permission is enforced via `canManageAgent` from
+`src/security/cross-agent-perm.ts`: self-target is always allowed; cross-agent
+requires `operator_console.manages` to list the target (or be `'*'`). The
+three `manage_*` tools are HARD_BLACKLIST'd in `safety_profile: public`.
+
+### Self-configuration tools
+
+Four MCP tools let an agent configure the three subsystems above through
+natural conversation instead of editing YAML:
+
+- `manage_notifications(target?, action)` — enable/disable, add/remove routes,
+  add/remove subscriptions, list, test (sends a synthetic notification through
+  a named route to verify connectivity).
+- `manage_human_takeover(target?, enabled?, pause_ttl_minutes?, channels?, ignore?)`
+  — patch-style: `undefined` = keep, `null` = reset to schema default,
+  concrete value = update.
+- `manage_operator_console(target?, enabled?, manages?, manages_action?, capabilities?)`
+  — full replacement of `manages` or incremental `add`/`remove` (mutually
+  exclusive). `manages: '*'` super-admin.
+- `show_config(target?, sections?)` — read-only inspector with schema defaults
+  applied; includes a `last_modified` field from the audit log.
+
+```yaml
+# agent.yml — opt-in via mcp_tools allowlist (off by default)
+mcp_tools:
+  - manage_notifications
+  - manage_human_takeover
+  - manage_operator_console
+  - show_config
+```
+
+Cross-agent permission reuses `canManageAgent` — same `manages` whitelist as
+operator-console. The three `manage_*` tools are HARD_BLACKLIST'd in
+`safety_profile: public`; `show_config` is allowed in all profiles
+(read-only).
+
+#### `AgentConfigWriter` core service
+
+All YAML mutations — chat-driven and UI-driven — go through one
+`AgentConfigWriter` service. Comment-preserving via `yaml.parseDocument`,
+per-agent file lock, atomic rename, schema validation before write,
+automatic backups (last 10 per agent under `agent.yml.bak-<ISO>-<seq>`),
+audit log JSONL at `data/config-audit/<agentId>.jsonl` with byte-size
+rotation. Audit entries record `caller_agent`, `target_agent`, `section`,
+`action`, `prev`, `new`, `source: chat|ui|system`. Audit log failure never
+rejects a successful write — observability infrastructure must not veto
+committed state.
+
+Orphan `agent.yml.tmp` files (e.g. from a crash mid-write on a prior run)
+are cleaned up at gateway startup.
+
+### Handoff tab (Web UI)
+
+Agent settings page gains a **Handoff** tab between **Routines** and
+**Skills** with five sections:
+
+- **Auto-pause on human takeover** (`HumanTakeoverCard`) — enabled toggle,
+  TTL, channels, ignore list, throttle. Saves through `AgentConfigWriter`.
+- **Notifications** (`NotificationsCard`) — routes table (add/remove rows),
+  subscriptions table (event + route + optional schedule + optional throttle),
+  per-route Test button.
+- **Active pauses** (`ActivePausesTable`) — live polling table refreshing
+  every 10s; per-row Unpause button hits `DELETE /api/agents/[id]/pauses/[peerKey]`.
+- **Activity log** (`ActivityLogPanel`) — filterable timeline of pause
+  events. v1 backend reads from current pauses; richer history viewer is a
+  follow-up.
+- **Config audit** (`ConfigAuditPanel`) — timeline of every config change
+  with section filter, source tag (chat / ui), prev → new diff.
+
+Each card shows a "Last modified … via chat (klavdia)" indicator pulled from
+the audit log.
+
+API endpoints (all behind `withAuth()`):
+
+- `GET /api/agents/[id]/pauses` — list active pauses
+- `POST /api/agents/[id]/pauses` — manually pause a peer
+- `DELETE /api/agents/[id]/pauses/[peerKey]` — unpause
+- `GET /api/agents/[id]/pause-events` — activity log
+- `POST /api/notifications/test` — dispatch a test notification
+- `GET /api/agents/[id]/config-audit?section=&limit=` — audit log read
+- `PATCH /api/agents/[id]/config` — UI save endpoint that routes through
+  `AgentConfigWriter` with `source: 'ui'`
+
+### Composition example
+
+A complete agent.yml for a managed lead-bot using all three subsystems:
+
+```yaml
+id: amina
+safety_profile: chat_like_openclaw
+routes:
+  - { channel: whatsapp, account_id: business, scope: dm }
+allowlist:
+  whatsapp: ["*"]
+
+human_takeover:
+  enabled: true
+  pause_ttl_minutes: 30
+
+notifications:
+  enabled: true
+  routes:
+    operator: { channel: telegram, account_id: control, peer_id: "48705953" }
+  subscriptions:
+    - { event: peer_pause_started, route: operator }
+    - { event: peer_pause_summary_daily, route: operator, schedule: "0 9 * * *" }
+```
+
+The matching operator agent (Klavdia in Telegram) opts into the management
+plugin and the four self-config tools — the operator can then say "set up
+notifications to me" or "pause Amina for +371…" entirely in chat, no YAML
+edits required:
+
+```yaml
+id: klavdia
+safety_profile: chat_like_openclaw
+routes:
+  - { channel: telegram, account_id: control, scope: dm }
+allowlist:
+  telegram: ["48705953"]
+
+plugins:
+  operator-console:
+    enabled: true
+    manages: [amina]
+
+mcp_tools:
+  - operator-console_peer_pause
+  - operator-console_delegate_to_peer
+  - operator-console_list_active_peers
+  - operator-console_peer_summary
+  - manage_notifications
+  - manage_human_takeover
+  - manage_operator_console
+  - show_config
+```
+
+No code references either agent's id; everything composes through generic
+primitives.
+
+---
+
 ## Background Memory Prefetch
 
 After each agent response, the gateway asynchronously pre-fetches potentially relevant memory for the next turn.

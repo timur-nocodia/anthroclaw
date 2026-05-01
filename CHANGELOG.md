@@ -2,9 +2,19 @@
 
 All notable changes to AnthroClaw are documented here.
 
-> **Looking for a specific feature?** Most major capabilities (Plugin framework, **LCM** lossless context management, **Safety profiles**, **Learning loop**, **Scheduled tasks** as a runtime primitive, **chat_like_openclaw** conversational profile) shipped in **[v0.5.0](#050---2026-04-30)** below. Earlier releases focused on Sessions UI (0.4.0) and persistent session/channel reliability (0.3.0).
+> **Looking for a specific feature?** The **Operator Control Plane** (auto-pause on human takeover, generic notifications emitter, cross-agent admin tools) and **self-configuration tools** (configure agents via chat) shipped in **[v0.6.0](#060---2026-05-01)** below. Most other major capabilities (Plugin framework, **LCM** lossless context management, **Safety profiles**, **Learning loop**, **Scheduled tasks**, **chat_like_openclaw**) shipped in **[v0.5.0](#050---2026-04-30)**. Earlier releases focused on Sessions UI (0.4.0) and persistent session/channel reliability (0.3.0).
 
 ## [Unreleased]
+
+## [0.6.0] - 2026-05-01
+
+This release adds the **Operator Control Plane** — three orthogonal off-by-default
+subsystems that let one agent manage another agent's runtime behavior across
+channels, packaged as YAML configuration so any agent can become an operator
+for any other agent without code changes. The motivating case (lead-bot
+double-replies when operator types from their phone) is solved end-to-end.
+Heartbeat routines, an SDK-native periodic wake loop driven by per-agent
+`HEARTBEAT.md` task files, also lands in this release.
 
 ### Added
 
