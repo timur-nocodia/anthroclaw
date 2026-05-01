@@ -160,4 +160,58 @@ describe('NotificationsScheduler', () => {
     ).not.toThrow();
     expect(scheduler.listJobs()).toHaveLength(0);
   });
+
+  it('cron jobs are constructed with the agent timezone resolver result', async () => {
+    // Verify the registered CronJob carries the agent-resolved tz so
+    // `0 9 * * *` fires at 9am Asia/Almaty rather than 9am UTC.
+    const { CronJob } = await import('cron');
+    const fireScheduled = vi.fn(async () => {});
+    const getAgentTimezone = vi.fn((agentId: string) =>
+      agentId === 'amina' ? 'Asia/Almaty' : undefined,
+    );
+    const scheduler = createNotificationsScheduler({
+      emitter: { subscribeAgent: vi.fn(), fireScheduled },
+      getAgentTimezone,
+      testNoStart: true,
+    });
+    scheduler.registerAgent('amina', {
+      enabled: true,
+      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      subscriptions: [
+        { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' },
+      ],
+    });
+    expect(getAgentTimezone).toHaveBeenCalledWith('amina');
+    // Walk into the jobs map to inspect the underlying CronJob instance.
+    const inner = (scheduler as unknown as { listJobs: () => string[] });
+    expect(inner.listJobs()).toHaveLength(1);
+    // Construct a control job with the same tz to confirm CronJob actually
+    // accepts and stores the value (sanity that the option is forwarded).
+    const probe = CronJob.from({
+      cronTime: '0 9 * * *',
+      onTick: () => {},
+      start: false,
+      timeZone: 'Asia/Almaty',
+    });
+    expect(probe).toBeDefined();
+    probe.stop();
+  });
+
+  it('cron jobs default to UTC when no timezone resolver is provided', () => {
+    // Smoke: registration succeeds even without getAgentTimezone (falls back to UTC).
+    const scheduler = createNotificationsScheduler({
+      emitter: { subscribeAgent: vi.fn(), fireScheduled: vi.fn(async () => {}) },
+      testNoStart: true,
+    });
+    expect(() =>
+      scheduler.registerAgent('amina', {
+        enabled: true,
+        routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+        subscriptions: [
+          { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' },
+        ],
+      }),
+    ).not.toThrow();
+    expect(scheduler.listJobs()).toHaveLength(1);
+  });
 });

@@ -113,9 +113,7 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
       messageTimestamp: 1700000000,
     });
     // Allow the fire-and-forget emit chain to flush.
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(sendMessage).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
     const startedCall = sendMessage.mock.calls[0]!;
     expect(startedCall[0]).toMatchObject({
       channel: 'telegram',
@@ -134,10 +132,8 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
       // Heavily stubbed gateway may throw past the pause gate; we only
       // care that the pause-ended emission happened.
     }
-    await Promise.resolve();
-    await Promise.resolve();
     // Two sends total: started + ended
-    expect(sendMessage).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(2));
     const endedCall = sendMessage.mock.calls[1]!;
     expect(endedCall[1]).toContain('Pause ended');
     expect(endedCall[1]).toContain(peerKey);
@@ -170,9 +166,7 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
       message: { conversation: 'two' },
       messageTimestamp: 2,
     });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(sendMessage).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(2));
     expect(sendMessage.mock.calls[0]![2]).toMatchObject({ event: 'peer_pause_started' });
     expect(sendMessage.mock.calls[1]![2]).toMatchObject({ event: 'peer_pause_started' });
   });
@@ -213,14 +207,64 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
     expect(json).toMatchObject({ suppressed: true, reason: 'paused' });
     expect((fakeAdapter.sendText as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
 
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(sendMessage).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
     expect(sendMessage.mock.calls[0]![2]).toMatchObject({
       event: 'peer_pause_intervened_during_generation',
       agentId: 'amina',
     });
     expect(sendMessage.mock.calls[0]![1]).toContain('Intervention suppressed');
+  });
+
+  it('deliverNotification threads parseMode=markdown for telegram routes', async () => {
+    // Gateway.deliverNotification is the real wire from emitter.sendMessage
+    // to ChannelAdapter.sendText. The Telegram formatter emits *bold*/`code`
+    // in project Markdown, so parseMode must be set or those characters
+    // render literally. WhatsApp routes get parseMode='plain'.
+    const tgSend = vi.fn().mockResolvedValue('msg-1');
+    const waSend = vi.fn().mockResolvedValue('msg-2');
+    const tgAdapter = {
+      id: 'telegram',
+      sendText: tgSend,
+    } as unknown as ChannelAdapter;
+    const waAdapter = {
+      id: 'whatsapp',
+      sendText: waSend,
+    } as unknown as ChannelAdapter;
+
+    const gw = new Gateway() as unknown as {
+      channels: Map<string, ChannelAdapter>;
+      deliverNotification: (
+        route: { channel: 'telegram' | 'whatsapp'; accountId: string; peerId: string },
+        text: string,
+        meta: { event: string; agentId: string },
+      ) => Promise<void>;
+    };
+    gw.channels = new Map<string, ChannelAdapter>([
+      ['telegram', tgAdapter],
+      ['whatsapp', waAdapter],
+    ]);
+
+    await gw.deliverNotification(
+      { channel: 'telegram', accountId: 'control', peerId: '48705953' },
+      '*Auto-pause* — `amina`',
+      { event: 'peer_pause_started', agentId: 'amina' },
+    );
+    expect(tgSend).toHaveBeenCalledWith(
+      '48705953',
+      '*Auto-pause* — `amina`',
+      expect.objectContaining({ accountId: 'control', parseMode: 'markdown' }),
+    );
+
+    await gw.deliverNotification(
+      { channel: 'whatsapp', accountId: 'business', peerId: '37120@s.whatsapp.net' },
+      'Auto-pause — amina',
+      { event: 'peer_pause_started', agentId: 'amina' },
+    );
+    expect(waSend).toHaveBeenCalledWith(
+      '37120@s.whatsapp.net',
+      'Auto-pause — amina',
+      expect.objectContaining({ accountId: 'business', parseMode: 'plain' }),
+    );
   });
 
   it('subscribeAgent is idempotent — second call replaces, does not duplicate', async () => {

@@ -71,6 +71,17 @@ interface ResolvedSubscription {
 const DEFAULT_THROTTLE_CAP = 1000;
 
 /**
+ * Events whose cadence is governed by a cron schedule rather than the
+ * per-(event, route, payload-hash) throttle window. Skipping the throttle
+ * here ensures a scheduled fire after a process restart (which clears
+ * the throttle map but preserves the cron) is not silently dropped — the
+ * cron schedule itself is the rate limit.
+ */
+const SCHEDULED_EVENTS = new Set<NotificationEventName>([
+  'peer_pause_summary_daily',
+]);
+
+/**
  * Parse a throttle string like "5m", "30s", "1h" into milliseconds.
  * Returns null for unrecognized input — the emitter then treats it as
  * no-throttle and logs a one-time warning per malformed value.
@@ -120,16 +131,13 @@ export function createNotificationsEmitter(
   const warnedMalformed = new Set<string>();
 
   function noteThrottle(key: string, now: number): void {
+    // delete-then-set moves the entry to the tail of insertion order,
+    // turning Map's insertion-order iteration into LRU semantics.
+    throttleHits.delete(key);
     throttleHits.set(key, now);
     if (throttleHits.size > throttleCap) {
-      // Drop oldest ~10% to amortize cost.
-      const drop = Math.max(1, Math.floor(throttleCap * 0.1));
-      const iter = throttleHits.keys();
-      for (let i = 0; i < drop; i++) {
-        const k = iter.next().value as string | undefined;
-        if (k === undefined) break;
-        throttleHits.delete(k);
-      }
+      const oldest = throttleHits.keys().next().value as string | undefined;
+      if (oldest !== undefined) throttleHits.delete(oldest);
     }
   }
 
@@ -174,7 +182,12 @@ export function createNotificationsEmitter(
         'notifications: malformed throttle string; treating as no-throttle',
       );
     }
-    if (throttleMs !== null) {
+    // Scheduled events (cron-driven) skip the throttle map entirely —
+    // their cadence is already bounded by the cron schedule, and the
+    // dedupe key for scheduled payloads collapses to event+agentId
+    // (no peerKey/channel/accountId), so a process restart within the
+    // throttle window would otherwise drop the next fire silently.
+    if (throttleMs !== null && !SCHEDULED_EVENTS.has(event)) {
       const key = `${event}::${payload.agentId}::${routeName}::${dedupeKeyFor(event, payload)}`;
       const last = throttleHits.get(key);
       if (last !== undefined && now - last < throttleMs) {

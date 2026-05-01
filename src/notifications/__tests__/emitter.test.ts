@@ -184,6 +184,72 @@ describe('NotificationsEmitter — throttle', () => {
     await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
     expect(sendMessage).toHaveBeenCalledTimes(2);
   });
+
+  it('LRU eviction — touched entries survive cap eviction', async () => {
+    // Cap=3, insert A,B,C, then touch A; the next insert (D) should
+    // evict the least-recently-used (B), not A.
+    const sendMessage = vi.fn();
+    let now = 1_700_000_000_000;
+    const emitter = createNotificationsEmitter({
+      sendMessage,
+      clock: () => now,
+      throttleMaxEntries: 3,
+    });
+    emitter.subscribeAgent('amina', {
+      enabled: true,
+      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      subscriptions: [{ event: 'peer_pause_started', route: 'operator', throttle: '5m' }],
+    });
+    const peers = ['A', 'B', 'C', 'D'];
+    // Insert A, B, C (each populates a throttle entry).
+    for (const p of peers.slice(0, 3)) {
+      await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: p });
+    }
+    // Touch A (re-emit while throttled is the cheapest way to bump LRU,
+    // but emit returns early on hit. Simulate with a direct re-emit by
+    // advancing slightly past window for A only — instead rely on an
+    // explicit re-emit for A with same payload after throttle clears
+    // would also bump. Cleaner: emit A again with an extra payload key
+    // that does not affect dedupe — dedupe key uses peerKey, so a second
+    // emit for A within window is a hit and updates noteThrottle? No —
+    // hit returns BEFORE noteThrottle. To touch A reliably we re-emit
+    // after window; the throttle window is 5m so advance and emit A.
+    now += 6 * 60_000;
+    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'A' });
+    // Now A was inserted most-recently. Insert D (cap=3) → oldest is B.
+    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'D' });
+    // Verify by checking that B re-emit within window still fires (its
+    // entry was evicted, so no throttle hit), while A and C re-emit
+    // within window are throttled (still in map).
+    const before = sendMessage.mock.calls.length;
+    // Re-emit A within current window — should be throttled (entry alive).
+    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'A' });
+    // Re-emit B within window — should fire (entry evicted).
+    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'B' });
+    expect(sendMessage.mock.calls.length).toBe(before + 1);
+    expect(sendMessage.mock.calls.at(-1)![1]).toContain('B');
+  });
+
+  it('scheduled events bypass throttle (cron is the rate limit)', async () => {
+    // peer_pause_summary_daily must fire on every cron tick even if a
+    // throttle is configured — the cron schedule itself bounds cadence,
+    // and a process restart clears the throttle map but not the cron.
+    const sendMessage = vi.fn();
+    let now = 1_700_000_000_000;
+    const emitter = createNotificationsEmitter({ sendMessage, clock: () => now });
+    emitter.subscribeAgent('amina', {
+      enabled: true,
+      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      subscriptions: [
+        { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *', throttle: '1h' },
+      ],
+    });
+    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'amina' });
+    // Within throttle window — must still fire (scheduled-event bypass).
+    now += 30_000;
+    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'amina' });
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('parseThrottle', () => {

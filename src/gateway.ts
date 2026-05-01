@@ -791,6 +791,7 @@ export class Gateway {
           await this.notificationsEmitter?.fireScheduled(event, args);
         },
       },
+      getAgentTimezone: (agentId) => this.agents.get(agentId)?.config.timezone,
     });
     this.heartbeatStateStore = new HeartbeatStateStore(join(dataDir, 'heartbeat-state.json'));
     this.heartbeatHistoryStore = new HeartbeatHistoryStore(
@@ -2956,7 +2957,13 @@ export class Gateway {
       return;
     }
     try {
-      await adapter.sendText(route.peerId, text, { accountId: route.accountId });
+      // Telegram formatter emits project Markdown (`*bold*`, `_italic_`,
+      // `` `code` ``). Without parseMode the literal asterisks/backticks
+      // would render verbatim. WhatsApp uses plain text.
+      await adapter.sendText(route.peerId, text, {
+        accountId: route.accountId,
+        parseMode: route.channel === 'telegram' ? 'markdown' : 'plain',
+      });
     } catch (err) {
       logger.warn(
         { err, route, event: meta.event, agentId: meta.agentId },

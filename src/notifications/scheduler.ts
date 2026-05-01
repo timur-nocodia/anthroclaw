@@ -29,6 +29,12 @@ export interface CreateNotificationsSchedulerOptions {
   emitter: Pick<NotificationsEmitter, 'subscribeAgent'> & {
     fireScheduled: (event: NotificationEventName, payload: { agentId: string }) => Promise<void>;
   };
+  /**
+   * Resolve the IANA timezone an agent's cron expressions should fire
+   * in. `0 9 * * *` means 9am local for the agent, not 9am UTC. Returns
+   * undefined to fall back to UTC.
+   */
+  getAgentTimezone?: (agentId: string) => string | undefined;
   /** Hook for tests to assert registration without spinning real cron. */
   testNoStart?: boolean;
 }
@@ -57,6 +63,7 @@ export function createNotificationsScheduler(
         if (!sub.schedule) return;
         const key = jobKey(agentId, idx, sub.event);
         try {
+          const tz = opts.getAgentTimezone?.(agentId) ?? 'UTC';
           const runner = CronJobRunner.from({
             cronTime: sub.schedule,
             onTick: async () => {
@@ -70,7 +77,7 @@ export function createNotificationsScheduler(
               }
             },
             start: !opts.testNoStart,
-            timeZone: 'UTC',
+            timeZone: tz,
           });
           jobs.set(key, runner);
           logger.info(

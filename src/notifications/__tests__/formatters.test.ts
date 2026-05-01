@@ -58,15 +58,15 @@ describe('formatTelegram', () => {
     expect(msg).toContain('blocked');
   });
 
-  it('peer_pause_summary_daily — total + per-peer counts', () => {
+  it('peer_pause_summary_daily — total + per-peer extend counts', () => {
     const msg = formatTelegram(
       'peer_pause_summary_daily',
       {
         agentId: 'amina',
         activePauses: 2,
         items: [
-          { peerKey: 'wa:b:1', count: 3 },
-          { peerKey: 'wa:b:2', count: 1 },
+          { peerKey: 'wa:b:1', extendedCount: 3 },
+          { peerKey: 'wa:b:2', extendedCount: 1 },
         ],
       },
       NOW,
@@ -75,6 +75,9 @@ describe('formatTelegram', () => {
     expect(msg).toContain('Active pauses: 2');
     expect(msg).toContain('wa:b:1');
     expect(msg).toContain('wa:b:2');
+    // extendedCount surfaces as parenthesized suffix per item.
+    expect(msg).toContain('(3)');
+    expect(msg).toContain('(1)');
   });
 
   it('agent_error — shows error message in code fence', () => {
@@ -149,13 +152,14 @@ describe('formatPlain', () => {
       {
         agentId: 'amina',
         activePauses: 1,
-        items: [{ peerKey: 'wa:b:1', count: 2 }],
+        items: [{ peerKey: 'wa:b:1', extendedCount: 2 }],
       },
       NOW,
     );
     expect(msg).not.toContain('*');
     expect(msg).toContain('Active pauses: 1');
     expect(msg).toContain('wa:b:1');
+    expect(msg).toContain('(2)');
   });
 
   it('all event names produce non-empty plain output (smoke)', () => {

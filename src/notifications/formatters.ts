@@ -69,8 +69,10 @@ function formatPauseSummaryItems(payload: NotificationEventPayload): string {
     .map((it) => {
       if (typeof it !== 'object' || it === null) return '';
       const peer = (it as Record<string, unknown>).peerKey;
-      const count = (it as Record<string, unknown>).count;
-      return `• ${typeof peer === 'string' ? peer : 'unknown'}${typeof count === 'number' ? ` (${count})` : ''}`;
+      const extendedCount = (it as Record<string, unknown>).extendedCount;
+      return `• ${typeof peer === 'string' ? peer : 'unknown'}${
+        typeof extendedCount === 'number' ? ` (${extendedCount})` : ''
+      }`;
     })
     .filter(Boolean)
     .join('\n');
