@@ -18,6 +18,7 @@ import { createLocalNoteSearchTool } from './tools/local-note-search.js';
 import { createLocalNoteProposeTool } from './tools/local-note-propose.js';
 import type { DynamicCronStore } from '../cron/dynamic-store.js';
 import type { PeerPauseStore } from '../routing/peer-pause.js';
+import type { NotificationsEmitter } from '../notifications/emitter.js';
 import { createSdkMcpServer, query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpSdkServerConfigWithInstance, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { PluginMcpTool } from '../plugins/types.js';
@@ -275,6 +276,7 @@ export class Agent {
     onCronUpdate?: () => void,
     onMemoryWrite?: (event: MemoryWriteToolEvent & { agentId: string }) => void | Promise<void>,
     peerPauseStore?: PeerPauseStore | null,
+    notificationsEmitter?: NotificationsEmitter | null,
   ): Promise<Agent> {
     const id = basename(agentDir);
     const config = loadAgentYml(agentDir);
@@ -326,6 +328,7 @@ export class Agent {
             tools.push(createSendMessageTool(getChannel, {
               agentId: id,
               peerPauseStore: peerPauseStore ?? null,
+              notificationsEmitter: notificationsEmitter ?? null,
             }));
           }
           break;

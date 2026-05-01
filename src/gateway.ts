@@ -33,6 +33,18 @@ import { MessageDebouncer, mergeInboundMessages } from './routing/debounce.js';
 import { RateLimiter } from './routing/rate-limiter.js';
 import { QueueManager, type ActiveQueryView } from './routing/queue-manager.js';
 import { createPeerPauseStore, type PeerPauseStore } from './routing/peer-pause.js';
+import {
+  createNotificationsEmitter,
+  type NotificationsEmitter,
+} from './notifications/emitter.js';
+import {
+  createNotificationsScheduler,
+  type NotificationsScheduler,
+} from './notifications/scheduler.js';
+import type {
+  NotificationEventName,
+  NotificationRoute,
+} from './notifications/types.js';
 import type { OperatorOutboundEvent } from './channels/types.js';
 import { TelegramChannel } from './channels/telegram.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
@@ -717,6 +729,13 @@ export class Gateway {
    * Public so MCP tools (`send_message`) and tests can read it.
    */
   public peerPauseStore: PeerPauseStore | null = null;
+  /**
+   * Notifications emitter (Stage 2). Public so the send_message tool
+   * (constructed in Agent.load) and the operator-console plugin (Stage 3)
+   * can call `emit` directly. Always instantiated alongside peerPauseStore.
+   */
+  public notificationsEmitter: NotificationsEmitter | null = null;
+  private notificationsScheduler: NotificationsScheduler | null = null;
 
   async start(config: GlobalConfig, agentsDir: string, dataDir: string, pluginsDir?: string): Promise<void> {
     this.startedAt = Date.now();
@@ -756,6 +775,23 @@ export class Gateway {
     // gateway can route operator_outbound events even when no agent has the
     // subsystem enabled — enable check happens per event.
     this.peerPauseStore = createPeerPauseStore({ filePath: join(dataDir, 'peer-pauses.json') });
+    // Notifications subsystem (Stage 2). Always instantiated; agents that
+    // omit the `notifications` block produce no events. sendMessage routes
+    // through whichever channel adapter the route names; falls back to a
+    // logged warning if the adapter is missing or send fails.
+    this.notificationsEmitter = createNotificationsEmitter({
+      sendMessage: (route, text, meta) => this.deliverNotification(route, text, meta),
+      peerPauseStore: this.peerPauseStore,
+      getAgentTimezone: (agentId) => this.agents.get(agentId)?.config.timezone,
+    });
+    this.notificationsScheduler = createNotificationsScheduler({
+      emitter: {
+        subscribeAgent: (id, cfg) => this.notificationsEmitter?.subscribeAgent(id, cfg),
+        fireScheduled: async (event, args) => {
+          await this.notificationsEmitter?.fireScheduled(event, args);
+        },
+      },
+    });
     this.heartbeatStateStore = new HeartbeatStateStore(join(dataDir, 'heartbeat-state.json'));
     this.heartbeatHistoryStore = new HeartbeatHistoryStore(
       join(dataDir, 'heartbeat-output'),
@@ -780,9 +816,12 @@ export class Gateway {
         onCronUpdate,
         (event) => this.emitMemoryWriteHook(event),
         this.peerPauseStore,
+        this.notificationsEmitter,
       );
       this.agents.set(agent.id, agent);
       this.registerProfileRateLimiter(agent.id, agent, dataDir);
+      this.notificationsEmitter?.subscribeAgent(agent.id, agent.config.notifications);
+      this.notificationsScheduler?.registerAgent(agent.id, agent.config.notifications);
       logger.info({ agentId: agent.id, routes: agent.config.routes.length }, 'Loaded agent');
     }
 
@@ -1028,6 +1067,9 @@ export class Gateway {
     this.clearHookEmitters();
     this.scheduler?.stop();
     this.scheduler = null;
+    this.notificationsScheduler?.stopAll();
+    this.notificationsScheduler = null;
+    this.notificationsEmitter = null;
     this.heartbeatRunner?.stop();
     this.heartbeatRunner = null;
     this.heartbeatHistoryStore = null;
@@ -2602,6 +2644,8 @@ export class Gateway {
     for (const id of oldAgentIds) {
       if (!newAgentIds.has(id)) {
         this.agents.delete(id);
+        this.notificationsEmitter?.unsubscribeAgent(id);
+        this.notificationsScheduler?.unregisterAgent(id);
         removed.push(id);
       }
     }
@@ -2609,7 +2653,7 @@ export class Gateway {
     // Load/reload agents
     for (const dir of agentDirs) {
       try {
-        const agent = await Agent.load(dir, dataDir, getChannel, undefined, config, this.accessControl ?? undefined, this.dynamicCronStore ?? undefined, onCronUpdate, undefined, this.peerPauseStore);
+        const agent = await Agent.load(dir, dataDir, getChannel, undefined, config, this.accessControl ?? undefined, this.dynamicCronStore ?? undefined, onCronUpdate, undefined, this.peerPauseStore, this.notificationsEmitter);
         const existed = this.agents.has(agent.id);
 
         if (existed) {
@@ -2623,6 +2667,10 @@ export class Gateway {
 
         this.agents.set(agent.id, agent);
         this.registerProfileRateLimiter(agent.id, agent, dataDir);
+        // subscribeAgent is idempotent — replays the latest config, so this
+        // covers both newly-added and reloaded agents.
+        this.notificationsEmitter?.subscribeAgent(agent.id, agent.config.notifications);
+        this.notificationsScheduler?.registerAgent(agent.id, agent.config.notifications);
       } catch (err) {
         logger.error({ err, dir }, 'Hot reload: failed to load agent, keeping old version if available');
       }
@@ -2889,6 +2937,35 @@ export class Gateway {
    * Exposed as package-internal for testing (not part of public API contract).
    */
   /**
+   * Deliver a formatted notification text via the channel adapter named
+   * by the route. Failures (missing adapter, send error) are logged but
+   * do not propagate — notifications are best-effort and must never
+   * destabilize the gateway.
+   */
+  private async deliverNotification(
+    route: NotificationRoute,
+    text: string,
+    meta: { event: NotificationEventName; agentId: string },
+  ): Promise<void> {
+    const adapter = this.channels.get(route.channel);
+    if (!adapter) {
+      logger.warn(
+        { route, event: meta.event, agentId: meta.agentId },
+        'notifications: channel adapter not present; dropping',
+      );
+      return;
+    }
+    try {
+      await adapter.sendText(route.peerId, text, { accountId: route.accountId });
+    } catch (err) {
+      logger.warn(
+        { err, route, event: meta.event, agentId: meta.agentId },
+        'notifications: sendText failed',
+      );
+    }
+  }
+
+  /**
    * Handle a `operator_outbound` event from a channel adapter.
    *
    * Looks up the agent that owns the route for this peer; if that agent
@@ -2922,16 +2999,41 @@ export class Gateway {
       );
       return;
     }
-    // TODO Stage 2: honour cfg.channels filter — currently only WhatsApp emits operator_outbound, but the schema accepts ['telegram'] too.
+    // Honour cfg.channels filter — schema accepts ['telegram', 'whatsapp']
+    // but only the channels listed should drive auto-pause for this agent.
+    if (Array.isArray(cfg.channels) && !cfg.channels.includes(event.channel)) {
+      logger.debug(
+        { agentId: route.agentId, channel: event.channel, allowed: cfg.channels },
+        'operator_outbound: channel not in human_takeover.channels; ignoring',
+      );
+      return;
+    }
     const status = this.peerPauseStore.isPaused(route.agentId, event.peerKey);
     if (status.paused && !status.expired) {
-      this.peerPauseStore.extend(route.agentId, event.peerKey);
+      const updated = this.peerPauseStore.extend(route.agentId, event.peerKey);
       logger.info(
         { agentId: route.agentId, peerKey: event.peerKey, messageId: event.messageId },
         'operator_outbound: pause extended',
       );
+      // Fire pause_started with `extended: true` flag so a subscriber can
+      // distinguish first pause from sliding-window extension and choose
+      // to ignore the latter (typical: throttle by event+peer).
+      if (this.notificationsEmitter) {
+        void this.notificationsEmitter
+          .emit('peer_pause_started', {
+            agentId: route.agentId,
+            peerKey: event.peerKey,
+            channel: event.channel,
+            accountId: event.accountId,
+            extended: true,
+            expiresAt: updated?.expiresAt ?? null,
+            extendedCount: updated?.extendedCount ?? 0,
+            reason: 'operator_takeover',
+          })
+          .catch((err) => logger.warn({ err }, 'notifications: emit failed for pause_started (extend)'));
+      }
     } else {
-      this.peerPauseStore.pause(route.agentId, event.peerKey, {
+      const created = this.peerPauseStore.pause(route.agentId, event.peerKey, {
         ttlMinutes: cfg.pause_ttl_minutes,
         reason: 'operator_takeover',
         source: `${event.channel}:${event.accountId}:fromMe`,
@@ -2940,6 +3042,20 @@ export class Gateway {
         { agentId: route.agentId, peerKey: event.peerKey, ttl: cfg.pause_ttl_minutes, messageId: event.messageId },
         'operator_outbound: pause started',
       );
+      if (this.notificationsEmitter) {
+        void this.notificationsEmitter
+          .emit('peer_pause_started', {
+            agentId: route.agentId,
+            peerKey: event.peerKey,
+            channel: event.channel,
+            accountId: event.accountId,
+            extended: false,
+            expiresAt: created.expiresAt,
+            ttlMinutes: cfg.pause_ttl_minutes,
+            reason: 'operator_takeover',
+          })
+          .catch((err) => logger.warn({ err }, 'notifications: emit failed for pause_started'));
+      }
     }
   }
 
@@ -3126,12 +3242,25 @@ export class Gateway {
       const status = this.peerPauseStore.isPaused(route.agentId, peerKey);
       if (status.paused) {
         if (status.expired) {
-          this.peerPauseStore.unpause(route.agentId, peerKey, 'ttl_expired');
-          // TODO Stage 2: notificationsEmitter.emit('peer_pause_ended', ...)
+          const removed = this.peerPauseStore.unpause(route.agentId, peerKey, 'ttl_expired');
           logger.info(
             { agentId: route.agentId, peerKey },
             'human_takeover: pause expired; resuming dispatch',
           );
+          if (this.notificationsEmitter) {
+            void this.notificationsEmitter
+              .emit('peer_pause_ended', {
+                agentId: route.agentId,
+                peerKey,
+                channel: msg.channel,
+                accountId: msg.accountId,
+                endedAt: new Date().toISOString(),
+                reason: 'ttl_expired',
+                pausedAt: removed?.pausedAt,
+                extendedCount: removed?.extendedCount ?? 0,
+              })
+              .catch((err) => logger.warn({ err }, 'notifications: emit failed for pause_ended'));
+          }
         } else {
           logger.info(
             {

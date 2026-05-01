@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type { ChannelAdapter, SendOptions } from '../../channels/types.js';
 import type { PeerPauseStore } from '../../routing/peer-pause.js';
+import type { NotificationsEmitter } from '../../notifications/emitter.js';
 import type { ToolDefinition } from './types.js';
 import type { ToolMeta } from '../../security/types.js';
 import { logger } from '../../logger.js';
@@ -15,6 +16,12 @@ export interface SendMessageToolOptions {
    * `suppressed: true` payload without calling the channel adapter.
    */
   peerPauseStore?: PeerPauseStore | null;
+  /**
+   * Optional notifications emitter. When suppression fires, the tool
+   * emits `peer_pause_intervened_during_generation` so the operator
+   * sees the agent tried (and was blocked) mid-turn.
+   */
+  notificationsEmitter?: Pick<NotificationsEmitter, 'emit'> | null;
 }
 
 export function createSendMessageTool(
@@ -64,7 +71,22 @@ export function createSendMessageTool(
             },
             'send_message: suppressed; peer is paused',
           );
-          // TODO Stage 2: notificationsEmitter.emit('peer_pause_intervened_during_generation', ...)
+          if (opts.notificationsEmitter) {
+            // Fire-and-forget: notification failure must not break the tool path.
+            void opts.notificationsEmitter
+              .emit('peer_pause_intervened_during_generation', {
+                agentId: opts.agentId,
+                peerKey,
+                channel,
+                accountId,
+                at: new Date().toISOString(),
+                expiresAt: status.entry?.expiresAt ?? null,
+                textPreview: text.slice(0, 200),
+              })
+              .catch((err) => {
+                logger.warn({ err }, 'notifications: emit failed for intervened_during_generation');
+              });
+          }
           return {
             content: [
               {
