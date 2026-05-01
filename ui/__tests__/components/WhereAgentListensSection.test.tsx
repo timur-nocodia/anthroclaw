@@ -130,6 +130,78 @@ describe("WhereAgentListensSection", () => {
     ]);
   });
 
+  it("Test button is hidden when agentId is not provided", () => {
+    const routes: BindingRoute[] = [
+      {
+        channel: "telegram",
+        account: "content_sm",
+        scope: "group",
+        peers: ["-1003729315809"],
+        topics: ["3"],
+      },
+    ];
+    render(<WhereAgentListensSection routes={routes} accounts={ACCOUNTS} />);
+    expect(
+      screen.queryByTestId("binding-card-test"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("Test button on BindingCard opens BindingTestPanel pre-populated", () => {
+    const routes: BindingRoute[] = [
+      {
+        channel: "telegram",
+        account: "content_sm",
+        scope: "group",
+        peers: ["-1003729315809"],
+        topics: ["3"],
+        mention_only: true,
+      },
+    ];
+    render(
+      <WhereAgentListensSection
+        agentId="operator_agent"
+        routes={routes}
+        accounts={ACCOUNTS}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("binding-card-test"));
+    expect(screen.getByTestId("binding-test-panel")).toBeInTheDocument();
+    const peer = screen.getByTestId(
+      "binding-test-peer-id",
+    ) as HTMLInputElement;
+    expect(peer.value).toBe("-1003729315809");
+    const thread = screen.getByTestId(
+      "binding-test-thread-id",
+    ) as HTMLInputElement;
+    expect(thread.value).toBe("3");
+  });
+
+  it("Closing BindingTestPanel clears state", async () => {
+    const routes: BindingRoute[] = [
+      {
+        channel: "telegram",
+        account: "content_sm",
+        scope: "group",
+        peers: ["-1003729315809"],
+      },
+    ];
+    render(
+      <WhereAgentListensSection
+        agentId="operator_agent"
+        routes={routes}
+        accounts={ACCOUNTS}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("binding-card-test"));
+    expect(screen.getByTestId("binding-test-panel")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("binding-test-close"));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("binding-test-panel"),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   it("falls back to fetch PATCH when only agentId is provided", async () => {
     const fetchMock = vi
       .fn()

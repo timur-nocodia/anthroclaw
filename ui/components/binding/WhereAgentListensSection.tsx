@@ -10,6 +10,7 @@ import {
   type BindingWizardRoute,
   type WizardAccountsConfig,
 } from "@/components/binding/BindingWizardDialog";
+import { BindingTestPanel } from "@/components/binding/BindingTestPanel";
 
 export interface BindingRoute {
   channel: string;
@@ -74,6 +75,7 @@ export function WhereAgentListensSection({
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editIndex, setEditIndex] = useState<number | null>(null);
+  const [testRoute, setTestRoute] = useState<BindingWizardRoute | null>(null);
 
   const editingRoute =
     editIndex !== null
@@ -196,6 +198,9 @@ export function WhereAgentListensSection({
                     }}
                     onEdit={() => handleEdit(route)}
                     onRemove={() => handleRemove(route)}
+                    onTest={
+                      agentId ? () => setTestRoute(wizardRoute) : undefined
+                    }
                   />
                 </li>
               );
@@ -213,6 +218,16 @@ export function WhereAgentListensSection({
         initialRoute={editingRoute}
         onSave={handleSaveFromWizard}
       />
+      {agentId && testRoute && (
+        <BindingTestPanel
+          open={testRoute !== null}
+          onOpenChange={(o) => {
+            if (!o) setTestRoute(null);
+          }}
+          agentId={agentId}
+          route={testRoute}
+        />
+      )}
     </>
   );
 }
