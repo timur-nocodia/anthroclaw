@@ -2,9 +2,17 @@
 
 All notable changes to AnthroClaw are documented here.
 
-> **Looking for a specific feature?** The **Operator Control Plane** (auto-pause on human takeover, generic notifications emitter, cross-agent admin tools) and **self-configuration tools** (configure agents via chat) shipped in **[v0.6.0](#060---2026-05-01)** below. Most other major capabilities (Plugin framework, **LCM** lossless context management, **Safety profiles**, **Learning loop**, **Scheduled tasks**, **chat_like_openclaw**) shipped in **[v0.5.0](#050---2026-04-30)**. Earlier releases focused on Sessions UI (0.4.0) and persistent session/channel reliability (0.3.0).
+> **Looking for a specific feature?** The **channel binding wizard** (mouse-driven 5-step UI for connecting an agent to channels/groups/topics) shipped in **[v0.7.0](#070---2026-05-01)** below. The **Operator Control Plane** (auto-pause on human takeover, generic notifications emitter, cross-agent admin tools) and **self-configuration tools** (configure agents via chat) shipped in **[v0.6.0](#060---2026-05-01)**. Most other major capabilities (Plugin framework, **LCM** lossless context management, **Safety profiles**, **Learning loop**, **Scheduled tasks**, **chat_like_openclaw**) shipped in **[v0.5.0](#050---2026-04-30)**. Earlier releases focused on Sessions UI (0.4.0) and persistent session/channel reliability (0.3.0).
 
 ## [Unreleased]
+
+## [0.7.0] - 2026-05-01
+
+This release replaces the flat-row Routes editor with a wizard-driven UI for
+channel binding. Operators can now mouse-drive the full flow (channel → account
+→ where → target → behavior → preview) without knowing peer/topic-ID formats
+or YAML field names. Includes an offline binding verification endpoint so
+operators can confirm a binding matches before sending a real message.
 
 ### Added
 - **Channel binding wizard** (#8): new "Where this agent listens" section in
