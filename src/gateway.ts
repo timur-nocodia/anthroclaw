@@ -32,6 +32,20 @@ import { buildSessionKey } from './routing/session-key.js';
 import { MessageDebouncer, mergeInboundMessages } from './routing/debounce.js';
 import { RateLimiter } from './routing/rate-limiter.js';
 import { QueueManager, type ActiveQueryView } from './routing/queue-manager.js';
+import { createPeerPauseStore, type PeerPauseStore } from './routing/peer-pause.js';
+import {
+  createNotificationsEmitter,
+  type NotificationsEmitter,
+} from './notifications/emitter.js';
+import {
+  createNotificationsScheduler,
+  type NotificationsScheduler,
+} from './notifications/scheduler.js';
+import type {
+  NotificationEventName,
+  NotificationRoute,
+} from './notifications/types.js';
+import type { OperatorOutboundEvent } from './channels/types.js';
 import { TelegramChannel } from './channels/telegram.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import { CronScheduler } from './cron/scheduler.js';
@@ -710,6 +724,18 @@ export class Gateway {
   private resolvedPluginsDir: string | null = null;
   private learningStore: LearningStore | null = null;
   private learningQueue: LearningQueue | null = null;
+  /**
+   * Cross-peer pause store for the human_takeover subsystem.
+   * Public so MCP tools (`send_message`) and tests can read it.
+   */
+  public peerPauseStore: PeerPauseStore | null = null;
+  /**
+   * Notifications emitter (Stage 2). Public so the send_message tool
+   * (constructed in Agent.load) and the operator-console plugin (Stage 3)
+   * can call `emit` directly. Always instantiated alongside peerPauseStore.
+   */
+  public notificationsEmitter: NotificationsEmitter | null = null;
+  private notificationsScheduler: NotificationsScheduler | null = null;
 
   async start(config: GlobalConfig, agentsDir: string, dataDir: string, pluginsDir?: string): Promise<void> {
     this.startedAt = Date.now();
@@ -745,6 +771,28 @@ export class Gateway {
 
     // Dynamic cron store
     this.dynamicCronStore = new DynamicCronStore(join(dataDir, 'dynamic-cron.json'));
+    // Peer-pause store (human_takeover subsystem). Always instantiated so the
+    // gateway can route operator_outbound events even when no agent has the
+    // subsystem enabled — enable check happens per event.
+    this.peerPauseStore = createPeerPauseStore({ filePath: join(dataDir, 'peer-pauses.json') });
+    // Notifications subsystem (Stage 2). Always instantiated; agents that
+    // omit the `notifications` block produce no events. sendMessage routes
+    // through whichever channel adapter the route names; falls back to a
+    // logged warning if the adapter is missing or send fails.
+    this.notificationsEmitter = createNotificationsEmitter({
+      sendMessage: (route, text, meta) => this.deliverNotification(route, text, meta),
+      peerPauseStore: this.peerPauseStore,
+      getAgentTimezone: (agentId) => this.agents.get(agentId)?.config.timezone,
+    });
+    this.notificationsScheduler = createNotificationsScheduler({
+      emitter: {
+        subscribeAgent: (id, cfg) => this.notificationsEmitter?.subscribeAgent(id, cfg),
+        fireScheduled: async (event, args) => {
+          await this.notificationsEmitter?.fireScheduled(event, args);
+        },
+      },
+      getAgentTimezone: (agentId) => this.agents.get(agentId)?.config.timezone,
+    });
     this.heartbeatStateStore = new HeartbeatStateStore(join(dataDir, 'heartbeat-state.json'));
     this.heartbeatHistoryStore = new HeartbeatHistoryStore(
       join(dataDir, 'heartbeat-output'),
@@ -768,9 +816,13 @@ export class Gateway {
         this.dynamicCronStore,
         onCronUpdate,
         (event) => this.emitMemoryWriteHook(event),
+        this.peerPauseStore,
+        this.notificationsEmitter,
       );
       this.agents.set(agent.id, agent);
       this.registerProfileRateLimiter(agent.id, agent, dataDir);
+      this.notificationsEmitter?.subscribeAgent(agent.id, agent.config.notifications);
+      this.notificationsScheduler?.registerAgent(agent.id, agent.config.notifications);
       logger.info({ agentId: agent.id, routes: agent.config.routes.length }, 'Loaded agent');
     }
 
@@ -910,6 +962,7 @@ export class Gateway {
         mediaDir: join(dataDir, 'media', 'whatsapp'),
       });
       wa.onMessage(onInbound);
+      wa.on('operator_outbound', (event) => this.handleOperatorOutbound(event));
       this.channels.set('whatsapp', wa);
       await wa.start();
       logger.info('WhatsApp channel started');
@@ -1015,6 +1068,9 @@ export class Gateway {
     this.clearHookEmitters();
     this.scheduler?.stop();
     this.scheduler = null;
+    this.notificationsScheduler?.stopAll();
+    this.notificationsScheduler = null;
+    this.notificationsEmitter = null;
     this.heartbeatRunner?.stop();
     this.heartbeatRunner = null;
     this.heartbeatHistoryStore = null;
@@ -1137,6 +1193,10 @@ export class Gateway {
       registerCommand: (cmd) => this.pluginRegistry.addCommandFromPlugin(d.manifest.name, cmd),
       getAgentConfig: (id: string) => this.agents.get(id)?.config,
       getGlobalConfig: () => this.globalConfig,
+      getPeerPauseStore: () => this.peerPauseStore,
+      getNotificationsEmitter: () => this.notificationsEmitter,
+      dispatchSyntheticInbound: (input) => this.dispatchSyntheticInbound(input),
+      searchAgentMemory: (input) => this.searchAgentMemory(input),
     });
     const instance = await mod.register(ctx);
     this.pluginRegistry.addPlugin(d.manifest.name, { manifest: d.manifest, instance });
@@ -2589,6 +2649,8 @@ export class Gateway {
     for (const id of oldAgentIds) {
       if (!newAgentIds.has(id)) {
         this.agents.delete(id);
+        this.notificationsEmitter?.unsubscribeAgent(id);
+        this.notificationsScheduler?.unregisterAgent(id);
         removed.push(id);
       }
     }
@@ -2596,7 +2658,7 @@ export class Gateway {
     // Load/reload agents
     for (const dir of agentDirs) {
       try {
-        const agent = await Agent.load(dir, dataDir, getChannel, undefined, config, this.accessControl ?? undefined, this.dynamicCronStore ?? undefined, onCronUpdate);
+        const agent = await Agent.load(dir, dataDir, getChannel, undefined, config, this.accessControl ?? undefined, this.dynamicCronStore ?? undefined, onCronUpdate, undefined, this.peerPauseStore, this.notificationsEmitter);
         const existed = this.agents.has(agent.id);
 
         if (existed) {
@@ -2610,6 +2672,10 @@ export class Gateway {
 
         this.agents.set(agent.id, agent);
         this.registerProfileRateLimiter(agent.id, agent, dataDir);
+        // subscribeAgent is idempotent — replays the latest config, so this
+        // covers both newly-added and reloaded agents.
+        this.notificationsEmitter?.subscribeAgent(agent.id, agent.config.notifications);
+        this.notificationsScheduler?.registerAgent(agent.id, agent.config.notifications);
       } catch (err) {
         logger.error({ err, dir }, 'Hot reload: failed to load agent, keeping old version if available');
       }
@@ -2875,6 +2941,135 @@ export class Gateway {
    * Dispatch an inbound message through routing, access control, and agent query.
    * Exposed as package-internal for testing (not part of public API contract).
    */
+  /**
+   * Deliver a formatted notification text via the channel adapter named
+   * by the route. Failures (missing adapter, send error) are logged but
+   * do not propagate — notifications are best-effort and must never
+   * destabilize the gateway.
+   */
+  private async deliverNotification(
+    route: NotificationRoute,
+    text: string,
+    meta: { event: NotificationEventName; agentId: string },
+  ): Promise<void> {
+    const adapter = this.channels.get(route.channel);
+    if (!adapter) {
+      logger.warn(
+        { route, event: meta.event, agentId: meta.agentId },
+        'notifications: channel adapter not present; dropping',
+      );
+      return;
+    }
+    try {
+      // Telegram formatter emits project Markdown (`*bold*`, `_italic_`,
+      // `` `code` ``). Without parseMode the literal asterisks/backticks
+      // would render verbatim. WhatsApp uses plain text.
+      await adapter.sendText(route.peer_id, text, {
+        accountId: route.account_id,
+        parseMode: route.channel === 'telegram' ? 'markdown' : 'plain',
+      });
+    } catch (err) {
+      logger.warn(
+        { err, route, event: meta.event, agentId: meta.agentId },
+        'notifications: sendText failed',
+      );
+    }
+  }
+
+  /**
+   * Handle a `operator_outbound` event from a channel adapter.
+   *
+   * Looks up the agent that owns the route for this peer; if that agent
+   * has `human_takeover.enabled = true`, pauses (or extends) the peer for
+   * the configured TTL.
+   */
+  handleOperatorOutbound(event: OperatorOutboundEvent): void {
+    if (!this.routeTable || !this.peerPauseStore) return;
+    // Operator-typed messages always come through DM (1:1 chat). Group "fromMe"
+    // posts use a different remoteJid format and aren't a takeover signal.
+    const route = this.routeTable.resolve(
+      event.channel,
+      event.accountId,
+      'dm',
+      event.peerId,
+    );
+    if (!route) {
+      logger.debug({ event }, 'operator_outbound: no route matched');
+      return;
+    }
+    const agent = this.agents.get(route.agentId);
+    if (!agent) {
+      logger.warn({ agentId: route.agentId }, 'operator_outbound: route → unknown agent');
+      return;
+    }
+    const cfg = agent.config.human_takeover;
+    if (!cfg?.enabled) {
+      logger.debug(
+        { agentId: route.agentId, peerKey: event.peerKey },
+        'operator_outbound: human_takeover disabled; ignoring',
+      );
+      return;
+    }
+    // Honour cfg.channels filter — schema accepts ['telegram', 'whatsapp']
+    // but only the channels listed should drive auto-pause for this agent.
+    if (Array.isArray(cfg.channels) && !cfg.channels.includes(event.channel)) {
+      logger.debug(
+        { agentId: route.agentId, channel: event.channel, allowed: cfg.channels },
+        'operator_outbound: channel not in human_takeover.channels; ignoring',
+      );
+      return;
+    }
+    const status = this.peerPauseStore.isPaused(route.agentId, event.peerKey);
+    if (status.paused && !status.expired) {
+      const updated = this.peerPauseStore.extend(route.agentId, event.peerKey);
+      logger.info(
+        { agentId: route.agentId, peerKey: event.peerKey, messageId: event.messageId },
+        'operator_outbound: pause extended',
+      );
+      // Fire pause_started with `extended: true` flag so a subscriber can
+      // distinguish first pause from sliding-window extension and choose
+      // to ignore the latter (typical: throttle by event+peer).
+      if (this.notificationsEmitter) {
+        void this.notificationsEmitter
+          .emit('peer_pause_started', {
+            agentId: route.agentId,
+            peerKey: event.peerKey,
+            channel: event.channel,
+            accountId: event.accountId,
+            extended: true,
+            expiresAt: updated?.expiresAt ?? null,
+            extendedCount: updated?.extendedCount ?? 0,
+            reason: 'operator_takeover',
+          })
+          .catch((err) => logger.warn({ err }, 'notifications: emit failed for pause_started (extend)'));
+      }
+    } else {
+      const created = this.peerPauseStore.pause(route.agentId, event.peerKey, {
+        ttlMinutes: cfg.pause_ttl_minutes,
+        reason: 'operator_takeover',
+        source: `${event.channel}:${event.accountId}:fromMe`,
+      });
+      logger.info(
+        { agentId: route.agentId, peerKey: event.peerKey, ttl: cfg.pause_ttl_minutes, messageId: event.messageId },
+        'operator_outbound: pause started',
+      );
+      if (this.notificationsEmitter) {
+        void this.notificationsEmitter
+          .emit('peer_pause_started', {
+            agentId: route.agentId,
+            peerKey: event.peerKey,
+            channel: event.channel,
+            accountId: event.accountId,
+            extended: false,
+            expiresAt: created.expiresAt,
+            ttlMinutes: cfg.pause_ttl_minutes,
+            reason: 'operator_takeover',
+          })
+          .catch((err) => logger.warn({ err }, 'notifications: emit failed for pause_started'));
+      }
+    }
+  }
+
   async dispatch(msg: InboundMessage): Promise<void> {
     metrics.increment('messages_received');
     metrics.recordMessage();
@@ -3039,6 +3234,55 @@ export class Gateway {
           logger.info({ senderId: msg.senderId, retryAfterMs: rl.retryAfterMs }, 'Message rate-limited');
           recordRouteDecision({
             outcome: 'rate_limited',
+            candidates: routeCandidates,
+            winnerAgentId: route.agentId,
+            accessAllowed: true,
+          });
+          return;
+        }
+      }
+    }
+
+    // ─── Human takeover pause check ─────────────────────────────────
+    // After access control + rate limiter, before any further processing.
+    // If the operator is currently driving this peer, suppress the inbound
+    // entirely. Expired entries are auto-cleared so the next message
+    // dispatches normally.
+    if (this.peerPauseStore) {
+      const peerKey = `${msg.channel}:${msg.accountId}:${msg.peerId}`;
+      const status = this.peerPauseStore.isPaused(route.agentId, peerKey);
+      if (status.paused) {
+        if (status.expired) {
+          const removed = this.peerPauseStore.unpause(route.agentId, peerKey, 'ttl_expired');
+          logger.info(
+            { agentId: route.agentId, peerKey },
+            'human_takeover: pause expired; resuming dispatch',
+          );
+          if (this.notificationsEmitter) {
+            void this.notificationsEmitter
+              .emit('peer_pause_ended', {
+                agentId: route.agentId,
+                peerKey,
+                channel: msg.channel,
+                accountId: msg.accountId,
+                endedAt: new Date().toISOString(),
+                reason: 'ttl_expired',
+                pausedAt: removed?.pausedAt,
+                extendedCount: removed?.extendedCount ?? 0,
+              })
+              .catch((err) => logger.warn({ err }, 'notifications: emit failed for pause_ended'));
+          }
+        } else {
+          logger.info(
+            {
+              agentId: route.agentId,
+              peerKey,
+              expiresAt: status.entry?.expiresAt,
+            },
+            'human_takeover: peer is paused; skipping dispatch',
+          );
+          recordRouteDecision({
+            outcome: 'peer_paused',
             candidates: routeCandidates,
             winnerAgentId: route.agentId,
             accessAllowed: true,
@@ -4019,6 +4263,93 @@ export class Gateway {
     });
     logger.info({ agentId: request.agent.id, runId: request.runId, channel: target.channel, peerId: target.peer_id }, 'Heartbeat response delivered');
     return { response, delivered: true };
+  }
+
+  /**
+   * Synthesise an inbound message for a target agent's session, routed as
+   * if it had arrived through the named channel/account/peer combination.
+   *
+   * Used by the operator-console plugin's `delegate_to_peer` tool to enqueue
+   * work for a managed agent. Mirrors the synthetic-message construction
+   * in `handleCronJob`. Returns the synthesised messageId and the session
+   * key the message landed in.
+   *
+   * Fire-and-forget: we kick off `queryAgent` async (no await) so the
+   * caller (the operator agent's tool call) doesn't block on the managed
+   * agent's full response.
+   */
+  public async dispatchSyntheticInbound(input: {
+    targetAgentId: string;
+    channel: 'whatsapp' | 'telegram';
+    accountId?: string;
+    peerId: string;
+    text: string;
+    meta?: Record<string, unknown>;
+  }): Promise<{ messageId: string; sessionKey: string }> {
+    const agent = this.agents.get(input.targetAgentId);
+    if (!agent) {
+      throw new Error(`unknown agent: ${input.targetAgentId}`);
+    }
+
+    const messageId = `op-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const accountId = input.accountId ?? 'default';
+    const sessionKey = buildSessionKey(
+      input.targetAgentId,
+      input.channel,
+      'dm',
+      input.peerId,
+    );
+
+    const syntheticMsg: InboundMessage = {
+      channel: input.channel,
+      accountId,
+      chatType: 'dm',
+      peerId: input.peerId,
+      senderId: 'operator-console',
+      senderName: 'operator-console',
+      text: input.text,
+      messageId,
+      mentionedBot: false,
+      raw: {
+        operatorConsole: true,
+        ...(input.meta ?? {}),
+      },
+    };
+
+    void this.queryAgent(agent, syntheticMsg, sessionKey).catch((err) => {
+      logger.warn(
+        { err, agentId: input.targetAgentId, messageId },
+        'operator-console: synthetic inbound queryAgent failed',
+      );
+    });
+
+    return { messageId, sessionKey };
+  }
+
+  /**
+   * Run a memory_search-style lookup against a target agent's memory store
+   * on behalf of a plugin tool. Returns top-N results in the shape the
+   * operator-console plugin expects.
+   */
+  public async searchAgentMemory(input: {
+    targetAgentId: string;
+    query: string;
+    maxResults?: number;
+  }): Promise<{ results: Array<{ path: string; snippet: string; score: number }> }> {
+    const agent = this.agents.get(input.targetAgentId);
+    if (!agent) {
+      throw new Error(`unknown agent: ${input.targetAgentId}`);
+    }
+    const max = Math.max(1, Math.min(50, input.maxResults ?? 10));
+    const raw = agent.memoryStore.textSearch(input.query, max);
+    const MAX_SNIPPET = 500;
+    return {
+      results: raw.map((r) => ({
+        path: `${r.path}#L${r.startLine}-L${r.endLine}`,
+        snippet: r.text.length > MAX_SNIPPET ? r.text.slice(0, MAX_SNIPPET) + '…' : r.text,
+        score: r.score,
+      })),
+    };
   }
 
   /**

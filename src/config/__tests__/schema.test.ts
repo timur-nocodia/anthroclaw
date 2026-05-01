@@ -139,4 +139,178 @@ describe('plugins config schema', () => {
       mode: 'propose',
     });
   });
+
+  it('AgentYmlSchema accepts human_takeover block with defaults', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      human_takeover: { enabled: true },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.human_takeover).toMatchObject({
+        enabled: true,
+        pause_ttl_minutes: 30,
+        channels: ['whatsapp'],
+        ignore: ['reactions', 'receipts', 'typing', 'protocol'],
+        notification_throttle_minutes: 5,
+      });
+    }
+  });
+
+  it('human_takeover defaults to disabled (block omitted entirely)', () => {
+    const result = AgentYmlSchema.safeParse(minimalValidAgentYml);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.human_takeover).toBeUndefined();
+      expect(result.data.human_takeover?.enabled ?? false).toBe(false);
+    }
+  });
+
+  it('AgentYmlSchema rejects human_takeover.pause_ttl_minutes <= 0', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      human_takeover: { enabled: true, pause_ttl_minutes: 0 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('AgentYmlSchema rejects negative human_takeover.pause_ttl_minutes', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      human_takeover: { enabled: true, pause_ttl_minutes: -5 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('AgentYmlSchema rejects unknown channel in human_takeover.channels', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      human_takeover: { enabled: true, channels: ['discord'] },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('human_takeover allows custom pause_ttl_minutes and channels', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      human_takeover: {
+        enabled: true,
+        pause_ttl_minutes: 60,
+        channels: ['whatsapp', 'telegram'],
+        notification_throttle_minutes: 0,
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.human_takeover).toMatchObject({
+        enabled: true,
+        pause_ttl_minutes: 60,
+        channels: ['whatsapp', 'telegram'],
+        notification_throttle_minutes: 0,
+      });
+    }
+  });
+
+  // ─── notifications ────────────────────────────────────────────
+
+  it('AgentYmlSchema accepts notifications block with defaults applied', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      notifications: {},
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.notifications).toMatchObject({
+        enabled: false,
+        routes: {},
+        subscriptions: [],
+      });
+    }
+  });
+
+  it('notifications is optional and absent when omitted', () => {
+    const result = AgentYmlSchema.safeParse(minimalValidAgentYml);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.notifications).toBeUndefined();
+    }
+  });
+
+  it('AgentYmlSchema accepts notifications routes record + subscriptions array', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      notifications: {
+        enabled: true,
+        routes: {
+          operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' },
+          team: { channel: 'whatsapp', account_id: 'business', peer_id: '37120000@s.whatsapp.net' },
+        },
+        subscriptions: [
+          { event: 'peer_pause_started', route: 'operator' },
+          { event: 'peer_pause_ended', route: 'operator', throttle: '5m' },
+          { event: 'peer_pause_summary_daily', route: 'team', schedule: '0 9 * * *' },
+        ],
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.notifications?.routes.operator).toMatchObject({
+        channel: 'telegram',
+        account_id: 'control',
+        peer_id: '48705953',
+      });
+      expect(result.data.notifications?.subscriptions).toHaveLength(3);
+    }
+  });
+
+  it('notifications throttle is freeform — accepts "5m", "1h", "30s"', () => {
+    const cases = ['5m', '1h', '30s', '90m'];
+    for (const throttle of cases) {
+      const result = AgentYmlSchema.safeParse({
+        ...minimalValidAgentYml,
+        notifications: {
+          enabled: true,
+          routes: { op: { channel: 'telegram', account_id: 'a', peer_id: 'p' } },
+          subscriptions: [{ event: 'peer_pause_started', route: 'op', throttle }],
+        },
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('notifications rejects empty-string throttle', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      notifications: {
+        enabled: true,
+        routes: { op: { channel: 'telegram', account_id: 'a', peer_id: 'p' } },
+        subscriptions: [{ event: 'peer_pause_started', route: 'op', throttle: '' }],
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('notifications rejects unknown event name', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      notifications: {
+        enabled: true,
+        routes: { op: { channel: 'telegram', account_id: 'a', peer_id: 'p' } },
+        subscriptions: [{ event: 'bogus_event', route: 'op' }],
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('notifications rejects route with unknown channel', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      notifications: {
+        enabled: true,
+        routes: { op: { channel: 'discord', account_id: 'a', peer_id: 'p' } },
+        subscriptions: [],
+      },
+    });
+    expect(result.success).toBe(false);
+  });
 });
