@@ -70,6 +70,33 @@ export interface CallbackEvent {
   callbackQueryId: string;
 }
 
+/**
+ * Emitted by a channel adapter when the operator (the WhatsApp account
+ * owner) sends a message to a peer outside the bot — Baileys delivers
+ * these as `key.fromMe = true`. The gateway uses this signal to drive
+ * the human_takeover subsystem (peer-pause).
+ *
+ * Reactions, receipts, protocol envelopes, and typing indicators are
+ * filtered out by the adapter and never produce this event.
+ */
+export interface OperatorOutboundEvent {
+  channel: 'telegram' | 'whatsapp';
+  accountId: string;
+  /** Stable peer key in `{channel}:{accountId}:{peerId}` form. */
+  peerKey: string;
+  /** Raw remoteJid / chat id without channel/account prefix. */
+  peerId: string;
+  textPreview: string;
+  hasMedia: boolean;
+  messageId: string;
+  /** Adapter-supplied unix timestamp (seconds). */
+  timestamp: number;
+}
+
+export type ChannelAdapterEvents = {
+  operator_outbound: OperatorOutboundEvent;
+};
+
 export interface ChannelAdapter {
   readonly id: 'telegram' | 'whatsapp';
   start(): Promise<void>;
@@ -84,4 +111,13 @@ export interface ChannelAdapter {
   setReaction?(peerId: string, messageId: string, emoji: string, accountId?: string): Promise<void>;
   readonly supportsApproval: boolean;
   promptForApproval(req: ApprovalRequest): Promise<void>;
+  /** Subscribe to adapter-level events such as `operator_outbound`. */
+  on?<E extends keyof ChannelAdapterEvents>(
+    event: E,
+    handler: (payload: ChannelAdapterEvents[E]) => void,
+  ): void;
+  off?<E extends keyof ChannelAdapterEvents>(
+    event: E,
+    handler: (payload: ChannelAdapterEvents[E]) => void,
+  ): void;
 }

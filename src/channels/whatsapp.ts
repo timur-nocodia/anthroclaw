@@ -19,14 +19,17 @@ import { randomUUID } from 'node:crypto';
 
 import type {
   ChannelAdapter,
+  ChannelAdapterEvents,
   InboundMessage,
   InboundMedia,
+  OperatorOutboundEvent,
   OutboundMedia,
   SendOptions,
   ApprovalRequest,
 } from './types.js';
 import { logger } from '../logger.js';
 import { chunkText, mimeToExtension } from './utils.js';
+import { classifyFromMe } from './whatsapp-classifier.js';
 
 /* ------------------------------------------------------------------ */
 /*  Config                                                             */
@@ -103,6 +106,9 @@ export class WhatsAppChannel implements ChannelAdapter {
   // it, sock.logout() would trigger a close event which would immediately try
   // to reconnect the socket we just removed.
   private disconnectedAccounts = new Set<string>();
+  // Channel-level event listeners (e.g., operator_outbound). Plain object
+  // map keeps us off Node's EventEmitter to avoid 'error' default semantics.
+  private listeners: { [E in keyof ChannelAdapterEvents]?: Set<(e: ChannelAdapterEvents[E]) => void> } = {};
 
   constructor(config: WhatsAppConfig) {
     this.config = config;
@@ -112,6 +118,63 @@ export class WhatsAppChannel implements ChannelAdapter {
 
   onMessage(handler: (msg: InboundMessage) => Promise<void>): void {
     this.handler = handler;
+  }
+
+  on<E extends keyof ChannelAdapterEvents>(
+    event: E,
+    handler: (payload: ChannelAdapterEvents[E]) => void,
+  ): void {
+    if (!this.listeners[event]) {
+      this.listeners[event] = new Set();
+    }
+    (this.listeners[event] as Set<(e: ChannelAdapterEvents[E]) => void>).add(handler);
+  }
+
+  off<E extends keyof ChannelAdapterEvents>(
+    event: E,
+    handler: (payload: ChannelAdapterEvents[E]) => void,
+  ): void {
+    this.listeners[event]?.delete(handler as never);
+  }
+
+  private emitEvent<E extends keyof ChannelAdapterEvents>(event: E, payload: ChannelAdapterEvents[E]): void {
+    const set = this.listeners[event];
+    if (!set) return;
+    for (const fn of set) {
+      try {
+        (fn as (e: ChannelAdapterEvents[E]) => void)(payload);
+      } catch (err) {
+        logger.warn({ err, event }, 'whatsapp: listener threw');
+      }
+    }
+  }
+
+  /**
+   * Test helper: simulate a Baileys messages.upsert with the same `fromMe`
+   * processing the live socket uses. Allows unit tests to verify that the
+   * adapter emits `operator_outbound` events without bringing up Baileys.
+   */
+  __test_handleFromMe(accountId: string, msg: unknown): void {
+    this.handleFromMeMessage(accountId, msg);
+  }
+
+  private handleFromMeMessage(accountId: string, msg: unknown): void {
+    const m = msg as { key?: { remoteJid?: string | null } };
+    const result = classifyFromMe(msg as Parameters<typeof classifyFromMe>[0]);
+    if (result.kind !== 'operator_outbound') return;
+    const remoteJid = m?.key?.remoteJid ?? '';
+    if (!remoteJid) return;
+    const event: OperatorOutboundEvent = {
+      channel: 'whatsapp',
+      accountId,
+      peerKey: `whatsapp:${accountId}:${remoteJid}`,
+      peerId: remoteJid,
+      textPreview: result.textPreview,
+      hasMedia: result.hasMedia,
+      messageId: result.messageId,
+      timestamp: result.timestamp,
+    };
+    this.emitEvent('operator_outbound', event);
   }
 
   async start(): Promise<void> {
@@ -418,7 +481,13 @@ export class WhatsAppChannel implements ChannelAdapter {
 
       for (const msg of upsert.messages) {
         try {
-          if (msg.key.fromMe) continue;
+          if (msg.key.fromMe) {
+            // Operator typed a message to a peer outside the bot.
+            // Emit operator_outbound (gateway uses this for human_takeover);
+            // never dispatch to agents.
+            this.handleFromMeMessage(accountId, msg);
+            continue;
+          }
           if (!msg.message) continue;
 
           const jid = msg.key.remoteJid ?? '';
