@@ -7,6 +7,10 @@ import type {
   HookHandler,
   RunSubagentOpts,
   PluginLogger,
+  SyntheticInboundInput,
+  SyntheticInboundResult,
+  SearchAgentMemoryInput,
+  SearchAgentMemoryResult,
 } from './types.js';
 import { runSubagent as runSubagentImpl } from './subagent-runner.js';
 
@@ -35,6 +39,12 @@ export interface ContextDeps {
 
   getAgentConfig(agentId: string): unknown;
   getGlobalConfig(): unknown;
+
+  // ── Optional cross-plugin handles (gateway-injected) ──────────────
+  getPeerPauseStore?(): unknown;
+  getNotificationsEmitter?(): unknown;
+  dispatchSyntheticInbound?(input: SyntheticInboundInput): Promise<SyntheticInboundResult>;
+  searchAgentMemory?(input: SearchAgentMemoryInput): Promise<SearchAgentMemoryResult>;
 }
 
 export function createPluginContext(deps: ContextDeps): PluginContext {
@@ -89,5 +99,10 @@ export function createPluginContext(deps: ContextDeps): PluginContext {
     getGlobalConfig(): unknown {
       return deps.getGlobalConfig();
     },
+
+    getPeerPauseStore: deps.getPeerPauseStore?.bind(deps),
+    getNotificationsEmitter: deps.getNotificationsEmitter?.bind(deps),
+    dispatchSyntheticInbound: deps.dispatchSyntheticInbound?.bind(deps),
+    searchAgentMemory: deps.searchAgentMemory?.bind(deps),
   };
 }

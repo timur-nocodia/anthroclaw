@@ -55,6 +55,50 @@ export interface PluginContext {
 
   getAgentConfig(agentId: string): unknown;     // Returns AgentYml — typed in registry
   getGlobalConfig(): unknown;                    // Returns GlobalConfig
+
+  // ── Optional cross-plugin handles (gateway-injected) ──────────────
+  // These are populated when the gateway wires plugins to its runtime
+  // services (peer-pause store, notifications emitter, synthetic-inbound
+  // dispatch, per-agent memory search). They're optional so plugins
+  // running in unit tests with a stub context don't have to construct
+  // every gateway dependency. Plugins MUST handle absence gracefully.
+  getPeerPauseStore?(): unknown;
+  getNotificationsEmitter?(): unknown;
+  dispatchSyntheticInbound?(input: SyntheticInboundInput): Promise<SyntheticInboundResult>;
+  searchAgentMemory?(input: SearchAgentMemoryInput): Promise<SearchAgentMemoryResult>;
+}
+
+/**
+ * Input shape for `PluginContext.dispatchSyntheticInbound` — synthesises
+ * an inbound message into a target agent's session, routed as if it had
+ * arrived through the named channel/account/peer combination.
+ */
+export interface SyntheticInboundInput {
+  targetAgentId: string;
+  channel: 'whatsapp' | 'telegram';
+  accountId?: string;
+  peerId: string;
+  text: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface SyntheticInboundResult {
+  messageId: string;
+  sessionKey: string;
+}
+
+/**
+ * Input shape for `PluginContext.searchAgentMemory` — runs memory_search
+ * against a specific agent's memory store on behalf of a plugin tool.
+ */
+export interface SearchAgentMemoryInput {
+  targetAgentId: string;
+  query: string;
+  maxResults?: number;
+}
+
+export interface SearchAgentMemoryResult {
+  results: Array<{ path: string; snippet: string; score: number }>;
 }
 
 export type { HookEvent } from '../hooks/emitter.js';

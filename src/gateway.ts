@@ -1193,6 +1193,10 @@ export class Gateway {
       registerCommand: (cmd) => this.pluginRegistry.addCommandFromPlugin(d.manifest.name, cmd),
       getAgentConfig: (id: string) => this.agents.get(id)?.config,
       getGlobalConfig: () => this.globalConfig,
+      getPeerPauseStore: () => this.peerPauseStore,
+      getNotificationsEmitter: () => this.notificationsEmitter,
+      dispatchSyntheticInbound: (input) => this.dispatchSyntheticInbound(input),
+      searchAgentMemory: (input) => this.searchAgentMemory(input),
     });
     const instance = await mod.register(ctx);
     this.pluginRegistry.addPlugin(d.manifest.name, { manifest: d.manifest, instance });
@@ -4259,6 +4263,88 @@ export class Gateway {
     });
     logger.info({ agentId: request.agent.id, runId: request.runId, channel: target.channel, peerId: target.peer_id }, 'Heartbeat response delivered');
     return { response, delivered: true };
+  }
+
+  /**
+   * Synthesise an inbound message for a target agent's session, routed as
+   * if it had arrived through the named channel/account/peer combination.
+   *
+   * Used by the operator-console plugin's `delegate_to_peer` tool to enqueue
+   * work for a managed agent. Mirrors the synthetic-message construction
+   * in `handleCronJob`. Returns the synthesised messageId and the session
+   * key the message landed in.
+   *
+   * Fire-and-forget: we kick off `queryAgent` async (no await) so the
+   * caller (the operator agent's tool call) doesn't block on the managed
+   * agent's full response.
+   */
+  public async dispatchSyntheticInbound(input: {
+    targetAgentId: string;
+    channel: 'whatsapp' | 'telegram';
+    accountId?: string;
+    peerId: string;
+    text: string;
+    meta?: Record<string, unknown>;
+  }): Promise<{ messageId: string; sessionKey: string }> {
+    const agent = this.agents.get(input.targetAgentId);
+    if (!agent) {
+      throw new Error(`unknown agent: ${input.targetAgentId}`);
+    }
+
+    const messageId = `op-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const accountId = input.accountId ?? 'default';
+    const sessionKey = `${input.targetAgentId}:${input.channel}:dm:${input.peerId}`;
+
+    const syntheticMsg: InboundMessage = {
+      channel: input.channel,
+      accountId,
+      chatType: 'dm',
+      peerId: input.peerId,
+      senderId: 'operator-console',
+      senderName: 'operator-console',
+      text: input.text,
+      messageId,
+      mentionedBot: false,
+      raw: {
+        operatorConsole: true,
+        ...(input.meta ?? {}),
+      },
+    };
+
+    void this.queryAgent(agent, syntheticMsg, sessionKey).catch((err) => {
+      logger.warn(
+        { err, agentId: input.targetAgentId, messageId },
+        'operator-console: synthetic inbound queryAgent failed',
+      );
+    });
+
+    return { messageId, sessionKey };
+  }
+
+  /**
+   * Run a memory_search-style lookup against a target agent's memory store
+   * on behalf of a plugin tool. Returns top-N results in the shape the
+   * operator-console plugin expects.
+   */
+  public async searchAgentMemory(input: {
+    targetAgentId: string;
+    query: string;
+    maxResults?: number;
+  }): Promise<{ results: Array<{ path: string; snippet: string; score: number }> }> {
+    const agent = this.agents.get(input.targetAgentId);
+    if (!agent) {
+      throw new Error(`unknown agent: ${input.targetAgentId}`);
+    }
+    const max = Math.max(1, Math.min(50, input.maxResults ?? 10));
+    const raw = agent.memoryStore.textSearch(input.query, max);
+    const MAX_SNIPPET = 500;
+    return {
+      results: raw.map((r) => ({
+        path: `${r.path}#L${r.startLine}-L${r.endLine}`,
+        snippet: r.text.length > MAX_SNIPPET ? r.text.slice(0, MAX_SNIPPET) + '…' : r.text,
+        score: r.score,
+      })),
+    };
   }
 
   /**
