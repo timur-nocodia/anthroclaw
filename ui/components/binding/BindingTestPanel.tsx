@@ -221,14 +221,14 @@ export function BindingTestPanel({
               data-testid="binding-test-sender-id"
               value={senderId}
               onChange={(e) => setSenderId(e.target.value)}
-              placeholder="48705953"
+              placeholder="123456789"
               required
             />
             <p
               className="text-[11px]"
               style={{ color: "var(--oc-text-muted)" }}
             >
-              Telegram user ID like 48705953. Find with @userinfobot.
+              Numeric Telegram user ID. Find your own with @userinfobot.
             </p>
           </div>
 
@@ -241,7 +241,7 @@ export function BindingTestPanel({
               data-testid="binding-test-text"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="@clowwy_bot show_config"
+              placeholder="@your_bot some message"
               rows={2}
             />
           </div>
