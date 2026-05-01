@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createPeerPauseStore } from '../peer-pause.js';
 
 describe('PeerPauseStore — basic shape', () => {
@@ -99,5 +102,73 @@ describe('PeerPauseStore — pause/unpause/extend', () => {
     expect(replaced.extendedCount).toBe(0);
     expect(replaced.reason).toBe('manual');
     expect(replaced.expiresAt).toBe('2026-05-01T14:00:00.000Z');
+  });
+});
+
+describe('PeerPauseStore — persistence', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'pp-'));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('saves to disk and reloads on next instance', async () => {
+    const path = join(dir, 'peer-pauses.json');
+    const a = createPeerPauseStore({ filePath: path });
+    a.pause('amina', 'wa:b:1', {
+      ttlMinutes: 30,
+      reason: 'operator_takeover',
+      source: 'wa',
+    });
+    await a.flush();
+
+    const b = createPeerPauseStore({ filePath: path });
+    expect(b.list()).toHaveLength(1);
+    expect(b.list()[0].peerKey).toBe('wa:b:1');
+    expect(b.list()[0].agentId).toBe('amina');
+  });
+
+  it('handles missing file as empty store', () => {
+    const path = join(dir, 'does-not-exist.json');
+    const store = createPeerPauseStore({ filePath: path });
+    expect(store.list()).toEqual([]);
+  });
+
+  it('handles malformed file by logging and starting empty', () => {
+    const path = join(dir, 'bad.json');
+    writeFileSync(path, '{not valid json');
+    const store = createPeerPauseStore({ filePath: path });
+    expect(store.list()).toEqual([]);
+  });
+
+  it(':memory: filePath skips load and save', async () => {
+    const store = createPeerPauseStore({ filePath: ':memory:' });
+    store.pause('amina', 'wa:b:1', {
+      ttlMinutes: 30,
+      reason: 'operator_takeover',
+      source: 'wa',
+    });
+    await store.flush();
+    expect(store.list()).toHaveLength(1);
+  });
+
+  it('extend and unpause persist across reloads', async () => {
+    const path = join(dir, 'peer-pauses.json');
+    const a = createPeerPauseStore({ filePath: path });
+    a.pause('amina', 'wa:b:1', {
+      ttlMinutes: 30,
+      reason: 'operator_takeover',
+      source: 'wa',
+    });
+    a.pause('amina', 'wa:b:2', {
+      ttlMinutes: 30,
+      reason: 'operator_takeover',
+      source: 'wa',
+    });
+    a.unpause('amina', 'wa:b:1', 'manual');
+    await a.flush();
+
+    const b = createPeerPauseStore({ filePath: path });
+    expect(b.list().map((e) => e.peerKey)).toEqual(['wa:b:2']);
   });
 });
