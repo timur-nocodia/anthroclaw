@@ -3114,6 +3114,42 @@ export class Gateway {
       }
     }
 
+    // ─── Human takeover pause check ─────────────────────────────────
+    // After access control + rate limiter, before any further processing.
+    // If the operator is currently driving this peer, suppress the inbound
+    // entirely. Expired entries are auto-cleared so the next message
+    // dispatches normally.
+    if (this.peerPauseStore) {
+      const peerKey = `${msg.channel}:${msg.accountId}:${msg.peerId}`;
+      const status = this.peerPauseStore.isPaused(route.agentId, peerKey);
+      if (status.paused) {
+        if (status.expired) {
+          this.peerPauseStore.unpause(route.agentId, peerKey, 'ttl_expired');
+          // TODO Stage 2: notificationsEmitter.emit('peer_pause_ended', ...)
+          logger.info(
+            { agentId: route.agentId, peerKey },
+            'human_takeover: pause expired; resuming dispatch',
+          );
+        } else {
+          logger.info(
+            {
+              agentId: route.agentId,
+              peerKey,
+              expiresAt: status.entry?.expiresAt,
+            },
+            'human_takeover: peer is paused; skipping dispatch',
+          );
+          recordRouteDecision({
+            outcome: 'peer_paused',
+            candidates: routeCandidates,
+            winnerAgentId: route.agentId,
+            accessAllowed: true,
+          });
+          return;
+        }
+      }
+    }
+
     // ─── Hook: on_message_received ─────────────────────────────────
     const emitter = this.hookEmitters.get(route.agentId);
     if (emitter) {

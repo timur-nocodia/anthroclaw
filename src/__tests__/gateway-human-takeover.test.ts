@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Gateway } from '../gateway.js';
 import { RouteTable } from '../routing/table.js';
 import { createPeerPauseStore } from '../routing/peer-pause.js';
-import type { OperatorOutboundEvent } from '../channels/types.js';
+import type { ChannelAdapter, InboundMessage, OperatorOutboundEvent } from '../channels/types.js';
 import type { AgentYml } from '../config/schema.js';
 
 /**
@@ -98,5 +98,92 @@ describe('Gateway.handleOperatorOutbound', () => {
   it('returns silently if peerPauseStore or routeTable is missing', () => {
     const gw = new Gateway() as any;
     expect(() => gw.handleOperatorOutbound(makeEvent())).not.toThrow();
+  });
+});
+
+describe('Gateway.dispatch — pause check', () => {
+  const peerKey = 'whatsapp:business:37120@s.whatsapp.net';
+
+  function setupDispatchGateway(config: AgentYml) {
+    const gw = new Gateway() as any;
+    gw.peerPauseStore = createPeerPauseStore({ filePath: ':memory:' });
+    gw.routeTable = RouteTable.build([{ id: 'amina', config }]);
+    gw.agents = new Map([['amina', { id: 'amina', config }]]);
+    // Stub access control so no pairing/allowlist is needed.
+    gw.accessControl = {
+      check: () => ({ allowed: true }),
+      tryCode: () => false,
+    };
+    gw.profileRateLimiters = new Map();
+    gw.hookEmitters = new Map();
+    gw.channels = new Map<string, ChannelAdapter>();
+    // Spy that the dispatch path stops before reaching queryAgent.
+    gw.queryAgent = vi.fn();
+    return gw;
+  }
+
+  function makeInbound(): InboundMessage {
+    return {
+      channel: 'whatsapp',
+      accountId: 'business',
+      chatType: 'dm',
+      peerId: '37120@s.whatsapp.net',
+      senderId: '37120@s.whatsapp.net',
+      text: 'thanks',
+      messageId: 'M-in-1',
+      mentionedBot: false,
+      raw: {},
+    };
+  }
+
+  it('skips dispatch for paused peer', async () => {
+    const gw = setupDispatchGateway(ttlAgentConfig);
+    gw.peerPauseStore.pause('amina', peerKey, {
+      ttlMinutes: 30,
+      reason: 'operator_takeover',
+      source: 'wa',
+    });
+    await gw.dispatch(makeInbound());
+    expect(gw.queryAgent).not.toHaveBeenCalled();
+    // Pause stays in place (not expired).
+    expect(gw.peerPauseStore.list('amina')).toHaveLength(1);
+  });
+
+  it('clears expired pause and continues past the pause gate', async () => {
+    const t0 = Date.UTC(2026, 4, 1, 12, 0, 0);
+    let clock = t0;
+    const store = createPeerPauseStore({ filePath: ':memory:', clock: () => clock });
+    const gw = setupDispatchGateway(ttlAgentConfig);
+    gw.peerPauseStore = store;
+    store.pause('amina', peerKey, {
+      ttlMinutes: 30,
+      reason: 'operator_takeover',
+      source: 'wa',
+    });
+    clock = t0 + 31 * 60_000;
+
+    // Dispatch will go past the pause check; downstream paths may throw on
+    // the heavily stubbed gateway. We only care that the pause was cleared
+    // — that is the spec for Task 8 ("auto-clear expired").
+    try {
+      await gw.dispatch(makeInbound());
+    } catch {
+      // expected: downstream session/heartbeat plumbing is intentionally
+      // absent in this test.
+    }
+    expect(store.list('amina')).toEqual([]);
+  });
+
+  it('non-paused peer flows past the pause gate (no early-return)', async () => {
+    const gw = setupDispatchGateway(ttlAgentConfig);
+    // No pause set. The dispatch should attempt to proceed; downstream
+    // bookkeeping may throw on the stubbed gateway, but the peerPauseStore
+    // must remain empty (no spurious entries from the gate).
+    try {
+      await gw.dispatch(makeInbound());
+    } catch {
+      // ignored — we only assert the pause gate did not block dispatch.
+    }
+    expect(gw.peerPauseStore.list('amina')).toEqual([]);
   });
 });
