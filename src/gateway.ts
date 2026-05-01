@@ -57,6 +57,14 @@ import { HeartbeatStateStore } from './heartbeat/state-store.js';
 import { formatHeartbeatDeliveryContract, isHeartbeatAckResponse } from './heartbeat/delivery-contract.js';
 import { HeartbeatHistoryStore } from './heartbeat/history.js';
 import { ConfigWatcher } from './config/watcher.js';
+import {
+  createAgentConfigWriter,
+  type AgentConfigWriter,
+} from './config/writer.js';
+import {
+  createConfigAuditLog,
+  type ConfigAuditLog,
+} from './config/audit.js';
 import { runDreaming } from './memory/dreaming.js';
 import {
   buildPostRunMemoryExtractionPrompt,
@@ -736,6 +744,24 @@ export class Gateway {
    */
   public notificationsEmitter: NotificationsEmitter | null = null;
   private notificationsScheduler: NotificationsScheduler | null = null;
+  /**
+   * Unified mutation point for agent.yml — used by UI save endpoints (Stage 1)
+   * and chat-driven self-config tools (Stage 2). Comment-preserving writes,
+   * per-agent locking, atomic rename, schema validation, automatic backups,
+   * and an audit-log entry per write.
+   */
+  private agentConfigWriter: AgentConfigWriter | null = null;
+  private configAuditLog: ConfigAuditLog | null = null;
+
+  /** Returns the unified config writer (null until start() runs). */
+  getAgentConfigWriter(): AgentConfigWriter | null {
+    return this.agentConfigWriter;
+  }
+
+  /** Returns the per-agent JSONL audit log of config writes (null until start() runs). */
+  getConfigAuditLog(): ConfigAuditLog | null {
+    return this.configAuditLog;
+  }
 
   async start(config: GlobalConfig, agentsDir: string, dataDir: string, pluginsDir?: string): Promise<void> {
     this.startedAt = Date.now();
@@ -768,6 +794,17 @@ export class Gateway {
     } catch (err) {
       logger.warn({ err }, 'Claude Agent SDK startup failed; agent queries will use fallback responses');
     }
+
+    // Agent config writer + audit log (Stage 1 self-config-tools). Single
+    // mutation point for agent.yml — UI save endpoints and chat-driven tools
+    // both go through this writer so we get one audit trail.
+    this.configAuditLog = createConfigAuditLog({
+      auditDir: join(dataDir, 'config-audit'),
+    });
+    this.agentConfigWriter = createAgentConfigWriter({
+      agentsDir,
+      auditLog: this.configAuditLog,
+    });
 
     // Dynamic cron store
     this.dynamicCronStore = new DynamicCronStore(join(dataDir, 'dynamic-cron.json'));
@@ -1071,6 +1108,8 @@ export class Gateway {
     this.notificationsScheduler?.stopAll();
     this.notificationsScheduler = null;
     this.notificationsEmitter = null;
+    this.agentConfigWriter = null;
+    this.configAuditLog = null;
     this.heartbeatRunner?.stop();
     this.heartbeatRunner = null;
     this.heartbeatHistoryStore = null;

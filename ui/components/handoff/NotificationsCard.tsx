@@ -435,16 +435,24 @@ async function defaultPersist(
   agentId: string,
   cfg: NotificationsConfig,
 ): Promise<void> {
-  const url = `/api/agents/${encodeURIComponent(agentId)}`;
-  const getRes = await fetch(url);
-  if (!getRes.ok) throw new Error(`GET /api/agents/${agentId} failed: ${getRes.status}`);
-  const current = (await getRes.json()) as { parsed?: Record<string, unknown> };
-  const parsed = (current.parsed ?? {}) as Record<string, unknown>;
-  const next = { ...parsed, notifications: cfg };
-  const putRes = await fetch(url, {
-    method: "PUT",
+  // Stage 1 self-config-tools: route OCP-section saves through the unified
+  // PATCH endpoint backed by AgentConfigWriter. Comment-preserving writes,
+  // automatic backups, audit-log entry tagged `source: 'ui'`.
+  const url = `/api/agents/${encodeURIComponent(agentId)}/config`;
+  const res = await fetch(url, {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ config: next }),
+    body: JSON.stringify({ section: "notifications", value: cfg }),
   });
-  if (!putRes.ok) throw new Error(`PUT failed: ${putRes.status}`);
+  if (!res.ok) {
+    let message = `PATCH /api/agents/${agentId}/config failed: ${res.status}`;
+    try {
+      const body = (await res.json()) as { message?: string; error?: string };
+      if (body?.message) message = body.message;
+      else if (body?.error) message = body.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
 }

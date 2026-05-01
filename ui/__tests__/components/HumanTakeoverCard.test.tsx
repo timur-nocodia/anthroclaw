@@ -56,30 +56,23 @@ describe("HumanTakeoverCard", () => {
     expect(arg.pause_ttl_minutes).toBe(45);
   });
 
-  it("falls back to fetching+PUT when onSave is not provided", async () => {
+  it("PATCHes /api/agents/[id]/config when onSave is not provided", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       const method = (init?.method ?? "GET").toUpperCase();
-      if (method === "GET") {
-        return new Response(
-          JSON.stringify({ parsed: { model: "x" } }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-      // PUT
-      const body = JSON.parse(init!.body as string) as { config: Record<string, unknown> };
-      expect(body.config).toHaveProperty("human_takeover");
-      expect(body.config.human_takeover).toMatchObject({ enabled: true });
-      // Asserting we PUT to the right url for safety
-      expect(url).toContain("/api/agents/amina");
-      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+      expect(method).toBe("PATCH");
+      expect(url).toContain("/api/agents/amina/config");
+      const body = JSON.parse(init!.body as string) as { section: string; value: Record<string, unknown> };
+      expect(body.section).toBe("human_takeover");
+      expect(body.value).toMatchObject({ enabled: true });
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } });
     });
     vi.stubGlobal("fetch", fetchMock);
 
     render(<HumanTakeoverCard agentId="amina" />);
     fireEvent.click(screen.getByLabelText(/enabled/i));
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   });
 
   it("shows an error when onSave rejects", async () => {
