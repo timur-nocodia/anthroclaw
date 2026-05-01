@@ -8,6 +8,7 @@ describe('PluginRegistry', () => {
     const reg = new PluginRegistry();
     expect(reg.listPlugins()).toEqual([]);
     expect(reg.getMcpToolsForAgent('any')).toEqual([]);
+    expect(reg.getContextEngines('any')).toEqual([]);
     expect(reg.getContextEngine('any')).toBeNull();
     expect(reg.listSlashCommands()).toEqual([]);
   });
@@ -81,6 +82,10 @@ describe('PluginRegistry', () => {
 
     reg.enableForAgent('agent-1', 'lcm-a');
     reg.enableForAgent('agent-1', 'lcm-b');
+    expect(reg.getContextEngines('agent-1')).toEqual([
+      { name: 'lcm-a', engine: engineA },
+      { name: 'lcm-b', engine: engineB },
+    ]);
     expect(reg.getContextEngine('agent-1')).toEqual({ name: 'lcm-b', engine: engineB });
   });
 

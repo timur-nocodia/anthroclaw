@@ -116,20 +116,29 @@ export class PluginRegistry {
   }
 
   /**
-   * Active ContextEngine for an agent: last among enabled plugins with a registered engine.
-   * If multiple — we take the last enabled (insertion-order Set) and log a warning.
-   * Returns `{ name, engine }` so callers can attribute log lines to the plugin
-   * that took over (operator debuggability when several engines are registered).
+   * Active ContextEngines for an agent, in plugin enablement order.
+   *
+   * Gateway prompt assembly composes these sequentially so independent
+   * context injectors (for example LCM + mission-state) can coexist.
    */
-  getContextEngine(agentId: string): { name: string; engine: ContextEngine } | null {
+  getContextEngines(agentId: string): Array<{ name: string; engine: ContextEngine }> {
     const enabled = this.enabledByAgent.get(agentId);
-    if (!enabled || enabled.size === 0) return null;
+    if (!enabled || enabled.size === 0) return [];
 
     const candidates: { name: string; engine: ContextEngine }[] = [];
     for (const pluginName of enabled) {
       const engine = this.engineByPlugin.get(pluginName);
       if (engine) candidates.push({ name: pluginName, engine });
     }
+    return candidates;
+  }
+
+  /**
+   * Back-compat helper for older call sites/tests that expect a single engine.
+   * If multiple are enabled, returns the last enabled engine and logs the legacy warning.
+   */
+  getContextEngine(agentId: string): { name: string; engine: ContextEngine } | null {
+    const candidates = this.getContextEngines(agentId);
     if (candidates.length === 0) return null;
     if (candidates.length > 1) {
       logger.warn(

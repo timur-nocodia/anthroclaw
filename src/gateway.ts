@@ -672,6 +672,33 @@ export async function tryPluginAssemble(
   }
 }
 
+export async function tryPluginAssembleChain(
+  engines: Array<{ name: string; engine: ContextEngine }> | null | undefined,
+  agentId: string,
+  sessionKey: string,
+  prompt: string,
+): Promise<string | null> {
+  if (!engines || engines.length === 0) return null;
+
+  let current = prompt;
+  let changed = false;
+  for (const entry of engines) {
+    const assembled = await tryPluginAssemble(
+      entry.engine,
+      agentId,
+      sessionKey,
+      current,
+      entry.name,
+    );
+    if (assembled !== null) {
+      current = assembled;
+      changed = true;
+    }
+  }
+
+  return changed ? current : null;
+}
+
 export class Gateway {
   private agents = new Map<string, Agent>();
   private channels = new Map<string, ChannelAdapter>();
@@ -3637,17 +3664,16 @@ export class Gateway {
         });
       }
 
-      // Plugin context-engine assemble (T21): if a plugin transforms the
-      // prompt (e.g. LCM injects compressed history context), use the
-      // transformed version. Otherwise pass the original prompt through
-      // unchanged. Failures fall back to the original prompt silently.
-      const assembleEntry = this.pluginRegistry.getContextEngine(agent.id);
-      const assembledPrompt = await tryPluginAssemble(
-        assembleEntry?.engine ?? null,
+      // Plugin context-engine assemble (T21): enabled plugins can transform
+      // the prompt in sequence (e.g. LCM injects history context, then
+      // mission-state injects operational state). Otherwise pass the original
+      // prompt through unchanged. Failures fall back to the current prompt.
+      const assembleEntries = this.pluginRegistry.getContextEngines(agent.id);
+      const assembledPrompt = await tryPluginAssembleChain(
+        assembleEntries,
         agent.id,
         sessionKey,
         prompt,
-        assembleEntry?.name ?? null,
       );
       if (assembledPrompt !== null) {
         prompt = assembledPrompt;
