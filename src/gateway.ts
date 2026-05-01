@@ -2922,6 +2922,7 @@ export class Gateway {
       );
       return;
     }
+    // TODO Stage 2: honour cfg.channels filter — currently only WhatsApp emits operator_outbound, but the schema accepts ['telegram'] too.
     const status = this.peerPauseStore.isPaused(route.agentId, event.peerKey);
     if (status.paused && !status.expired) {
       this.peerPauseStore.extend(route.agentId, event.peerKey);

@@ -63,7 +63,19 @@ describe('human_takeover end-to-end', () => {
     const gw = new Gateway() as any;
     gw.peerPauseStore = createPeerPauseStore({ filePath: ':memory:', clock: () => clock });
     gw.routeTable = RouteTable.build([{ id: 'amina', config: aminaConfig }]);
-    gw.agents = new Map([['amina', { id: 'amina', config: aminaConfig }]]);
+    // Stubbed Agent — only the methods dispatch() reaches between the pause
+    // gate and queryAgent need to exist; everything else is bypassed by the
+    // default `session_policy: 'never'` and lack of slash-commands.
+    const stubAgent = {
+      id: 'amina',
+      config: aminaConfig,
+      incrementMessageCount: vi.fn(),
+      getSessionId: vi.fn(() => undefined),
+      getSessionModel: vi.fn(() => undefined),
+      clearSession: vi.fn(),
+      isSessionResetDue: vi.fn(() => false),
+    };
+    gw.agents = new Map([['amina', stubAgent]]);
     gw.accessControl = { check: () => ({ allowed: true }), tryCode: () => false };
     gw.profileRateLimiters = new Map();
     gw.hookEmitters = new Map();
@@ -117,6 +129,10 @@ describe('human_takeover end-to-end', () => {
       // observable signal we care about is the cleared pause.
     }
     expect(gw.peerPauseStore.list('amina')).toEqual([]);
+    // Positive assertion: dispatch progressed past the pause gate exactly
+    // once after expiry — i.e. the pause was the only reason it had been
+    // skipped before, and now the agent path is reached.
+    expect(queryAgent).toHaveBeenCalledTimes(1);
   });
 
   it('extending: second operator_outbound during active pause extends, not replaces', () => {

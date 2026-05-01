@@ -59,6 +59,14 @@ describe('PeerPauseStore — pause/unpause/extend', () => {
     expect(store.extend('amina', 'wa:b:1')).toBeNull();
   });
 
+  it('extend returns null when the pause is already expired', () => {
+    let now = NOW;
+    const store = createPeerPauseStore({ filePath: ':memory:', clock: () => now });
+    store.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    now = NOW + 31 * 60 * 1000;
+    expect(store.extend('amina', 'wa:b:1')).toBeNull();
+  });
+
   it('unpause removes the entry and returns the previous state', () => {
     const store = createPeerPauseStore({ filePath: ':memory:', clock });
     store.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
@@ -150,6 +158,36 @@ describe('PeerPauseStore — persistence', () => {
     });
     await store.flush();
     expect(store.list()).toHaveLength(1);
+  });
+
+  it('extend uses pausedAt as fallback when lastOperatorMessageAt is null', () => {
+    // Simulate a hand-edited / pre-versioned persisted entry that has
+    // lastOperatorMessageAt: null. The store loads the array format from
+    // disk, so we craft the file in the same shape writeNow() produces.
+    const path = join(dir, 'peer-pauses.json');
+    const handcraftedAt = '2026-05-01T12:00:00.000Z';
+    const handcraftedExpires = '2026-05-01T12:30:00.000Z';
+    writeFileSync(
+      path,
+      JSON.stringify([
+        {
+          agentId: 'amina',
+          peerKey: 'wa:b:1',
+          pausedAt: handcraftedAt,
+          expiresAt: handcraftedExpires,
+          reason: 'operator_takeover',
+          source: 'wa',
+          extendedCount: 0,
+          lastOperatorMessageAt: null,
+        },
+      ]),
+    );
+    let now = Date.parse(handcraftedAt) + 10 * 60 * 1000;
+    const store = createPeerPauseStore({ filePath: path, clock: () => now });
+    const ext = store.extend('amina', 'wa:b:1');
+    expect(ext).not.toBeNull();
+    // 10min after pausedAt + (30min TTL window from pausedAt→expiresAt) = 12:40
+    expect(ext?.expiresAt).toBe('2026-05-01T12:40:00.000Z');
   });
 
   it('extend and unpause persist across reloads', async () => {

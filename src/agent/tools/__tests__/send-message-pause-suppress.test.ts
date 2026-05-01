@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createSendMessageTool } from '../send-message.js';
 import { createPeerPauseStore } from '../../../routing/peer-pause.js';
+import { logger } from '../../../logger.js';
 import type { ChannelAdapter } from '../../../channels/types.js';
 
 /**
@@ -126,6 +127,46 @@ describe('send_message — pause suppression', () => {
     });
 
     expect(sendText).toHaveBeenCalledOnce();
+  });
+
+  it('without account_id logs warning, does NOT check pause, falls through to send', async () => {
+    // The gateway always pauses peers under `whatsapp:business:...`. If
+    // send_message lacks account_id we cannot reconstruct that key, so we
+    // skip the pause check (fail-open) and emit a warning so the gap is
+    // observable rather than silent.
+    const store = createPeerPauseStore({ filePath: ':memory:' });
+    store.pause('amina', 'whatsapp:business:37120@s.whatsapp.net', {
+      ttlMinutes: 30,
+      reason: 'operator_takeover',
+      source: 'wa',
+    });
+    const isPausedSpy = vi.spyOn(store, 'isPaused');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const { adapter, sendText } = makeFakeAdapter();
+    const tool = createSendMessageTool(() => adapter, {
+      agentId: 'amina',
+      peerPauseStore: store,
+    });
+
+    const handler = getHandler(tool);
+    await handler({
+      channel: 'whatsapp',
+      // account_id intentionally omitted
+      peer_id: '37120@s.whatsapp.net',
+      text: 'no account id',
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        peerId: '37120@s.whatsapp.net',
+        channel: 'whatsapp',
+      }),
+      'send_message called without account_id; cannot perform pause check',
+    );
+    expect(isPausedSpy).not.toHaveBeenCalled();
+    expect(sendText).toHaveBeenCalledOnce();
+    warnSpy.mockRestore();
+    isPausedSpy.mockRestore();
   });
 
   it('omits agentId/peerPauseStore => standard send (subsystem disabled at construction)', async () => {

@@ -41,8 +41,19 @@ export function createSendMessageTool(
       // entirely. Mid-generation suppression covers the case where the
       // pause started after the agent decided to reply but before the tool
       // call landed.
-      if (opts.agentId && opts.peerPauseStore) {
-        const peerKey = `${channel}:${accountId ?? 'default'}:${peerId}`;
+      //
+      // Without account_id we cannot construct the same peerKey the gateway
+      // uses (e.g. `whatsapp:business:...`), so a `default` fallback would
+      // never match a real pause and silently bypass it. Fail-open with a
+      // warning so existing callers keep working but the gap is observable.
+      if (opts.agentId && opts.peerPauseStore && !accountId) {
+        logger.warn(
+          { peerId, channel },
+          'send_message called without account_id; cannot perform pause check',
+        );
+      }
+      if (opts.agentId && opts.peerPauseStore && accountId) {
+        const peerKey = `${channel}:${accountId}:${peerId}`;
         const status = opts.peerPauseStore.isPaused(opts.agentId, peerKey);
         if (status.paused && !status.expired) {
           logger.info(

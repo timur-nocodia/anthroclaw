@@ -125,10 +125,18 @@ export function createPeerPauseStore(opts: CreatePeerPauseStoreOptions): PeerPau
       const existing = entries.get(key(agentId, peerKey));
       if (!existing) return null;
       const nowMs = clock();
+      // Refuse to extend an expired pause — caller should pause() fresh instead.
+      if (existing.expiresAt !== null && nowMs > Date.parse(existing.expiresAt)) {
+        return null;
+      }
       const nowIso = new Date(nowMs).toISOString();
       let nextExpiresAt: string | null = null;
-      if (existing.expiresAt !== null && existing.lastOperatorMessageAt !== null) {
-        const ttlMs = Date.parse(existing.expiresAt) - Date.parse(existing.lastOperatorMessageAt);
+      if (existing.expiresAt !== null) {
+        // Fall back to pausedAt when lastOperatorMessageAt is null (e.g.,
+        // hand-edited or pre-versioned persisted entries) so a TTL pause
+        // never silently turns into an indefinite one.
+        const ref = existing.lastOperatorMessageAt ?? existing.pausedAt;
+        const ttlMs = Date.parse(existing.expiresAt) - Date.parse(ref);
         nextExpiresAt = new Date(nowMs + ttlMs).toISOString();
       }
       const updated: PauseEntry = {
