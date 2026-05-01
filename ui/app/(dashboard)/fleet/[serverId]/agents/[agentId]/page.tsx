@@ -60,6 +60,7 @@ import { PluginsPanel } from "@/components/plugins/PluginsPanel";
 import { DoctorPanel } from "@/components/lcm/DoctorPanel";
 import { HandoffTab } from "@/components/handoff/HandoffTab";
 import { Section } from "@/components/ui/section";
+import { WhereAgentListensSection } from "@/components/binding/WhereAgentListensSection";
 import { ANTHROPIC_MODELS as MODELS } from "@/lib/anthropic-models";
 
 /* ------------------------------------------------------------------ */
@@ -2021,6 +2022,9 @@ function ConfigTab({
               onAllowlistChange={(al) => update({ allowlist: al })}
             />
           </Section>
+
+          {/* Where this agent listens — Stage 1 placeholder; Stage 2 adds wizard + cards */}
+          <WhereAgentListensSection routes={cfg.routes} />
 
           {/* Per-chat customization (formerly "Channel behavior") */}
           <Section
