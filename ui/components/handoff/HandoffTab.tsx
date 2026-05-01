@@ -1,18 +1,20 @@
 "use client";
 
 /**
- * HandoffTab — composes the four Handoff sections:
+ * HandoffTab — composes the five Handoff sections:
  *
  *   ┌── Auto-pause on human takeover ──┐  (HumanTakeoverCard)
  *   ├── Notifications ─────────────────┤  (NotificationsCard)
  *   ├── Active pauses ─────────────────┤  (ActivePausesTable)
- *   └── Activity log ──────────────────┘  (ActivityLogPanel)
+ *   ├── Activity log ──────────────────┤  (ActivityLogPanel)
+ *   └── Config change history ─────────┘  (ConfigAuditPanel)
  */
 
 import { HumanTakeoverCard, type HumanTakeoverConfig } from "./HumanTakeoverCard";
 import { NotificationsCard, type NotificationsConfig } from "./NotificationsCard";
 import { ActivePausesTable } from "./ActivePausesTable";
 import { ActivityLogPanel } from "./ActivityLogPanel";
+import { ConfigAuditPanel } from "./ConfigAuditPanel";
 
 /**
  * Loose shape — accepts the AgentConfig from page.tsx whose `notifications`
@@ -49,6 +51,7 @@ export function HandoffTab({ agentId, agent }: HandoffTabProps) {
       />
       <ActivePausesTable agentId={agentId} />
       <ActivityLogPanel agentId={agentId} />
+      <ConfigAuditPanel agentId={agentId} />
     </div>
   );
 }
