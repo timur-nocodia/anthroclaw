@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createAgentConfigWriter } from '../writer.js';
-import { createConfigAuditLog } from '../audit.js';
+import { createConfigAuditLog, type ConfigAuditLog } from '../audit.js';
+import { logger } from '../../logger.js';
 
 const SEED_YAML = [
   '# Amina lead bot',
@@ -185,5 +186,65 @@ describe('AgentConfigWriter — audit integration', () => {
     ).rejects.toThrow();
     const entries = await auditLog.readRecent('amina');
     expect(entries).toHaveLength(0);
+  });
+
+  it('audit log append failure does not reject the committed write', async () => {
+    // Audit log that always rejects. Write is already committed by the time
+    // append runs, so the caller MUST get a resolved result and the file
+    // MUST be on disk. A rejected audit append would force the UI/caller to
+    // retry, producing redundant writes + extra backups.
+    const failingAudit: ConfigAuditLog = {
+      append: () => Promise.reject(new Error('audit dir not writable')),
+      readRecent: () => Promise.resolve([]),
+    };
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as unknown as void);
+    try {
+      const writer = createAgentConfigWriter({ agentsDir, auditLog: failingAudit });
+      const result = await writer.patchSection('amina', 'human_takeover', () => ({
+        enabled: true,
+        pause_ttl_minutes: 30,
+      }));
+      expect(result.newValue).toMatchObject({ enabled: true, pause_ttl_minutes: 30 });
+      const after = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
+      expect(after).toContain('human_takeover:');
+      expect(after).toContain('pause_ttl_minutes: 30');
+      // The warn-and-swallow path emitted a structured warning.
+      const warnedAuditFailure = warnSpy.mock.calls.some((call) => {
+        const ctx = call[0] as Record<string, unknown> | undefined;
+        const msg = call[1];
+        return (
+          typeof msg === 'string' &&
+          msg.includes('audit log append failed') &&
+          ctx !== undefined &&
+          (ctx as { agentId?: unknown }).agentId === 'amina'
+        );
+      });
+      expect(warnedAuditFailure).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+describe('AgentConfigWriter — clock injection', () => {
+  let agentsDir: string;
+  beforeEach(() => {
+    agentsDir = mkdtempSync(join(tmpdir(), 'acw-clk-'));
+    mkdirSync(join(agentsDir, 'amina'), { recursive: true });
+    writeFileSync(join(agentsDir, 'amina', 'agent.yml'), SEED_YAML);
+  });
+  afterEach(() => rmSync(agentsDir, { recursive: true, force: true }));
+
+  it('uses injected clock for backup filename timestamp and writtenAt', async () => {
+    const fixed = Date.parse('2026-05-01T12:34:56.789Z');
+    const writer = createAgentConfigWriter({ agentsDir, clock: () => fixed });
+    const result = await writer.patchSection('amina', 'human_takeover', () => ({
+      enabled: true,
+      pause_ttl_minutes: 30,
+    }));
+    expect(result.writtenAt).toBe('2026-05-01T12:34:56.789Z');
+    // Backup filename embeds the same timestamp (with `:` and `.` flattened
+    // to `-`). The seq suffix still helps with same-millisecond collisions.
+    expect(result.backupPath).toContain('agent.yml.bak-2026-05-01T12-34-56-789Z-');
   });
 });

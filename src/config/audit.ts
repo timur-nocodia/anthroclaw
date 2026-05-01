@@ -33,6 +33,15 @@ export interface ReadRecentOptions {
 
 export interface ConfigAuditLog {
   append(entry: AuditEntry): Promise<void>;
+  /**
+   * Returns recent audit entries newest-first.
+   *
+   * Limitation: only reads the active log file. Entries that have been
+   * rotated to `{agentId}.jsonl.<N>` are not visible. Callers requesting
+   * `limit: N` may receive fewer than N entries even when N entries exist
+   * in the rolled history. This is acceptable for v1; multi-file scan
+   * will land if/when audit history viewer needs deeper retention.
+   */
   readRecent(agentId: string, opts?: ReadRecentOptions): Promise<PersistedAuditEntry[]>;
 }
 
@@ -108,10 +117,19 @@ function serialize(entry: PersistedAuditEntry): string {
   return JSON.stringify(out);
 }
 
+const VALID_SECTIONS: ReadonlySet<string> = new Set([
+  'notifications',
+  'human_takeover',
+  'operator_console',
+]);
+
 function deserialize(line: string): PersistedAuditEntry | null {
   try {
     const obj = JSON.parse(line) as Record<string, unknown>;
     if (typeof obj.ts !== 'string' || typeof obj.target_agent !== 'string') return null;
+    // Validate section against the canonical set rather than trusting a
+    // possibly-tampered or corrupt persisted value.
+    if (typeof obj.section !== 'string' || !VALID_SECTIONS.has(obj.section)) return null;
     return {
       ts: obj.ts,
       callerAgent: String(obj.caller_agent ?? ''),

@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import { AgentYmlSchema } from './schema.js';
 import type { ConfigAuditLog } from './audit.js';
+import { logger } from '../logger.js';
 
 export type ConfigSection = 'notifications' | 'human_takeover' | 'operator_console';
 
@@ -43,8 +44,12 @@ export interface AgentConfigWriter {
 
 export interface CreateAgentConfigWriterOptions {
   agentsDir: string;
-  auditDir?: string;
   backupKeep?: number;
+  /**
+   * Optional clock injection for deterministic backup timestamps in tests.
+   * Returns epoch milliseconds (compatible with `Date.now()`). When omitted,
+   * `Date.now()` is used.
+   */
   clock?: () => number;
   auditLog?: ConfigAuditLog;
 }
@@ -98,7 +103,8 @@ function pruneBackups(agentsDir: string, agentId: string, keep: number): void {
 }
 
 export function createAgentConfigWriter(opts: CreateAgentConfigWriterOptions): AgentConfigWriter {
-  const { agentsDir, backupKeep = 10, auditLog } = opts;
+  const { agentsDir, backupKeep = 10, auditLog, clock } = opts;
+  const now = (): Date => new Date(clock?.() ?? Date.now());
   const locks = new Map<string, Promise<void>>();
   let backupSeq = 0;
 
@@ -119,28 +125,46 @@ export function createAgentConfigWriter(opts: CreateAgentConfigWriterOptions): A
     const run = prior
       .catch(() => undefined)
       .then(async () => {
+        // doPatch is synchronous and the YAML file is on disk by the time
+        // it returns. Audit logging is observability — failure must not
+        // veto a committed write or the UI/caller will retry, producing a
+        // redundant write + extra backup.
         const result = doPatch(agentId, section, patch);
         if (auditLog) {
-          await auditLog.append({
-            callerAgent: context.caller ?? 'system',
-            callerSession: context.callerSession,
-            targetAgent: agentId,
-            section,
-            action: context.action ?? 'patch_section',
-            prev: result.prevValue ?? null,
-            new: result.newValue,
-            source: context.source ?? 'system',
-          });
+          await auditLog
+            .append({
+              callerAgent: context.caller ?? 'system',
+              callerSession: context.callerSession,
+              targetAgent: agentId,
+              section,
+              action: context.action ?? 'patch_section',
+              prev: result.prevValue ?? null,
+              new: result.newValue,
+              source: context.source ?? 'system',
+            })
+            .catch((err) => {
+              logger.warn(
+                { err, agentId, section },
+                'audit log append failed; write was committed',
+              );
+            });
         }
         return result;
       });
-    locks.set(
-      agentId,
-      run.then(
-        () => undefined,
-        () => undefined,
-      ),
+    const lockPromise = run.then(
+      () => undefined,
+      () => undefined,
     );
+    locks.set(agentId, lockPromise);
+    // After this lock chain settles, evict the entry only if it's still
+    // the same promise — a fresh write enqueued in the meantime will have
+    // replaced it, and we must not delete the new chain. Without this GC
+    // a long-running gateway with hot-reloaded agents accumulates entries.
+    lockPromise.then(() => {
+      if (locks.get(agentId) === lockPromise) {
+        locks.delete(agentId);
+      }
+    });
     return run;
   }
 
@@ -179,7 +203,7 @@ export function createAgentConfigWriter(opts: CreateAgentConfigWriterOptions): A
     }
 
     const serialized = doc.toString();
-    const writtenAt = new Date();
+    const writtenAt = now();
     const seq = (backupSeq++ % 1_000_000).toString().padStart(6, '0');
     const backupName = `${BACKUP_PREFIX}${timestampForBackup(writtenAt)}-${seq}`;
     const backupPath = join(agentsDir, agentId, backupName);

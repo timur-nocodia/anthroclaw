@@ -1,4 +1,4 @@
-import { readdirSync, existsSync, readFileSync } from 'node:fs';
+import { readdirSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -694,6 +694,27 @@ export async function tryPluginAssemble(
   }
 }
 
+/**
+ * Sweep `agent.yml.tmp` files left behind by a crash mid-write in a prior
+ * run. The writer uses write-tmp + atomic rename, so a leftover tmp is
+ * always safe to discard. Logs warn per orphan removed.
+ */
+function cleanupOrphanTmpFiles(agentsDir: string): void {
+  if (!existsSync(agentsDir)) return;
+  for (const entry of readdirSync(agentsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const tmpPath = join(agentsDir, entry.name, 'agent.yml.tmp');
+    if (existsSync(tmpPath)) {
+      logger.warn({ path: tmpPath }, 'cleaning up orphan agent.yml.tmp from prior crash');
+      try {
+        unlinkSync(tmpPath);
+      } catch (err) {
+        logger.warn({ err, path: tmpPath }, 'failed to remove orphan agent.yml.tmp');
+      }
+    }
+  }
+}
+
 export class Gateway {
   private agents = new Map<string, Agent>();
   private channels = new Map<string, ChannelAdapter>();
@@ -805,6 +826,11 @@ export class Gateway {
       agentsDir,
       auditLog: this.configAuditLog,
     });
+
+    // Sweep stray `agent.yml.tmp` files left behind by a crash mid-write
+    // in a prior run. The writer uses write-tmp + rename for atomicity, so
+    // a leftover tmp is always discardable.
+    cleanupOrphanTmpFiles(agentsDir);
 
     // Dynamic cron store
     this.dynamicCronStore = new DynamicCronStore(join(dataDir, 'dynamic-cron.json'));

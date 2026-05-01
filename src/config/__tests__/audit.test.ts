@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createConfigAuditLog } from '../audit.js';
@@ -104,5 +104,60 @@ describe('ConfigAuditLog', () => {
   it('readRecent returns empty when no log file', async () => {
     const log = createConfigAuditLog({ auditDir: dir });
     expect(await log.readRecent('ghost')).toEqual([]);
+  });
+
+  it('readRecent skips malformed lines and entries with invalid section', async () => {
+    // Hand-craft a log file with a mix of valid + corrupt + tampered lines.
+    // The deserializer must drop bad rows rather than coerce them.
+    const path = join(dir, 'amina.jsonl');
+    appendFileSync(
+      path,
+      [
+        // Valid entry.
+        JSON.stringify({
+          ts: '2026-05-01T10:00:00.000Z',
+          caller_agent: 'k',
+          target_agent: 'amina',
+          section: 'human_takeover',
+          action: 'noop',
+          prev: null,
+          new: { i: 1 },
+          source: 'chat',
+        }),
+        // Invalid JSON.
+        '{not valid json',
+        // Tampered: section is not in VALID_SECTIONS.
+        JSON.stringify({
+          ts: '2026-05-01T10:00:01.000Z',
+          caller_agent: 'k',
+          target_agent: 'amina',
+          section: 'evil_payload',
+          action: 'noop',
+          prev: null,
+          new: { i: 2 },
+          source: 'chat',
+        }),
+        // Missing required field (target_agent).
+        JSON.stringify({ ts: '2026-05-01T10:00:02.000Z', section: 'human_takeover' }),
+        // Another valid entry.
+        JSON.stringify({
+          ts: '2026-05-01T10:00:03.000Z',
+          caller_agent: 'k',
+          target_agent: 'amina',
+          section: 'notifications',
+          action: 'noop',
+          prev: null,
+          new: { i: 3 },
+          source: 'chat',
+        }),
+        '',
+      ].join('\n'),
+      'utf-8',
+    );
+    const log = createConfigAuditLog({ auditDir: dir });
+    const entries = await log.readRecent('amina');
+    expect(entries).toHaveLength(2);
+    expect(entries.map((e) => (e.new as { i: number }).i).sort()).toEqual([1, 3]);
+    expect(entries.every((e) => e.section === 'human_takeover' || e.section === 'notifications')).toBe(true);
   });
 });
