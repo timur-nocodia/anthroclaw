@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { logger } from '../logger.js';
+import { formatForChannel } from './formatters.js';
 import type {
   AgentNotificationsConfig,
   NotificationEventName,
@@ -8,9 +11,14 @@ import type {
 } from './types.js';
 
 /**
- * Public surface of the notifications emitter. Stage 2 (Tasks 11–16):
- * scaffold types and registration; later tasks fill in subscription
- * dispatch, throttle, and scheduled events.
+ * Public surface of the notifications emitter. Owns:
+ *  • per-agent route + subscription registry (via subscribeAgent)
+ *  • dispatch fan-out on `emit` to all matching subscriptions
+ *  • per-(event, route, payload-hash) throttle window
+ *
+ * The emitter is the only call surface the gateway and the send_message
+ * tool depend on. Stage 3 (operator-console plugin) reuses the same
+ * surface for `escalation_needed` and similar.
  */
 export interface NotificationsEmitter {
   /** Register or replace the per-agent notifications config. Idempotent. */
@@ -19,24 +27,152 @@ export interface NotificationsEmitter {
   unsubscribeAgent(agentId: string): void;
   /** Dispatch an event payload to every matching subscription. */
   emit(event: NotificationEventName, payload: NotificationEventPayload): Promise<void>;
-  /** Lower-level helper retained for symmetry with `emit` — same semantics. */
+  /** Lower-level helper: register a single subscription with a literal route. */
   subscribe(agentId: string, subscription: NotificationSubscription, route: NotificationRoute): void;
 }
 
 export interface CreateNotificationsEmitterOptions {
   sendMessage: SendNotificationFn;
+  /** Injectable clock for tests. Defaults to Date.now. */
+  clock?: () => number;
+  /**
+   * Max throttle entries to retain in memory. Old entries are dropped
+   * LRU-style when the cap is exceeded. Default 1000.
+   */
+  throttleMaxEntries?: number;
+}
+
+interface ResolvedSubscription {
+  subscription: NotificationSubscription;
+  route: NotificationRoute;
+  routeName: string;
+}
+
+const DEFAULT_THROTTLE_CAP = 1000;
+
+/**
+ * Parse a throttle string like "5m", "30s", "1h" into milliseconds.
+ * Returns null for unrecognized input — the emitter then treats it as
+ * no-throttle and logs a one-time warning per malformed value.
+ */
+export function parseThrottle(input: string | undefined | null): number | null {
+  if (!input) return null;
+  const m = input.trim().match(/^(\d+)\s*(s|m|h)$/i);
+  if (!m) return null;
+  const n = Number.parseInt(m[1] ?? '', 10);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const unit = (m[2] ?? '').toLowerCase();
+  switch (unit) {
+    case 's': return n * 1000;
+    case 'm': return n * 60_000;
+    case 'h': return n * 3_600_000;
+    default: return null;
+  }
 }
 
 /**
- * Factory. Returns an emitter whose `emit` is a no-op until Task 14 wires
- * subscription dispatch + throttle. The shape is the contract that
- * Stage 1 callsites (gateway, send-message tool) bind to.
+ * Build a stable hash of payload fields that distinguish "the same event
+ * about the same thing" — e.g. peerKey for pause events. Used to
+ * collapse repeat events within a throttle window.
  */
+function dedupeKeyFor(event: NotificationEventName, payload: NotificationEventPayload): string {
+  const parts: string[] = [event, String(payload.agentId ?? '')];
+  // Stable, well-known fields used across the pause/error events.
+  for (const key of ['peerKey', 'channel', 'accountId']) {
+    const v = payload[key];
+    if (typeof v === 'string') parts.push(`${key}=${v}`);
+  }
+  return createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 16);
+}
+
 export function createNotificationsEmitter(
   opts: CreateNotificationsEmitterOptions,
 ): NotificationsEmitter {
-  void opts.sendMessage;
+  const sendMessage = opts.sendMessage;
+  const clock = opts.clock ?? Date.now;
+  const throttleCap = opts.throttleMaxEntries ?? DEFAULT_THROTTLE_CAP;
+
   const agentConfigs = new Map<string, AgentNotificationsConfig>();
+  // (event, routeKey, dedupeKey) → last-emit ms
+  const throttleHits = new Map<string, number>();
+  const warnedMalformed = new Set<string>();
+
+  function noteThrottle(key: string, now: number): void {
+    throttleHits.set(key, now);
+    if (throttleHits.size > throttleCap) {
+      // Drop oldest ~10% to amortize cost.
+      const drop = Math.max(1, Math.floor(throttleCap * 0.1));
+      const iter = throttleHits.keys();
+      for (let i = 0; i < drop; i++) {
+        const k = iter.next().value as string | undefined;
+        if (k === undefined) break;
+        throttleHits.delete(k);
+      }
+    }
+  }
+
+  function resolveSubscriptions(
+    agentId: string,
+    event: NotificationEventName,
+  ): ResolvedSubscription[] {
+    const cfg = agentConfigs.get(agentId);
+    if (!cfg) return [];
+    if (cfg.enabled === false) return [];
+    const subs = cfg.subscriptions ?? [];
+    const routes = cfg.routes ?? {};
+    const matches: ResolvedSubscription[] = [];
+    for (const sub of subs) {
+      if (sub.event !== event) continue;
+      const route = routes[sub.route];
+      if (!route) {
+        logger.warn(
+          { agentId, event, routeName: sub.route },
+          'notifications: subscription references unknown route name; skipping',
+        );
+        continue;
+      }
+      matches.push({ subscription: sub, route, routeName: sub.route });
+    }
+    return matches;
+  }
+
+  async function dispatchOne(
+    event: NotificationEventName,
+    payload: NotificationEventPayload,
+    resolved: ResolvedSubscription,
+  ): Promise<void> {
+    const { subscription, route, routeName } = resolved;
+    const text = formatForChannel(route.channel, event, payload);
+    const now = clock();
+    const throttleMs = parseThrottle(subscription.throttle);
+    if (subscription.throttle && throttleMs === null && !warnedMalformed.has(subscription.throttle)) {
+      warnedMalformed.add(subscription.throttle);
+      logger.warn(
+        { throttle: subscription.throttle, agentId: payload.agentId, event },
+        'notifications: malformed throttle string; treating as no-throttle',
+      );
+    }
+    if (throttleMs !== null) {
+      const key = `${event}::${payload.agentId}::${routeName}::${dedupeKeyFor(event, payload)}`;
+      const last = throttleHits.get(key);
+      if (last !== undefined && now - last < throttleMs) {
+        logger.debug(
+          { event, agentId: payload.agentId, routeName, throttleMs, sinceLastMs: now - last },
+          'notifications: throttled; skipping send',
+        );
+        return;
+      }
+      noteThrottle(key, now);
+    }
+    try {
+      await sendMessage(route, text, { event, agentId: String(payload.agentId) });
+    } catch (err) {
+      logger.warn(
+        { err, event, agentId: payload.agentId, routeName },
+        'notifications: send failed',
+      );
+    }
+  }
 
   return {
     subscribeAgent: (agentId, cfg) => {
@@ -49,14 +185,22 @@ export function createNotificationsEmitter(
     unsubscribeAgent: (agentId) => {
       agentConfigs.delete(agentId);
     },
-    emit: async (_event, _payload) => {
-      void _event;
-      void _payload;
+    emit: async (event, payload) => {
+      const agentId = String(payload.agentId ?? '');
+      if (!agentId) return;
+      const resolved = resolveSubscriptions(agentId, event);
+      if (resolved.length === 0) return;
+      await Promise.all(resolved.map((r) => dispatchOne(event, payload, r)));
     },
-    subscribe: (_agentId, _subscription, _route) => {
-      void _agentId;
-      void _subscription;
-      void _route;
+    subscribe: (agentId, subscription, route) => {
+      const existing = agentConfigs.get(agentId) ?? {
+        enabled: true,
+        routes: {},
+        subscriptions: [],
+      };
+      const routes = { ...(existing.routes ?? {}), [subscription.route]: route };
+      const subscriptions = [...(existing.subscriptions ?? []), subscription];
+      agentConfigs.set(agentId, { ...existing, routes, subscriptions });
     },
   };
 }
