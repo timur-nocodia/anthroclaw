@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createAgentConfigWriter } from '../writer.js';
@@ -83,5 +83,54 @@ describe('AgentConfigWriter — patchSection', () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const cfg = writer.readFullConfig('amina') as Record<string, unknown>;
     expect(cfg.safety_profile).toBe('chat_like_openclaw');
+  });
+});
+
+describe('AgentConfigWriter — schema validation + backups', () => {
+  let agentsDir: string;
+  beforeEach(() => {
+    agentsDir = mkdtempSync(join(tmpdir(), 'acw-val-'));
+    mkdirSync(join(agentsDir, 'amina'), { recursive: true });
+    writeFileSync(join(agentsDir, 'amina', 'agent.yml'), SEED_YAML);
+  });
+  afterEach(() => rmSync(agentsDir, { recursive: true, force: true }));
+
+  it('rejects patch that produces invalid YAML schema and leaves file unchanged', async () => {
+    const writer = createAgentConfigWriter({ agentsDir });
+    const before = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
+    await expect(
+      writer.patchSection('amina', 'human_takeover', () => ({
+        enabled: true,
+        pause_ttl_minutes: -1,
+      })),
+    ).rejects.toThrow(/pause_ttl_minutes/);
+    const after = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
+    expect(after).toBe(before);
+    expect(after).not.toContain('-1');
+  });
+
+  it('creates a timestamped backup before each write', async () => {
+    const writer = createAgentConfigWriter({ agentsDir });
+    const result = await writer.patchSection('amina', 'human_takeover', () => ({
+      enabled: true,
+      pause_ttl_minutes: 30,
+    }));
+    const files = readdirSync(join(agentsDir, 'amina'));
+    expect(files.some((f) => f.startsWith('agent.yml.bak-'))).toBe(true);
+    expect(result.backupPath).toContain('agent.yml.bak-');
+  });
+
+  it('prunes backups beyond backupKeep', async () => {
+    const writer = createAgentConfigWriter({ agentsDir, backupKeep: 3 });
+    for (let i = 0; i < 5; i++) {
+      await writer.patchSection('amina', 'human_takeover', () => ({
+        enabled: i % 2 === 0,
+        pause_ttl_minutes: 30 + i,
+      }));
+    }
+    const backups = readdirSync(join(agentsDir, 'amina')).filter((f) =>
+      f.startsWith('agent.yml.bak-'),
+    );
+    expect(backups).toHaveLength(3);
   });
 });

@@ -1,6 +1,15 @@
-import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
+import { AgentYmlSchema } from './schema.js';
 
 export type ConfigSection = 'notifications' | 'human_takeover' | 'operator_console';
 
@@ -37,13 +46,51 @@ export class AgentConfigNotFoundError extends Error {
   }
 }
 
+export class ConfigValidationError extends Error {
+  constructor(
+    message: string,
+    public readonly issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; message: string }>,
+  ) {
+    super(message);
+    this.name = 'ConfigValidationError';
+  }
+}
+
+const BACKUP_PREFIX = 'agent.yml.bak-';
+
 function agentYmlPath(agentsDir: string, agentId: string): string {
   return join(agentsDir, agentId, 'agent.yml');
 }
 
+function timestampForBackup(date: Date): string {
+  return date.toISOString().replace(/[:.]/g, '-');
+}
+
+function listBackups(agentsDir: string, agentId: string): string[] {
+  const dir = join(agentsDir, agentId);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.startsWith(BACKUP_PREFIX))
+    .sort();
+}
+
+function pruneBackups(agentsDir: string, agentId: string, keep: number): void {
+  const backups = listBackups(agentsDir, agentId);
+  if (backups.length <= keep) return;
+  const toDelete = backups.slice(0, backups.length - keep);
+  for (const name of toDelete) {
+    try {
+      unlinkSync(join(agentsDir, agentId, name));
+    } catch {
+      // best-effort prune; ignore
+    }
+  }
+}
+
 export function createAgentConfigWriter(opts: CreateAgentConfigWriterOptions): AgentConfigWriter {
-  const { agentsDir } = opts;
+  const { agentsDir, backupKeep = 10 } = opts;
   const locks = new Map<string, Promise<void>>();
+  let backupSeq = 0;
 
   function readDoc(agentId: string) {
     const path = agentYmlPath(agentsDir, agentId);
@@ -90,18 +137,39 @@ export function createAgentConfigWriter(opts: CreateAgentConfigWriterOptions): A
       doc.set(section, newValue);
     }
 
+    const candidate = doc.toJS();
+    const validation = AgentYmlSchema.safeParse(candidate);
+    if (!validation.success) {
+      const issues = validation.error.issues.map((i) => ({
+        path: i.path,
+        message: i.message,
+      }));
+      const summary = issues
+        .map((i) => `${i.path.map((p) => String(p)).join('.')}: ${i.message}`)
+        .join('; ');
+      throw new ConfigValidationError(summary, issues);
+    }
+
     const serialized = doc.toString();
+    const writtenAt = new Date();
+    const seq = (backupSeq++ % 1_000_000).toString().padStart(6, '0');
+    const backupName = `${BACKUP_PREFIX}${timestampForBackup(writtenAt)}-${seq}`;
+    const backupPath = join(agentsDir, agentId, backupName);
+    copyFileSync(path, backupPath);
+
     const tmpPath = `${path}.tmp`;
     writeFileSync(tmpPath, serialized, 'utf-8');
     renameSync(tmpPath, path);
+
+    pruneBackups(agentsDir, agentId, backupKeep);
 
     return {
       agentId,
       section,
       prevValue,
       newValue,
-      writtenAt: new Date().toISOString(),
-      backupPath: '',
+      writtenAt: writtenAt.toISOString(),
+      backupPath,
     };
   }
 
