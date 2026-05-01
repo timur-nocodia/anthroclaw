@@ -30,6 +30,7 @@ import {
   Sparkles,
   Stethoscope,
   Terminal,
+  UserCheck,
   Trash2,
   Upload,
   XCircle,
@@ -57,6 +58,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PluginsPanel } from "@/components/plugins/PluginsPanel";
 import { DoctorPanel } from "@/components/lcm/DoctorPanel";
+import { HandoffTab } from "@/components/handoff/HandoffTab";
 import { ANTHROPIC_MODELS as MODELS } from "@/lib/anthropic-models";
 
 /* ------------------------------------------------------------------ */
@@ -175,6 +177,23 @@ interface AgentConfig {
     includeHookEvents?: boolean;
     enableFileCheckpointing?: boolean;
     fallbackModel?: string;
+  };
+  human_takeover?: {
+    enabled?: boolean;
+    pause_ttl_minutes?: number;
+    channels?: Array<"whatsapp" | "telegram">;
+    ignore?: Array<"reactions" | "receipts" | "typing" | "protocol">;
+    notification_throttle_minutes?: number;
+  };
+  notifications?: {
+    enabled?: boolean;
+    routes?: Record<string, { channel: "telegram" | "whatsapp"; account_id: string; peer_id: string }>;
+    subscriptions?: Array<{
+      event: string;
+      route: string;
+      schedule?: string;
+      throttle?: string;
+    }>;
   };
 }
 
@@ -895,6 +914,13 @@ export default function AgentEditorPage() {
             Routines
           </TabsTrigger>
           <TabsTrigger
+            value="handoff"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <UserCheck className="mr-1.5 h-3.5 w-3.5" />
+            Handoff
+          </TabsTrigger>
+          <TabsTrigger
             value="skills"
             className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
           >
@@ -934,6 +960,9 @@ export default function AgentEditorPage() {
         </TabsContent>
         <TabsContent value="routines" className="mt-0 flex-1 overflow-auto">
           {agent && <RoutinesTab serverId={serverId} agentId={agentId} agent={agent} />}
+        </TabsContent>
+        <TabsContent value="handoff" className="mt-0 flex-1 overflow-auto">
+          {agent && <HandoffTab serverId={serverId} agentId={agentId} agent={agent} />}
         </TabsContent>
         <TabsContent value="skills" className="mt-0 flex-1 overflow-auto">
           <SkillsTab serverId={serverId} agentId={agentId} />

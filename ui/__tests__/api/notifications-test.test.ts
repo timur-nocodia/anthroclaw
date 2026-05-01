@@ -66,11 +66,11 @@ describe('POST /api/notifications/test', () => {
     expect(body.ok).toBe(true);
     expect(body.event).toBe('escalation_needed');
     expect(gw.notificationsEmitter!.emit).toHaveBeenCalledOnce();
-    const [event, payload] = gw.notificationsEmitter!.emit.mock.calls[0];
-    expect(event).toBe('escalation_needed');
-    expect(payload.agentId).toBe('amina');
-    expect(payload.message).toBe('hello operator');
-    expect(payload.test).toBe(true);
+    const call = gw.notificationsEmitter!.emit.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(call[0]).toBe('escalation_needed');
+    expect(call[1].agentId).toBe('amina');
+    expect(call[1].message).toBe('hello operator');
+    expect(call[1].test).toBe(true);
   });
 
   it('honours an explicit known event', async () => {

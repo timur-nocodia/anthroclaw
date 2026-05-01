@@ -81,9 +81,9 @@ describe("NotificationsCard", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /^test/i }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const [, init] = fetchMock.mock.calls[0];
-    expect((init as RequestInit).method).toBe("POST");
-    expect((init as RequestInit).body).toContain("amina");
+    const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit];
+    expect(call[1].method).toBe("POST");
+    expect(call[1].body).toContain("amina");
   });
 
   it("invokes onSave with the new config", async () => {
