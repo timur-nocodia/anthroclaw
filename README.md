@@ -128,6 +128,18 @@ SDK-native headless reviewer that proposes memory or skill updates after agent r
 - jobs persist in `data/dynamic-cron.json`, survive restart
 - dashboard Scheduled Tasks panel for static (yml) jobs
 
+### Heartbeat routines
+
+Per-agent `heartbeat` config plus `HEARTBEAT.md` adds a lightweight, SDK-native
+wake loop for recurring agent work:
+
+- gateway reads due tasks from `HEARTBEAT.md` and sends a synthetic heartbeat turn through the normal Agent SDK path
+- optional workspace scripts can gate whether the model should wake and can feed fresh metrics/docs into the prompt
+- meaningful responses are delivered back to the last chat; `HEARTBEAT_OK` and `[SILENT]` stay quiet
+- Routines UI covers settings, `HEARTBEAT.md`, manual runs, last-target/status, and output preview
+
+See [Heartbeat Routines](docs/guide.md#heartbeat-routines) for the full contract.
+
 ### Agents as workspaces
 
 Each agent is a directory:
