@@ -15,6 +15,8 @@ import {
   AccountStep,
   type AccountOption,
 } from "@/components/binding/steps/AccountStep";
+import { WhereStep } from "@/components/binding/steps/WhereStep";
+import { TargetStep } from "@/components/binding/steps/TargetStep";
 
 export type BindingScopeValue = "dm" | "group" | "any";
 
@@ -62,6 +64,12 @@ interface WizardState {
   mention_only?: boolean;
   reply_to_mode?: "always" | "incoming_reply_only" | "never";
   pairing_mode?: "open" | "code" | "approve" | "off";
+  // Target sub-flow ephemeral inputs (kept here so Back preserves them).
+  dmMode?: "all" | "allowlist";
+  dmAllowlistInput?: string;
+  groupChatId?: string;
+  groupForumEnabled?: boolean;
+  groupTopicsInput?: string;
 }
 
 function availableChannelsList(
@@ -85,21 +93,55 @@ function buildAccountOptions(
 }
 
 function stateFromRoute(route: BindingWizardRoute | undefined): WizardState {
-  if (!route) return {};
+  if (!route) {
+    return {
+      dmMode: "all",
+      dmAllowlistInput: "",
+      groupChatId: "",
+      groupForumEnabled: false,
+      groupTopicsInput: "",
+    };
+  }
+  const peers = route.peers ?? null;
+  const topics = route.topics ?? null;
+  const pairingMode = route.pairing_mode ?? route.pairingMode;
+  const replyMode = route.reply_to_mode ?? route.replyToMode;
+  const mentionOnly =
+    typeof route.mention_only === "boolean"
+      ? route.mention_only
+      : typeof route.mentionOnly === "boolean"
+        ? route.mentionOnly
+        : undefined;
+
+  // For DM scope: derive ephemeral allowlist input from peers.
+  const dmHasAllowlist = route.scope === "dm" && peers !== null && peers.length > 0;
+  const dmMode: "all" | "allowlist" = dmHasAllowlist ? "allowlist" : "all";
+  const dmAllowlistInput = dmHasAllowlist ? peers.join(", ") : "";
+
+  // For group scope: first peer is chat ID; topics flag forum.
+  const groupChatId =
+    route.scope === "group" && peers !== null && peers.length > 0
+      ? peers[0]
+      : "";
+  const groupForumEnabled =
+    route.scope === "group" && topics !== null && topics.length > 0;
+  const groupTopicsInput =
+    route.scope === "group" && topics !== null ? topics.join(", ") : "";
+
   return {
     channel: route.channel,
     account: route.account,
     scope: route.scope,
-    peers: route.peers ?? null,
-    topics: route.topics ?? null,
-    mention_only:
-      typeof route.mention_only === "boolean"
-        ? route.mention_only
-        : typeof route.mentionOnly === "boolean"
-          ? route.mentionOnly
-          : undefined,
-    reply_to_mode: route.reply_to_mode ?? route.replyToMode,
-    pairing_mode: route.pairing_mode ?? route.pairingMode,
+    peers,
+    topics,
+    mention_only: mentionOnly,
+    reply_to_mode: replyMode,
+    pairing_mode: pairingMode,
+    dmMode,
+    dmAllowlistInput,
+    groupChatId,
+    groupForumEnabled,
+    groupTopicsInput,
   };
 }
 
@@ -187,6 +229,30 @@ export function BindingWizardDialog({
     setState((s) => ({ ...s, account: accountId }));
   };
 
+  const handleScopeSelect = (scope: BindingScopeValue) => {
+    setState((s) => ({ ...s, scope }));
+  };
+
+  const handleDmModeChange = (mode: "all" | "allowlist") => {
+    setState((s) => ({ ...s, dmMode: mode }));
+  };
+
+  const handleDmAllowlistChange = (value: string) => {
+    setState((s) => ({ ...s, dmAllowlistInput: value }));
+  };
+
+  const handleGroupChatIdChange = (value: string) => {
+    setState((s) => ({ ...s, groupChatId: value }));
+  };
+
+  const handleGroupForumChange = (enabled: boolean) => {
+    setState((s) => ({ ...s, groupForumEnabled: enabled }));
+  };
+
+  const handleGroupTopicsChange = (value: string) => {
+    setState((s) => ({ ...s, groupTopicsInput: value }));
+  };
+
   const goBack = () => {
     const idx = STEP_ORDER.indexOf(step);
     if (idx <= 0) return;
@@ -202,6 +268,15 @@ export function BindingWizardDialog({
   const canGoNext = (): boolean => {
     if (step === "channel") return Boolean(state.channel);
     if (step === "account") return Boolean(state.account);
+    if (step === "where") return Boolean(state.scope);
+    if (step === "target") {
+      if (state.scope === "group" || state.scope === "any") {
+        if (!state.groupChatId || state.groupChatId.trim().length === 0) {
+          return false;
+        }
+      }
+      return true;
+    }
     return true;
   };
 
@@ -244,22 +319,26 @@ export function BindingWizardDialog({
             />
           )}
           {step === "where" && (
-            <p
-              className="text-[12px]"
-              style={{ color: "var(--oc-text-muted)" }}
-              data-testid="binding-step-where-placeholder"
-            >
-              Where step — coming next.
-            </p>
+            <WhereStep
+              selected={state.scope}
+              onSelect={handleScopeSelect}
+            />
           )}
-          {step === "target" && (
-            <p
-              className="text-[12px]"
-              style={{ color: "var(--oc-text-muted)" }}
-              data-testid="binding-step-target-placeholder"
-            >
-              Target step — coming next.
-            </p>
+          {step === "target" && state.channel && state.scope && (
+            <TargetStep
+              scope={state.scope}
+              channel={state.channel}
+              dmMode={state.dmMode}
+              dmAllowlistInput={state.dmAllowlistInput ?? ""}
+              groupChatId={state.groupChatId ?? ""}
+              groupForumEnabled={state.groupForumEnabled ?? false}
+              groupTopicsInput={state.groupTopicsInput ?? ""}
+              onDmModeChange={handleDmModeChange}
+              onDmAllowlistChange={handleDmAllowlistChange}
+              onGroupChatIdChange={handleGroupChatIdChange}
+              onGroupForumChange={handleGroupForumChange}
+              onGroupTopicsChange={handleGroupTopicsChange}
+            />
           )}
           {step === "behavior" && (
             <p
