@@ -1,0 +1,11 @@
+{
+  "name": "mission",
+  "version": "0.1.0",
+  "description": "Mission State — durable operational state for long-running agent responsibilities.",
+  "entry": "dist/index.js",
+  "configSchema": "dist/config.js",
+  "skills": "skills/",
+  "requires": {
+    "anthroclaw": ">=0.5.0"
+  }
+}
