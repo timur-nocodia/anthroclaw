@@ -392,7 +392,7 @@ const NotificationSubscriptionSchema = z.object({
 });
 
 export const NotificationsSchema = z.object({
-  enabled: z.boolean().default(true),
+  enabled: z.boolean().default(false),
   routes: z.record(z.string(), NotificationRouteSchema).default({}),
   subscriptions: z.array(NotificationSubscriptionSchema).default([]),
 });

@@ -4293,7 +4293,12 @@ export class Gateway {
 
     const messageId = `op-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const accountId = input.accountId ?? 'default';
-    const sessionKey = `${input.targetAgentId}:${input.channel}:dm:${input.peerId}`;
+    const sessionKey = buildSessionKey(
+      input.targetAgentId,
+      input.channel,
+      'dm',
+      input.peerId,
+    );
 
     const syntheticMsg: InboundMessage = {
       channel: input.channel,

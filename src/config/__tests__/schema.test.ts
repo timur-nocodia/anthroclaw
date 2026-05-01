@@ -221,7 +221,7 @@ describe('plugins config schema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.notifications).toMatchObject({
-        enabled: true,
+        enabled: false,
         routes: {},
         subscriptions: [],
       });
