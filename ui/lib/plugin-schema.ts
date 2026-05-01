@@ -50,14 +50,19 @@ export async function loadPluginConfigSchema(
   if (mod.default !== undefined) candidates.push(mod.default);
   if (mod.configSchema !== undefined) candidates.push(mod.configSchema);
 
-  // capitalised <Name>ConfigSchema
-  const cap = pluginName.charAt(0).toUpperCase() + pluginName.slice(1);
-  const capKey = `${cap}ConfigSchema`;
+  // capitalised <Name>ConfigSchema (kebab-case → joined PascalCase, so
+  // "operator-console" → "OperatorConsoleConfigSchema").
+  const pascal = pluginName
+    .split('-')
+    .filter(Boolean)
+    .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
+    .join('');
+  const capKey = `${pascal}ConfigSchema`;
   if (mod[capKey] !== undefined) candidates.push(mod[capKey]);
 
   // Some plugins (e.g. LCM) also export an upper-cased acronym form
   // (e.g. LCMConfigSchema). Try the all-caps variant too.
-  const upperKey = `${pluginName.toUpperCase()}ConfigSchema`;
+  const upperKey = `${pluginName.replace(/-/g, '').toUpperCase()}ConfigSchema`;
   if (upperKey !== capKey && mod[upperKey] !== undefined) candidates.push(mod[upperKey]);
 
   for (const c of candidates) {
