@@ -139,4 +139,75 @@ describe('plugins config schema', () => {
       mode: 'propose',
     });
   });
+
+  it('AgentYmlSchema accepts human_takeover block with defaults', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      human_takeover: { enabled: true },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.human_takeover).toMatchObject({
+        enabled: true,
+        pause_ttl_minutes: 30,
+        channels: ['whatsapp'],
+        ignore: ['reactions', 'receipts', 'typing', 'protocol'],
+        notification_throttle_minutes: 5,
+      });
+    }
+  });
+
+  it('human_takeover defaults to disabled (block omitted entirely)', () => {
+    const result = AgentYmlSchema.safeParse(minimalValidAgentYml);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.human_takeover).toBeUndefined();
+      expect(result.data.human_takeover?.enabled ?? false).toBe(false);
+    }
+  });
+
+  it('AgentYmlSchema rejects human_takeover.pause_ttl_minutes <= 0', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      human_takeover: { enabled: true, pause_ttl_minutes: 0 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('AgentYmlSchema rejects negative human_takeover.pause_ttl_minutes', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      human_takeover: { enabled: true, pause_ttl_minutes: -5 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('AgentYmlSchema rejects unknown channel in human_takeover.channels', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      human_takeover: { enabled: true, channels: ['discord'] },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('human_takeover allows custom pause_ttl_minutes and channels', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      human_takeover: {
+        enabled: true,
+        pause_ttl_minutes: 60,
+        channels: ['whatsapp', 'telegram'],
+        notification_throttle_minutes: 0,
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.human_takeover).toMatchObject({
+        enabled: true,
+        pause_ttl_minutes: 60,
+        channels: ['whatsapp', 'telegram'],
+        notification_throttle_minutes: 0,
+      });
+    }
+  });
 });

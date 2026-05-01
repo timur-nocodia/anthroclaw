@@ -347,6 +347,16 @@ const SafetyOverridesSchema = z.object({
 
 export type SafetyOverrides = z.infer<typeof SafetyOverridesSchema>;
 
+export const HumanTakeoverSchema = z.object({
+  enabled: z.boolean().default(false),
+  pause_ttl_minutes: z.number().int().positive().default(30),
+  channels: z.array(z.enum(['whatsapp', 'telegram'])).default(['whatsapp']),
+  ignore: z
+    .array(z.enum(['reactions', 'receipts', 'typing', 'protocol']))
+    .default(['reactions', 'receipts', 'typing', 'protocol']),
+  notification_throttle_minutes: z.number().int().nonnegative().default(5),
+});
+
 export const AgentYmlSchema = z.object({
   model: z.string().optional(),
   thinking: ThinkingConfigSchema.optional(),
@@ -412,6 +422,7 @@ export const AgentYmlSchema = z.object({
     z.string(),
     z.object({ enabled: z.boolean().optional() }).passthrough(),
   ).optional(),
+  human_takeover: HumanTakeoverSchema.optional(),
 }).superRefine((val, ctx) => {
   if (val.learning.enabled && val.learning.mode === 'off') {
     ctx.addIssue({
@@ -433,6 +444,7 @@ export const AgentYmlSchema = z.object({
 
 export type GlobalConfig = z.infer<typeof GlobalConfigSchema>;
 export type AgentYml = z.infer<typeof AgentYmlSchema>;
+export type HumanTakeoverConfig = z.infer<typeof HumanTakeoverSchema>;
 export type Route = z.infer<typeof RouteSchema>;
 export type Pairing = z.infer<typeof PairingSchema>;
 export type CronJob = z.infer<typeof CronJobSchema>;
