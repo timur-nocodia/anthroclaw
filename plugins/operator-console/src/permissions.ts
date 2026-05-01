@@ -8,6 +8,12 @@ import type { OperatorConsoleConfig } from './config.js';
  *   - `enabled === false` → never authorised.
  *   - `manages === '*'`   → super-admin, any target authorised.
  *   - `manages: string[]` → authorised iff the array contains targetAgentId.
+ *
+ * This is a plugin-local mirror of the shared helper at
+ * `src/security/cross-agent-perm.ts` (`canManageAgent`). The plugin lives
+ * outside the backend `rootDir` and cannot import directly; both
+ * implementations are intentionally pinned to the same semantics. If you
+ * change one, change the other and update both test suites.
  */
 export function canManage(
   cfg: OperatorConsoleConfig,

@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { LastModifiedIndicator } from "./LastModifiedIndicator";
 
 const ALL_CHANNELS = ["whatsapp", "telegram"] as const;
 type Channel = (typeof ALL_CHANNELS)[number];
@@ -126,9 +127,12 @@ export function HumanTakeoverCard({
       style={{ background: "var(--oc-bg0)", borderColor: "var(--oc-border)" }}
     >
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-[14px] font-medium">
-          <UserCheck className="h-4 w-4" />
-          Auto-pause on human takeover
+        <CardTitle className="flex items-center justify-between gap-2 text-[14px] font-medium">
+          <span className="flex items-center gap-2">
+            <UserCheck className="h-4 w-4" />
+            Auto-pause on human takeover
+          </span>
+          <LastModifiedIndicator agentId={agentId} section="human_takeover" />
         </CardTitle>
         <CardDescription className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
           When the operator messages a peer directly through their own account, the agent
@@ -246,21 +250,24 @@ async function defaultPersist(
   agentId: string,
   cfg: HumanTakeoverConfig,
 ): Promise<void> {
-  // Pull the canonical config, splice in our block, PUT it back.
-  const url = `/api/agents/${encodeURIComponent(agentId)}`;
-  const getRes = await fetch(url);
-  if (!getRes.ok) {
-    throw new Error(`GET /api/agents/${agentId} failed: ${getRes.status}`);
-  }
-  const current = (await getRes.json()) as { parsed?: Record<string, unknown>; raw?: string };
-  const parsed = (current.parsed ?? {}) as Record<string, unknown>;
-  const next = { ...parsed, human_takeover: cfg };
-  const putRes = await fetch(url, {
-    method: "PUT",
+  // Stage 1 self-config-tools: route OCP-section saves through the unified
+  // PATCH endpoint backed by AgentConfigWriter. Comment-preserving writes,
+  // automatic backups, audit-log entry tagged `source: 'ui'`.
+  const url = `/api/agents/${encodeURIComponent(agentId)}/config`;
+  const res = await fetch(url, {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ config: next }),
+    body: JSON.stringify({ section: "human_takeover", value: cfg }),
   });
-  if (!putRes.ok) {
-    throw new Error(`PUT failed: ${putRes.status}`);
+  if (!res.ok) {
+    let message = `PATCH /api/agents/${agentId}/config failed: ${res.status}`;
+    try {
+      const body = (await res.json()) as { message?: string; error?: string };
+      if (body?.message) message = body.message;
+      else if (body?.error) message = body.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
   }
 }

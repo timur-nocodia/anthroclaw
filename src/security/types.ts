@@ -17,4 +17,6 @@ export interface ToolMeta {
   destructive: boolean;        // requires approval in trusted (and optionally private)
   reads_only: boolean;
   hard_blacklist_in: ProfileName[]; // override cannot open this tool in these profiles
+  description?: string;        // human-readable summary surfaced to operators
+  reasoning?: string;          // why the safety classification was chosen
 }

@@ -18,6 +18,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { LastModifiedIndicator } from "./LastModifiedIndicator";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -195,9 +196,12 @@ export function NotificationsCard({
       style={{ background: "var(--oc-bg0)", borderColor: "var(--oc-border)" }}
     >
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-[14px] font-medium">
-          <Bell className="h-4 w-4" />
-          Notifications
+        <CardTitle className="flex items-center justify-between gap-2 text-[14px] font-medium">
+          <span className="flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            Notifications
+          </span>
+          <LastModifiedIndicator agentId={agentId} section="notifications" />
         </CardTitle>
         <CardDescription className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
           Routes are named delivery targets. Subscriptions wire events to one of those routes,
@@ -435,16 +439,24 @@ async function defaultPersist(
   agentId: string,
   cfg: NotificationsConfig,
 ): Promise<void> {
-  const url = `/api/agents/${encodeURIComponent(agentId)}`;
-  const getRes = await fetch(url);
-  if (!getRes.ok) throw new Error(`GET /api/agents/${agentId} failed: ${getRes.status}`);
-  const current = (await getRes.json()) as { parsed?: Record<string, unknown> };
-  const parsed = (current.parsed ?? {}) as Record<string, unknown>;
-  const next = { ...parsed, notifications: cfg };
-  const putRes = await fetch(url, {
-    method: "PUT",
+  // Stage 1 self-config-tools: route OCP-section saves through the unified
+  // PATCH endpoint backed by AgentConfigWriter. Comment-preserving writes,
+  // automatic backups, audit-log entry tagged `source: 'ui'`.
+  const url = `/api/agents/${encodeURIComponent(agentId)}/config`;
+  const res = await fetch(url, {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ config: next }),
+    body: JSON.stringify({ section: "notifications", value: cfg }),
   });
-  if (!putRes.ok) throw new Error(`PUT failed: ${putRes.status}`);
+  if (!res.ok) {
+    let message = `PATCH /api/agents/${agentId}/config failed: ${res.status}`;
+    try {
+      const body = (await res.json()) as { message?: string; error?: string };
+      if (body?.message) message = body.message;
+      else if (body?.error) message = body.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
 }

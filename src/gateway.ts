@@ -1,4 +1,4 @@
-import { readdirSync, existsSync, readFileSync } from 'node:fs';
+import { readdirSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +45,8 @@ import type {
   NotificationEventName,
   NotificationRoute,
 } from './notifications/types.js';
+import { formatTestDispatch } from './notifications/formatters.js';
+import type { OperatorConsoleConfigShape } from './security/cross-agent-perm.js';
 import type { OperatorOutboundEvent } from './channels/types.js';
 import { TelegramChannel } from './channels/telegram.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
@@ -57,6 +59,14 @@ import { HeartbeatStateStore } from './heartbeat/state-store.js';
 import { formatHeartbeatDeliveryContract, isHeartbeatAckResponse } from './heartbeat/delivery-contract.js';
 import { HeartbeatHistoryStore } from './heartbeat/history.js';
 import { ConfigWatcher } from './config/watcher.js';
+import {
+  createAgentConfigWriter,
+  type AgentConfigWriter,
+} from './config/writer.js';
+import {
+  createConfigAuditLog,
+  type ConfigAuditLog,
+} from './config/audit.js';
 import { runDreaming } from './memory/dreaming.js';
 import {
   buildPostRunMemoryExtractionPrompt,
@@ -686,6 +696,27 @@ export async function tryPluginAssemble(
   }
 }
 
+/**
+ * Sweep `agent.yml.tmp` files left behind by a crash mid-write in a prior
+ * run. The writer uses write-tmp + atomic rename, so a leftover tmp is
+ * always safe to discard. Logs warn per orphan removed.
+ */
+function cleanupOrphanTmpFiles(agentsDir: string): void {
+  if (!existsSync(agentsDir)) return;
+  for (const entry of readdirSync(agentsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const tmpPath = join(agentsDir, entry.name, 'agent.yml.tmp');
+    if (existsSync(tmpPath)) {
+      logger.warn({ path: tmpPath }, 'cleaning up orphan agent.yml.tmp from prior crash');
+      try {
+        unlinkSync(tmpPath);
+      } catch (err) {
+        logger.warn({ err, path: tmpPath }, 'failed to remove orphan agent.yml.tmp');
+      }
+    }
+  }
+}
+
 export class Gateway {
   private agents = new Map<string, Agent>();
   private channels = new Map<string, ChannelAdapter>();
@@ -736,6 +767,24 @@ export class Gateway {
    */
   public notificationsEmitter: NotificationsEmitter | null = null;
   private notificationsScheduler: NotificationsScheduler | null = null;
+  /**
+   * Unified mutation point for agent.yml — used by UI save endpoints (Stage 1)
+   * and chat-driven self-config tools (Stage 2). Comment-preserving writes,
+   * per-agent locking, atomic rename, schema validation, automatic backups,
+   * and an audit-log entry per write.
+   */
+  private agentConfigWriter: AgentConfigWriter | null = null;
+  private configAuditLog: ConfigAuditLog | null = null;
+
+  /** Returns the unified config writer (null until start() runs). */
+  getAgentConfigWriter(): AgentConfigWriter | null {
+    return this.agentConfigWriter;
+  }
+
+  /** Returns the per-agent JSONL audit log of config writes (null until start() runs). */
+  getConfigAuditLog(): ConfigAuditLog | null {
+    return this.configAuditLog;
+  }
 
   async start(config: GlobalConfig, agentsDir: string, dataDir: string, pluginsDir?: string): Promise<void> {
     this.startedAt = Date.now();
@@ -768,6 +817,22 @@ export class Gateway {
     } catch (err) {
       logger.warn({ err }, 'Claude Agent SDK startup failed; agent queries will use fallback responses');
     }
+
+    // Agent config writer + audit log (Stage 1 self-config-tools). Single
+    // mutation point for agent.yml — UI save endpoints and chat-driven tools
+    // both go through this writer so we get one audit trail.
+    this.configAuditLog = createConfigAuditLog({
+      auditDir: join(dataDir, 'config-audit'),
+    });
+    this.agentConfigWriter = createAgentConfigWriter({
+      agentsDir,
+      auditLog: this.configAuditLog,
+    });
+
+    // Sweep stray `agent.yml.tmp` files left behind by a crash mid-write
+    // in a prior run. The writer uses write-tmp + rename for atomicity, so
+    // a leftover tmp is always discardable.
+    cleanupOrphanTmpFiles(agentsDir);
 
     // Dynamic cron store
     this.dynamicCronStore = new DynamicCronStore(join(dataDir, 'dynamic-cron.json'));
@@ -818,6 +883,13 @@ export class Gateway {
         (event) => this.emitMemoryWriteHook(event),
         this.peerPauseStore,
         this.notificationsEmitter,
+        {
+          agentConfigWriter: this.agentConfigWriter,
+          configAuditLog: this.configAuditLog,
+          dispatchTestNotification: (args) => this.dispatchTestNotification(args),
+          getOperatorConsoleConfigForAgent: (callerId) =>
+            this.getOperatorConsoleConfigForAgent(callerId),
+        },
       );
       this.agents.set(agent.id, agent);
       this.registerProfileRateLimiter(agent.id, agent, dataDir);
@@ -1071,6 +1143,8 @@ export class Gateway {
     this.notificationsScheduler?.stopAll();
     this.notificationsScheduler = null;
     this.notificationsEmitter = null;
+    this.agentConfigWriter = null;
+    this.configAuditLog = null;
     this.heartbeatRunner?.stop();
     this.heartbeatRunner = null;
     this.heartbeatHistoryStore = null;
@@ -2658,7 +2732,26 @@ export class Gateway {
     // Load/reload agents
     for (const dir of agentDirs) {
       try {
-        const agent = await Agent.load(dir, dataDir, getChannel, undefined, config, this.accessControl ?? undefined, this.dynamicCronStore ?? undefined, onCronUpdate, undefined, this.peerPauseStore, this.notificationsEmitter);
+        const agent = await Agent.load(
+          dir,
+          dataDir,
+          getChannel,
+          undefined,
+          config,
+          this.accessControl ?? undefined,
+          this.dynamicCronStore ?? undefined,
+          onCronUpdate,
+          undefined,
+          this.peerPauseStore,
+          this.notificationsEmitter,
+          {
+            agentConfigWriter: this.agentConfigWriter,
+            configAuditLog: this.configAuditLog,
+            dispatchTestNotification: (args) => this.dispatchTestNotification(args),
+            getOperatorConsoleConfigForAgent: (callerId) =>
+              this.getOperatorConsoleConfigForAgent(callerId),
+          },
+        );
         const existed = this.agents.has(agent.id);
 
         if (existed) {
@@ -2947,6 +3040,58 @@ export class Gateway {
    * do not propagate — notifications are best-effort and must never
    * destabilize the gateway.
    */
+  /**
+   * Sends a one-shot "test" notification down a configured route — wired into
+   * the `manage_notifications` tool's `test` action via `Agent.load`. Decoupled
+   * from `deliverNotification`/`NotificationsEmitter` because the test ping is
+   * synthetic and does not belong in the strongly-typed event union.
+   */
+  private async dispatchTestNotification(args: {
+    agentId: string;
+    routeName: string;
+    route: NotificationRoute;
+  }): Promise<void> {
+    const adapter = this.channels.get(args.route.channel);
+    if (!adapter) {
+      throw new Error(
+        `No channel adapter for "${args.route.channel}" (account "${args.route.account_id}")`,
+      );
+    }
+    const text = formatTestDispatch(args.route.channel, {
+      agentId: args.agentId,
+      routeName: args.routeName,
+    });
+    await adapter.sendText(args.route.peer_id, text, {
+      accountId: args.route.account_id,
+      parseMode: args.route.channel === 'telegram' ? 'markdown' : 'plain',
+    });
+  }
+
+  /**
+   * Reads the operator-console section out of the caller agent's parsed config
+   * (top-level `operator_console` block in agent.yml). Used by self-config tools
+   * to authorize cross-agent writes without crossing the rootDir boundary into
+   * the operator-console plugin.
+   */
+  private getOperatorConsoleConfigForAgent(callerId: string): OperatorConsoleConfigShape | undefined {
+    const agent = this.agents.get(callerId);
+    // Agent.yml has `operator_console` as a top-level field. The Zod schema
+    // doesn't declare it (z.object strips), but the YAML loader only validates
+    // known fields — the writer can still read it. Try both paths.
+    const fromConfig = (agent?.config as unknown as { operator_console?: OperatorConsoleConfigShape })
+      ?.operator_console;
+    if (fromConfig && typeof fromConfig === 'object') return fromConfig;
+    if (this.agentConfigWriter) {
+      try {
+        const raw = this.agentConfigWriter.readSection(callerId, 'operator_console');
+        if (raw && typeof raw === 'object') return raw as OperatorConsoleConfigShape;
+      } catch {
+        // unknown agent or read error → no operator-console
+      }
+    }
+    return undefined;
+  }
+
   private async deliverNotification(
     route: NotificationRoute,
     text: string,
