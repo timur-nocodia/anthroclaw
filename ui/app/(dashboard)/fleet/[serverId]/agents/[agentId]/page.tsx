@@ -59,6 +59,7 @@ import {
 import { PluginsPanel } from "@/components/plugins/PluginsPanel";
 import { DoctorPanel } from "@/components/lcm/DoctorPanel";
 import { HandoffTab } from "@/components/handoff/HandoffTab";
+import { Section } from "@/components/ui/section";
 import { ANTHROPIC_MODELS as MODELS } from "@/lib/anthropic-models";
 
 /* ------------------------------------------------------------------ */
@@ -2021,11 +2022,12 @@ function ConfigTab({
             />
           </Section>
 
-          {/* Channel behavior */}
+          {/* Per-chat customization (formerly "Channel behavior") */}
           <Section
-            title="Channel behavior"
-            tooltip="Operator-configured channel context is injected as fenced, untrusted context. It adds behavior hints without replacing CLAUDE.md or mutating SDK sessions."
+            title="Per-chat customization (optional)"
+            tooltip="Optional per-chat or per-topic context strings added to the agent's prompt for that specific peer or topic. Not the routing config — see 'Where this agent listens' above. Injected as fenced, untrusted context; does not replace CLAUDE.md or mutate SDK sessions."
             icon={<MessageSquare className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+            defaultCollapsed
           >
             <FormGrid>
               <Field label="Reply target" tooltip="Controls reply threading for channel deliveries. Incoming reply only keeps replies scoped when the user replied to an existing message.">
@@ -3028,49 +3030,6 @@ function ConfigTab({
 /* ------------------------------------------------------------------ */
 /*  Config sub-components                                              */
 /* ------------------------------------------------------------------ */
-
-function Section({
-  title,
-  subtitle,
-  icon,
-  tooltip,
-  action,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  icon?: React.ReactNode;
-  tooltip?: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="rounded-md"
-      style={{ background: "var(--oc-bg1)", border: "1px solid var(--oc-border)" }}
-    >
-      <div
-        className="flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2.5"
-        style={{ borderBottom: "1px solid var(--oc-border)" }}
-      >
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {icon}
-          <span className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
-            {title}
-          </span>
-          {tooltip && <Tip text={tooltip} />}
-          {subtitle && (
-            <span className="text-[11.5px]" style={{ color: "var(--oc-text-muted)" }}>
-              &middot; {subtitle}
-            </span>
-          )}
-        </div>
-        {action}
-      </div>
-      <div className="p-3.5">{children}</div>
-    </div>
-  );
-}
 
 function FormGrid({ children }: { children: React.ReactNode }) {
   return (
