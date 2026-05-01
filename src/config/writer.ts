@@ -10,8 +10,16 @@ import {
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import { AgentYmlSchema } from './schema.js';
+import type { ConfigAuditLog } from './audit.js';
 
 export type ConfigSection = 'notifications' | 'human_takeover' | 'operator_console';
+
+export interface PatchContext {
+  caller?: string;
+  callerSession?: string;
+  source?: 'chat' | 'ui' | 'system';
+  action?: string;
+}
 
 export interface ConfigWriteResult {
   agentId: string;
@@ -27,6 +35,7 @@ export interface AgentConfigWriter {
     agentId: string,
     section: ConfigSection,
     patch: (current: unknown) => unknown | null,
+    context?: PatchContext,
   ): Promise<ConfigWriteResult>;
   readSection(agentId: string, section: ConfigSection): unknown;
   readFullConfig(agentId: string): unknown;
@@ -37,6 +46,7 @@ export interface CreateAgentConfigWriterOptions {
   auditDir?: string;
   backupKeep?: number;
   clock?: () => number;
+  auditLog?: ConfigAuditLog;
 }
 
 export class AgentConfigNotFoundError extends Error {
@@ -88,7 +98,7 @@ function pruneBackups(agentsDir: string, agentId: string, keep: number): void {
 }
 
 export function createAgentConfigWriter(opts: CreateAgentConfigWriterOptions): AgentConfigWriter {
-  const { agentsDir, backupKeep = 10 } = opts;
+  const { agentsDir, backupKeep = 10, auditLog } = opts;
   const locks = new Map<string, Promise<void>>();
   let backupSeq = 0;
 
@@ -103,9 +113,27 @@ export function createAgentConfigWriter(opts: CreateAgentConfigWriterOptions): A
     agentId: string,
     section: ConfigSection,
     patch: (current: unknown) => unknown | null,
+    context: PatchContext = {},
   ): Promise<ConfigWriteResult> {
     const prior = locks.get(agentId) ?? Promise.resolve();
-    const run = prior.catch(() => undefined).then(() => doPatch(agentId, section, patch));
+    const run = prior
+      .catch(() => undefined)
+      .then(async () => {
+        const result = doPatch(agentId, section, patch);
+        if (auditLog) {
+          await auditLog.append({
+            callerAgent: context.caller ?? 'system',
+            callerSession: context.callerSession,
+            targetAgent: agentId,
+            section,
+            action: context.action ?? 'patch_section',
+            prev: result.prevValue ?? null,
+            new: result.newValue,
+            source: context.source ?? 'system',
+          });
+        }
+        return result;
+      });
     locks.set(
       agentId,
       run.then(

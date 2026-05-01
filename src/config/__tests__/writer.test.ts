@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSyn
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createAgentConfigWriter } from '../writer.js';
+import { createConfigAuditLog } from '../audit.js';
 
 const SEED_YAML = [
   '# Amina lead bot',
@@ -132,5 +133,57 @@ describe('AgentConfigWriter — schema validation + backups', () => {
       f.startsWith('agent.yml.bak-'),
     );
     expect(backups).toHaveLength(3);
+  });
+});
+
+describe('AgentConfigWriter — audit integration', () => {
+  let agentsDir: string;
+  let auditDir: string;
+  beforeEach(() => {
+    agentsDir = mkdtempSync(join(tmpdir(), 'acw-aud-'));
+    auditDir = mkdtempSync(join(tmpdir(), 'acw-aud-log-'));
+    mkdirSync(join(agentsDir, 'amina'), { recursive: true });
+    writeFileSync(join(agentsDir, 'amina', 'agent.yml'), SEED_YAML);
+  });
+  afterEach(() => {
+    rmSync(agentsDir, { recursive: true, force: true });
+    rmSync(auditDir, { recursive: true, force: true });
+  });
+
+  it('emits audit entry with caller context after each successful write', async () => {
+    const auditLog = createConfigAuditLog({ auditDir });
+    const writer = createAgentConfigWriter({ agentsDir, auditLog });
+    await writer.patchSection(
+      'amina',
+      'human_takeover',
+      () => ({ enabled: true, pause_ttl_minutes: 30 }),
+      { caller: 'klavdia', callerSession: 'tg:control:dm:1', source: 'chat', action: 'set_enabled' },
+    );
+    const entries = await auditLog.readRecent('amina');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      callerAgent: 'klavdia',
+      callerSession: 'tg:control:dm:1',
+      targetAgent: 'amina',
+      section: 'human_takeover',
+      action: 'set_enabled',
+      source: 'chat',
+    });
+    expect(entries[0].new).toMatchObject({ enabled: true });
+  });
+
+  it('does not emit audit entry on failed validation', async () => {
+    const auditLog = createConfigAuditLog({ auditDir });
+    const writer = createAgentConfigWriter({ agentsDir, auditLog });
+    await expect(
+      writer.patchSection(
+        'amina',
+        'human_takeover',
+        () => ({ enabled: true, pause_ttl_minutes: -5 }),
+        { caller: 'klavdia', source: 'chat' },
+      ),
+    ).rejects.toThrow();
+    const entries = await auditLog.readRecent('amina');
+    expect(entries).toHaveLength(0);
   });
 });
