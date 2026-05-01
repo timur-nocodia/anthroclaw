@@ -16,7 +16,9 @@ export interface PeerPauseStore {
     opts: { ttlMinutes?: number; reason: PauseEntry['reason']; source: string },
   ): PauseEntry;
   extend(agentId: string, peerKey: string): PauseEntry | null;
+  /** `reason` is freeform audit text (e.g., `'ttl_expired'`, `'manual'`); not constrained to PauseEntry['reason']. */
   unpause(agentId: string, peerKey: string, reason: string): PauseEntry | null;
+  /** `expired: true` only after Task 2 implements TTL math; until then, only `paused` is meaningful. */
   isPaused(
     agentId: string,
     peerKey: string,
@@ -29,7 +31,8 @@ export interface CreatePeerPauseStoreOptions {
 }
 
 export function createPeerPauseStore(opts: CreatePeerPauseStoreOptions): PeerPauseStore {
-  void opts;
+  const { filePath: _filePath } = opts;
+  void _filePath;
   const entries = new Map<string, PauseEntry>();
   const key = (agentId: string, peerKey: string) => `${agentId}::${peerKey}`;
   return {

@@ -9,4 +9,10 @@ describe('PeerPauseStore — basic shape', () => {
     expect(result.paused).toBe(false);
     expect(result.entry).toBeUndefined();
   });
+
+  it('list(agentId) filters by agent on empty store (real coverage in Task 2)', () => {
+    const store = createPeerPauseStore({ filePath: ':memory:' });
+    expect(store.list('amina')).toEqual([]);
+    expect(store.list('larry')).toEqual([]);
+  });
 });
