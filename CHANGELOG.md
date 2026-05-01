@@ -8,6 +8,34 @@ All notable changes to AnthroClaw are documented here.
 
 ### Added
 
+- **Operator control plane** (PR #6) — three independent off-by-default
+  subsystems composed via YAML, packaged so any agent can become an operator
+  for any other agent without code changes:
+  - **`human_takeover`** — WhatsApp `fromMe` detection auto-pauses the agent
+    for that conversation with a sliding-window TTL, so operator and agent
+    no longer reply to clients in parallel. Persisted to
+    `data/peer-pauses.json`.
+  - **`notifications`** — generic event emitter dispatching subscribed events
+    (`peer_pause_started`, `peer_pause_ended`,
+    `peer_pause_intervened_during_generation`, `peer_pause_summary_daily`,
+    `agent_error`, `iteration_budget_exhausted`, `escalation_needed`) to a
+    configured operator route via existing `send_message` infrastructure,
+    with cron-scheduled events honoring per-agent timezone and Telegram
+    `parseMode: markdown` wired end-to-end.
+  - **`operator-console` plugin** — built-in plugin under `plugins/operator-console/`
+    exposing 5 cross-agent admin tools: `peer_pause`, `delegate_to_peer`
+    (synthesizes inbound to managed agent's session — preserves session
+    continuity), `list_active_peers`, `peer_summary`, `escalate`. Permission
+    via manager-side `manages: [agent_ids] | "*"` whitelist.
+- **Handoff tab** in agent settings (`ui/components/handoff/`): four sections —
+  Auto-pause settings (`HumanTakeoverCard`), Notifications routes &
+  subscriptions (`NotificationsCard`), live Active pauses with per-row
+  unpause (`ActivePausesTable`), Activity log (`ActivityLogPanel`).
+- API endpoints under `withAuth()`:
+  `GET/POST /api/agents/[id]/pauses`,
+  `DELETE /api/agents/[id]/pauses/[peerKey]`,
+  `GET /api/agents/[id]/pause-events`,
+  `POST /api/notifications/test`.
 - **Heartbeat routines**: per-agent `heartbeat` config plus `HEARTBEAT.md`
   task files create a Gateway-managed periodic wake loop through the native
   Claude Agent SDK query path.
