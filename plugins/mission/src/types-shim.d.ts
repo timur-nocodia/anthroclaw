@@ -9,6 +9,7 @@ export interface PluginLogger {
 
 export interface McpToolContext {
   agentId: string;
+  /** May be undefined for tools invoked outside a session-specific dispatch. */
   sessionKey?: string;
 }
 

@@ -118,6 +118,7 @@ export class Agent {
 
   /** Original built-in tools registered at construction time. Plugin tools are layered on top. */
   private readonly builtinTools: ToolDefinition[];
+  private pluginTools: PluginMcpTool[];
 
   private sessions: Map<string, string>;
   private sessionLastUsed: Map<string, number>;
@@ -145,6 +146,7 @@ export class Agent {
     this.safetyProfile = safetyProfile;
     this.mcpServer = mcpServer;
     this.builtinTools = tools;
+    this.pluginTools = [];
     this.tools = [...tools];
     this.sessions = new Map();
     this.sessionLastUsed = new Map();
@@ -200,15 +202,8 @@ export class Agent {
    * Called by Gateway after plugins are loaded and enabled for this agent.
    */
   refreshPluginTools(pluginTools: PluginMcpTool[]): void {
-    const agentId = this.id;
-    const wrapped: ToolDefinition[] = pluginTools.map((pt) => ({
-      name: pt.name,
-      description: pt.description,
-      inputSchema: pt.inputSchema,
-      // Bind agentId at refresh time. sessionKey is left undefined here —
-      // it varies per dispatch and is reserved for future plumbing.
-      handler: (input: unknown) => pt.handler(input, { agentId }),
-    }) as unknown as ToolDefinition);
+    this.pluginTools = [...pluginTools];
+    const wrapped = this.wrapPluginTools(this.pluginTools);
     // Reset plugin tools each refresh — exclude any previously-attached plugin
     // tools so we don't accumulate stale entries across reloads. We keep the
     // original built-in tools (passed at construction time) intact.
@@ -217,6 +212,35 @@ export class Agent {
       name: `${this.id}-tools`,
       tools: this.tools as unknown as any[],
     });
+  }
+
+  hasPluginTools(): boolean {
+    return this.pluginTools.length > 0;
+  }
+
+  getToolsForSession(sessionKey?: string): ToolDefinition[] {
+    if (!sessionKey || this.pluginTools.length === 0) return this.tools;
+    return [...this.builtinTools, ...this.wrapPluginTools(this.pluginTools, sessionKey)];
+  }
+
+  createMcpServerForSession(sessionKey?: string): McpSdkServerConfigWithInstance {
+    return createSdkMcpServer({
+      name: this.mcpServer.name,
+      tools: this.getToolsForSession(sessionKey) as unknown as any[],
+    });
+  }
+
+  private wrapPluginTools(pluginTools: PluginMcpTool[], sessionKey?: string): ToolDefinition[] {
+    const agentId = this.id;
+    return pluginTools.map((pt) => ({
+      name: pt.name,
+      description: pt.description,
+      inputSchema: pt.inputSchema,
+      handler: (input: unknown) => pt.handler(input, {
+        agentId,
+        ...(sessionKey ? { sessionKey } : {}),
+      }),
+    }) as unknown as ToolDefinition);
   }
 
   private loadSessionMappings(): void {

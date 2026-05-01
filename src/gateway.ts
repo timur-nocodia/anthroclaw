@@ -1222,6 +1222,9 @@ export class Gateway {
       ...this.sdkSessionService?.getQueryOptions(),
     });
 
+    let dispatchTools = sessionKey ? agent.getToolsForSession(sessionKey) : agent.tools;
+    let useDispatchMcpServer = Boolean(sessionKey && agent.hasPluginTools());
+
     if (msg && this.dynamicCronStore && agent.config.mcp_tools?.includes('manage_cron')) {
       const dispatchManageCron = createManageCronTool(
         agent.id,
@@ -1236,9 +1239,13 @@ export class Gateway {
           threadId: msg.threadId,
         },
       );
-      const dispatchTools = agent.tools.map((tool) =>
+      dispatchTools = dispatchTools.map((tool) =>
         tool.name === 'manage_cron' ? dispatchManageCron : tool,
       );
+      useDispatchMcpServer = true;
+    }
+
+    if (useDispatchMcpServer) {
       options.mcpServers = {
         ...(options.mcpServers ?? {}),
         [agent.mcpServer.name]: createSdkMcpServer({
@@ -2389,6 +2396,7 @@ export class Gateway {
         keepCheckpointHandle ? streamingUserPrompt(prompt) : prompt,
         options,
         existingSessionId,
+        !agent.hasPluginTools(),
       );
       this.controlRegistry.register(
         [runId, sessionKey, ...(existingSessionId ? [existingSessionId] : []), ...(sessionId ? [sessionId] : [])],
@@ -3679,7 +3687,8 @@ export class Gateway {
         prompt = assembledPrompt;
       }
 
-      const useWarmQuery = !(this.dynamicCronStore && agent.config.mcp_tools?.includes('manage_cron'));
+      const useWarmQuery = !(this.dynamicCronStore && agent.config.mcp_tools?.includes('manage_cron'))
+        && !agent.hasPluginTools();
       const result = this.startQuery(agent, prompt, options, existingSessionId, useWarmQuery);
       this.queueManager.register(sessionKey, result, abort, {
         traceId: runId,
