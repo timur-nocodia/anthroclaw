@@ -1984,12 +1984,47 @@ function ConfigTab({
             </FormGrid>
           </Section>
 
-          {/* Routes & allowlist */}
+          {/* Where this agent listens — wizard-driven section */}
+          <WhereAgentListensSection
+            agentId={agentId}
+            routes={cfg.routes}
+            accounts={(() => {
+              const tg: Record<string, { username?: string }> = {};
+              const wa: Record<string, { username?: string }> = {};
+              for (const r of cfg.routes) {
+                if (r.channel === "telegram" && r.account && !(r.account in tg)) {
+                  tg[r.account] = {};
+                } else if (r.channel === "whatsapp" && r.account && !(r.account in wa)) {
+                  wa[r.account] = {};
+                }
+              }
+              return { telegram: tg, whatsapp: wa };
+            })()}
+            pairingMode={cfg.pairing.mode as "open" | "code" | "approve" | "off"}
+            onSaveRoutes={async (next) => {
+              update({ routes: next });
+              const res = await fetch(`/api/agents/${agentId}/config`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ section: "routes", value: next }),
+              });
+              if (!res.ok) {
+                const text = await res.text().catch(() => res.statusText);
+                throw new Error(text || "Failed to save routes");
+              }
+              setDirty(false);
+            }}
+          />
+
+          {/* Advanced (raw routes table) — power-user fallback for the
+              wizard-driven section above. Collapsed by default; same data, same
+              save flow. Stage 2 Task 10. */}
           <Section
-            title="Routes"
+            title="Advanced (raw routes table)"
             subtitle={`${cfg.routes.length} active`}
-            tooltip="Which channels and chat types this agent listens to. Each route connects the agent to a Telegram or WhatsApp account with specific scope (DM, groups, or both)."
+            tooltip="Raw routes editor. The wizard above covers most cases — use this only when you need wildcard peers/topics or other unusual route shapes."
             icon={<Globe className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+            defaultCollapsed
             action={
               <Button
                 variant="outline"
@@ -2022,38 +2057,6 @@ function ConfigTab({
               onAllowlistChange={(al) => update({ allowlist: al })}
             />
           </Section>
-
-          {/* Where this agent listens — wizard-driven section */}
-          <WhereAgentListensSection
-            agentId={agentId}
-            routes={cfg.routes}
-            accounts={(() => {
-              const tg: Record<string, { username?: string }> = {};
-              const wa: Record<string, { username?: string }> = {};
-              for (const r of cfg.routes) {
-                if (r.channel === "telegram" && r.account && !(r.account in tg)) {
-                  tg[r.account] = {};
-                } else if (r.channel === "whatsapp" && r.account && !(r.account in wa)) {
-                  wa[r.account] = {};
-                }
-              }
-              return { telegram: tg, whatsapp: wa };
-            })()}
-            pairingMode={cfg.pairing.mode as "open" | "code" | "approve" | "off"}
-            onSaveRoutes={async (next) => {
-              update({ routes: next });
-              const res = await fetch(`/api/agents/${agentId}/config`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ section: "routes", value: next }),
-              });
-              if (!res.ok) {
-                const text = await res.text().catch(() => res.statusText);
-                throw new Error(text || "Failed to save routes");
-              }
-              setDirty(false);
-            }}
-          />
 
           {/* Per-chat customization (formerly "Channel behavior") */}
           <Section
