@@ -779,6 +779,7 @@ export class Gateway {
         this.dynamicCronStore,
         onCronUpdate,
         (event) => this.emitMemoryWriteHook(event),
+        this.peerPauseStore,
       );
       this.agents.set(agent.id, agent);
       this.registerProfileRateLimiter(agent.id, agent, dataDir);
@@ -2608,7 +2609,7 @@ export class Gateway {
     // Load/reload agents
     for (const dir of agentDirs) {
       try {
-        const agent = await Agent.load(dir, dataDir, getChannel, undefined, config, this.accessControl ?? undefined, this.dynamicCronStore ?? undefined, onCronUpdate);
+        const agent = await Agent.load(dir, dataDir, getChannel, undefined, config, this.accessControl ?? undefined, this.dynamicCronStore ?? undefined, onCronUpdate, undefined, this.peerPauseStore);
         const existed = this.agents.has(agent.id);
 
         if (existed) {
