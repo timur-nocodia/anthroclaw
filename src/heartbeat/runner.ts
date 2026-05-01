@@ -27,6 +27,25 @@ export interface HeartbeatRunResult {
   delivered: boolean;
 }
 
+export interface HeartbeatRunOutcome {
+  agentId: string;
+  status:
+    | 'completed'
+    | 'skipped'
+    | 'busy'
+    | 'disabled'
+    | 'missing_file'
+    | 'empty'
+    | 'no_due_tasks'
+    | 'no_target'
+    | 'not_found'
+    | 'error';
+  runId?: string;
+  startedAt?: number;
+  taskNames?: string[];
+  message?: string;
+}
+
 export interface HeartbeatRunnerDeps {
   listAgents: () => Agent[];
   stateStore: HeartbeatStateStore;
@@ -86,48 +105,57 @@ export class HeartbeatRunner {
     this.scheduleNext();
   }
 
-  private async runAgent(agent: Agent, reason: string): Promise<void> {
-    if (this.running.has(agent.id)) return;
+  async runNow(agentId: string): Promise<HeartbeatRunOutcome> {
+    const agent = this.deps.listAgents().find((candidate) => candidate.id === agentId);
+    if (!agent) return { agentId, status: 'not_found', message: `Agent "${agentId}" not found` };
+    return this.runAgent(agent, 'manual', { forceDue: true });
+  }
+
+  private async runAgent(agent: Agent, reason: string, opts: { forceDue?: boolean } = {}): Promise<HeartbeatRunOutcome> {
+    if (this.running.has(agent.id)) return { agentId: agent.id, status: 'busy', message: 'Heartbeat is already running for this agent' };
     const config = agent.config.heartbeat;
-    if (!isHeartbeatEnabled(config)) return;
+    if (!isHeartbeatEnabled(config)) return { agentId: agent.id, status: 'disabled', message: 'Heartbeat is disabled for this agent' };
 
     const startedAt = this.now();
     const sessionKey = heartbeatSessionKey(agent.id, config, startedAt);
     if (this.deps.isSessionActive(sessionKey)) {
       this.scheduleRetry();
-      return;
+      return { agentId: agent.id, status: 'busy', startedAt, message: 'Heartbeat session is active' };
     }
 
     const intervalMs = resolveHeartbeatEveryMs(config) ?? parseHeartbeatDurationMs(DEFAULT_HEARTBEAT_EVERY)!;
+    const runId = `heartbeat-${agent.id}-${startedAt}`;
     this.running.add(agent.id);
     try {
       const filePath = join(agent.workspacePath, HEARTBEAT_FILENAME);
       if (!existsSync(filePath)) {
         this.advance(agent.id, startedAt + intervalMs);
-        return;
+        return { agentId: agent.id, status: 'missing_file', startedAt, message: `${HEARTBEAT_FILENAME} is missing` };
       }
       const content = readFileSync(filePath, 'utf-8');
       const parsed = parseHeartbeatFile(content);
       if (parsed.tasks.length === 0 && isHeartbeatContentEffectivelyEmpty(content)) {
         this.advance(agent.id, startedAt + intervalMs);
-        return;
+        return { agentId: agent.id, status: 'empty', startedAt, message: `${HEARTBEAT_FILENAME} is effectively empty` };
       }
 
-      const dueTasks = parsed.tasks.filter((task) => isTaskDue(
-        this.deps.stateStore.getTaskLastRun(agent.id, task.name),
-        task.interval,
-        startedAt,
-      ));
+      const dueTasks = opts.forceDue
+        ? parsed.tasks
+        : parsed.tasks.filter((task) => isTaskDue(
+          this.deps.stateStore.getTaskLastRun(agent.id, task.name),
+          task.interval,
+          startedAt,
+        ));
       if (dueTasks.length === 0) {
         this.advance(agent.id, startedAt + intervalMs);
-        return;
+        return { agentId: agent.id, status: 'no_due_tasks', startedAt, message: 'No heartbeat tasks are due' };
       }
 
       const target = config?.target === 'none' ? undefined : this.deps.stateStore.getLastTarget(agent.id);
       if ((config?.target ?? 'last') === 'last' && !target) {
         logger.info({ agentId: agent.id }, 'Heartbeat skipped: no last delivery target');
         this.advance(agent.id, startedAt + intervalMs);
-        return;
+        return { agentId: agent.id, status: 'no_target', startedAt, taskNames: dueTasks.map((task) => task.name), message: 'No last delivery target recorded' };
       }
 
       const runnableTasks: RunnableHeartbeatTask[] = [];
@@ -144,7 +172,7 @@ export class HeartbeatRunner {
           this.deps.stateStore.markTaskRun(agent.id, task.name, 'skipped', startedAt);
           this.deps.historyStore?.appendRun({
             timestamp: startedAt,
-            runId: `heartbeat-${agent.id}-${startedAt}`,
+            runId,
             agentId: agent.id,
             taskName: task.name,
             status: 'skipped_wake_gate',
@@ -160,10 +188,9 @@ export class HeartbeatRunner {
       }
       if (runnableTasks.length === 0) {
         this.advance(agent.id, startedAt + intervalMs);
-        return;
+        return { agentId: agent.id, status: 'skipped', runId, startedAt, taskNames: dueTasks.map((task) => task.name), message: 'All due tasks were skipped by wake gates' };
       }
 
-      const runId = `heartbeat-${agent.id}-${startedAt}`;
       const prompt = buildHeartbeatPrompt({
         basePrompt: config?.prompt ?? DEFAULT_HEARTBEAT_PROMPT,
         context: parsed.context,
@@ -214,9 +241,23 @@ export class HeartbeatRunner {
         this.deps.stateStore.recordDelivery(agent.id, result.response);
       }
       this.advance(agent.id, startedAt + intervalMs);
+      return {
+        agentId: agent.id,
+        status: status === 'ok' ? 'completed' : 'skipped',
+        runId,
+        startedAt,
+        taskNames: runnableTasks.map((task) => task.name),
+      };
     } catch (err) {
       logger.error({ err, agentId: agent.id }, 'Heartbeat run failed');
       this.advance(agent.id, startedAt + intervalMs);
+      return {
+        agentId: agent.id,
+        status: 'error',
+        runId,
+        startedAt,
+        message: err instanceof Error ? err.message : String(err),
+      };
     } finally {
       this.running.delete(agent.id);
     }

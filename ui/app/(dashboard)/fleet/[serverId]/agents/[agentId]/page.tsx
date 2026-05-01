@@ -205,6 +205,19 @@ interface HeartbeatRunLogEntry {
   };
 }
 
+interface HeartbeatState {
+  tasks?: Record<string, { lastRunAt?: number; lastStatus?: string; lastError?: string | null }>;
+  lastHeartbeatAt?: number;
+  lastTarget?: {
+    channel: string;
+    peer_id: string;
+    account_id?: string;
+    thread_id?: string;
+    session_key?: string;
+  };
+  lastDeliveredHash?: string;
+}
+
 type ReplyToMode = "always" | "incoming_reply_only" | "never";
 
 interface ChannelBehaviorRule {
@@ -3359,11 +3372,22 @@ function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: 
   });
   const [heartbeatMd, setHeartbeatMd] = useState("");
   const [runs, setRuns] = useState<HeartbeatRunLogEntry[]>([]);
+  const [state, setState] = useState<HeartbeatState | null>(null);
+  const [selectedRun, setSelectedRun] = useState<HeartbeatRunLogEntry | null>(null);
+  const [selectedOutput, setSelectedOutput] = useState<string | null>(null);
+  const [runningNow, setRunningNow] = useState(false);
+  const [lastManualResult, setLastManualResult] = useState<string | null>(null);
   const [dirtyConfig, setDirtyConfig] = useState(false);
   const [dirtyFile, setDirtyFile] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const heartbeatFilePath = `/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/files/${encodeURIComponent("HEARTBEAT.md")}`;
+  const validationErrors = validateHeartbeatUi(cfg, heartbeatMd);
+  const parsedTaskCount = countHeartbeatTasks(heartbeatMd);
+  const lastRun = runs[runs.length - 1];
+  const targetLabel = state?.lastTarget
+    ? `${state.lastTarget.channel}:${state.lastTarget.account_id ?? "default"}:${state.lastTarget.peer_id}${state.lastTarget.thread_id ? `/${state.lastTarget.thread_id}` : ""}`
+    : "none";
 
   const loadHeartbeat = useCallback(async () => {
     const [metaRes, fileRes] = await Promise.all([
@@ -3374,6 +3398,7 @@ function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: 
       const meta = await metaRes.json();
       if (Array.isArray(meta.runs)) setRuns(meta.runs);
       if (meta.heartbeat) setCfg((current) => ({ ...current, ...meta.heartbeat }));
+      setState(meta.state ?? null);
     }
     if (fileRes?.ok) {
       const file = await fileRes.json();
@@ -3391,6 +3416,7 @@ function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: 
   };
 
   const save = async () => {
+    if (validationErrors.length > 0) return;
     setSaving(true);
     try {
       if (dirtyConfig) {
@@ -3412,6 +3438,37 @@ function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: 
       await loadHeartbeat();
     } finally {
       setSaving(false);
+    }
+  };
+
+  const runNow = async () => {
+    if (validationErrors.length > 0 || dirtyConfig || dirtyFile) return;
+    setRunningNow(true);
+    setLastManualResult(null);
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/heartbeat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operation: "run_now" }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      const result = payload.result;
+      setLastManualResult(result?.message ? `${result.status}: ${result.message}` : result?.status ? `Run now: ${result.status}` : `Run now: HTTP ${res.status}`);
+      await loadHeartbeat();
+    } finally {
+      setRunningNow(false);
+    }
+  };
+
+  const openRun = async (run: HeartbeatRunLogEntry) => {
+    setSelectedRun(run);
+    setSelectedOutput(null);
+    if (!run.outputPath) return;
+    const params = new URLSearchParams({ outputPath: run.outputPath });
+    const res = await fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/heartbeat?${params.toString()}`);
+    if (res.ok) {
+      const payload = await res.json();
+      setSelectedOutput(typeof payload.content === "string" ? payload.content : null);
     }
   };
 
@@ -3439,19 +3496,47 @@ function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: 
             <RefreshCw className="h-3.5 w-3.5" />
             Reload
           </Button>
-          <Button size="sm" disabled={saving || (!dirtyConfig && !dirtyFile)} onClick={() => void save()}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={runningNow || dirtyConfig || dirtyFile || validationErrors.length > 0}
+            onClick={() => void runNow()}
+            title={dirtyConfig || dirtyFile ? "Save changes before running heartbeat manually." : undefined}
+          >
+            <Zap className="h-3.5 w-3.5" />
+            {runningNow ? "Running..." : "Run now"}
+          </Button>
+          <Button size="sm" disabled={saving || (!dirtyConfig && !dirtyFile) || validationErrors.length > 0} onClick={() => void save()}>
             <Save className="h-3.5 w-3.5" />
             {saving ? "Saving..." : "Save"}
           </Button>
         </div>
       </div>
 
+      {(validationErrors.length > 0 || lastManualResult) && (
+        <div
+          className="rounded-md border px-3 py-2 text-[11.5px]"
+          style={{
+            borderColor: validationErrors.length > 0 ? "rgba(248,113,113,0.35)" : "rgba(34,197,94,0.35)",
+            background: validationErrors.length > 0 ? "rgba(248,113,113,0.08)" : "rgba(34,197,94,0.08)",
+            color: validationErrors.length > 0 ? "var(--oc-red)" : "var(--oc-green)",
+          }}
+        >
+          {validationErrors.length > 0 ? validationErrors.join(" · ") : lastManualResult}
+        </div>
+      )}
+
       <Section
         title="Heartbeat"
-        subtitle={cfg.enabled ? `${cfg.every} · ${cfg.target}` : "disabled"}
+        subtitle={cfg.enabled ? `${cfg.every} · ${cfg.target} · ${parsedTaskCount} tasks` : "disabled"}
         icon={<Zap className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
         tooltip="Gateway-managed periodic wake loop for routines."
       >
+        <div className="mb-3 grid grid-cols-3 gap-2">
+          <HeartbeatMetric label="Last target" value={targetLabel} />
+          <HeartbeatMetric label="Last run" value={lastRun ? new Date(lastRun.timestamp).toLocaleString() : "none"} />
+          <HeartbeatMetric label="Last status" value={lastRun?.status ?? "none"} />
+        </div>
         <FormGrid>
           <Field label="Enabled">
             <button
@@ -3571,13 +3656,82 @@ function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: 
                 <span className="ml-auto text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
                   {new Date(run.timestamp).toLocaleString()}
                 </span>
+                <Button variant="outline" size="sm" onClick={() => void openRun(run)}>
+                  Details
+                </Button>
               </div>
             ))}
           </div>
         )}
       </Section>
+
+      <Dialog open={Boolean(selectedRun)} onOpenChange={(open) => { if (!open) setSelectedRun(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Heartbeat run</DialogTitle>
+            <DialogDescription>{selectedRun ? `${selectedRun.taskName} / ${selectedRun.status}` : ""}</DialogDescription>
+          </DialogHeader>
+          {selectedRun && (
+            <div className="flex max-h-[65vh] flex-col gap-3 overflow-auto text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <HeartbeatMetric label="Run ID" value={selectedRun.runId} />
+                <HeartbeatMetric label="Timestamp" value={new Date(selectedRun.timestamp).toLocaleString()} />
+                <HeartbeatMetric label="Delivered" value={selectedRun.delivered === undefined ? "unknown" : String(selectedRun.delivered)} />
+                <HeartbeatMetric label="Output" value={selectedRun.outputPath ? "written" : "none"} />
+              </div>
+              {selectedRun.script && (
+                <div className="rounded-md border p-3" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}>
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>Script</div>
+                  <div style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>{selectedRun.script.command}</div>
+                  <div className="mt-1" style={{ color: "var(--oc-text-muted)" }}>
+                    exit {selectedRun.script.exitCode}{selectedRun.script.timedOut ? " · timed out" : ""}{selectedRun.script.wakeAgent === false ? " · wake gated" : ""}
+                  </div>
+                  {selectedRun.script.error && <div className="mt-1" style={{ color: "var(--oc-red)" }}>{selectedRun.script.error}</div>}
+                </div>
+              )}
+              {selectedOutput && (
+                <pre className="whitespace-pre-wrap rounded-md border p-3 text-[11.5px]" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)", color: "var(--color-foreground)" }}>
+                  {selectedOutput}
+                </pre>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+function HeartbeatMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md border px-2.5 py-2" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}>
+      <div className="text-[10px] font-medium uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>{label}</div>
+      <div className="mt-1 truncate text-[11.5px]" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} title={value}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function validateHeartbeatUi(cfg: Required<HeartbeatConfig>, heartbeatMd: string): string[] {
+  const errors: string[] = [];
+  if (cfg.enabled && !/^\d+\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks)$/i.test(cfg.every.trim())) {
+    errors.push('Cadence must look like 10m, 1h, 1d, or 1w');
+  }
+  if (cfg.enabled && !cfg.ack_token.trim()) {
+    errors.push('Ack token is required');
+  }
+  if (cfg.enabled && !cfg.prompt.trim()) {
+    errors.push('Base prompt is required');
+  }
+  if (cfg.enabled && heartbeatMd.trim() && countHeartbeatTasks(heartbeatMd) === 0) {
+    errors.push('HEARTBEAT.md has no parsable tasks: block');
+  }
+  return errors;
+}
+
+function countHeartbeatTasks(markdown: string): number {
+  return markdown.split(/\r?\n/).filter((line) => line.trim().startsWith('- name:')).length;
 }
 
 /* ------------------------------------------------------------------ */

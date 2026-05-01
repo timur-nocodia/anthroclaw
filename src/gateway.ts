@@ -38,7 +38,7 @@ import { CronScheduler } from './cron/scheduler.js';
 import { DynamicCronStore, type DynamicCronJob } from './cron/dynamic-store.js';
 import { formatCronDeliveryContract } from './cron/delivery-contract.js';
 import { looksLikeOneShotSchedule, oneShotScheduleTimeUtc } from './cron/one-shot.js';
-import { HeartbeatRunner, type HeartbeatRunRequest } from './heartbeat/runner.js';
+import { HeartbeatRunner, type HeartbeatRunOutcome, type HeartbeatRunRequest } from './heartbeat/runner.js';
 import { HeartbeatStateStore } from './heartbeat/state-store.js';
 import { formatHeartbeatDeliveryContract, isHeartbeatAckResponse } from './heartbeat/delivery-contract.js';
 import { HeartbeatHistoryStore } from './heartbeat/history.js';
@@ -1554,6 +1554,13 @@ export class Gateway {
       ...options,
       status: this.getStatus(),
     });
+  }
+
+  async runHeartbeatNow(agentId: string): Promise<HeartbeatRunOutcome> {
+    if (!this.heartbeatRunner) {
+      return { agentId, status: 'disabled', message: 'Heartbeat runner is not started' };
+    }
+    return this.heartbeatRunner.runNow(agentId);
   }
 
   private resolveAgentSessionId(

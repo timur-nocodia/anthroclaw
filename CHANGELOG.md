@@ -21,6 +21,8 @@ All notable changes to AnthroClaw are documented here.
   `data/heartbeat-runs.jsonl`.
 - Agent UI **Routines** tab for heartbeat settings, `HEARTBEAT.md` editing, and
   recent run history.
+- Manual heartbeat runs from the Routines tab, plus last-target/status summary
+  and run detail output preview for operators.
 
 ### Changed
 

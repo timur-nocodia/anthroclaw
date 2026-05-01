@@ -1663,7 +1663,8 @@ error context so it can decide what to report.
   `data/heartbeat-output/<agentId>/<taskName>/<runId>.md`.
 - Structured run history is appended to `data/heartbeat-runs.jsonl`.
 - The Web UI has an agent-level **Routines** tab for heartbeat settings,
-  `HEARTBEAT.md`, and recent run history.
+  `HEARTBEAT.md`, manual runs, last-target/status summary, and recent run
+  history with output preview.
 
 ---
 

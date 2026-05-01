@@ -208,6 +208,36 @@ tasks:
     });
   });
 
+  it('runNow forces a task even when it is not due yet', async () => {
+    const agent = makeAgent({}, `
+tasks:
+  - name: standup
+    interval: 1h
+    prompt: Prepare standup.
+`);
+    const store = makeStore();
+    store.markTaskRun('klavdia', 'standup', 'ok', 10_000);
+    let calls = 0;
+    const runner = new HeartbeatRunner({
+      listAgents: () => [agent],
+      stateStore: store,
+      isSessionActive: () => false,
+      runHeartbeat: async () => {
+        calls += 1;
+        return { response: 'Manual run complete.', delivered: false };
+      },
+      nowMs: () => 20_000,
+    });
+
+    runner.start();
+    const result = await runner.runNow('klavdia');
+    runner.stop();
+
+    expect(calls).toBe(1);
+    expect(result.status).toBe('completed');
+    expect(result.taskNames).toEqual(['standup']);
+  });
+
   it('injects script output into the model prompt and writes output history', async () => {
     const agent = makeAgent({}, `
 tasks:
