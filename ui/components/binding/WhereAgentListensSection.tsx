@@ -95,7 +95,6 @@ export function WhereAgentListensSection({
         const text = await res.text().catch(() => res.statusText);
         throw new Error(text || "Failed to save routes");
       }
-      onRoutesChange?.(next);
     }
   };
 
