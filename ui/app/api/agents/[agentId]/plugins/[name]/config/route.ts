@@ -87,6 +87,15 @@ export async function PUT(
     // Persist to agent.yml (throws NotFoundError → 404 if agent missing).
     setAgentPluginConfig(agentId, name, config);
 
+    const persisted = getAgentPluginConfig(agentId, name);
+    if (typeof persisted.enabled === 'boolean') {
+      if (persisted.enabled) {
+        gw.pluginRegistry.enableForAgent(agentId, name);
+      } else {
+        gw.pluginRegistry.disableForAgent(agentId, name);
+      }
+    }
+
     // Mirror A1's eager refresh — the running agent picks up the new config
     // on its next dispatch without waiting on the watcher debounce.
     gw.refreshAgentPluginTools(agentId);

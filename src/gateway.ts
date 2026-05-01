@@ -672,6 +672,33 @@ export async function tryPluginAssemble(
   }
 }
 
+export async function tryPluginAssembleChain(
+  engines: Array<{ name: string; engine: ContextEngine }> | null | undefined,
+  agentId: string,
+  sessionKey: string,
+  prompt: string,
+): Promise<string | null> {
+  if (!engines || engines.length === 0) return null;
+
+  let current = prompt;
+  let changed = false;
+  for (const entry of engines) {
+    const assembled = await tryPluginAssemble(
+      entry.engine,
+      agentId,
+      sessionKey,
+      current,
+      entry.name,
+    );
+    if (assembled !== null) {
+      current = assembled;
+      changed = true;
+    }
+  }
+
+  return changed ? current : null;
+}
+
 export class Gateway {
   private agents = new Map<string, Agent>();
   private channels = new Map<string, ChannelAdapter>();
@@ -1195,6 +1222,9 @@ export class Gateway {
       ...this.sdkSessionService?.getQueryOptions(),
     });
 
+    let dispatchTools = sessionKey ? agent.getToolsForSession(sessionKey) : agent.tools;
+    let useDispatchMcpServer = Boolean(sessionKey && agent.hasPluginTools());
+
     if (msg && this.dynamicCronStore && agent.config.mcp_tools?.includes('manage_cron')) {
       const dispatchManageCron = createManageCronTool(
         agent.id,
@@ -1209,9 +1239,13 @@ export class Gateway {
           threadId: msg.threadId,
         },
       );
-      const dispatchTools = agent.tools.map((tool) =>
+      dispatchTools = dispatchTools.map((tool) =>
         tool.name === 'manage_cron' ? dispatchManageCron : tool,
       );
+      useDispatchMcpServer = true;
+    }
+
+    if (useDispatchMcpServer) {
       options.mcpServers = {
         ...(options.mcpServers ?? {}),
         [agent.mcpServer.name]: createSdkMcpServer({
@@ -2362,6 +2396,7 @@ export class Gateway {
         keepCheckpointHandle ? streamingUserPrompt(prompt) : prompt,
         options,
         existingSessionId,
+        !agent.hasPluginTools(),
       );
       this.controlRegistry.register(
         [runId, sessionKey, ...(existingSessionId ? [existingSessionId] : []), ...(sessionId ? [sessionId] : [])],
@@ -3637,23 +3672,23 @@ export class Gateway {
         });
       }
 
-      // Plugin context-engine assemble (T21): if a plugin transforms the
-      // prompt (e.g. LCM injects compressed history context), use the
-      // transformed version. Otherwise pass the original prompt through
-      // unchanged. Failures fall back to the original prompt silently.
-      const assembleEntry = this.pluginRegistry.getContextEngine(agent.id);
-      const assembledPrompt = await tryPluginAssemble(
-        assembleEntry?.engine ?? null,
+      // Plugin context-engine assemble (T21): enabled plugins can transform
+      // the prompt in sequence (e.g. LCM injects history context, then
+      // mission-state injects operational state). Otherwise pass the original
+      // prompt through unchanged. Failures fall back to the current prompt.
+      const assembleEntries = this.pluginRegistry.getContextEngines(agent.id);
+      const assembledPrompt = await tryPluginAssembleChain(
+        assembleEntries,
         agent.id,
         sessionKey,
         prompt,
-        assembleEntry?.name ?? null,
       );
       if (assembledPrompt !== null) {
         prompt = assembledPrompt;
       }
 
-      const useWarmQuery = !(this.dynamicCronStore && agent.config.mcp_tools?.includes('manage_cron'));
+      const useWarmQuery = !(this.dynamicCronStore && agent.config.mcp_tools?.includes('manage_cron'))
+        && !agent.hasPluginTools();
       const result = this.startQuery(agent, prompt, options, existingSessionId, useWarmQuery);
       this.queueManager.register(sessionKey, result, abort, {
         traceId: runId,

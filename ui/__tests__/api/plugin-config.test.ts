@@ -537,6 +537,36 @@ describe('PUT /api/agents/[agentId]/plugins/[name]/config', () => {
     expect(fakeGw.notifyAgentConfigChanged).toHaveBeenCalledWith('alpha');
   });
 
+  it('reconciles the live plugin registry when config save changes enabled', async () => {
+    writeAgentYml('alpha', {
+      model: 'claude-sonnet-4-6',
+      routes: [{ channel: 'telegram', scope: 'dm' }],
+      plugins: { lcm: { enabled: true, triggers: { threshold: 1000 } } },
+    });
+    writePluginSchemaModule('lcm', 'default', SAMPLE_SCHEMA_SOURCE);
+    const fakeGw = makeFakeGateway([
+      { manifest: { name: 'lcm', version: '0.1.0', configSchema: 'dist/config.js' } },
+    ]);
+    fakeGw.pluginRegistry.enableForAgent('alpha', 'lcm');
+    vi.doMock('@/lib/gateway', () => ({
+      getGateway: vi.fn().mockResolvedValue(fakeGw),
+    }));
+
+    const { PUT } = await import('@/app/api/agents/[agentId]/plugins/[name]/config/route');
+    const res = await PUT(
+      jsonRequest('http://localhost:3000/api/agents/alpha/plugins/lcm/config', {
+        config: { enabled: false, triggers: { threshold: 50000 } },
+      }),
+      { params: Promise.resolve({ agentId: 'alpha', name: 'lcm' }) },
+    );
+
+    expect(res.status).toBe(200);
+    expect(fakeGw.pluginRegistry.disableForAgent).toHaveBeenCalledWith('alpha', 'lcm');
+    expect(fakeGw.pluginRegistry.isEnabledFor('alpha', 'lcm')).toBe(false);
+    expect(fakeGw.refreshAgentPluginTools).toHaveBeenCalledWith('alpha');
+    expect(fakeGw.notifyAgentConfigChanged).toHaveBeenCalledWith('alpha');
+  });
+
   it('preserves existing enabled when PUT config omits the enabled field', async () => {
     // Pre-state: agent.yml has plugins.lcm = { enabled: true, triggers.threshold: 1000 }
     writeAgentYml('alpha', {

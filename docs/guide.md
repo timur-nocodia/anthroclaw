@@ -90,6 +90,7 @@ AnthroClaw is inspired by OpenClaw and Hermes-style agent infrastructure, but it
 51. [FAQ](#faq)
 52. [Plugin Framework](#plugin-framework)
 53. [LCM Plugin (Lossless Context Management)](#lcm-plugin-lossless-context-management)
+54. [Mission State Plugin](#mission-state-plugin)
 
 ---
 
@@ -317,6 +318,12 @@ queue_mode: collect                       # What happens when a new message arri
 # plugins:
 #   lcm:
 #     enabled: true
+#   mission:
+#     enabled: true
+#     mode: lightweight              # lightweight | lifecycle | operations | custom
+#     auto_inject: true              # inject compact mission state before each query
+#     auto_wrap: suggest             # off | suggest | strict
+#     max_injected_chars: 6000
 
 # ─── Learning Loop ────────────────────────────────────────
 # Disabled by default. Use propose first; auto_private is valid only with
@@ -2559,7 +2566,7 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
 }
 ```
 
-The MCP tool handler receives `(input, ctx: McpToolContext)` where `ctx.agentId` identifies the calling agent — plugins maintaining per-agent state resolve it at invocation time.
+The MCP tool handler receives `(input, ctx: McpToolContext)` where `ctx.agentId` identifies the calling agent. For normal dispatches, `ctx.sessionKey` is also available so tools can write session-specific handoffs. Tools invoked outside a session-specific query path may receive no `sessionKey`.
 
 The `runSubagent(opts)` method on `ctx` is the **only** sanctioned LLM path — it wraps Agent SDK's `query()` with `tools: []`, `canUseTool: deny`, and a 60s default timeout. Plugins MUST NOT import `@anthropic-ai/sdk` or `@anthropic-ai/claude-agent-sdk` directly. A contract test enforces this.
 
@@ -2572,7 +2579,7 @@ plugins:
     enabled: true
 ```
 
-Hot-reload supported: edit `agent.yml`, plugin reflects without restart.
+Hot-reload supported: edit `agent.yml`, plugin reflects without restart. Disabling a plugin removes its context engine and MCP tools from the live agent, but plugin-owned data remains on disk unless explicitly archived or deleted by that plugin's own admin surface.
 
 ### Hooks (fire-and-forget observers)
 
@@ -2665,3 +2672,104 @@ Per-agent SQLite at `data/lcm-db/{agentId}.sqlite`. Schema is versioned via `boo
 ### Lossless invariant
 
 The defining property: from any D2 / D3 / D{n} node, the recursive `source_ids` chain leads back to the original byte-exact messages in the immutable store. Verified by the `@lossless` test suite under `plugins/lcm/tests/integration/lossless.test.ts` — four scenarios: drill-down recovery, source-lineage filter, carry-over preservation across session reset, and SQLite restart survival. This is the gating invariant for the plugin.
+
+---
+
+## Mission State Plugin
+
+Optional plugin (`plugins/mission/`) for long-running agent work. It gives an agent a durable "mission/state" layer: current state, next actions, objectives, decisions, handoffs, and a compact prompt block injected before each SDK query.
+
+This is not general memory and not a replacement for LCM. Memory stores durable facts; LCM preserves long conversation history; Mission State stores operational progress for one active responsibility.
+
+### Enable
+
+Mission State is opt-in per agent:
+
+```yaml
+# agent.yml
+plugins:
+  mission:
+    enabled: true
+    mode: lightweight              # lightweight | lifecycle | operations | custom
+    auto_inject: true
+    auto_wrap: suggest             # off | suggest | strict
+    max_injected_chars: 6000
+```
+
+When enabled, the agent gets these auto-namespaced MCP tools:
+
+- `mission_status` — read the active mission state.
+- `mission_create` — create a new active mission.
+- `mission_update_state` — update current state and next actions.
+- `mission_add_objective` — add an active objective.
+- `mission_validate_objective` — mark an objective validated.
+- `mission_reject_objective` — mark an objective rejected/out of scope with reasoning.
+- `mission_add_decision` — record a decision and rationale.
+- `mission_transition_phase` — move through `define -> design -> build -> verify -> ship`.
+- `mission_wrap_session` — write a structured handoff for the current session.
+- `mission_archive` — archive the active mission without deleting data.
+
+Only one mission can be active per agent. Creating a new mission automatically archives the previous active mission with a `superseded_by_new_mission` event.
+
+### Agent Skill
+
+The plugin includes procedural guidance at:
+
+```text
+plugins/mission/skills/mission-state/SKILL.md
+```
+
+The current skill system loads project-local skills from:
+
+```text
+agents/<agent>/.claude/skills/<skill-name>/SKILL.md
+```
+
+So the Mission State skill is deliberately optional: copy or attach it to the agent when you want the model to follow the mission lifecycle conventions. Removing that skill removes the procedural guidance. Disabling `plugins.mission.enabled` removes the runtime tools and context injection. Existing mission data stays on disk.
+
+Manual attach example:
+
+```bash
+mkdir -p agents/my-agent/.claude/skills/mission-state
+cp plugins/mission/skills/mission-state/SKILL.md \
+  agents/my-agent/.claude/skills/mission-state/SKILL.md
+```
+
+### Human/Admin Surfaces
+
+CLI:
+
+```bash
+pnpm mission status --agent my-agent
+pnpm mission create --agent my-agent --title "Release 0.6" --goal "Ship Mission State"
+pnpm mission export --agent my-agent
+pnpm mission archive --agent my-agent --reason "shipped"
+```
+
+All commands accept `--data-dir <dir>`. `status`, `create`, `archive`, and `export` accept `--json` for machine-readable output.
+
+Web UI:
+
+- Agent page -> Mission tab: create, inspect, and archive the active mission.
+- Agent page -> Plugins tab: enable/disable `mission` and edit plugin config.
+
+### Storage
+
+Canonical data is SQLite:
+
+```text
+data/mission/mission-state-db/<agentId>.sqlite
+```
+
+The store uses schema versioning, WAL mode, foreign keys, and an append-only `events` table. Markdown export is generated from the store; agents and users should not edit canonical mission markdown directly.
+
+### Runtime Flow
+
+1. Gateway receives a Telegram, WhatsApp, Web, cron, or heartbeat turn.
+2. Enabled context engines run in sequence.
+3. Mission State injects a compact `<mission_state>` block when there is an active mission.
+4. Claude Agent SDK query runs normally.
+5. The agent may call `mission_*` tools to update state.
+6. On meaningful progress, `mission_wrap_session` records a handoff with the current `sessionKey`.
+
+The plugin does not fork or wrap the Anthropic SDK runtime. It only participates through AnthroClaw's plugin MCP tools, hooks, and ContextEngine assemble path.

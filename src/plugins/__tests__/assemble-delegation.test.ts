@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ContextEngine, AssembleInput, AssembleResult } from '../types.js';
-import { tryPluginAssemble } from '../../gateway.js';
+import { tryPluginAssemble, tryPluginAssembleChain } from '../../gateway.js';
 import { logger } from '../../logger.js';
 
 describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () => {
@@ -308,5 +308,92 @@ describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () =
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('composes multiple ContextEngines in order', async () => {
+    const original = 'original prompt padded enough for assembly size caps';
+    const engineA: ContextEngine = {
+      assemble: vi.fn(async (input) => ({
+        messages: [
+          { role: 'system', content: 'LCM context' },
+          ...(input.messages as unknown[]),
+        ],
+      })),
+    };
+    const engineB: ContextEngine = {
+      assemble: vi.fn(async (input) => ({
+        messages: [
+          { role: 'system', content: 'Mission context' },
+          ...(input.messages as unknown[]),
+        ],
+      })),
+    };
+
+    const out = await tryPluginAssembleChain(
+      [
+        { name: 'lcm', engine: engineA },
+        { name: 'mission-state', engine: engineB },
+      ],
+      'agent-1',
+      'session-1',
+      original,
+    );
+
+    expect(out).toContain('[system]: Mission context');
+    expect(out).toContain('[system]: LCM context');
+    expect(out).toContain(original);
+    expect(engineA.assemble).toHaveBeenCalledWith({
+      agentId: 'agent-1',
+      sessionKey: 'session-1',
+      messages: [{ role: 'user', content: original }],
+    });
+    expect(engineB.assemble).toHaveBeenCalledTimes(1);
+    const engineBInput = (engineB.assemble as ReturnType<typeof vi.fn>).mock.calls[0][0] as AssembleInput;
+    expect(engineBInput.messages).toEqual([{ role: 'user', content: expect.stringContaining(original) }]);
+  });
+
+  it('continues assemble chain when one ContextEngine is pass-through', async () => {
+    const original = 'original prompt padded enough for assembly size caps';
+    const passThrough: ContextEngine = {
+      assemble: vi.fn(async () => null),
+    };
+    const injector: ContextEngine = {
+      assemble: vi.fn(async (input) => ({
+        messages: [
+          { role: 'system', content: 'Mission context' },
+          ...(input.messages as unknown[]),
+        ],
+      })),
+    };
+
+    const out = await tryPluginAssembleChain(
+      [
+        { name: 'noop', engine: passThrough },
+        { name: 'mission-state', engine: injector },
+      ],
+      'agent-1',
+      'session-1',
+      original,
+    );
+
+    expect(out).toContain('[system]: Mission context');
+    expect(out).toContain(original);
+  });
+
+  it('returns null from assemble chain when every ContextEngine is pass-through', async () => {
+    const engineA: ContextEngine = { assemble: vi.fn(async () => null) };
+    const engineB: ContextEngine = {};
+
+    const out = await tryPluginAssembleChain(
+      [
+        { name: 'a', engine: engineA },
+        { name: 'b', engine: engineB },
+      ],
+      'agent-1',
+      'session-1',
+      'prompt',
+    );
+
+    expect(out).toBeNull();
   });
 });
