@@ -210,4 +210,107 @@ describe('plugins config schema', () => {
       });
     }
   });
+
+  // ─── notifications ────────────────────────────────────────────
+
+  it('AgentYmlSchema accepts notifications block with defaults applied', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      notifications: {},
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.notifications).toMatchObject({
+        enabled: true,
+        routes: {},
+        subscriptions: [],
+      });
+    }
+  });
+
+  it('notifications is optional and absent when omitted', () => {
+    const result = AgentYmlSchema.safeParse(minimalValidAgentYml);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.notifications).toBeUndefined();
+    }
+  });
+
+  it('AgentYmlSchema accepts notifications routes record + subscriptions array', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      notifications: {
+        enabled: true,
+        routes: {
+          operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' },
+          team: { channel: 'whatsapp', accountId: 'business', peerId: '37120000@s.whatsapp.net' },
+        },
+        subscriptions: [
+          { event: 'peer_pause_started', route: 'operator' },
+          { event: 'peer_pause_ended', route: 'operator', throttle: '5m' },
+          { event: 'peer_pause_summary_daily', route: 'team', schedule: '0 9 * * *' },
+        ],
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.notifications?.routes.operator).toMatchObject({
+        channel: 'telegram',
+        accountId: 'control',
+        peerId: '48705953',
+      });
+      expect(result.data.notifications?.subscriptions).toHaveLength(3);
+    }
+  });
+
+  it('notifications throttle is freeform — accepts "5m", "1h", "30s"', () => {
+    const cases = ['5m', '1h', '30s', '90m'];
+    for (const throttle of cases) {
+      const result = AgentYmlSchema.safeParse({
+        ...minimalValidAgentYml,
+        notifications: {
+          enabled: true,
+          routes: { op: { channel: 'telegram', accountId: 'a', peerId: 'p' } },
+          subscriptions: [{ event: 'peer_pause_started', route: 'op', throttle }],
+        },
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('notifications rejects empty-string throttle', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      notifications: {
+        enabled: true,
+        routes: { op: { channel: 'telegram', accountId: 'a', peerId: 'p' } },
+        subscriptions: [{ event: 'peer_pause_started', route: 'op', throttle: '' }],
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('notifications rejects unknown event name', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      notifications: {
+        enabled: true,
+        routes: { op: { channel: 'telegram', accountId: 'a', peerId: 'p' } },
+        subscriptions: [{ event: 'bogus_event', route: 'op' }],
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('notifications rejects route with unknown channel', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      notifications: {
+        enabled: true,
+        routes: { op: { channel: 'discord', accountId: 'a', peerId: 'p' } },
+        subscriptions: [],
+      },
+    });
+    expect(result.success).toBe(false);
+  });
 });

@@ -357,6 +357,46 @@ export const HumanTakeoverSchema = z.object({
   notification_throttle_minutes: z.number().int().nonnegative().default(5),
 });
 
+// ─── NotificationsSchema ───────────────────────────────────────────
+//
+// Per-agent notifications config. Off-by-default — agents that omit
+// the block produce no notifications. `routes` is a name → target map;
+// each `subscriptions[].route` references one of those names.
+//
+// `throttle` is intentionally freeform string ('5m', '30s', '1h') to
+// keep the YAML ergonomic; the emitter parses it leniently and treats
+// malformed values as no-throttle (with a logged warning).
+
+const NotificationEventNameSchema = z.enum([
+  'peer_pause_started',
+  'peer_pause_ended',
+  'peer_pause_intervened_during_generation',
+  'peer_pause_summary_daily',
+  'agent_error',
+  'iteration_budget_exhausted',
+  'escalation_needed',
+]);
+
+const NotificationRouteSchema = z.object({
+  channel: z.enum(['telegram', 'whatsapp']),
+  accountId: z.string().min(1),
+  peerId: z.string().min(1),
+});
+
+const NotificationSubscriptionSchema = z.object({
+  event: NotificationEventNameSchema,
+  route: z.string().min(1),
+  schedule: z.string().min(1).optional(),
+  throttle: z.string().min(1).optional(),
+  filter: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const NotificationsSchema = z.object({
+  enabled: z.boolean().default(true),
+  routes: z.record(z.string(), NotificationRouteSchema).default({}),
+  subscriptions: z.array(NotificationSubscriptionSchema).default([]),
+});
+
 export const AgentYmlSchema = z.object({
   model: z.string().optional(),
   thinking: ThinkingConfigSchema.optional(),
@@ -423,6 +463,7 @@ export const AgentYmlSchema = z.object({
     z.object({ enabled: z.boolean().optional() }).passthrough(),
   ).optional(),
   human_takeover: HumanTakeoverSchema.optional(),
+  notifications: NotificationsSchema.optional(),
 }).superRefine((val, ctx) => {
   if (val.learning.enabled && val.learning.mode === 'off') {
     ctx.addIssue({
@@ -445,6 +486,7 @@ export const AgentYmlSchema = z.object({
 export type GlobalConfig = z.infer<typeof GlobalConfigSchema>;
 export type AgentYml = z.infer<typeof AgentYmlSchema>;
 export type HumanTakeoverConfig = z.infer<typeof HumanTakeoverSchema>;
+export type NotificationsConfig = z.infer<typeof NotificationsSchema>;
 export type Route = z.infer<typeof RouteSchema>;
 export type Pairing = z.infer<typeof PairingSchema>;
 export type CronJob = z.infer<typeof CronJobSchema>;
