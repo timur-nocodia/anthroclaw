@@ -32,6 +32,8 @@ import { buildSessionKey } from './routing/session-key.js';
 import { MessageDebouncer, mergeInboundMessages } from './routing/debounce.js';
 import { RateLimiter } from './routing/rate-limiter.js';
 import { QueueManager, type ActiveQueryView } from './routing/queue-manager.js';
+import { createPeerPauseStore, type PeerPauseStore } from './routing/peer-pause.js';
+import type { OperatorOutboundEvent } from './channels/types.js';
 import { TelegramChannel } from './channels/telegram.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import { CronScheduler } from './cron/scheduler.js';
@@ -710,6 +712,11 @@ export class Gateway {
   private resolvedPluginsDir: string | null = null;
   private learningStore: LearningStore | null = null;
   private learningQueue: LearningQueue | null = null;
+  /**
+   * Cross-peer pause store for the human_takeover subsystem.
+   * Public so MCP tools (`send_message`) and tests can read it.
+   */
+  public peerPauseStore: PeerPauseStore | null = null;
 
   async start(config: GlobalConfig, agentsDir: string, dataDir: string, pluginsDir?: string): Promise<void> {
     this.startedAt = Date.now();
@@ -745,6 +752,10 @@ export class Gateway {
 
     // Dynamic cron store
     this.dynamicCronStore = new DynamicCronStore(join(dataDir, 'dynamic-cron.json'));
+    // Peer-pause store (human_takeover subsystem). Always instantiated so the
+    // gateway can route operator_outbound events even when no agent has the
+    // subsystem enabled — enable check happens per event.
+    this.peerPauseStore = createPeerPauseStore({ filePath: join(dataDir, 'peer-pauses.json') });
     this.heartbeatStateStore = new HeartbeatStateStore(join(dataDir, 'heartbeat-state.json'));
     this.heartbeatHistoryStore = new HeartbeatHistoryStore(
       join(dataDir, 'heartbeat-output'),
@@ -910,6 +921,7 @@ export class Gateway {
         mediaDir: join(dataDir, 'media', 'whatsapp'),
       });
       wa.onMessage(onInbound);
+      wa.on('operator_outbound', (event) => this.handleOperatorOutbound(event));
       this.channels.set('whatsapp', wa);
       await wa.start();
       logger.info('WhatsApp channel started');
@@ -2875,6 +2887,60 @@ export class Gateway {
    * Dispatch an inbound message through routing, access control, and agent query.
    * Exposed as package-internal for testing (not part of public API contract).
    */
+  /**
+   * Handle a `operator_outbound` event from a channel adapter.
+   *
+   * Looks up the agent that owns the route for this peer; if that agent
+   * has `human_takeover.enabled = true`, pauses (or extends) the peer for
+   * the configured TTL.
+   */
+  handleOperatorOutbound(event: OperatorOutboundEvent): void {
+    if (!this.routeTable || !this.peerPauseStore) return;
+    // Operator-typed messages always come through DM (1:1 chat). Group "fromMe"
+    // posts use a different remoteJid format and aren't a takeover signal.
+    const route = this.routeTable.resolve(
+      event.channel,
+      event.accountId,
+      'dm',
+      event.peerId,
+    );
+    if (!route) {
+      logger.debug({ event }, 'operator_outbound: no route matched');
+      return;
+    }
+    const agent = this.agents.get(route.agentId);
+    if (!agent) {
+      logger.warn({ agentId: route.agentId }, 'operator_outbound: route → unknown agent');
+      return;
+    }
+    const cfg = agent.config.human_takeover;
+    if (!cfg?.enabled) {
+      logger.debug(
+        { agentId: route.agentId, peerKey: event.peerKey },
+        'operator_outbound: human_takeover disabled; ignoring',
+      );
+      return;
+    }
+    const status = this.peerPauseStore.isPaused(route.agentId, event.peerKey);
+    if (status.paused && !status.expired) {
+      this.peerPauseStore.extend(route.agentId, event.peerKey);
+      logger.info(
+        { agentId: route.agentId, peerKey: event.peerKey, messageId: event.messageId },
+        'operator_outbound: pause extended',
+      );
+    } else {
+      this.peerPauseStore.pause(route.agentId, event.peerKey, {
+        ttlMinutes: cfg.pause_ttl_minutes,
+        reason: 'operator_takeover',
+        source: `${event.channel}:${event.accountId}:fromMe`,
+      });
+      logger.info(
+        { agentId: route.agentId, peerKey: event.peerKey, ttl: cfg.pause_ttl_minutes, messageId: event.messageId },
+        'operator_outbound: pause started',
+      );
+    }
+  }
+
   async dispatch(msg: InboundMessage): Promise<void> {
     metrics.increment('messages_received');
     metrics.recordMessage();
