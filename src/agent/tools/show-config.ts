@@ -58,8 +58,16 @@ function withDefaults(section: ConfigSection, value: unknown): unknown {
 function expandSections(input: Input): ConfigSection[] {
   if (!input.sections || input.sections.length === 0) return [...ALL_SECTIONS];
   if (input.sections.includes('all')) return [...ALL_SECTIONS];
-  // After filtering out 'all', the remaining values are guaranteed to be ConfigSection.
-  return input.sections.filter((s): s is ConfigSection => s !== 'all');
+  // After filtering out 'all', the remaining values are a subset of
+  // ConfigSection that overlaps with this tool's whitelist.
+  const out: ConfigSection[] = [];
+  for (const s of input.sections) {
+    if (s === 'all') continue;
+    if (s === 'notifications' || s === 'human_takeover' || s === 'operator_console') {
+      out.push(s);
+    }
+  }
+  return out;
 }
 
 export function createShowConfigTool(opts: CreateShowConfigOptions): ToolDefinition {

@@ -786,6 +786,22 @@ export class Gateway {
     return this.configAuditLog;
   }
 
+  /**
+   * Returns the active RouteTable (null until start() runs).
+   * Used by UI route-test endpoint for offline binding verification.
+   */
+  getRouteTable(): RouteTable | null {
+    return this.routeTable;
+  }
+
+  /**
+   * Returns the AccessControl instance (null until start() runs).
+   * Used by UI route-test endpoint for offline access verification.
+   */
+  getAccessControl(): AccessControl | null {
+    return this.accessControl;
+  }
+
   async start(config: GlobalConfig, agentsDir: string, dataDir: string, pluginsDir?: string): Promise<void> {
     this.startedAt = Date.now();
     this.globalConfig = config;

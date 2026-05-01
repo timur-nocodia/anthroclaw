@@ -13,7 +13,7 @@ import { AgentYmlSchema } from './schema.js';
 import type { ConfigAuditLog } from './audit.js';
 import { logger } from '../logger.js';
 
-export type ConfigSection = 'notifications' | 'human_takeover' | 'operator_console';
+export type ConfigSection = 'notifications' | 'human_takeover' | 'operator_console' | 'routes';
 
 export interface PatchContext {
   caller?: string;
