@@ -283,3 +283,170 @@ describe("BindingWizardDialog — Where + Target steps", () => {
     expect(screen.getByTestId("binding-target-group")).toBeInTheDocument();
   });
 });
+
+import { waitFor } from "@testing-library/react";
+
+describe("BindingWizardDialog — Behavior + Preview steps", () => {
+  it("Step 5 (Behavior) shows three radios for group scope", () => {
+    render(
+      <BindingWizardDialog
+        open
+        onOpenChange={vi.fn()}
+        accounts={bothChannels}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    advanceToStep("where");
+    fireEvent.click(screen.getByTestId("binding-scope-group"));
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    fireEvent.change(screen.getByTestId("binding-target-group-chat-id"), {
+      target: { value: "-1003729315809" },
+    });
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    expect(screen.getByTestId("binding-step-behavior")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("binding-behavior-mention_only"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("binding-behavior-all")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("binding-behavior-incoming_reply_only"),
+    ).toBeInTheDocument();
+  });
+
+  it("Step 5 skipped for DM-only scope", () => {
+    render(
+      <BindingWizardDialog
+        open
+        onOpenChange={vi.fn()}
+        accounts={bothChannels}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    advanceToStep("where");
+    fireEvent.click(screen.getByTestId("binding-scope-dm"));
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    // Now in target step (DM); next should jump straight to preview, skipping behavior.
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    expect(
+      screen.queryByTestId("binding-step-behavior"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("binding-step-preview")).toBeInTheDocument();
+  });
+
+  it("Step 6 (Preview) shows plain-language summary via describeBinding", () => {
+    render(
+      <BindingWizardDialog
+        open
+        onOpenChange={vi.fn()}
+        accounts={bothChannels}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    advanceToStep("where");
+    fireEvent.click(screen.getByTestId("binding-scope-group"));
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    fireEvent.change(screen.getByTestId("binding-target-group-chat-id"), {
+      target: { value: "-1003729315809" },
+    });
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    fireEvent.click(screen.getByTestId("binding-behavior-mention_only"));
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    expect(screen.getByTestId("binding-step-preview")).toBeInTheDocument();
+    expect(screen.getByText("In group: -1003729315809")).toBeInTheDocument();
+    expect(
+      screen.getByText("Behavior: Responds only when @-mentioned"),
+    ).toBeInTheDocument();
+  });
+
+  it("Step 6 shows YAML diff when toggle is clicked", () => {
+    render(
+      <BindingWizardDialog
+        open
+        onOpenChange={vi.fn()}
+        accounts={bothChannels}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    advanceToStep("where");
+    fireEvent.click(screen.getByTestId("binding-scope-group"));
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    fireEvent.change(screen.getByTestId("binding-target-group-chat-id"), {
+      target: { value: "-1003729315809" },
+    });
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    fireEvent.click(screen.getByTestId("binding-behavior-mention_only"));
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    expect(
+      screen.queryByTestId("binding-preview-yaml-diff"),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("binding-preview-diff-toggle"));
+    const diff = screen.getByTestId("binding-preview-yaml-diff");
+    expect(diff).toBeInTheDocument();
+    expect(diff.textContent).toMatch(/channel: telegram/);
+    expect(diff.textContent).toMatch(/peers: \["-1003729315809"\]/);
+  });
+
+  it("Step 6 Save calls onSave with assembled state", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const onOpenChange = vi.fn();
+    render(
+      <BindingWizardDialog
+        open
+        onOpenChange={onOpenChange}
+        accounts={bothChannels}
+        onSave={onSave}
+      />,
+    );
+    advanceToStep("where");
+    fireEvent.click(screen.getByTestId("binding-scope-group"));
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    fireEvent.change(screen.getByTestId("binding-target-group-chat-id"), {
+      target: { value: "-1003729315809" },
+    });
+    fireEvent.click(screen.getByTestId("binding-target-group-forum-toggle"));
+    fireEvent.change(screen.getByTestId("binding-target-group-topics-input"), {
+      target: { value: "3" },
+    });
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    fireEvent.click(screen.getByTestId("binding-behavior-mention_only"));
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    fireEvent.click(screen.getByTestId("binding-wizard-save"));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const arg = onSave.mock.calls[0][0];
+    expect(arg).toMatchObject({
+      channel: "telegram",
+      scope: "group",
+      peers: ["-1003729315809"],
+      topics: ["3"],
+      mention_only: true,
+    });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("Save error renders inline below the Save button", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("boom"));
+    render(
+      <BindingWizardDialog
+        open
+        onOpenChange={vi.fn()}
+        accounts={bothChannels}
+        onSave={onSave}
+      />,
+    );
+    advanceToStep("where");
+    fireEvent.click(screen.getByTestId("binding-scope-group"));
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    fireEvent.change(screen.getByTestId("binding-target-group-chat-id"), {
+      target: { value: "-1003729315809" },
+    });
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    fireEvent.click(screen.getByTestId("binding-behavior-mention_only"));
+    fireEvent.click(screen.getByTestId("binding-wizard-next"));
+    fireEvent.click(screen.getByTestId("binding-wizard-save"));
+    await waitFor(() => {
+      expect(screen.getByTestId("binding-wizard-save-error")).toHaveTextContent(
+        "boom",
+      );
+    });
+  });
+});
