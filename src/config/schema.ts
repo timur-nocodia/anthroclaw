@@ -379,8 +379,8 @@ const NotificationEventNameSchema = z.enum([
 
 const NotificationRouteSchema = z.object({
   channel: z.enum(['telegram', 'whatsapp']),
-  accountId: z.string().min(1),
-  peerId: z.string().min(1),
+  account_id: z.string().min(1),
+  peer_id: z.string().min(1),
 });
 
 const NotificationSubscriptionSchema = z.object({

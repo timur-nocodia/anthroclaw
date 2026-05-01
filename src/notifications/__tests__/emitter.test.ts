@@ -24,7 +24,7 @@ describe('NotificationsEmitter — subscription dispatch', () => {
     const emitter = createNotificationsEmitter({ sendMessage });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
     });
     await emitter.emit('peer_pause_started', {
@@ -34,7 +34,7 @@ describe('NotificationsEmitter — subscription dispatch', () => {
     });
     expect(sendMessage).toHaveBeenCalledOnce();
     const [route, text, meta] = sendMessage.mock.calls[0]!;
-    expect(route).toMatchObject({ channel: 'telegram', accountId: 'control', peerId: '48705953' });
+    expect(route).toMatchObject({ channel: 'telegram', account_id: 'control', peer_id: '48705953' });
     expect(text).toContain('Auto-pause');
     expect(text).toContain('amina');
     expect(meta).toMatchObject({ event: 'peer_pause_started', agentId: 'amina' });
@@ -45,7 +45,7 @@ describe('NotificationsEmitter — subscription dispatch', () => {
     const emitter = createNotificationsEmitter({ sendMessage });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
     });
     await emitter.emit('peer_pause_ended', { agentId: 'amina', peerKey: 'wa:b:1' });
@@ -57,7 +57,7 @@ describe('NotificationsEmitter — subscription dispatch', () => {
     const emitter = createNotificationsEmitter({ sendMessage });
     emitter.subscribeAgent('amina', {
       enabled: false,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
     });
     await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
@@ -70,8 +70,8 @@ describe('NotificationsEmitter — subscription dispatch', () => {
     emitter.subscribeAgent('amina', {
       enabled: true,
       routes: {
-        operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' },
-        team: { channel: 'whatsapp', accountId: 'business', peerId: '37120@s.whatsapp.net' },
+        operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' },
+        team: { channel: 'whatsapp', account_id: 'business', peer_id: '37120@s.whatsapp.net' },
       },
       subscriptions: [
         { event: 'peer_pause_started', route: 'operator' },
@@ -100,7 +100,7 @@ describe('NotificationsEmitter — subscription dispatch', () => {
     emitter.subscribe(
       'amina',
       { event: 'peer_pause_started', route: 'operator' },
-      { channel: 'telegram', accountId: 'control', peerId: '48705953' },
+      { channel: 'telegram', account_id: 'control', peer_id: '48705953' },
     );
     await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
     expect(sendMessage).toHaveBeenCalledOnce();
@@ -111,7 +111,7 @@ describe('NotificationsEmitter — subscription dispatch', () => {
     const emitter = createNotificationsEmitter({ sendMessage });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
     });
     emitter.subscribeAgent('amina', undefined);
@@ -124,12 +124,12 @@ describe('NotificationsEmitter — subscription dispatch', () => {
     const emitter = createNotificationsEmitter({ sendMessage });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
     });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_ended', route: 'operator' }],
     });
     await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
@@ -146,7 +146,7 @@ describe('NotificationsEmitter — throttle', () => {
     const emitter = createNotificationsEmitter({ sendMessage, clock: () => now });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator', throttle: '5m' }],
     });
     const payload = { agentId: 'amina', peerKey: 'wa:b:1' };
@@ -164,7 +164,7 @@ describe('NotificationsEmitter — throttle', () => {
     const emitter = createNotificationsEmitter({ sendMessage, clock: () => now });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator', throttle: '5m' }],
     });
     await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
@@ -177,7 +177,7 @@ describe('NotificationsEmitter — throttle', () => {
     const emitter = createNotificationsEmitter({ sendMessage });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator', throttle: 'whenever' }],
     });
     await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
@@ -197,7 +197,7 @@ describe('NotificationsEmitter — throttle', () => {
     });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator', throttle: '5m' }],
     });
     const peers = ['A', 'B', 'C', 'D'];
@@ -239,7 +239,7 @@ describe('NotificationsEmitter — throttle', () => {
     const emitter = createNotificationsEmitter({ sendMessage, clock: () => now });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [
         { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *', throttle: '1h' },
       ],

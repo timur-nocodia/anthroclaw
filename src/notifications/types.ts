@@ -28,8 +28,8 @@ export interface NotificationEventPayload {
  */
 export interface NotificationRoute {
   channel: 'telegram' | 'whatsapp';
-  accountId: string;
-  peerId: string;
+  account_id: string;
+  peer_id: string;
 }
 
 export interface NotificationSubscription {

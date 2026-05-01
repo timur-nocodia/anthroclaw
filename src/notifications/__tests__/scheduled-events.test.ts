@@ -14,7 +14,7 @@ describe('NotificationsEmitter — fireScheduled', () => {
     const emitter = createNotificationsEmitter({ sendMessage, peerPauseStore });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' }],
     });
 
@@ -34,7 +34,7 @@ describe('NotificationsEmitter — fireScheduled', () => {
     const emitter = createNotificationsEmitter({ sendMessage });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' }],
     });
     await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'amina' });
@@ -47,7 +47,7 @@ describe('NotificationsEmitter — fireScheduled', () => {
     const emitter = createNotificationsEmitter({ sendMessage });
     emitter.subscribeAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
     });
     await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'amina' });
@@ -59,7 +59,7 @@ describe('NotificationsEmitter — fireScheduled', () => {
     const emitter = createNotificationsEmitter({ sendMessage });
     emitter.subscribeAgent('amina', {
       enabled: false,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' }],
     });
     await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'amina' });
@@ -77,7 +77,7 @@ describe('NotificationsScheduler', () => {
     });
     scheduler.registerAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [
         { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' },
         { event: 'peer_pause_started', route: 'operator' }, // no schedule → not registered
@@ -95,7 +95,7 @@ describe('NotificationsScheduler', () => {
     });
     scheduler.registerAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [
         { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' },
       ],
@@ -103,7 +103,7 @@ describe('NotificationsScheduler', () => {
     expect(scheduler.listJobs()).toHaveLength(1);
     scheduler.registerAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [
         { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 10 * * *' },
         { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 18 * * *' },
@@ -119,12 +119,12 @@ describe('NotificationsScheduler', () => {
     });
     scheduler.registerAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' }],
     });
     scheduler.registerAgent('larry', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 10 * * *' }],
     });
     expect(scheduler.listJobs()).toHaveLength(2);
@@ -140,7 +140,7 @@ describe('NotificationsScheduler', () => {
     });
     scheduler.registerAgent('amina', {
       enabled: false,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' }],
     });
     expect(scheduler.listJobs()).toHaveLength(0);
@@ -154,7 +154,7 @@ describe('NotificationsScheduler', () => {
     expect(() =>
       scheduler.registerAgent('amina', {
         enabled: true,
-        routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+        routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
         subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: 'not a cron' }],
       }),
     ).not.toThrow();
@@ -176,7 +176,7 @@ describe('NotificationsScheduler', () => {
     });
     scheduler.registerAgent('amina', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
       subscriptions: [
         { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' },
       ],
@@ -206,7 +206,7 @@ describe('NotificationsScheduler', () => {
     expect(() =>
       scheduler.registerAgent('amina', {
         enabled: true,
-        routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+        routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
         subscriptions: [
           { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' },
         ],

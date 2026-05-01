@@ -2960,8 +2960,8 @@ export class Gateway {
       // Telegram formatter emits project Markdown (`*bold*`, `_italic_`,
       // `` `code` ``). Without parseMode the literal asterisks/backticks
       // would render verbatim. WhatsApp uses plain text.
-      await adapter.sendText(route.peerId, text, {
-        accountId: route.accountId,
+      await adapter.sendText(route.peer_id, text, {
+        accountId: route.account_id,
         parseMode: route.channel === 'telegram' ? 'markdown' : 'plain',
       });
     } catch (err) {

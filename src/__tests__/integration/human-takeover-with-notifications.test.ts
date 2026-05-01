@@ -25,7 +25,7 @@ const aminaConfig = {
   routes: [{ channel: 'whatsapp', account: 'business' }],
   notifications: {
     enabled: true,
-    routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+    routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
     subscriptions: [
       { event: 'peer_pause_started', route: 'operator' },
       { event: 'peer_pause_ended', route: 'operator' },
@@ -117,8 +117,8 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
     const startedCall = sendMessage.mock.calls[0]!;
     expect(startedCall[0]).toMatchObject({
       channel: 'telegram',
-      accountId: 'control',
-      peerId: '48705953',
+      account_id: 'control',
+      peer_id: '48705953',
     });
     expect(startedCall[1]).toContain('Auto-pause');
     expect(startedCall[1]).toContain(peerKey);
@@ -234,7 +234,7 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
     const gw = new Gateway() as unknown as {
       channels: Map<string, ChannelAdapter>;
       deliverNotification: (
-        route: { channel: 'telegram' | 'whatsapp'; accountId: string; peerId: string },
+        route: { channel: 'telegram' | 'whatsapp'; account_id: string; peer_id: string },
         text: string,
         meta: { event: string; agentId: string },
       ) => Promise<void>;
@@ -245,10 +245,12 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
     ]);
 
     await gw.deliverNotification(
-      { channel: 'telegram', accountId: 'control', peerId: '48705953' },
+      { channel: 'telegram', account_id: 'control', peer_id: '48705953' },
       '*Auto-pause* — `amina`',
       { event: 'peer_pause_started', agentId: 'amina' },
     );
+    // accountId here is the SendOptions field on ChannelAdapter.sendText —
+    // a different shape from NotificationRoute (which is snake_case).
     expect(tgSend).toHaveBeenCalledWith(
       '48705953',
       '*Auto-pause* — `amina`',
@@ -256,7 +258,7 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
     );
 
     await gw.deliverNotification(
-      { channel: 'whatsapp', accountId: 'business', peerId: '37120@s.whatsapp.net' },
+      { channel: 'whatsapp', account_id: 'business', peer_id: '37120@s.whatsapp.net' },
       'Auto-pause — amina',
       { event: 'peer_pause_started', agentId: 'amina' },
     );

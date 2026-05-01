@@ -242,8 +242,8 @@ describe('plugins config schema', () => {
       notifications: {
         enabled: true,
         routes: {
-          operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' },
-          team: { channel: 'whatsapp', accountId: 'business', peerId: '37120000@s.whatsapp.net' },
+          operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' },
+          team: { channel: 'whatsapp', account_id: 'business', peer_id: '37120000@s.whatsapp.net' },
         },
         subscriptions: [
           { event: 'peer_pause_started', route: 'operator' },
@@ -256,8 +256,8 @@ describe('plugins config schema', () => {
     if (result.success) {
       expect(result.data.notifications?.routes.operator).toMatchObject({
         channel: 'telegram',
-        accountId: 'control',
-        peerId: '48705953',
+        account_id: 'control',
+        peer_id: '48705953',
       });
       expect(result.data.notifications?.subscriptions).toHaveLength(3);
     }
@@ -270,7 +270,7 @@ describe('plugins config schema', () => {
         ...minimalValidAgentYml,
         notifications: {
           enabled: true,
-          routes: { op: { channel: 'telegram', accountId: 'a', peerId: 'p' } },
+          routes: { op: { channel: 'telegram', account_id: 'a', peer_id: 'p' } },
           subscriptions: [{ event: 'peer_pause_started', route: 'op', throttle }],
         },
       });
@@ -283,7 +283,7 @@ describe('plugins config schema', () => {
       ...minimalValidAgentYml,
       notifications: {
         enabled: true,
-        routes: { op: { channel: 'telegram', accountId: 'a', peerId: 'p' } },
+        routes: { op: { channel: 'telegram', account_id: 'a', peer_id: 'p' } },
         subscriptions: [{ event: 'peer_pause_started', route: 'op', throttle: '' }],
       },
     });
@@ -295,7 +295,7 @@ describe('plugins config schema', () => {
       ...minimalValidAgentYml,
       notifications: {
         enabled: true,
-        routes: { op: { channel: 'telegram', accountId: 'a', peerId: 'p' } },
+        routes: { op: { channel: 'telegram', account_id: 'a', peer_id: 'p' } },
         subscriptions: [{ event: 'bogus_event', route: 'op' }],
       },
     });
@@ -307,7 +307,7 @@ describe('plugins config schema', () => {
       ...minimalValidAgentYml,
       notifications: {
         enabled: true,
-        routes: { op: { channel: 'discord', accountId: 'a', peerId: 'p' } },
+        routes: { op: { channel: 'discord', account_id: 'a', peer_id: 'p' } },
         subscriptions: [],
       },
     });
