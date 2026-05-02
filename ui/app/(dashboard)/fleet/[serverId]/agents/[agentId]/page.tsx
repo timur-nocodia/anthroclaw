@@ -4501,7 +4501,8 @@ function MemoryEntryRow({
     if (!expanded || content !== null || contentLoading) return;
     setContentLoading(true);
     setContentError(null);
-    fetch(`/api/fleet/${serverId}/agents/${agentId}/files/${encodeURIComponent(entry.path)}?optional=true`)
+    const url = `/api/fleet/${serverId}/agents/${agentId}/memory-file?path=${encodeURIComponent(entry.path)}&optional=true`;
+    fetch(url)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
