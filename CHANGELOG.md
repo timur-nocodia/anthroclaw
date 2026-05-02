@@ -6,6 +6,44 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-02
+
+Patch release with UX polish and small fixes shipped after v0.7.0 production
+deploy. No schema changes; safe to upgrade.
+
+### Fixed
+
+- BindingTestPanel placeholders no longer leak operator-specific identifiers.
+  Previously the Sender ID hint hardcoded the project owner's actual Telegram
+  user ID and the Message text hardcoded a specific bot username — both
+  visible to every operator regardless of context. Replaced with generic
+  `123456789` / `@your_bot some message` patterns.
+- Plugin Configure panel returned **Schema fetch failed (404)** for plugins
+  with a kebab-case name (e.g. `operator-console`). The schema loader was
+  building candidate export keys with literal hyphens (invalid JS
+  identifiers). Now splits on `-` and joins as PascalCase, so
+  `operator-console` resolves the canonical `OperatorConsoleConfigSchema`
+  export.
+- Memory tab inline content view stayed on "Loading…" forever when expanding
+  any entry whose path contained slashes (memory entries are stored at
+  `memory/YYYY/MM/DD.md`). The previous implementation routed through
+  `/api/agents/[id]/files/[filename]`, whose `safeFilePath` rejects any
+  filename containing path separators. New dedicated
+  `GET /api/agents/[id]/memory-file?path=...` endpoint takes the path as a
+  query parameter, resolves it under the agent directory, and verifies the
+  resolved path doesn't traverse outside.
+
+### Changed
+
+- Memory tab default status filter is now `all` (was `pending`). With
+  auto-extracted memory the default state is `approved`, so the previous
+  default showed an empty list and operators couldn't see what was actually
+  stored.
+- MemoryEntryRow is click-expandable: clicking a row toggles a panel that
+  fetches the file content via the new memory-file endpoint and renders it
+  inline as a scrollable preformatted block. Lazy-loaded — content is fetched
+  only when the row is first expanded. Failures surface inline.
+
 ## [0.7.0] - 2026-05-01
 
 This release replaces the flat-row Routes editor with a wizard-driven UI for
