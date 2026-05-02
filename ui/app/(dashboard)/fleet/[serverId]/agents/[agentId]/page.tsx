@@ -6,7 +6,9 @@ import Link from "next/link";
 import {
   AlertTriangle,
   Brain,
+  ChevronDown,
   ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   Clock,
   Copy,
@@ -4239,7 +4241,7 @@ function RoutesTable({
 /* ------------------------------------------------------------------ */
 
 function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: string }) {
-  const [status, setStatus] = useState<MemoryReviewStatus | "all">("pending");
+  const [status, setStatus] = useState<MemoryReviewStatus | "all">("all");
   const [source, setSource] = useState("all");
   const [entries, setEntries] = useState<MemoryEntryRecord[]>([]);
   const [doctor, setDoctor] = useState<MemoryDoctorReport | null>(null);
@@ -4395,6 +4397,7 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
               <MemoryEntryRow
                 key={entry.id}
                 serverId={serverId}
+                agentId={agentId}
                 entry={entry}
                 saving={savingId === entry.id}
                 onApprove={() => reviewEntry(entry.id, "approved")}
@@ -4477,21 +4480,53 @@ function MemoryReviewTab({ serverId, agentId }: { serverId: string; agentId: str
 function MemoryEntryRow({
   serverId,
   entry,
+  agentId,
   saving,
   onApprove,
   onReject,
 }: {
   serverId: string;
   entry: MemoryEntryRecord;
+  agentId: string;
   saving: boolean;
   onApprove: () => void;
   onReject: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const [content, setContent] = useState<string | null>(null);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [contentError, setContentError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!expanded || content !== null || contentLoading) return;
+    setContentLoading(true);
+    setContentError(null);
+    fetch(`/api/fleet/${serverId}/agents/${agentId}/files/${encodeURIComponent(entry.path)}?optional=true`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((body: { content?: string }) => setContent(body.content ?? ""))
+      .catch((err: Error) => setContentError(err.message))
+      .finally(() => setContentLoading(false));
+  }, [expanded, content, contentLoading, serverId, agentId, entry.path]);
+
   return (
     <div className="px-3.5 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="min-w-0 flex-1 cursor-pointer text-left"
+          aria-expanded={expanded}
+          title="Click to view file content"
+        >
           <div className="flex min-w-0 items-center gap-2">
+            {expanded ? (
+              <ChevronDown className="h-3 w-3 shrink-0" style={{ color: "var(--oc-text-muted)" }} />
+            ) : (
+              <ChevronRight className="h-3 w-3 shrink-0" style={{ color: "var(--oc-text-muted)" }} />
+            )}
             <span className="truncate text-[12.5px] font-medium" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
               {entry.path}
             </span>
@@ -4499,7 +4534,7 @@ function MemoryEntryRow({
               {entry.reviewStatus}
             </span>
           </div>
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 pl-5 text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
             <span>{entry.source}</span>
             <span>{formatRuntimeTime(entry.updatedAt)}</span>
             {entry.provenance.runId && (
@@ -4511,11 +4546,11 @@ function MemoryEntryRow({
             {entry.provenance.sessionKey && <span>{shortRuntimeId(entry.provenance.sessionKey, 28)}</span>}
           </div>
           {entry.reviewNote && (
-            <p className="mt-1 text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
+            <p className="mt-1 pl-5 text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
               {entry.reviewNote}
             </p>
           )}
-        </div>
+        </button>
         <div className="flex items-center gap-1.5">
           <Button
             variant="outline"
@@ -4539,6 +4574,23 @@ function MemoryEntryRow({
           </Button>
         </div>
       </div>
+      {expanded && (
+        <div className="mt-3 rounded border" style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)" }}>
+          {contentLoading ? (
+            <div className="px-3 py-2 text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
+              Loading…
+            </div>
+          ) : contentError ? (
+            <div className="px-3 py-2 text-[11px]" style={{ color: "var(--oc-danger, #b91c1c)" }}>
+              Failed to load: {contentError}
+            </div>
+          ) : (
+            <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words px-3 py-2 text-[11.5px] leading-relaxed" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
+              {content || "(empty file)"}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }
