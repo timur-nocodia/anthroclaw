@@ -98,25 +98,38 @@ related production bugs found 2026-05-04.
 
 ### Required action for operators upgrading from 0.7.x
 
-1. Generate the credential-store master key:
+1. **Set canonical agent / data paths in prod `.env`** (REQUIRED):
+   ```env
+   OC_AGENTS_DIR=/app/agents
+   OC_DATA_DIR=/app/data
+   ```
+   The cutoff layer resolves each agent's SDK `cwd` via
+   `agentWorkspaceDir(agentId)`, which falls back to
+   `<process.cwd()>/agents`. In our docker-compose `working_dir` is
+   `/app/ui` (Next.js host), so the fallback resolves to
+   `/app/ui/agents/<id>` — a non-existent path, causing spawned SDK
+   processes to die instantly with a misleading
+   "Claude Code native binary not found" error. Set explicitly.
+
+2. Generate the credential-store master key (optional for v0.8.0,
+   required from v0.9.0):
    ```bash
    openssl rand -hex 32 > /tmp/master-key
    echo "ANTHROCLAW_MASTER_KEY=$(cat /tmp/master-key)" >> /path/to/prod/.env
    shred /tmp/master-key
    ```
-   The gateway will fail-fast at startup once the credential store is
-   actively used. v0.8.0 ships the store but no agent reads it yet
-   (that's v0.9.0 agent-driven OAuth) — set the env var now anyway so
-   the v0.9.0 deploy doesn't surprise.
+   v0.8.0 ships the encrypted store but no agent reads it yet (that's
+   v0.9.0 agent-driven OAuth). Set the env var now anyway so the v0.9
+   deploy doesn't surprise.
 
-2. **Disable cron jobs that relied on inherited Claude.ai MCP
+3. **Disable cron jobs that relied on inherited Claude.ai MCP
    servers.** After deploy, `mcp__claude_ai_*` tools return deny
    from the cutoff gate. Most affected: `morning-standup` for
    `timur_agent` (calendar reads). Disable in
    `data/dynamic-cron.json` (set `enabled: false`) until v0.9.0
    ships agent-driven OAuth.
 
-3. **Customer-facing agents:** apply the addendum from
+4. **Customer-facing agents:** apply the addendum from
    `docs/customer-facing-agent-template.md` to the agent's
    `CLAUDE.md` (or its first `@./*.md` import) and add `escalate`
    to the agent's `mcp_tools`. Hardens against the
@@ -141,6 +154,29 @@ related production bugs found 2026-05-04.
 
 - Implicit access to Claude account-bound MCP servers from agent
   runtime. (Was a security hazard, not a feature.)
+
+### Known limitations
+
+- **`mcp__claude_ai_*` names still appear in `deferred_tools_delta`.**
+  The Claude Code native binary reads its own `~/.claude/` settings on
+  startup and announces those tool names to the model regardless of
+  `enabledMcpjsonServers: []`. The cutoff `canUseTool` gate denies the
+  actual call (whitelist), and the names are not in `--allowedTools`
+  the SDK passes, so the model cannot directly invoke them; `ToolSearch`
+  is now in HARNESS_BLOCKLIST as additional defence-in-depth. End
+  result is structurally safe but the names leak at the
+  "model-knows-they-exist" layer. A clean closure requires moving the
+  OAuth-token storage out of `~/.claude/` so the bind-mount is no
+  longer needed — deferred to v0.9.0.
+- **Bug #3 behavioural discipline (Amina) only partially fixed.** The
+  structural cause (hallucinated technical excuses about internal
+  architecture) is closed by the cutoff + `escalate` tool. But the
+  customer-facing addendum's hard rules (no competitor names, no
+  markdown in WhatsApp, plain refusals) are imperfectly followed by
+  Opus 4.6 with adaptive thinking — the model still drifts toward
+  "helpful" comparisons. A second-pass critique agent (review the
+  pre-send response, regenerate if it violates rules) is the fix —
+  scheduled for v0.9.0.
 
 ## [0.7.1] - 2026-05-02
 
