@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { CanUseTool, Options as SdkOptions } from '@anthropic-ai/claude-agent-sdk';
@@ -12,6 +12,8 @@ import {
   applyCutoffOptions,
   agentToolGate,
   buildAllowedToolNames,
+  wrapBashCommand,
+  detectBashPathEscape,
 } from '../cutoff.js';
 import type { Agent } from '../../agent/agent.js';
 import { logger } from '../../logger.js';
@@ -629,5 +631,189 @@ describe('applyCutoffOptions', () => {
     expect(out.model).toBe('claude-haiku-4-5');
     expect(out.systemPrompt).toBe('be brief');
     expect(out.maxTurns).toBe(7);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Bash sibling-dir denylist + cwd-guard wrapper (Task 4)
+// ────────────────────────────────────────────────────────────────────────────
+
+describe('Bash sibling-dir denylist', () => {
+  let prevAgentsDir: string | undefined;
+  let agentsRoot: string;
+
+  beforeEach(() => {
+    agentsRoot = mkdtempSync(join(tmpdir(), 'cutoff-bash-'));
+    mkdirSync(join(agentsRoot, 'agent_a'));
+    mkdirSync(join(agentsRoot, 'agent_b'));
+    prevAgentsDir = process.env.OC_AGENTS_DIR;
+    process.env.OC_AGENTS_DIR = agentsRoot;
+  });
+  afterEach(() => {
+    process.env.OC_AGENTS_DIR = prevAgentsDir;
+    rmSync(agentsRoot, { recursive: true, force: true });
+  });
+
+  describe('wrapBashCommand', () => {
+    it('returns string containing cd "<workspace>" and original user command', () => {
+      const wrapped = wrapBashCommand('echo hi', { id: 'agent_a' } as any);
+      const ws = resolve(agentsRoot, 'agent_a');
+      expect(wrapped).toContain(`cd "${ws}"`);
+      expect(wrapped).toContain('echo hi');
+      // The cd must come BEFORE the user command.
+      expect(wrapped.indexOf(`cd "${ws}"`)).toBeLessThan(wrapped.indexOf('echo hi'));
+    });
+
+    it('preamble exits non-zero if cd fails', () => {
+      const wrapped = wrapBashCommand('echo hi', { id: 'agent_a' } as any);
+      // Should contain `exit 1` (or similar) on cd failure.
+      expect(wrapped).toMatch(/\|\|.*exit 1/);
+    });
+
+    it('preserves multi-line user commands unchanged', () => {
+      const cmd = 'set -e\nls -la\nfor f in *.txt; do\n  echo "$f"\ndone';
+      const wrapped = wrapBashCommand(cmd, { id: 'agent_a' } as any);
+      expect(wrapped).toContain(cmd);
+    });
+
+    it('produces valid wrap for empty user command (preamble + empty body is no-op)', () => {
+      const wrapped = wrapBashCommand('', { id: 'agent_a' } as any);
+      const ws = resolve(agentsRoot, 'agent_a');
+      expect(wrapped).toContain(`cd "${ws}"`);
+      expect(wrapped).toMatch(/\|\|.*exit 1/);
+    });
+
+    it('quotes the workspace path with double-quotes (safe for paths with spaces in agents-root)', () => {
+      // Simulate an agents-root containing a space (operator-controlled path).
+      const spacedRoot = mkdtempSync(join(tmpdir(), 'cutoff bash space-'));
+      mkdirSync(join(spacedRoot, 'agent_a'));
+      const prev = process.env.OC_AGENTS_DIR;
+      process.env.OC_AGENTS_DIR = spacedRoot;
+      try {
+        const wrapped = wrapBashCommand('ls', { id: 'agent_a' } as any);
+        const ws = resolve(spacedRoot, 'agent_a');
+        // Path contains a space; verify it is wrapped in double quotes verbatim.
+        expect(wrapped).toContain(`cd "${ws}"`);
+      } finally {
+        process.env.OC_AGENTS_DIR = prev;
+        rmSync(spacedRoot, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('detectBashPathEscape', () => {
+    it('returns true when command contains absolute path to a sibling agent workspace', () => {
+      const sibling = resolve(agentsRoot, 'agent_b');
+      expect(detectBashPathEscape(`cat ${sibling}/credentials/google.enc`, 'agent_a')).toBe(true);
+    });
+
+    it('returns false for harmless commands', () => {
+      expect(detectBashPathEscape('echo hi', 'agent_a')).toBe(false);
+      expect(detectBashPathEscape('ls', 'agent_a')).toBe(false);
+      expect(detectBashPathEscape('cat README.md', 'agent_a')).toBe(false);
+    });
+
+    it('returns false for paths within the agent\'s OWN workspace', () => {
+      const own = resolve(agentsRoot, 'agent_a');
+      expect(detectBashPathEscape(`cat ${own}/notes.md`, 'agent_a')).toBe(false);
+    });
+
+    it('returns false when no siblings exist', () => {
+      // Remove the sibling first.
+      rmSync(join(agentsRoot, 'agent_b'), { recursive: true });
+      expect(detectBashPathEscape('cat /tmp/foo', 'agent_a')).toBe(false);
+    });
+  });
+
+  describe('agentToolGate Bash integration', () => {
+    it('Bash with non-escape command: allow with updatedInput.command containing preamble + original', async () => {
+      const gate = agentToolGate({
+        id: 'agent_a',
+        config: { mcp_tools: [], external_mcp_servers: undefined },
+      } as unknown as Agent);
+      const r = await gate('Bash', { command: 'cat /tmp/foo' }, {} as any);
+      expect(r.behavior).toBe('allow');
+      if (r.behavior === 'allow') {
+        const cmd = (r.updatedInput as Record<string, unknown> | undefined)?.command;
+        const ws = resolve(agentsRoot, 'agent_a');
+        expect(typeof cmd).toBe('string');
+        expect(cmd as string).toContain(`cd "${ws}"`);
+        expect(cmd as string).toContain('cat /tmp/foo');
+      }
+    });
+
+    it('Bash referencing sibling agent dir: deny with capability_cutoff_bash_escape', async () => {
+      const gate = agentToolGate({
+        id: 'agent_a',
+        config: { mcp_tools: [], external_mcp_servers: undefined },
+      } as unknown as Agent);
+      const sibling = resolve(agentsRoot, 'agent_b');
+      const r = await gate('Bash', { command: `cat ${sibling}/creds` }, {} as any);
+      expect(r.behavior).toBe('deny');
+      if (r.behavior === 'deny') {
+        expect((r as Record<string, unknown>).decisionReason).toMatchObject({
+          type: 'other',
+          reason: 'capability_cutoff_bash_escape',
+        });
+      }
+    });
+
+    it('non-Bash tools: no path-escape check, no input rewriting', async () => {
+      const gate = agentToolGate({
+        id: 'agent_a',
+        config: { mcp_tools: [], external_mcp_servers: undefined },
+      } as unknown as Agent);
+      const sibling = resolve(agentsRoot, 'agent_b');
+      // Even if the input mentions a sibling dir, non-Bash should not invoke escape detection.
+      const r = await gate('Read', { file_path: `${sibling}/creds` }, {} as any);
+      expect(r.behavior).toBe('allow');
+      if (r.behavior === 'allow') {
+        // No updatedInput rewriting for non-Bash tools.
+        expect(r.updatedInput).toBeUndefined();
+      }
+    });
+
+    it('Bash with empty/missing command: allows without rewriting (no crash)', async () => {
+      const gate = agentToolGate({
+        id: 'agent_a',
+        config: { mcp_tools: [], external_mcp_servers: undefined },
+      } as unknown as Agent);
+      const r1 = await gate('Bash', { command: '' }, {} as any);
+      expect(r1.behavior).toBe('allow');
+      if (r1.behavior === 'allow') expect(r1.updatedInput).toBeUndefined();
+      const r2 = await gate('Bash', {}, {} as any);
+      expect(r2.behavior).toBe('allow');
+      if (r2.behavior === 'allow') expect(r2.updatedInput).toBeUndefined();
+    });
+
+    it('Bash with non-object input: does not crash', async () => {
+      const gate = agentToolGate({
+        id: 'agent_a',
+        config: { mcp_tools: [], external_mcp_servers: undefined },
+      } as unknown as Agent);
+      // Defensive: even with weird inputs, must not throw.
+      await expect(gate('Bash', 'not-an-object' as any, {} as any)).resolves.toBeDefined();
+      await expect(gate('Bash', null as any, {} as any)).resolves.toBeDefined();
+    });
+
+    it('logs warn once on denied path-escape with { agentId, cmd }', async () => {
+      const gate = agentToolGate({
+        id: 'agent_a',
+        config: { mcp_tools: [], external_mcp_servers: undefined },
+      } as unknown as Agent);
+      const sibling = resolve(agentsRoot, 'agent_b');
+      const cmd = `cat ${sibling}/creds`;
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+      try {
+        const r = await gate('Bash', { command: cmd }, {} as any);
+        expect(r.behavior).toBe('deny');
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        const call = warnSpy.mock.calls[0];
+        // First arg is the structured log object.
+        expect(call[0]).toMatchObject({ agentId: 'agent_a', cmd });
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
   });
 });

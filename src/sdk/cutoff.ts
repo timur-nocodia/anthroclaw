@@ -28,7 +28,7 @@
  */
 import type { CanUseTool, Options as SdkOptions } from '@anthropic-ai/claude-agent-sdk';
 import type { Agent } from '../agent/agent.js';
-import { agentWorkspaceDir } from '../agent/sandbox/agent-workspace.js';
+import { agentWorkspaceDir, siblingAgentDirs } from '../agent/sandbox/agent-workspace.js';
 import { logger } from '../logger.js';
 
 /**
@@ -248,11 +248,90 @@ export function buildAllowedToolNames(agent: Agent): string[] {
 }
 
 /**
+ * Wrap a user-supplied Bash command with a small shell preamble that early-exits
+ * if the agent's workspace cwd cannot be entered. The wrapper format is:
+ *
+ *   # capability-cutoff: cwd guard
+ *   cd "<workspace>" || { echo "agent-cwd-guard: cannot enter workspace"; exit 1; }
+ *   <user command>
+ *
+ * This is **defence in depth**. `applyCutoffOptions` already sets
+ * `cwd: agentWorkspaceDir(agent.id)` on the SDK Options, so Bash inherits
+ * that cwd at spawn time. The preamble is additive, guarding against:
+ *   - A future code path that bypasses `applyCutoffOptions` (catches loader
+ *     regressions before they cause cross-agent leaks).
+ *   - Edge cases where cwd resolution differs at process-spawn time vs
+ *     Options-construction time.
+ *
+ * Quoting note: the workspace path is double-quoted to tolerate spaces in
+ * the agents-root path. We assume the agents-root path does NOT contain
+ * shell metacharacters such as `"`, `\`, `$`, or backticks. The agent-id
+ * portion is constrained by `AGENT_ID_RE` so it cannot contain such
+ * characters; the operator-controlled root is responsible for the rest.
+ * Production deploy uses `/app/agents/<id>` so this holds.
+ *
+ * Empty user command is preserved as-is (preamble + empty body is a no-op
+ * after a successful `cd`).
+ */
+export function wrapBashCommand(userCommand: string, agent: Agent): string {
+  const ws = agentWorkspaceDir(agent.id);
+  return `# capability-cutoff: cwd guard
+cd "${ws}" || { echo "agent-cwd-guard: cannot enter workspace"; exit 1; }
+${userCommand}`;
+}
+
+/**
+ * Best-effort substring scan for absolute paths to sibling-agent workspaces.
+ * Used by `agentToolGate` to deny Bash commands that explicitly reference
+ * another agent's directory tree.
+ *
+ * **Limitations** (intentional — this layer is additive defence, not a
+ * complete shell-escape detector):
+ *   - String concatenation: `'/app/agen' + 'ts/agentB'`
+ *   - Subshells: `cat $(echo /app/agents/agentB)`
+ *   - Path traversal: `../agentB`
+ *   - Symlinks inside the workspace pointing to siblings
+ *   - Dynamic paths via env vars: `cat $OTHER_AGENT/creds`
+ *
+ * The PreToolUse hook in `src/sdk/permissions.ts` (`DANGEROUS_BASH_PATTERNS`)
+ * provides additional hardening. This layer is best-effort and additive.
+ *
+ * Each call invokes `siblingAgentDirs(currentAgentId)`, which reads the
+ * filesystem. For Bash-heavy agents, callers (e.g. `agentToolGate`) should
+ * cache the sibling list at gate construction rather than calling this
+ * helper directly per Bash invocation.
+ */
+export function detectBashPathEscape(command: string, currentAgentId: string): boolean {
+  const siblings = siblingAgentDirs(currentAgentId);
+  return siblings.some((p) => command.includes(p));
+}
+
+/**
  * Build a `CanUseTool` gate that allows only tools an agent has declared
  * (per `buildAllowedToolNames`). Anything else is denied with a stable
  * `decisionReason: { type: 'other', reason: 'capability_cutoff' }` so
  * downstream telemetry / hook listeners can identify cutoff-driven blocks
  * distinctly from user permission denials.
+ *
+ * **Bash hardening (Task 4)**. When `toolName === 'Bash'`, before the
+ * normal allow/deny path:
+ *   1. If `_input.command` substring-matches any sibling agent's absolute
+ *      workspace path, deny with
+ *      `decisionReason: { type: 'other', reason: 'capability_cutoff_bash_escape' }`.
+ *   2. Otherwise (and only if Bash is in the agent's allowed list), allow
+ *      with `updatedInput.command` rewritten through `wrapBashCommand` —
+ *      prepending a cwd-guard preamble.
+ *   3. If `_input.command` is missing/empty/non-string, allow without
+ *      rewriting (the SDK or downstream hook will handle invalid input).
+ *
+ * The sibling list is **captured once at gate construction** (not per
+ * invocation): `siblingAgentDirs` reads the filesystem and is hot on
+ * Bash-heavy agents. A new sibling added at runtime will not appear in
+ * this gate's list until the next agent reload — this is a deliberate
+ * trade-off; the static `applyCutoffOptions` `cwd` enforcement and the
+ * PreToolUse hook layer remain in effect either way.
+ *
+ * Non-Bash tools follow the original allow/deny logic unchanged.
  */
 export function agentToolGate(agent: Agent): CanUseTool {
   const allowed = buildAllowedToolNames(agent);
@@ -261,7 +340,49 @@ export function agentToolGate(agent: Agent): CanUseTool {
     .filter((n) => n.endsWith('*'))
     .map((n) => n.slice(0, -1));
 
+  // Cache sibling dirs at gate construction. See JSDoc for trade-off.
+  const siblings = siblingAgentDirs(agent.id);
+
+  function isAllowedName(toolName: string): boolean {
+    if (exactNames.has(toolName)) return true;
+    if (prefixGlobs.some((p) => toolName.startsWith(p))) return true;
+    return false;
+  }
+
   return async (toolName, _input, ctx) => {
+    if (toolName === 'Bash') {
+      // Capability check first: if Bash itself is not in the agent's allowed
+      // tools, fall through to the standard deny path (consistent telemetry).
+      if (isAllowedName('Bash')) {
+        const inputObj = (_input && typeof _input === 'object')
+          ? (_input as Record<string, unknown>)
+          : undefined;
+        const cmdRaw = inputObj?.command;
+        const cmd = typeof cmdRaw === 'string' ? cmdRaw : '';
+
+        if (cmd.length > 0) {
+          if (siblings.some((p) => cmd.includes(p))) {
+            logger.warn(
+              { agentId: agent.id, cmd },
+              'cutoff: Bash sibling-dir reference blocked',
+            );
+            return {
+              behavior: 'deny',
+              message: 'Bash command references another agent\'s directory.',
+              decisionReason: { type: 'other', reason: 'capability_cutoff_bash_escape' },
+            };
+          }
+          return {
+            behavior: 'allow',
+            updatedInput: { ...inputObj, command: wrapBashCommand(cmd, agent) },
+          };
+        }
+        // Empty / missing / non-string command. Allow without rewriting; the
+        // SDK or PreToolUse hook layer handles invalid Bash input downstream.
+        return { behavior: 'allow' };
+      }
+    }
+
     if (exactNames.has(toolName)) return { behavior: 'allow' };
     if (prefixGlobs.some((p) => toolName.startsWith(p))) return { behavior: 'allow' };
     logger.warn(
