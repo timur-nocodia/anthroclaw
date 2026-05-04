@@ -1,12 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
-import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import type { CanUseTool, Options as SdkOptions } from '@anthropic-ai/claude-agent-sdk';
 import {
   AGENT_BUILTIN_TOOL_WHITELIST,
   ENV_VAR_DENYLIST,
   ENV_VAR_DENYLIST_PREFIXES,
   scrubAgentEnv,
   composeToolGates,
+  applyCutoffOptions,
+  agentToolGate,
+  buildAllowedToolNames,
 } from '../cutoff.js';
+import type { Agent } from '../../agent/agent.js';
 
 describe('AGENT_BUILTIN_TOOL_WHITELIST', () => {
   it('contains exactly the safe built-ins', () => {
@@ -213,5 +220,286 @@ describe('composeToolGates', () => {
   it('allows when both gates allow', async () => {
     const gate = composeToolGates(allow, allow);
     expect((await gate('x', {}, {} as any)).behavior).toBe('allow');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// applyCutoffOptions / agentToolGate / buildAllowedToolNames
+// ────────────────────────────────────────────────────────────────────────────
+
+function stubAgent(overrides: { id?: string; config?: Partial<Agent['config']> } = {}): Agent {
+  return {
+    id: overrides.id ?? 'test-agent',
+    config: {
+      model: 'claude-sonnet-4-6',
+      mcp_tools: ['memory_search', 'send_message'],
+      external_mcp_servers: undefined,
+      ...overrides.config,
+    },
+  } as unknown as Agent;
+}
+
+describe('buildAllowedToolNames', () => {
+  it('returns whitelist + mcp_tools + glob entries (one per external server)', () => {
+    const agent = stubAgent({
+      config: {
+        mcp_tools: ['memory_search', 'send_message'],
+        external_mcp_servers: {
+          gmail: { type: 'http', url: 'https://x' } as any,
+          calendar: { type: 'http', url: 'https://y' } as any,
+        } as any,
+      },
+    });
+    const names = buildAllowedToolNames(agent);
+    for (const t of AGENT_BUILTIN_TOOL_WHITELIST) {
+      expect(names).toContain(t);
+    }
+    expect(names).toContain('memory_search');
+    expect(names).toContain('send_message');
+    expect(names).toContain('mcp__gmail__*');
+    expect(names).toContain('mcp__calendar__*');
+  });
+
+  it('empty agent yields just whitelist', () => {
+    const agent = stubAgent({ config: { mcp_tools: undefined, external_mcp_servers: undefined } });
+    const names = buildAllowedToolNames(agent);
+    expect(names).toEqual([...AGENT_BUILTIN_TOOL_WHITELIST]);
+  });
+
+  it('includes glob for agent.mcpServer.name when present', () => {
+    const agent = {
+      id: 'klavdia',
+      config: { mcp_tools: ['memory_search'], external_mcp_servers: undefined },
+      mcpServer: { name: 'klavdia-tools' },
+    } as unknown as Agent;
+    const names = buildAllowedToolNames(agent);
+    expect(names).toContain('mcp__klavdia-tools__*');
+    expect(names).toContain('memory_search');
+  });
+});
+
+describe('agentToolGate', () => {
+  it('allows AGENT_BUILTIN_TOOL_WHITELIST entries', async () => {
+    const gate = agentToolGate(stubAgent());
+    for (const t of AGENT_BUILTIN_TOOL_WHITELIST) {
+      const r = await gate(t, {}, {} as any);
+      expect(r.behavior).toBe('allow');
+    }
+  });
+
+  it('allows entries in agent.config.mcp_tools', async () => {
+    const gate = agentToolGate(stubAgent({ config: { mcp_tools: ['memory_search', 'manage_cron'] } }));
+    expect((await gate('memory_search', {}, {} as any)).behavior).toBe('allow');
+    expect((await gate('manage_cron', {}, {} as any)).behavior).toBe('allow');
+  });
+
+  it('allows tools under the agent\'s own in-process SDK MCP server prefix', async () => {
+    const agent = {
+      id: 'klavdia',
+      config: { mcp_tools: ['memory_search'], external_mcp_servers: undefined },
+      mcpServer: { name: 'klavdia-tools' },
+    } as unknown as Agent;
+    const gate = agentToolGate(agent);
+    expect((await gate('mcp__klavdia-tools__memory_search', {}, {} as any)).behavior).toBe('allow');
+    expect((await gate('mcp__klavdia-tools__send_message', {}, {} as any)).behavior).toBe('allow');
+  });
+
+  it('allows tools matching mcp__<server>__* for each external_mcp_servers entry', async () => {
+    const gate = agentToolGate(stubAgent({
+      config: {
+        external_mcp_servers: {
+          notion: { type: 'http', url: 'https://x' } as any,
+        } as any,
+      },
+    }));
+    expect((await gate('mcp__notion__search', {}, {} as any)).behavior).toBe('allow');
+    expect((await gate('mcp__notion__create_page', {}, {} as any)).behavior).toBe('allow');
+  });
+
+  it('denies anything else with helpful message + decisionReason', async () => {
+    const gate = agentToolGate(stubAgent());
+    const r = await gate('mcp__claude_ai_Google_Calendar__list_events', {}, {} as any);
+    expect(r.behavior).toBe('deny');
+    if (r.behavior === 'deny') {
+      expect(r.message).toContain('not declared');
+      // `decisionReason` is an extra-property convention used by the gateway's
+      // hook listeners; the SDK runtime ignores it. Cast to access.
+      expect((r as Record<string, unknown>).decisionReason).toMatchObject({
+        type: 'other',
+        reason: 'capability_cutoff',
+      });
+    }
+  });
+
+  it('denies WebFetch / WebSearch / Task by default (not in whitelist)', async () => {
+    const gate = agentToolGate(stubAgent());
+    for (const t of ['WebFetch', 'WebSearch', 'Task', 'NotebookEdit']) {
+      const r = await gate(t, {}, {} as any);
+      expect(r.behavior).toBe('deny');
+    }
+  });
+
+  it('does not allow unrelated tools just because some external server is configured', async () => {
+    const gate = agentToolGate(stubAgent({
+      config: {
+        external_mcp_servers: {
+          gmail: { type: 'http', url: 'https://x' } as any,
+        } as any,
+      },
+    }));
+    const r = await gate('mcp__notion__search', {}, {} as any);
+    expect(r.behavior).toBe('deny');
+  });
+});
+
+describe('applyCutoffOptions', () => {
+  let prevAgentsDir: string | undefined;
+  let agentsRoot: string;
+
+  beforeEach(() => {
+    agentsRoot = mkdtempSync(join(tmpdir(), 'cutoff-options-'));
+    prevAgentsDir = process.env.OC_AGENTS_DIR;
+    process.env.OC_AGENTS_DIR = agentsRoot;
+  });
+  afterEach(() => {
+    process.env.OC_AGENTS_DIR = prevAgentsDir;
+    rmSync(agentsRoot, { recursive: true, force: true });
+  });
+
+  it('forces enabledMcpjsonServers to []', () => {
+    // `enabledMcpjsonServers` is not on the top-level Options type — the
+    // SDK consumes it via settingSources. We forcibly set it anyway as
+    // defence-in-depth (see applyCutoffOptions). Use casts to bypass the
+    // strict type.
+    const out = applyCutoffOptions(
+      { enabledMcpjsonServers: ['leak'] } as unknown as SdkOptions,
+      stubAgent(),
+    );
+    expect((out as Record<string, unknown>).enabledMcpjsonServers).toEqual([]);
+  });
+
+  it('forces settingSources to []', () => {
+    const out = applyCutoffOptions(
+      { settingSources: ['user', 'project'] } as SdkOptions,
+      stubAgent(),
+    );
+    expect(out.settingSources).toEqual([]);
+  });
+
+  it('forces additionalDirectories to []', () => {
+    const out = applyCutoffOptions(
+      { additionalDirectories: ['/etc'] } as SdkOptions,
+      stubAgent(),
+    );
+    expect(out.additionalDirectories).toEqual([]);
+  });
+
+  it('sets cwd to agentWorkspaceDir(agent.id)', () => {
+    const out = applyCutoffOptions(
+      { cwd: '/somewhere/else' } as SdkOptions,
+      stubAgent({ id: 'test-agent' }),
+    );
+    expect(out.cwd).toBe(resolve(agentsRoot, 'test-agent'));
+  });
+
+  it('strips denylisted env vars; preserves harmless ones (TZ)', () => {
+    const out = applyCutoffOptions(
+      { env: { ANTHROPIC_API_KEY: 'leak', GOOGLE_CALENDAR_ID: 'leak2', TZ: 'UTC' } } as SdkOptions,
+      stubAgent(),
+    );
+    expect(out.env?.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(out.env?.GOOGLE_CALENDAR_ID).toBeUndefined();
+    expect(out.env?.TZ).toBe('UTC');
+  });
+
+  it('falls back to process.env when base.env is undefined', () => {
+    const prev = process.env.TZ;
+    process.env.TZ = 'Etc/UTC';
+    try {
+      const out = applyCutoffOptions({} as SdkOptions, stubAgent());
+      expect(out.env).toBeDefined();
+      // env was scrubbed (denylisted keys absent)
+      expect(out.env?.ANTHROPIC_API_KEY).toBeUndefined();
+    } finally {
+      if (prev === undefined) delete process.env.TZ;
+      else process.env.TZ = prev;
+    }
+  });
+
+  it('does NOT modify mcpServers — passes through base.mcpServers unchanged', () => {
+    const baseMcp = {
+      'agent-tools': { name: 'agent-tools', instance: {} } as any,
+      external_foo: { type: 'http', url: 'https://x' } as any,
+    };
+    const out = applyCutoffOptions(
+      { mcpServers: baseMcp } as SdkOptions,
+      stubAgent({ config: { external_mcp_servers: undefined } }),
+    );
+    expect(out.mcpServers).toBe(baseMcp);
+  });
+
+  it('does NOT modify allowedTools — passes through base.allowedTools unchanged', () => {
+    const allowed = ['Read', 'Write', 'mcp__agent-tools__memory_search'];
+    const out = applyCutoffOptions(
+      { allowedTools: allowed } as SdkOptions,
+      stubAgent(),
+    );
+    expect(out.allowedTools).toBe(allowed);
+  });
+
+  it('canUseTool is composed: deny-everything upstream short-circuits before cutoff', async () => {
+    const upstream: CanUseTool = async () => ({
+      behavior: 'deny',
+      message: 'upstream-deny',
+      decisionReason: { type: 'other', reason: 'upstream' },
+    });
+    const out = applyCutoffOptions({ canUseTool: upstream } as SdkOptions, stubAgent());
+    expect(out.canUseTool).toBeDefined();
+    // 'Read' would be allowed by cutoff — but upstream denies first.
+    const r = await out.canUseTool!('Read', {}, {} as any);
+    expect(r.behavior).toBe('deny');
+    if (r.behavior === 'deny') expect(r.message).toBe('upstream-deny');
+  });
+
+  it('canUseTool composed: when upstream allows, cutoff has final say (denies undeclared)', async () => {
+    const upstream: CanUseTool = async () => ({ behavior: 'allow' });
+    const out = applyCutoffOptions({ canUseTool: upstream } as SdkOptions, stubAgent());
+    const r = await out.canUseTool!('mcp__claude_ai_Gmail__search_threads', {}, {} as any);
+    expect(r.behavior).toBe('deny');
+  });
+
+  it('canUseTool composed: when upstream undefined, cutoff gate alone applies', async () => {
+    const out = applyCutoffOptions({} as SdkOptions, stubAgent());
+    expect(out.canUseTool).toBeDefined();
+    expect((await out.canUseTool!('Read', {}, {} as any)).behavior).toBe('allow');
+    expect((await out.canUseTool!('mcp__claude_ai_Google_Calendar__list_events', {}, {} as any)).behavior).toBe('deny');
+  });
+
+  it('is idempotent — applying twice yields the same shape (modulo function identity)', () => {
+    const agent = stubAgent();
+    const once = applyCutoffOptions({ settingSources: ['user'] as any, additionalDirectories: ['/x'] } as SdkOptions, agent);
+    const twice = applyCutoffOptions(once, agent);
+    expect(twice.settingSources).toEqual([]);
+    expect(twice.additionalDirectories).toEqual([]);
+    expect((twice as Record<string, unknown>).enabledMcpjsonServers).toEqual([]);
+    expect(twice.cwd).toBe(once.cwd);
+    expect(twice.env).toEqual(once.env);
+    // mcpServers / allowedTools pass-through preserves whatever was there
+    expect(twice.mcpServers).toBe(once.mcpServers);
+    expect(twice.allowedTools).toBe(once.allowedTools);
+  });
+
+  it('preserves unrelated base options (model, systemPrompt, maxTurns)', () => {
+    const out = applyCutoffOptions(
+      {
+        model: 'claude-haiku-4-5',
+        systemPrompt: 'be brief',
+        maxTurns: 7,
+      } as SdkOptions,
+      stubAgent(),
+    );
+    expect(out.model).toBe('claude-haiku-4-5');
+    expect(out.systemPrompt).toBe('be brief');
+    expect(out.maxTurns).toBe(7);
   });
 });

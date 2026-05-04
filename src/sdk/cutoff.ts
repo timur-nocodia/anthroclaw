@@ -26,7 +26,10 @@
  *     defence-in-depth: a typo or accidental edit to the prefix list
  *     still leaves the exact-name entry as a backstop.
  */
-import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk';
+import type { CanUseTool, Options as SdkOptions } from '@anthropic-ai/claude-agent-sdk';
+import type { Agent } from '../agent/agent.js';
+import { agentWorkspaceDir } from '../agent/sandbox/agent-workspace.js';
+import { logger } from '../logger.js';
 
 /**
  * Built-in tools agents may use by default. Excludes WebFetch, WebSearch,
@@ -172,4 +175,130 @@ export function composeToolGates(
     }
     return cutoff(toolName, input, ctx);
   };
+}
+
+/**
+ * Compute the list of tool names an agent is permitted to invoke. Combines:
+ *   1. The conservative built-in whitelist (Read/Write/Edit/Bash/Glob/Grep/TodoWrite).
+ *   2. The agent's declared in-process MCP tools (bare names from
+ *      `agent.config.mcp_tools`).
+ *   3. A `mcp__<agent.mcpServer.name>__*` glob — the agent's own in-process
+ *      SDK MCP server (created by `createSdkMcpServer`) exposes its tools
+ *      to the model under this prefix. Without this glob the model would be
+ *      blocked from calling its own declared tools at runtime, since
+ *      `canUseTool` receives the prefixed form `mcp__<server>__<tool>`.
+ *   4. One `mcp__<server>__*` glob per entry in `agent.config.external_mcp_servers`.
+ *      External servers are out-of-process, so the gateway has no a-priori knowledge
+ *      of which tool names they expose; we permit any tool prefixed for that server.
+ *
+ * Used by `agentToolGate` for runtime enforcement. Note: the SDK option
+ * `allowedTools` is NOT set from this list by `applyCutoffOptions` — the
+ * cutoff enforces capability via `canUseTool` instead, leaving upstream
+ * `allowedTools` untouched. Callers may use this helper for diagnostics
+ * or for an additional `allowedTools` clamp when they want belt-and-
+ * suspenders.
+ */
+export function buildAllowedToolNames(agent: Agent): string[] {
+  const names: string[] = [...AGENT_BUILTIN_TOOL_WHITELIST];
+  for (const t of agent.config.mcp_tools ?? []) names.push(t);
+  // The agent's own in-process SDK MCP server (createSdkMcpServer) prefixes
+  // every tool it exposes with `mcp__<server-name>__`. Allow that whole
+  // namespace; the SDK has already restricted what tools the server publishes
+  // to those declared by the agent (`agent.tools`).
+  const ownServerName = agent.mcpServer?.name;
+  if (ownServerName) {
+    names.push(`mcp__${ownServerName}__*`);
+  }
+  for (const serverName of Object.keys(agent.config.external_mcp_servers ?? {})) {
+    names.push(`mcp__${serverName}__*`);
+  }
+  return names;
+}
+
+/**
+ * Build a `CanUseTool` gate that allows only tools an agent has declared
+ * (per `buildAllowedToolNames`). Anything else is denied with a stable
+ * `decisionReason: { type: 'other', reason: 'capability_cutoff' }` so
+ * downstream telemetry / hook listeners can identify cutoff-driven blocks
+ * distinctly from user permission denials.
+ */
+export function agentToolGate(agent: Agent): CanUseTool {
+  const allowed = buildAllowedToolNames(agent);
+  const exactNames = new Set(allowed.filter((n) => !n.endsWith('*')));
+  const prefixGlobs = allowed
+    .filter((n) => n.endsWith('*'))
+    .map((n) => n.slice(0, -1));
+
+  return async (toolName, _input, ctx) => {
+    if (exactNames.has(toolName)) return { behavior: 'allow' };
+    if (prefixGlobs.some((p) => toolName.startsWith(p))) return { behavior: 'allow' };
+    logger.warn(
+      { agentId: agent.id, toolName, sessionId: (ctx as Record<string, unknown> | undefined)?.sessionId },
+      'capability-cutoff: tool blocked at runtime',
+    );
+    return {
+      behavior: 'deny',
+      message: `Tool "${toolName}" is not declared in this agent's capabilities. Use only the tools listed in your system prompt.`,
+      decisionReason: { type: 'other', reason: 'capability_cutoff' },
+    };
+  };
+}
+
+/**
+ * Apply capability-cutoff hardening to an SDK Options object. This is the
+ * ground-truth enforcement layer — it runs after `buildSdkOptions` has
+ * computed profile-derived options, and overrides anything that could
+ * leak operator capabilities out to an agent's SDK process.
+ *
+ * What it forces (overriding upstream values):
+ *   - `enabledMcpjsonServers: []` — no .mcp.json server can attach.
+ *   - `settingSources: []` — ignore user/project/managed Claude settings,
+ *     including any inherited MCP servers, allowed tools, or skill packs.
+ *   - `additionalDirectories: []` — agent process gets only its own
+ *     workspace cwd; no upward path access.
+ *   - `cwd: agentWorkspaceDir(agent.id)` — canonical agent workspace,
+ *     resolved independently of the loader's `agent.workspacePath` so a
+ *     loader regression cannot escape cutoff. The agent-id regex in
+ *     `agent-workspace.ts` rejects path-traversal attempts.
+ *   - `env: scrubAgentEnv(base.env ?? process.env)` — strip operator
+ *     credentials and provider API keys before they reach the SDK
+ *     process.
+ *   - `canUseTool: composeToolGates(base.canUseTool, agentToolGate(agent))`
+ *     — runtime gate denying any tool the agent has not declared.
+ *
+ * What it does NOT touch (passes through verbatim):
+ *   - `mcpServers` — `buildSdkOptions` already restricts this to
+ *     `agent.mcpServer` plus the agent's declared `external_mcp_servers`,
+ *     which is itself cutoff-compliant. Replacing this would break the
+ *     agent's in-process tools (memory_search, send_message, etc.).
+ *   - `allowedTools` — left to upstream (`buildAllowedTools(agent, ...)`).
+ *     The cutoff enforces capability at runtime via `canUseTool`; an
+ *     additional clamp on `allowedTools` would be redundant here and
+ *     would risk dropping legitimate tool names unrelated to capability
+ *     (e.g. tool aliases the SDK introduces). Auditors who want a
+ *     belt-and-suspenders intersection can compose `buildAllowedToolNames`
+ *     into `allowedTools` themselves at call sites.
+ *
+ * Idempotent: applying twice produces the same forced fields and an
+ * equivalently-composed `canUseTool` (the second pass wraps the first
+ * pass's already-composed gate; runtime semantics are identical).
+ */
+export function applyCutoffOptions(base: SdkOptions, agent: Agent): SdkOptions {
+  // `enabledMcpjsonServers` is not declared on the top-level SDK `Options`
+  // type — it is consumed via `settingSources` when reading project / user
+  // .mcp.json files. We force `settingSources: []` below, which already
+  // neutralizes that discovery path. Setting `enabledMcpjsonServers: []`
+  // here is defence-in-depth for any future SDK version that surfaces
+  // this field at the top level; today it is a noop. Cast bypasses the
+  // missing-key check on the current Options type.
+  const out = {
+    ...base,
+    enabledMcpjsonServers: [],
+    settingSources: [],
+    additionalDirectories: [],
+    cwd: agentWorkspaceDir(agent.id),
+    env: scrubAgentEnv(base.env ?? process.env),
+    canUseTool: composeToolGates(base.canUseTool, agentToolGate(agent)),
+  } as SdkOptions & { enabledMcpjsonServers: string[] };
+  return out;
 }

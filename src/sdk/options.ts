@@ -13,6 +13,7 @@ import {
   type FileOwnershipPermissionHooks,
 } from './permissions.js';
 import { buildExternalMcpServerSpec } from './external-mcp.js';
+import { applyCutoffOptions } from './cutoff.js';
 import { normalizeSandboxSettings } from './sandbox.js';
 import { ApprovalBroker } from '../security/approval-broker.js';
 import type { ChannelAdapter } from '../channels/types.js';
@@ -147,7 +148,12 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
   if (trustedBypass) {
     options.permissionMode = 'bypassPermissions';
     options.allowDangerouslySkipPermissions = true;
-    return options;
+    // Capability cutoff applies even on trustedBypass: capability ≠ permission.
+    // A trusted agent still must not reach another tenant's MCP-exposed
+    // resources (e.g. another operator's Google Calendar). The cutoff layer
+    // hardens cwd, env, settingSources, and adds a runtime canUseTool gate
+    // limited to declared capabilities — independent of permission mode.
+    return applyCutoffOptions(options, agent);
   }
 
   const allowedTools = buildAllowedTools(agent, hasSubagents);
@@ -164,5 +170,5 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
     sessionContext: params.sessionContext ?? { peerId: '__headless__' },
   });
 
-  return options;
+  return applyCutoffOptions(options, agent);
 }
