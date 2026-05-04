@@ -34,7 +34,7 @@ describe('buildSdkOptions profile-aware', () => {
     expect(opts.settingSources).toEqual([]);
   });
 
-  it('trusted uses preset claude_code with project source', () => {
+  it('trusted uses preset claude_code; capability cutoff forces settingSources to []', () => {
     const opts = buildSdkOptions({
       agent: fakeAgent(trustedProfile),
       approvalBroker: new ApprovalBroker(),
@@ -42,16 +42,18 @@ describe('buildSdkOptions profile-aware', () => {
     });
     expect((opts.systemPrompt as any).type).toBe('preset');
     expect((opts.systemPrompt as any).preset).toBe('claude_code');
-    expect(opts.settingSources).toEqual(['project']);
+    // Profile declares ['project'] but applyCutoffOptions overrides — cutoff is ground truth.
+    expect(opts.settingSources).toEqual([]);
   });
 
-  it('private uses preset and full settingSources', () => {
+  it('private uses preset; capability cutoff forces settingSources to []', () => {
     const opts = buildSdkOptions({
       agent: fakeAgent(privateProfile),
       approvalBroker: new ApprovalBroker(),
       sessionContext: { peerId: '1' },
     });
-    expect(opts.settingSources).toEqual(['project', 'user']);
+    // Profile declares ['project', 'user'] but applyCutoffOptions overrides — cutoff is ground truth.
+    expect(opts.settingSources).toEqual([]);
   });
 });
 

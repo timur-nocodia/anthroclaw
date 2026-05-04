@@ -6,6 +6,178 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-04
+
+Capability-cutoff release. Closes a multi-tenant credential leak (one
+agent could reach Claude.ai-bound MCP servers like Google Calendar,
+Notion, Linear, Gmail bound to the host Claude account) and two
+related production bugs found 2026-05-04.
+
+### Added
+
+- **Capability cutoff** (`src/sdk/cutoff.ts` → `applyCutoffOptions`).
+  Every agent's SDK invocation now runs with `enabledMcpjsonServers: []`,
+  `settingSources: []`, `additionalDirectories: []`, scrubbed
+  `process.env`, and an agent-scoped `cwd`. A composed `canUseTool`
+  gate denies any tool the agent has not declared in its
+  `mcp_tools` / `external_mcp_servers`. Cutoff is the LAST step in
+  `buildSdkOptions` and applies to both normal and `trustedBypass`
+  paths — capability != permission.
+  - Built-in agent tool whitelist: `Read, Write, Edit, Bash, Glob,
+    Grep, TodoWrite`. Anything else (WebFetch, WebSearch,
+    NotebookEdit, Task, Claude.ai built-in MCP tools) requires
+    explicit per-agent declaration.
+  - Env scrub: case-insensitive denylist + prefix denylist covers
+    Anthropic / Claude / Google / Notion / Linear / Gmail / OpenAI /
+    AWS / GCP / Azure / Vault / GitHub plus project-internal
+    secrets (`JWT_SECRET`, `ADMIN_PASSWORD`, `DATABASE_URL` family,
+    `OC_AGENTS_DIR` / `OC_DATA_DIR`, `ANTHROCLAW_MASTER_KEY`).
+
+- **Filesystem sandbox** (`src/agent/sandbox/agent-workspace.ts`).
+  Canonical `agentWorkspaceDir(agentId)` resolved independently of
+  the loader-supplied `agent.workspacePath` so cutoff catches loader
+  regressions. Agent-id regex `^[a-z0-9][a-z0-9_-]*$` enforced both
+  in the helper and in `Gateway.discoverAgentDirs`.
+  - **Bash sibling-dir denylist** + cwd-guard wrapper: Bash commands
+    that substring-match a sibling agent's absolute workspace path
+    are denied; allowed commands are rewritten with a `cd "<ws>" ||
+    exit 1` preamble. Sibling paths are normalised with a trailing
+    `/` to prevent prefix-collision self-DoS (`agent_b` ⊂
+    `agent_bc`).
+
+- **Credential storage** (`src/agent/credentials/`).
+  - `master-key.ts` — `loadMasterKey()` validates
+    `ANTHROCLAW_MASTER_KEY` (32 bytes / 64 hex chars exactly).
+  - `audit.ts` — append-only JSONL audit log
+    (`<OC_DATA_DIR>/credential-access.jsonl`, mode `0o640`).
+    Concurrent writes serialized through a chain that survives
+    transient write failures.
+  - `encrypted-fs-store.ts` — `EncryptedFilesystemCredentialStore`.
+    AES-256-GCM with HKDF-SHA256-derived per-(agentId, service)
+    key. File layout `[version=1 | iv (12) | auth tag (16) |
+    ciphertext]` at `agents/<id>/credentials/<service>.enc` (mode
+    `0o600`, parent dir `0o700`). Cross-agent decryption fails;
+    tampering fails AES-GCM auth.
+  - `index.ts` — `CredentialStore` interface for future Vault
+    migration.
+
+- **Cron→DM session continuity** (`src/gateway.ts:handleCronJob`).
+  Cron dispatches with `deliverTo` now mirror the captured SDK
+  session id under the user-shaped sessionKey, so a follow-up user
+  reply resumes the same conversation. Background cron (no
+  `deliverTo`) stays isolated.
+
+- **`escalate` MCP tool** (`src/agent/tools/escalate.ts`). Universal
+  tool for routing client questions to a human operator when the
+  agent genuinely cannot fulfill the request. Writes structured
+  events to `<OC_DATA_DIR>/escalations/<agentId>.jsonl`.
+
+- **Customer-facing agent template**
+  (`docs/customer-facing-agent-template.md`). Anti-hallucination
+  addendum (don't invent technical excuses involving internal
+  architecture; refusal must be plain) plus instructions for adding
+  `escalate` to the agent's `mcp_tools`. Operators of customer-facing
+  agents (e.g. `leads_agent`/Amina) apply this at deploy time.
+
+- **`escalate` in example agent** — `agents/example/agent.yml`
+  ships with `escalate` registered.
+
+### Changed
+
+- `buildSdkOptions` wraps both return paths through
+  `applyCutoffOptions`. Profile-supplied `settingSources` is
+  overridden to `[]` (cutoff is ground truth).
+- `summarizeSessionRecallWithSdk` (`src/agent/agent.ts`) extracted
+  into `buildSessionRecallSdkOptions` and hardened with `settingSources:
+  []`, `additionalDirectories: []`, `env: scrubAgentEnv(process.env)`
+  even though all tools are denied — `.mcp.json` discovery still
+  fires at startup otherwise.
+- `composeToolGates` threads upstream's `updatedInput` into the
+  cutoff invocation and preserves it when cutoff allows without
+  supplying its own. Cutoff retains final say.
+
+### Required action for operators upgrading from 0.7.x
+
+1. **Set canonical agent / data paths in prod `.env`** (REQUIRED):
+   ```env
+   OC_AGENTS_DIR=/app/agents
+   OC_DATA_DIR=/app/data
+   ```
+   The cutoff layer resolves each agent's SDK `cwd` via
+   `agentWorkspaceDir(agentId)`, which falls back to
+   `<process.cwd()>/agents`. In our docker-compose `working_dir` is
+   `/app/ui` (Next.js host), so the fallback resolves to
+   `/app/ui/agents/<id>` — a non-existent path, causing spawned SDK
+   processes to die instantly with a misleading
+   "Claude Code native binary not found" error. Set explicitly.
+
+2. Generate the credential-store master key (optional for v0.8.0,
+   required from v0.9.0):
+   ```bash
+   openssl rand -hex 32 > /tmp/master-key
+   echo "ANTHROCLAW_MASTER_KEY=$(cat /tmp/master-key)" >> /path/to/prod/.env
+   shred /tmp/master-key
+   ```
+   v0.8.0 ships the encrypted store but no agent reads it yet (that's
+   v0.9.0 agent-driven OAuth). Set the env var now anyway so the v0.9
+   deploy doesn't surprise.
+
+3. **Disable cron jobs that relied on inherited Claude.ai MCP
+   servers.** After deploy, `mcp__claude_ai_*` tools return deny
+   from the cutoff gate. Most affected: `morning-standup` for
+   `timur_agent` (calendar reads). Disable in
+   `data/dynamic-cron.json` (set `enabled: false`) until v0.9.0
+   ships agent-driven OAuth.
+
+4. **Customer-facing agents:** apply the addendum from
+   `docs/customer-facing-agent-template.md` to the agent's
+   `CLAUDE.md` (or its first `@./*.md` import) and add `escalate`
+   to the agent's `mcp_tools`. Hardens against the
+   operator-console hallucination found 2026-05-04.
+
+### Bug fixes
+
+- **Bug #1 (cron amnesia):** cron-fired briefing went to one SDK
+  session, follow-up user message started a different session.
+  Fixed by mirroring the captured session id to the user-shaped
+  sessionKey in `handleCronJob`.
+- **Bug #2 (cross-tenant calendar leak):** Klavdia (`timur_agent`)
+  read Roman's Google Calendar via the inherited Claude.ai MCP
+  server. Closed structurally by the cutoff (Subsystem 1).
+- **Bug #3 (Amina hallucination):** `leads_agent` invented an
+  "operator console is disabled" excuse to refuse a client.
+  Mitigated by the customer-facing addendum + `escalate` tool.
+- **Bug #4 (cross-agent MCP credential leak):** parent of #2;
+  same fix.
+
+### Removed
+
+- Implicit access to Claude account-bound MCP servers from agent
+  runtime. (Was a security hazard, not a feature.)
+
+### Known limitations
+
+- **`mcp__claude_ai_*` names still appear in `deferred_tools_delta`.**
+  The Claude Code native binary reads its own `~/.claude/` settings on
+  startup and announces those tool names to the model regardless of
+  `enabledMcpjsonServers: []`. The cutoff `canUseTool` gate denies the
+  actual call (whitelist), and the names are not in `--allowedTools`
+  the SDK passes, so the model cannot directly invoke them; `ToolSearch`
+  is now in HARNESS_BLOCKLIST as additional defence-in-depth. End
+  result is structurally safe but the names leak at the
+  "model-knows-they-exist" layer. A clean closure requires moving the
+  OAuth-token storage out of `~/.claude/` so the bind-mount is no
+  longer needed — deferred to v0.9.0.
+- **Bug #3 behavioural discipline (Amina) only partially fixed.** The
+  structural cause (hallucinated technical excuses about internal
+  architecture) is closed by the cutoff + `escalate` tool. But the
+  customer-facing addendum's hard rules (no competitor names, no
+  markdown in WhatsApp, plain refusals) are imperfectly followed by
+  Opus 4.6 with adaptive thinking — the model still drifts toward
+  "helpful" comparisons. A second-pass critique agent (review the
+  pre-send response, regenerate if it violates rules) is the fix —
+  scheduled for v0.9.0.
+
 ## [0.7.1] - 2026-05-02
 
 Patch release with UX polish and small fixes shipped after v0.7.0 production

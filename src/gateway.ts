@@ -25,6 +25,7 @@ const ANTHROCLAW_VERSION = (() => {
 import { createSdkMcpServer, query, startup } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent/agent.js';
+import { AGENT_ID_MAX_LEN, AGENT_ID_RE } from './agent/sandbox/agent-workspace.js';
 import { createManageCronTool } from './agent/tools/manage-cron.js';
 import { RouteTable, type RouteEntry } from './routing/table.js';
 import { AccessControl } from './routing/access.js';
@@ -4514,6 +4515,40 @@ export class Gateway {
   }
 
   /**
+   * After a DM-targeted cron run, also bind the captured SDK session id under
+   * the user-shaped sessionKey so a follow-up user reply resumes the same
+   * conversation. Cron-without-deliverTo (background tasks) is intentionally
+   * isolated — do nothing. Group-cron continuity is deferred to v0.9.0
+   * (resolving the group user-side sessionKey requires `group_sessions`
+   * config — shared vs per_user — which `job.deliverTo` does not carry).
+   *
+   * Pure with respect to gateway state: only reads/writes `agent.sessions`.
+   * Exposed as a method (not a free function) so unit tests can patch
+   * Gateway.prototype directly without spinning up a full Gateway harness.
+   */
+  private mirrorCronSessionToUserKey(
+    agent: { id: string; getSessionId(k: string): string | undefined; setSessionId(k: string, v: string): void },
+    cronSessionKey: string,
+    deliverTo: ScheduledJob['deliverTo'],
+  ): void {
+    if (!deliverTo) return;
+    const sdkSessionId = agent.getSessionId(cronSessionKey);
+    if (!sdkSessionId) return;
+    const userSessionKey = buildSessionKey(
+      agent.id,
+      deliverTo.channel,
+      'dm',
+      deliverTo.peer_id,
+      deliverTo.thread_id,
+    );
+    // Paranoia guard — the cron key shape (`${id}:cron:${jobId}`) and the
+    // user key shape (`${id}:${channel}:dm:${peerId}[...]`) shouldn't collide,
+    // but skip the rebind if they ever do.
+    if (userSessionKey === cronSessionKey) return;
+    agent.setSessionId(userSessionKey, sdkSessionId);
+  }
+
+  /**
    * Handle a cron job firing: query the agent and optionally deliver the response.
    */
   private async handleCronJob(job: ScheduledJob): Promise<void> {
@@ -4554,6 +4589,14 @@ export class Gateway {
       };
 
       const response = await this.queryAgent(agent, syntheticMsg, sessionKey);
+
+      // Bug #1 (2026-05-04): mirror the captured SDK session id under the
+      // user-shaped sessionKey so a user reply to the cron-fired DM resumes
+      // the same SDK session (otherwise dispatch builds a different key and
+      // the agent has no recollection of the briefing it just sent).
+      // Group-cron continuity deferred to v0.9.0; for now group cron creates
+      // a fresh user session if/when a group member replies.
+      this.mirrorCronSessionToUserKey(agent, sessionKey, job.deliverTo);
 
       // Silent suppression: [SILENT] in response skips delivery
       if (response && isSilentResponse(response)) {
@@ -5151,9 +5194,24 @@ export class Gateway {
 
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const ymlPath = join(agentsDir, entry.name, 'agent.yml');
+      const agentId = entry.name;
+      // Reject any directory whose name does not conform to the canonical
+      // agent-id form. A non-conforming id would crash later in
+      // agentWorkspaceDir() (used to set the SDK cwd) — we'd rather skip
+      // here with a visible warning than fail downstream with no context.
+      if (!AGENT_ID_RE.test(agentId) || agentId.length > AGENT_ID_MAX_LEN) {
+        const ymlPath = join(agentsDir, agentId, 'agent.yml');
+        if (existsSync(ymlPath)) {
+          logger.warn(
+            { agentId, dir: join(agentsDir, agentId) },
+            'agent-discovery: skipping directory — id does not match canonical agent-id format ([a-z0-9][a-z0-9_-]*, max 64 chars)'
+          );
+        }
+        continue;
+      }
+      const ymlPath = join(agentsDir, agentId, 'agent.yml');
       if (existsSync(ymlPath)) {
-        dirs.push(join(agentsDir, entry.name));
+        dirs.push(join(agentsDir, agentId));
       }
     }
 

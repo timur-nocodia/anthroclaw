@@ -7,7 +7,8 @@ export type ToolCategory =
   | 'messaging'         // send_message, send_media
   | 'memory-write'      // memory_write, local_note_propose
   | 'agent-config'      // manage_cron, manage_skills, access_control
-  | 'session-introspect'; // session_search, list_skills, local_note_search
+  | 'session-introspect' // session_search, list_skills, local_note_search
+  | 'safety';           // escalate (route to human operator)
 
 export interface ToolMeta {
   category: ToolCategory;

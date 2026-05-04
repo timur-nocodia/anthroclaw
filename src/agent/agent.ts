@@ -23,6 +23,7 @@ import {
 import { createManageHumanTakeoverTool } from './tools/manage-human-takeover.js';
 import { createManageOperatorConsoleTool } from './tools/manage-operator-console.js';
 import { createShowConfigTool } from './tools/show-config.js';
+import { createEscalateTool } from './tools/escalate.js';
 import { canManageAgent, type OperatorConsoleConfigShape } from '../security/cross-agent-perm.js';
 import type { AgentConfigWriter } from '../config/writer.js';
 import type { ConfigAuditLog } from '../config/audit.js';
@@ -39,6 +40,7 @@ import { logger } from '../logger.js';
 import type { ChannelAdapter } from '../channels/types.js';
 import type { AccessControl } from '../routing/access.js';
 import { FileSessionStore } from '../sdk/session-store.js';
+import { scrubAgentEnv } from '../sdk/cutoff.js';
 import { SessionSearchService } from '../session/session-search.js';
 import type { SessionSummaryRequest } from '../session/session-search.js';
 import { TranscriptIndex } from '../session/transcript-index.js';
@@ -47,6 +49,52 @@ function formatTranscriptForSummary(entries: SessionSummaryRequest['transcript']
   return entries
     .map((entry) => `[${entry.role}] ${entry.timestamp}\n${entry.text}`)
     .join('\n\n');
+}
+
+/**
+ * Build the SDK Options for the session-recall summarizer. Hardened the same
+ * way the capability cutoff would harden a normal agent query — even though
+ * `canUseTool` denies all tools, the SDK's `.mcp.json` discovery (driven by
+ * `settingSources`) still fires at startup, which can connect external MCP
+ * servers that phone home or read process.env credentials. Mitigations:
+ *   - `settingSources: []` — no project/user/managed settings, no .mcp.json
+ *     discovery, no inherited skill packs.
+ *   - `additionalDirectories: []` — restrict filesystem visibility to cwd.
+ *   - `env: scrubAgentEnv(process.env)` — strip operator credentials before
+ *     they reach the SDK process.
+ *
+ * Note: `enabledMcpjsonServers` is intentionally NOT set here — it is not on
+ * the SDK `Options` type, and `settingSources: []` already neutralizes the
+ * discovery path that consumes it.
+ *
+ * Exported for testability — the network-dependent `query()` call below is
+ * not unit-testable in isolation, but the Options shape is.
+ */
+export function buildSessionRecallSdkOptions(
+  config: AgentYml,
+  workspacePath: string,
+): Options {
+  return {
+    model: config.model ?? 'claude-sonnet-4-6',
+    cwd: workspacePath,
+    tools: [],
+    allowedTools: [],
+    permissionMode: 'dontAsk',
+    canUseTool: async () => ({ behavior: 'deny', message: 'Tools disabled for session recall summarization.' }),
+    // Hardening (BR-6): match what applyCutoffOptions would do, even though
+    // canUseTool denies all tools — startup-time MCP discovery would still
+    // fire otherwise.
+    settingSources: [],
+    additionalDirectories: [],
+    env: scrubAgentEnv(process.env),
+    persistSession: false,
+    maxTurns: 1,
+    systemPrompt: {
+      type: 'preset',
+      preset: 'claude_code',
+      excludeDynamicSections: true,
+    },
+  };
 }
 
 async function summarizeSessionRecallWithSdk(
@@ -70,22 +118,7 @@ async function summarizeSessionRecallWithSdk(
     formatTranscriptForSummary(request.transcript),
   ].join('\n');
 
-  const options: Options = {
-    model: config.model ?? 'claude-sonnet-4-6',
-    cwd: workspacePath,
-    tools: [],
-    allowedTools: [],
-    permissionMode: 'dontAsk',
-    canUseTool: async () => ({ behavior: 'deny', message: 'Tools disabled for session recall summarization.' }),
-    settingSources: ['project'],
-    persistSession: false,
-    maxTurns: 1,
-    systemPrompt: {
-      type: 'preset',
-      preset: 'claude_code',
-      excludeDynamicSections: true,
-    },
-  };
+  const options: Options = buildSessionRecallSdkOptions(config, workspacePath);
 
   const result = query({ prompt, options });
 
@@ -458,6 +491,9 @@ export class Agent {
               'manage_operator_console listed in mcp_tools but agentConfigWriter not available',
             );
           }
+          break;
+        case 'escalate':
+          tools.push(createEscalateTool(id));
           break;
         case 'show_config':
           if (agentConfigWriter) {

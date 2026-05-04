@@ -413,7 +413,7 @@ export const AgentYmlSchema = z.object({
     .describe('Personality baseline override for chat_like_openclaw profile. Empty/missing → uses CHAT_PERSONALITY_BASELINE. Has no effect on other profiles (info-warning emitted by validator).'),
   pairing: PairingSchema.optional(),
   allowlist: z.record(z.string(), z.array(z.string())).optional(),
-  mcp_tools: z.array(z.string()).optional(),
+  mcp_tools: z.array(z.string().min(1)).optional(),
   external_mcp_servers: z.record(z.string(), ExternalMcpServerSchema).optional(),
   memory_extraction: MemoryExtractionSchema,
   learning: LearningConfigSchema,

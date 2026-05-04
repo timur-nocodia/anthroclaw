@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { resolve } from 'node:path';
 import { AgentYmlSchema } from '../../src/config/schema.js';
 import { buildSdkOptions } from '../../src/sdk/options.js';
 import { FileOwnershipRegistry } from '../../src/sdk/file-ownership.js';
@@ -60,11 +61,16 @@ describe('buildSdkOptions', () => {
     });
 
     expect(options.model).toBe('claude-sonnet-4-6');
-    expect(options.cwd).toBe('/tmp/test-agent');
+    // applyCutoffOptions overrides cwd to the canonical agent workspace
+    // resolved via OC_AGENTS_DIR (defaults to <cwd>/agents) — independent of
+    // the loader's `agent.workspacePath`. This is by design: cutoff is the
+    // ground truth for filesystem confinement.
+    expect(options.cwd).toBe(resolve(process.cwd(), 'agents', 'test-agent'));
     expect(options.resume).toBe('session-123');
     expect(options.fallbackModel).toBe('claude-haiku-4-5');
     expect(options.includePartialMessages).toBe(true);
-    expect(options.settingSources).toEqual(['project']);
+    // applyCutoffOptions forces settingSources to [] regardless of profile.
+    expect(options.settingSources).toEqual([]);
     expect(options.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
@@ -95,7 +101,10 @@ describe('buildSdkOptions', () => {
     expect(options.permissionMode).toBe('bypassPermissions');
     expect(options.allowDangerouslySkipPermissions).toBe(true);
     expect(options.allowedTools).toBeUndefined();
-    expect(options.canUseTool).toBeUndefined();
+    // applyCutoffOptions installs a capability-cutoff canUseTool gate even
+    // for trustedBypass (capability ≠ permission). A trusted agent skips
+    // approval prompts but still must not reach undeclared capabilities.
+    expect(typeof options.canUseTool).toBe('function');
     expect(options.mcpServers).toBeUndefined();
   });
 
