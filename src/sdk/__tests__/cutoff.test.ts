@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk';
 import {
   AGENT_BUILTIN_TOOL_WHITELIST,
+  ENV_VAR_DENYLIST,
+  ENV_VAR_DENYLIST_PREFIXES,
   scrubAgentEnv,
   composeToolGates,
 } from '../cutoff.js';
@@ -32,46 +34,67 @@ describe('AGENT_BUILTIN_TOOL_WHITELIST', () => {
   );
 });
 
-describe('scrubAgentEnv — property assertions for known credentials', () => {
-  const KNOWN_DENIED = [
+describe('scrubAgentEnv — every ENV_VAR_DENYLIST entry is denied', () => {
+  it.each([...ENV_VAR_DENYLIST])('denies %s', (key) => {
+    expect(scrubAgentEnv({ [key]: 'value' })).toEqual({});
+  });
+});
+
+describe('ENV_VAR_DENYLIST anchors — these MUST stay denied', () => {
+  // Critical credentials. Removing any of these from the denylist must
+  // be a deliberate, reviewed decision. The test catches accidental drops.
+  const ANCHORS = [
     'ANTHROPIC_API_KEY',
-    'OPENAI_API_KEY',
-    'AWS_SECRET_ACCESS_KEY',
-    'AWS_ACCESS_KEY_ID',
-    'GITHUB_TOKEN',
-    'GH_TOKEN',
-    'GITHUB_PAT',
-    'TELEGRAM_BOT_TOKEN',
-    'TELEGRAM_BOT_TOKEN_CONTENT_SM',
-    'WHATSAPP_AUTH_DIR',
-    'OPENCLAW_SUBAGENT_MCP_BRAVE_API_KEY',
-    'OPENCLAW_SUBAGENT_MCP_EXA_API_KEY',
     'ANTHROCLAW_MASTER_KEY',
-    'ANTHROCLAW_DB_PASSWORD',
-    'ASSEMBLYAI_API_KEY',
-    'BRAVE_API_KEY',
-    'EXA_API_KEY',
-    'CLAUDE_CODE_OAUTH_TOKEN',
-    'CLOUDFLARE_API_TOKEN',
-    'CF_API_KEY',
-    'STRIPE_SECRET_KEY',
-    'TWILIO_AUTH_TOKEN',
-    'SUPABASE_SERVICE_ROLE_KEY',
+    'JWT_SECRET',
+    'ADMIN_PASSWORD',
     'DATABASE_URL',
-    'REDIS_URL',
-    'NOTION_API_KEY',
-    'LINEAR_API_KEY',
-    'GMAIL_OAUTH_TOKEN',
+    'OC_AGENTS_DIR',
+    'OC_DATA_DIR',
     'GOOGLE_APPLICATION_CREDENTIALS',
     'GOOGLE_CALENDAR_ID',
-    'SLACK_BOT_TOKEN',
-    'DISCORD_TOKEN',
-    'NPM_TOKEN',
-    'SENTRY_AUTH_TOKEN',
-    'DATADOG_API_KEY',
-    'DD_API_KEY',
   ];
+  it.each(ANCHORS)('contains %s', (key) => {
+    expect(ENV_VAR_DENYLIST as readonly string[]).toContain(key);
+  });
+});
 
+describe('ENV_VAR_DENYLIST_PREFIXES — every entry actually filters', () => {
+  it.each([...ENV_VAR_DENYLIST_PREFIXES])(
+    'prefix %s denies a sample %sFOO',
+    (prefix) => {
+      const sample = `${prefix}FOO`;
+      expect(scrubAgentEnv({ [sample]: 'value' })).toEqual({});
+    },
+  );
+});
+
+describe('ENV_VAR_DENYLIST_PREFIXES anchors — these MUST stay denied', () => {
+  const ANCHORS = [
+    'ANTHROCLAW_',
+    'OPENCLAW_',
+    'TELEGRAM_',
+    'WHATSAPP_',
+    'BRAVE_',
+    'EXA_',
+    'ASSEMBLYAI_',
+    'GITHUB_',
+    'GH_',
+    'AWS_',
+    'GCP_',
+    'AZURE_',
+    'CLOUDFLARE_',
+    'STRIPE_',
+    'TWILIO_',
+    'SENTRY_',
+    'DATADOG_',
+  ];
+  it.each(ANCHORS)('contains %s', (prefix) => {
+    expect(ENV_VAR_DENYLIST_PREFIXES as readonly string[]).toContain(prefix);
+  });
+});
+
+describe('scrubAgentEnv — benign vars are preserved', () => {
   const KNOWN_KEPT = [
     'PATH',
     'HOME',
@@ -85,10 +108,6 @@ describe('scrubAgentEnv — property assertions for known credentials', () => {
     'TMPDIR',
     'XDG_RUNTIME_DIR',
   ];
-
-  it.each(KNOWN_DENIED)('denies %s', (key) => {
-    expect(scrubAgentEnv({ [key]: 'value' })).toEqual({});
-  });
 
   it.each(KNOWN_KEPT)('preserves %s', (key) => {
     const out = scrubAgentEnv({ [key]: 'value' });
