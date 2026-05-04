@@ -7,7 +7,7 @@
  * list of sibling-agent directories used by the Bash hardening layer.
  *
  * The agent-id format is conservative: must start with lowercase
- * alphanumeric, followed by alphanumeric (any case), `_`, or `-`,
+ * alphanumeric, followed by lowercase alphanumeric, `_`, or `-`,
  * max 64 chars. Any deviation is rejected — preventing path traversal
  * and accidental injection through agent-id mishandling upstream.
  */
@@ -15,7 +15,11 @@
 import { resolve } from 'node:path';
 import { readdirSync, statSync } from 'node:fs';
 
-const AGENT_ID_RE = /^[a-z0-9][a-zA-Z0-9_-]*$/;
+// Canonical agent-id form. Must match the validator everywhere — currently
+// lowercase alphanumeric + `_` and `-`, leading char must be alphanumeric,
+// max 64 chars. All production agent ids conform: content_sm_building,
+// leads_agent, operator_agent, timur_agent.
+const AGENT_ID_RE = /^[a-z0-9][a-z0-9_-]*$/;
 const AGENT_ID_MAX_LEN = 64;
 
 function agentsRoot(): string {

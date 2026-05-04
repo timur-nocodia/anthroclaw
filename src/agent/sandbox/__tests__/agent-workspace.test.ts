@@ -9,9 +9,9 @@ let prevEnv: string | undefined;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'sandbox-test-'));
-  mkdirSync(join(dir, 'agentA'));
-  mkdirSync(join(dir, 'agentB'));
-  mkdirSync(join(dir, 'agentC'));
+  mkdirSync(join(dir, 'agent_a'));
+  mkdirSync(join(dir, 'agent_b'));
+  mkdirSync(join(dir, 'agent_c'));
   prevEnv = process.env.OC_AGENTS_DIR;
   process.env.OC_AGENTS_DIR = dir;
 });
@@ -22,20 +22,20 @@ afterEach(() => {
 
 describe('agentWorkspaceDir', () => {
   it('returns absolute path under OC_AGENTS_DIR', () => {
-    expect(agentWorkspaceDir({ id: 'agentA' } as any)).toBe(join(dir, 'agentA'));
+    expect(agentWorkspaceDir({ id: 'agent_a' } as any)).toBe(join(dir, 'agent_a'));
   });
 
   it('returns absolute path even when OC_AGENTS_DIR is relative — resolves to absolute', () => {
     process.env.OC_AGENTS_DIR = './tmp-relative';
-    const out = agentWorkspaceDir({ id: 'agentA' } as any);
+    const out = agentWorkspaceDir({ id: 'agent_a' } as any);
     expect(out.startsWith('/')).toBe(true);
-    expect(out.endsWith('/tmp-relative/agentA')).toBe(true);
+    expect(out.endsWith('/tmp-relative/agent_a')).toBe(true);
   });
 
   it('falls back to cwd/agents when OC_AGENTS_DIR is unset', () => {
     delete process.env.OC_AGENTS_DIR;
-    const out = agentWorkspaceDir({ id: 'agentA' } as any);
-    expect(out.endsWith('/agents/agentA')).toBe(true);
+    const out = agentWorkspaceDir({ id: 'agent_a' } as any);
+    expect(out.endsWith('/agents/agent_a')).toBe(true);
   });
 
   it('rejects path traversal in agent id', () => {
@@ -69,39 +69,43 @@ describe('agentWorkspaceDir', () => {
     expect(() => agentWorkspaceDir({ id: 'a1-b_c-9' } as any)).not.toThrow();
   });
 
-  it('rejects id with uppercase letters', () => {
+  it('rejects mixed-case ids — canonical agent-id form is lowercase only', () => {
     expect(() => agentWorkspaceDir({ id: 'AgentA' } as any)).toThrow(/invalid/i);
+    expect(() => agentWorkspaceDir({ id: 'agentA' } as any)).toThrow(/invalid/i);
+    expect(() => agentWorkspaceDir({ id: 'AGENT_A' } as any)).toThrow(/invalid/i);
+    expect(() => agentWorkspaceDir({ id: 'aGeNt_a' } as any)).toThrow(/invalid/i);
   });
 });
 
 describe('siblingAgentDirs', () => {
   it('returns absolute paths of all agents EXCEPT current', () => {
-    const siblings = siblingAgentDirs('agentA').sort();
-    expect(siblings).toEqual([join(dir, 'agentB'), join(dir, 'agentC')].sort());
+    const siblings = siblingAgentDirs('agent_a').sort();
+    expect(siblings).toEqual([join(dir, 'agent_b'), join(dir, 'agent_c')].sort());
   });
 
   it('returns [] when current is the only agent', () => {
-    rmSync(join(dir, 'agentB'), { recursive: true });
-    rmSync(join(dir, 'agentC'), { recursive: true });
-    expect(siblingAgentDirs('agentA')).toEqual([]);
+    rmSync(join(dir, 'agent_b'), { recursive: true });
+    rmSync(join(dir, 'agent_c'), { recursive: true });
+    expect(siblingAgentDirs('agent_a')).toEqual([]);
   });
 
   it('returns [] when agents root does not exist', () => {
     process.env.OC_AGENTS_DIR = '/tmp/does-not-exist-' + Math.random();
-    expect(siblingAgentDirs('agentA')).toEqual([]);
+    expect(siblingAgentDirs('agent_a')).toEqual([]);
   });
 
   it('skips entries with invalid agent-id format', () => {
     mkdirSync(join(dir, 'NotAnAgent'));
     mkdirSync(join(dir, 'agent valid name has space'));
+    mkdirSync(join(dir, 'AgentMixedCase'));
     writeFileSync(join(dir, '.hidden'), 'x');
-    const siblings = siblingAgentDirs('agentA').sort();
-    expect(siblings).toEqual([join(dir, 'agentB'), join(dir, 'agentC')].sort());
+    const siblings = siblingAgentDirs('agent_a').sort();
+    expect(siblings).toEqual([join(dir, 'agent_b'), join(dir, 'agent_c')].sort());
   });
 
   it('skips files (only directories)', () => {
     writeFileSync(join(dir, 'fakeagent'), 'x');
-    const siblings = siblingAgentDirs('agentA').sort();
-    expect(siblings).toEqual([join(dir, 'agentB'), join(dir, 'agentC')].sort());
+    const siblings = siblingAgentDirs('agent_a').sort();
+    expect(siblings).toEqual([join(dir, 'agent_b'), join(dir, 'agent_c')].sort());
   });
 });
