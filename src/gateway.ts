@@ -25,6 +25,7 @@ const ANTHROCLAW_VERSION = (() => {
 import { createSdkMcpServer, query, startup } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent/agent.js';
+import { AGENT_ID_MAX_LEN, AGENT_ID_RE } from './agent/sandbox/agent-workspace.js';
 import { createManageCronTool } from './agent/tools/manage-cron.js';
 import { RouteTable, type RouteEntry } from './routing/table.js';
 import { AccessControl } from './routing/access.js';
@@ -5151,9 +5152,24 @@ export class Gateway {
 
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const ymlPath = join(agentsDir, entry.name, 'agent.yml');
+      const agentId = entry.name;
+      // Reject any directory whose name does not conform to the canonical
+      // agent-id form. A non-conforming id would crash later in
+      // agentWorkspaceDir() (used to set the SDK cwd) — we'd rather skip
+      // here with a visible warning than fail downstream with no context.
+      if (!AGENT_ID_RE.test(agentId) || agentId.length > AGENT_ID_MAX_LEN) {
+        const ymlPath = join(agentsDir, agentId, 'agent.yml');
+        if (existsSync(ymlPath)) {
+          logger.warn(
+            { agentId, dir: join(agentsDir, agentId) },
+            'agent-discovery: skipping directory — id does not match canonical agent-id format ([a-z0-9][a-z0-9_-]*, max 64 chars)'
+          );
+        }
+        continue;
+      }
+      const ymlPath = join(agentsDir, agentId, 'agent.yml');
       if (existsSync(ymlPath)) {
-        dirs.push(join(agentsDir, entry.name));
+        dirs.push(join(agentsDir, agentId));
       }
     }
 
