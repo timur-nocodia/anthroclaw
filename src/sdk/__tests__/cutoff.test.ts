@@ -1,8 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk';
 import {
   AGENT_BUILTIN_TOOL_WHITELIST,
-  ENV_VAR_DENYLIST,
-  ENV_VAR_DENYLIST_PREFIXES,
   scrubAgentEnv,
   composeToolGates,
 } from '../cutoff.js';
@@ -13,12 +12,93 @@ describe('AGENT_BUILTIN_TOOL_WHITELIST', () => {
       ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'TodoWrite'],
     );
   });
+
+  const KNOWN_DANGEROUS_TOOLS = [
+    'WebFetch',
+    'WebSearch',
+    'Task',
+    'NotebookEdit',
+    'KillShell',
+    'BashOutput',
+    'ExitPlanMode',
+  ];
+  it.each(KNOWN_DANGEROUS_TOOLS)(
+    'does not include %s in built-in whitelist',
+    (tool) => {
+      expect(AGENT_BUILTIN_TOOL_WHITELIST as readonly string[]).not.toContain(
+        tool,
+      );
+    },
+  );
 });
 
-describe('ENV_VAR_DENYLIST and prefixes are exported', () => {
-  it('exports both', () => {
-    expect(ENV_VAR_DENYLIST.length).toBeGreaterThan(0);
-    expect(ENV_VAR_DENYLIST_PREFIXES.length).toBeGreaterThan(0);
+describe('scrubAgentEnv — property assertions for known credentials', () => {
+  const KNOWN_DENIED = [
+    'ANTHROPIC_API_KEY',
+    'OPENAI_API_KEY',
+    'AWS_SECRET_ACCESS_KEY',
+    'AWS_ACCESS_KEY_ID',
+    'GITHUB_TOKEN',
+    'GH_TOKEN',
+    'GITHUB_PAT',
+    'TELEGRAM_BOT_TOKEN',
+    'TELEGRAM_BOT_TOKEN_CONTENT_SM',
+    'WHATSAPP_AUTH_DIR',
+    'OPENCLAW_SUBAGENT_MCP_BRAVE_API_KEY',
+    'OPENCLAW_SUBAGENT_MCP_EXA_API_KEY',
+    'ANTHROCLAW_MASTER_KEY',
+    'ANTHROCLAW_DB_PASSWORD',
+    'ASSEMBLYAI_API_KEY',
+    'BRAVE_API_KEY',
+    'EXA_API_KEY',
+    'CLAUDE_CODE_OAUTH_TOKEN',
+    'CLOUDFLARE_API_TOKEN',
+    'CF_API_KEY',
+    'STRIPE_SECRET_KEY',
+    'TWILIO_AUTH_TOKEN',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'DATABASE_URL',
+    'REDIS_URL',
+    'NOTION_API_KEY',
+    'LINEAR_API_KEY',
+    'GMAIL_OAUTH_TOKEN',
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    'GOOGLE_CALENDAR_ID',
+    'SLACK_BOT_TOKEN',
+    'DISCORD_TOKEN',
+    'NPM_TOKEN',
+    'SENTRY_AUTH_TOKEN',
+    'DATADOG_API_KEY',
+    'DD_API_KEY',
+  ];
+
+  const KNOWN_KEPT = [
+    'PATH',
+    'HOME',
+    'USER',
+    'LANG',
+    'TZ',
+    'NODE_ENV',
+    'TERM',
+    'SHELL',
+    'PWD',
+    'TMPDIR',
+    'XDG_RUNTIME_DIR',
+  ];
+
+  it.each(KNOWN_DENIED)('denies %s', (key) => {
+    expect(scrubAgentEnv({ [key]: 'value' })).toEqual({});
+  });
+
+  it.each(KNOWN_KEPT)('preserves %s', (key) => {
+    const out = scrubAgentEnv({ [key]: 'value' });
+    expect(out[key]).toBe('value');
+  });
+
+  it('matches case-insensitively', () => {
+    expect(scrubAgentEnv({ anthropic_api_key: 'x' })).toEqual({});
+    expect(scrubAgentEnv({ Anthropic_Api_Key: 'x' })).toEqual({});
+    expect(scrubAgentEnv({ Path: '/usr/bin' })).toEqual({ Path: '/usr/bin' });
   });
 });
 
@@ -61,6 +141,7 @@ describe('scrubAgentEnv', () => {
   it('handles undefined values without including them as defined', () => {
     const out = scrubAgentEnv({ X_OK: undefined, Y_OK: 'v' });
     expect(out.X_OK).toBeUndefined();
+    expect('X_OK' in out).toBe(false);
     expect(out.Y_OK).toBe('v');
   });
 });
@@ -83,6 +164,19 @@ describe('composeToolGates', () => {
     const r = await gate('Read', {}, { agentId: 'a', sessionId: 's' } as any);
     expect(r.behavior).toBe('deny');
     if (r.behavior === 'deny') expect(r.message).toBe('upstream-deny');
+  });
+
+  it('runs upstream first; if upstream returns ask, cutoff is not consulted', async () => {
+    const askGate: CanUseTool = async () =>
+      ({
+        behavior: 'ask' as const,
+        message: 'upstream-ask',
+      } as any);
+    const cutoffSpy = vi.fn(async () => ({ behavior: 'allow' as const }));
+    const gate = composeToolGates(askGate, cutoffSpy);
+    const r = await gate('Read', {}, { agentId: 'a', sessionId: 's' } as any);
+    expect(r.behavior).toBe('ask');
+    expect(cutoffSpy).not.toHaveBeenCalled();
   });
 
   it('runs cutoff after upstream allow; cutoff has final say', async () => {
