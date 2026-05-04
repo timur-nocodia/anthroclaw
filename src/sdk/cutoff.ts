@@ -32,6 +32,15 @@ import { agentWorkspaceDir, siblingAgentDirs } from '../agent/sandbox/agent-work
 import { logger } from '../logger.js';
 
 /**
+ * Stable `decisionReason.reason` strings emitted on cutoff-driven denies.
+ * Promoted to constants so SIEM rules / hook listeners that match on these
+ * values cannot silently break under a future rename — tests reference the
+ * constant, so a rename forces a coordinated test update.
+ */
+export const CUTOFF_DECISION_REASON = 'capability_cutoff' as const;
+export const CUTOFF_BASH_ESCAPE_DECISION_REASON = 'capability_cutoff_bash_escape' as const;
+
+/**
  * Built-in tools agents may use by default. Excludes WebFetch, WebSearch,
  * Task, NotebookEdit, KillShell, BashOutput — those require explicit
  * per-agent opt-in.
@@ -285,11 +294,24 @@ ${userCommand}`;
  * Used by `agentToolGate` to deny Bash commands that explicitly reference
  * another agent's directory tree.
  *
+ * Each sibling path is normalised with a trailing `/` before the substring
+ * check, so a sibling whose id is a string-prefix of another (`agent_b` vs
+ * `agent_bc`) cannot cause a false-positive deny against the longer agent's
+ * own workspace path. Without the trailing slash, agent_bc reading a file
+ * under its OWN workspace would substring-match the bare `<root>/agent_b`
+ * sibling path and self-DoS.
+ *
  * **Limitations** (intentional — this layer is additive defence, not a
  * complete shell-escape detector):
  *   - String concatenation: `'/app/agen' + 'ts/agentB'`
  *   - Subshells: `cat $(echo /app/agents/agentB)`
- *   - Path traversal: `../agentB`
+ *   - Path traversal: `../agentB` and any other relative-path escape
+ *   - `cd <parent> && cat <sibling>/creds` — shell `cd` followed by a
+ *     relative path; the sibling's absolute path string never appears in
+ *     the literal command, so substring scanning cannot see it
+ *   - Glob expansion: e.g. a wildcard like `age` followed by `*` then
+ *     `/creds` under the agents-root — the wildcard expands at shell-runtime,
+ *     so the literal command never contains the sibling's full path string
  *   - Symlinks inside the workspace pointing to siblings
  *   - Dynamic paths via env vars: `cat $OTHER_AGENT/creds`
  *
@@ -302,34 +324,45 @@ ${userCommand}`;
  * helper directly per Bash invocation.
  */
 export function detectBashPathEscape(command: string, currentAgentId: string): boolean {
-  const siblings = siblingAgentDirs(currentAgentId);
+  const siblings = siblingAgentDirs(currentAgentId).map((p) =>
+    p.endsWith('/') ? p : `${p}/`,
+  );
   return siblings.some((p) => command.includes(p));
 }
 
 /**
  * Build a `CanUseTool` gate that allows only tools an agent has declared
  * (per `buildAllowedToolNames`). Anything else is denied with a stable
- * `decisionReason: { type: 'other', reason: 'capability_cutoff' }` so
+ * `decisionReason: { type: 'other', reason: CUTOFF_DECISION_REASON }` so
  * downstream telemetry / hook listeners can identify cutoff-driven blocks
  * distinctly from user permission denials.
  *
  * **Bash hardening (Task 4)**. When `toolName === 'Bash'`, before the
  * normal allow/deny path:
  *   1. If `_input.command` substring-matches any sibling agent's absolute
- *      workspace path, deny with
- *      `decisionReason: { type: 'other', reason: 'capability_cutoff_bash_escape' }`.
+ *      workspace path (with trailing `/` boundary to avoid prefix-collision
+ *      false positives), deny with
+ *      `decisionReason: { type: 'other', reason: CUTOFF_BASH_ESCAPE_DECISION_REASON }`.
  *   2. Otherwise (and only if Bash is in the agent's allowed list), allow
  *      with `updatedInput.command` rewritten through `wrapBashCommand` —
  *      prepending a cwd-guard preamble.
  *   3. If `_input.command` is missing/empty/non-string, allow without
  *      rewriting (the SDK or downstream hook will handle invalid input).
  *
- * The sibling list is **captured once at gate construction** (not per
- * invocation): `siblingAgentDirs` reads the filesystem and is hot on
- * Bash-heavy agents. A new sibling added at runtime will not appear in
- * this gate's list until the next agent reload — this is a deliberate
- * trade-off; the static `applyCutoffOptions` `cwd` enforcement and the
- * PreToolUse hook layer remain in effect either way.
+ * **Sibling-list caching scope.** `agentToolGate` is rebuilt per query
+ * (via `applyCutoffOptions` → `buildSdkOptions`, called from the gateway
+ * for each query), so the sibling list IS re-read from disk on every
+ * query. The within-gate caching here exists purely so the substring check
+ * itself does not call `readdirSync` synchronously inside the
+ * `canUseTool` callback for every Bash invocation in a single query —
+ * one filesystem read per gate, not one per Bash call. A new sibling
+ * directory will appear in the gate's list at the start of the next
+ * query, not at the next agent reload.
+ *
+ * Each sibling path is normalised with a trailing `/` so an agent whose
+ * id is a string-prefix of another (`agent_b` vs `agent_bc`) cannot
+ * cause a false-positive deny against the longer agent reading its OWN
+ * workspace.
  *
  * Non-Bash tools follow the original allow/deny logic unchanged.
  */
@@ -340,8 +373,16 @@ export function agentToolGate(agent: Agent): CanUseTool {
     .filter((n) => n.endsWith('*'))
     .map((n) => n.slice(0, -1));
 
-  // Cache sibling dirs at gate construction. See JSDoc for trade-off.
-  const siblings = siblingAgentDirs(agent.id);
+  // Cache sibling dirs once per gate so the substring check itself isn't
+  // doing IO inside the canUseTool callback. The gate is rebuilt per query
+  // by applyCutoffOptions, so siblings is re-read at every query boundary —
+  // see JSDoc.
+  //
+  // Trailing `/` on each path is load-bearing: prevents prefix-collision
+  // self-DoS where `<root>/agent_b` substring-matches `<root>/agent_bc/own.txt`.
+  const siblings = siblingAgentDirs(agent.id).map((p) =>
+    p.endsWith('/') ? p : `${p}/`,
+  );
 
   function isAllowedName(toolName: string): boolean {
     if (exactNames.has(toolName)) return true;
@@ -350,6 +391,8 @@ export function agentToolGate(agent: Agent): CanUseTool {
   }
 
   return async (toolName, _input, ctx) => {
+    const sessionId = (ctx as Record<string, unknown> | undefined)?.sessionId;
+
     if (toolName === 'Bash') {
       // Capability check first: if Bash itself is not in the agent's allowed
       // tools, fall through to the standard deny path (consistent telemetry).
@@ -363,13 +406,13 @@ export function agentToolGate(agent: Agent): CanUseTool {
         if (cmd.length > 0) {
           if (siblings.some((p) => cmd.includes(p))) {
             logger.warn(
-              { agentId: agent.id, cmd },
+              { agentId: agent.id, toolName: 'Bash', sessionId, cmd },
               'cutoff: Bash sibling-dir reference blocked',
             );
             return {
               behavior: 'deny',
               message: 'Bash command references another agent\'s directory.',
-              decisionReason: { type: 'other', reason: 'capability_cutoff_bash_escape' },
+              decisionReason: { type: 'other', reason: CUTOFF_BASH_ESCAPE_DECISION_REASON },
             };
           }
           return {
@@ -386,13 +429,13 @@ export function agentToolGate(agent: Agent): CanUseTool {
     if (exactNames.has(toolName)) return { behavior: 'allow' };
     if (prefixGlobs.some((p) => toolName.startsWith(p))) return { behavior: 'allow' };
     logger.warn(
-      { agentId: agent.id, toolName, sessionId: (ctx as Record<string, unknown> | undefined)?.sessionId },
+      { agentId: agent.id, toolName, sessionId },
       'capability-cutoff: tool blocked at runtime',
     );
     return {
       behavior: 'deny',
       message: `Tool "${toolName}" is not declared in this agent's capabilities. Use only the tools listed in your system prompt.`,
-      decisionReason: { type: 'other', reason: 'capability_cutoff' },
+      decisionReason: { type: 'other', reason: CUTOFF_DECISION_REASON },
     };
   };
 }

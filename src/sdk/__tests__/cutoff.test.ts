@@ -7,6 +7,8 @@ import {
   AGENT_BUILTIN_TOOL_WHITELIST,
   ENV_VAR_DENYLIST,
   ENV_VAR_DENYLIST_PREFIXES,
+  CUTOFF_DECISION_REASON,
+  CUTOFF_BASH_ESCAPE_DECISION_REASON,
   scrubAgentEnv,
   composeToolGates,
   applyCutoffOptions,
@@ -397,8 +399,9 @@ describe('agentToolGate', () => {
       // hook listeners; the SDK runtime ignores it. Cast to access.
       expect((r as Record<string, unknown>).decisionReason).toMatchObject({
         type: 'other',
-        reason: 'capability_cutoff',
+        reason: CUTOFF_DECISION_REASON,
       });
+      expect(CUTOFF_DECISION_REASON).toBe('capability_cutoff');
     }
   });
 
@@ -737,8 +740,16 @@ describe('Bash sibling-dir denylist', () => {
         const cmd = (r.updatedInput as Record<string, unknown> | undefined)?.command;
         const ws = resolve(agentsRoot, 'agent_a');
         expect(typeof cmd).toBe('string');
-        expect(cmd as string).toContain(`cd "${ws}"`);
-        expect(cmd as string).toContain('cat /tmp/foo');
+        const cmdStr = cmd as string;
+        expect(cmdStr).toContain(`cd "${ws}"`);
+        expect(cmdStr).toContain('cat /tmp/foo');
+        // Preamble MUST appear BEFORE the user command. A regression that
+        // reverses this order would still pass a naive `toContain` pair.
+        expect(cmdStr.indexOf('# capability-cutoff')).toBeGreaterThanOrEqual(0);
+        expect(cmdStr.indexOf('# capability-cutoff')).toBeLessThan(cmdStr.indexOf(`cd "${ws}"`));
+        expect(cmdStr.indexOf(`cd "${ws}"`)).toBeLessThan(cmdStr.indexOf('cat /tmp/foo'));
+        // Structural regex: comment header → cd "..." || ... → user command at end.
+        expect(cmdStr).toMatch(/^# capability-cutoff[\s\S]*cd ".*"\s*\|\|[\s\S]*cat \/tmp\/foo$/);
       }
     });
 
@@ -753,8 +764,9 @@ describe('Bash sibling-dir denylist', () => {
       if (r.behavior === 'deny') {
         expect((r as Record<string, unknown>).decisionReason).toMatchObject({
           type: 'other',
-          reason: 'capability_cutoff_bash_escape',
+          reason: CUTOFF_BASH_ESCAPE_DECISION_REASON,
         });
+        expect(CUTOFF_BASH_ESCAPE_DECISION_REASON).toBe('capability_cutoff_bash_escape');
       }
     });
 
@@ -796,7 +808,7 @@ describe('Bash sibling-dir denylist', () => {
       await expect(gate('Bash', null as any, {} as any)).resolves.toBeDefined();
     });
 
-    it('logs warn once on denied path-escape with { agentId, cmd }', async () => {
+    it('logs warn once on denied path-escape with { agentId, toolName, sessionId, cmd }', async () => {
       const gate = agentToolGate({
         id: 'agent_a',
         config: { mcp_tools: [], external_mcp_servers: undefined },
@@ -805,14 +817,125 @@ describe('Bash sibling-dir denylist', () => {
       const cmd = `cat ${sibling}/creds`;
       const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
       try {
-        const r = await gate('Bash', { command: cmd }, {} as any);
+        const r = await gate('Bash', { command: cmd }, { sessionId: 'sess-123' } as any);
         expect(r.behavior).toBe('deny');
         expect(warnSpy).toHaveBeenCalledTimes(1);
         const call = warnSpy.mock.calls[0];
-        // First arg is the structured log object.
-        expect(call[0]).toMatchObject({ agentId: 'agent_a', cmd });
+        // First arg is the structured log object. Shape MUST match the
+        // existing capability-cutoff warn shape (toolName + sessionId)
+        // so SIEM correlation works across both deny paths.
+        expect(call[0]).toMatchObject({
+          agentId: 'agent_a',
+          toolName: 'Bash',
+          sessionId: 'sess-123',
+          cmd,
+        });
       } finally {
         warnSpy.mockRestore();
+      }
+    });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Prefix-collision regression: sibling path that is a string-prefix of the
+// current agent's own workspace path must NOT trigger a deny against the
+// current agent's own workspace. Realistic scenario: agents `agent_b` and
+// `agent_bc` co-existing → without a trailing-slash boundary on each sibling
+// path, agent_bc's own workspace path `/<root>/agent_bc/...` substring-matches
+// the bare sibling path `/<root>/agent_b` and self-DoS results.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe('Bash sibling-dir prefix-collision regression', () => {
+  let prevAgentsDir: string | undefined;
+  let agentsRoot: string;
+
+  beforeEach(() => {
+    agentsRoot = mkdtempSync(join(tmpdir(), 'cutoff-prefix-'));
+    // Two agents whose ids are prefixes of each other: `agent_b` ⊂ `agent_bc`.
+    mkdirSync(join(agentsRoot, 'agent_b'));
+    mkdirSync(join(agentsRoot, 'agent_bc'));
+    prevAgentsDir = process.env.OC_AGENTS_DIR;
+    process.env.OC_AGENTS_DIR = agentsRoot;
+  });
+  afterEach(() => {
+    process.env.OC_AGENTS_DIR = prevAgentsDir;
+    rmSync(agentsRoot, { recursive: true, force: true });
+  });
+
+  describe('detectBashPathEscape — trailing-slash boundary', () => {
+    it('from agent_bc perspective: command in OWN workspace (`<root>/agent_bc/...`) is NOT flagged', () => {
+      // Sibling list contains agent_b (path `<root>/agent_b`). Without the
+      // trailing-slash fix, the bare prefix `<root>/agent_b` is a substring
+      // of `<root>/agent_bc/own.txt` and triggers a false positive deny.
+      const ownFile = `${resolve(agentsRoot, 'agent_bc')}/own.txt`;
+      expect(detectBashPathEscape(`cat ${ownFile}`, 'agent_bc')).toBe(false);
+    });
+
+    it('from agent_b perspective: command in OWN workspace (`<root>/agent_b/...`) is NOT flagged', () => {
+      // Symmetric check: sibling list contains agent_bc (path `<root>/agent_bc`).
+      // Command `cat <root>/agent_b/own.txt` does NOT contain `<root>/agent_bc/`
+      // (different last-segment), so it must not match.
+      const ownFile = `${resolve(agentsRoot, 'agent_b')}/own.txt`;
+      expect(detectBashPathEscape(`cat ${ownFile}`, 'agent_b')).toBe(false);
+    });
+
+    it('from agent_b perspective: command targeting sibling agent_bc IS flagged', () => {
+      const sibling = resolve(agentsRoot, 'agent_bc');
+      expect(detectBashPathEscape(`cat ${sibling}/creds`, 'agent_b')).toBe(true);
+    });
+
+    it('from agent_bc perspective: command targeting sibling agent_b IS flagged', () => {
+      const sibling = resolve(agentsRoot, 'agent_b');
+      expect(detectBashPathEscape(`cat ${sibling}/creds`, 'agent_bc')).toBe(true);
+    });
+  });
+
+  describe('agentToolGate Bash — own-workspace allow with prefix-collision sibling', () => {
+    it('agent_bc: reading OWN workspace file is ALLOWED (regression test for self-DoS)', async () => {
+      const gate = agentToolGate({
+        id: 'agent_bc',
+        config: { mcp_tools: [], external_mcp_servers: undefined },
+      } as unknown as Agent);
+      const ownPath = `${resolve(agentsRoot, 'agent_bc')}/notes.md`;
+      const r = await gate('Bash', { command: `cat ${ownPath}` }, {} as any);
+      expect(r.behavior).toBe('allow');
+      if (r.behavior === 'allow') {
+        const cmd = (r.updatedInput as Record<string, unknown> | undefined)?.command;
+        expect(typeof cmd).toBe('string');
+        expect(cmd as string).toContain(`cat ${ownPath}`);
+      }
+    });
+
+    it('agent_bc: reading sibling agent_b creds is DENIED', async () => {
+      const gate = agentToolGate({
+        id: 'agent_bc',
+        config: { mcp_tools: [], external_mcp_servers: undefined },
+      } as unknown as Agent);
+      const sibling = resolve(agentsRoot, 'agent_b');
+      const r = await gate('Bash', { command: `cat ${sibling}/creds` }, {} as any);
+      expect(r.behavior).toBe('deny');
+      if (r.behavior === 'deny') {
+        expect((r as Record<string, unknown>).decisionReason).toMatchObject({
+          type: 'other',
+          reason: CUTOFF_BASH_ESCAPE_DECISION_REASON,
+        });
+      }
+    });
+
+    it('agent_b: reading sibling agent_bc files is DENIED', async () => {
+      const gate = agentToolGate({
+        id: 'agent_b',
+        config: { mcp_tools: [], external_mcp_servers: undefined },
+      } as unknown as Agent);
+      const sibling = resolve(agentsRoot, 'agent_bc');
+      const r = await gate('Bash', { command: `cat ${sibling}/x` }, {} as any);
+      expect(r.behavior).toBe('deny');
+      if (r.behavior === 'deny') {
+        expect((r as Record<string, unknown>).decisionReason).toMatchObject({
+          type: 'other',
+          reason: CUTOFF_BASH_ESCAPE_DECISION_REASON,
+        });
       }
     });
   });
