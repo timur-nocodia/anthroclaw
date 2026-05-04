@@ -23,6 +23,7 @@ import {
 import { createManageHumanTakeoverTool } from './tools/manage-human-takeover.js';
 import { createManageOperatorConsoleTool } from './tools/manage-operator-console.js';
 import { createShowConfigTool } from './tools/show-config.js';
+import { createEscalateTool } from './tools/escalate.js';
 import { canManageAgent, type OperatorConsoleConfigShape } from '../security/cross-agent-perm.js';
 import type { AgentConfigWriter } from '../config/writer.js';
 import type { ConfigAuditLog } from '../config/audit.js';
@@ -490,6 +491,9 @@ export class Agent {
               'manage_operator_console listed in mcp_tools but agentConfigWriter not available',
             );
           }
+          break;
+        case 'escalate':
+          tools.push(createEscalateTool(id));
           break;
         case 'show_config':
           if (agentConfigWriter) {
