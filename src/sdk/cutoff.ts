@@ -156,10 +156,20 @@ export function scrubAgentEnv(
 }
 
 /**
- * Compose two CanUseTool gates. `upstream` runs first; if it returns
- * anything other than 'allow' (deny, ask, etc.) that result is returned
- * verbatim and `cutoff` is not consulted. Otherwise `cutoff` runs and
- * its result is returned.
+ * Compose two CanUseTool gates. `upstream` runs first; if it returns a
+ * non-`'allow'` result (the SDK's `PermissionResult` is `'allow' | 'deny'`)
+ * that result is returned verbatim and `cutoff` is not consulted. Otherwise
+ * `cutoff` runs and its result is returned.
+ *
+ * `updatedInput` threading. When upstream allows with an `updatedInput`
+ * (e.g. a user-supplied redaction layer), that value is the effective input
+ * the tool will receive — so it MUST be what `cutoff` inspects. The
+ * composition therefore passes `upRes.updatedInput ?? input` into `cutoff`,
+ * and propagates upstream's `updatedInput` if `cutoff` allows without
+ * supplying its own:
+ *   - cutoff allow with own `updatedInput` → cutoff's wins (cutoff has final say)
+ *   - cutoff allow without `updatedInput`, upstream had one → upstream's preserved
+ *   - cutoff allow, neither side supplied `updatedInput` → no `updatedInput`
  *
  * Used by the cutoff layer to chain a user-supplied gate (if any) with
  * the cutoff's own runtime check; both must allow for a tool to fire.
@@ -169,11 +179,25 @@ export function composeToolGates(
   cutoff: CanUseTool,
 ): CanUseTool {
   return async (toolName, input, ctx) => {
+    let effectiveInput = input;
+    let upstreamUpdatedInput: Record<string, unknown> | undefined;
     if (upstream) {
       const upRes = await upstream(toolName, input, ctx);
       if (upRes.behavior !== 'allow') return upRes;
+      if (upRes.updatedInput !== undefined) {
+        upstreamUpdatedInput = upRes.updatedInput;
+        effectiveInput = upRes.updatedInput;
+      }
     }
-    return cutoff(toolName, input, ctx);
+    const cutRes = await cutoff(toolName, effectiveInput, ctx);
+    if (
+      cutRes.behavior === 'allow'
+      && cutRes.updatedInput === undefined
+      && upstreamUpdatedInput !== undefined
+    ) {
+      return { ...cutRes, updatedInput: upstreamUpdatedInput };
+    }
+    return cutRes;
   };
 }
 
@@ -181,7 +205,15 @@ export function composeToolGates(
  * Compute the list of tool names an agent is permitted to invoke. Combines:
  *   1. The conservative built-in whitelist (Read/Write/Edit/Bash/Glob/Grep/TodoWrite).
  *   2. The agent's declared in-process MCP tools (bare names from
- *      `agent.config.mcp_tools`).
+ *      `agent.config.mcp_tools`). At runtime `canUseTool` only ever sees
+ *      the prefixed form `mcp__<server>__<tool>`, so these bare names are
+ *      not consulted by `agentToolGate`'s exact-name set in the normal
+ *      runtime path. They are kept here intentionally as a public-API
+ *      affordance: callers using `buildAllowedToolNames` to clamp the SDK
+ *      option `allowedTools` (belt-and-suspenders) need bare names because
+ *      the SDK matches `allowedTools` against both bare and prefixed forms
+ *      depending on the surface. Removing them would silently break that
+ *      clamp pattern.
  *   3. A `mcp__<agent.mcpServer.name>__*` glob — the agent's own in-process
  *      SDK MCP server (created by `createSdkMcpServer`) exposes its tools
  *      to the model under this prefix. Without this glob the model would be

@@ -14,6 +14,7 @@ import {
   buildAllowedToolNames,
 } from '../cutoff.js';
 import type { Agent } from '../../agent/agent.js';
+import { logger } from '../../logger.js';
 
 describe('AGENT_BUILTIN_TOOL_WHITELIST', () => {
   it('contains exactly the safe built-ins', () => {
@@ -221,6 +222,74 @@ describe('composeToolGates', () => {
     const gate = composeToolGates(allow, allow);
     expect((await gate('x', {}, {} as any)).behavior).toBe('allow');
   });
+
+  // ── updatedInput threading (CR-2) ─────────────────────────────────────────
+  it('upstream allows with updatedInput; cutoff allows without — final result preserves upstream updatedInput', async () => {
+    const upstream: CanUseTool = async () => ({
+      behavior: 'allow',
+      updatedInput: { redacted: true, secret: '<redacted>' },
+    });
+    const cutoff: CanUseTool = async () => ({ behavior: 'allow' });
+    const gate = composeToolGates(upstream, cutoff);
+    const r = await gate('Read', { secret: 'leak' }, {} as any);
+    expect(r.behavior).toBe('allow');
+    if (r.behavior === 'allow') {
+      expect(r.updatedInput).toEqual({ redacted: true, secret: '<redacted>' });
+    }
+  });
+
+  it('upstream allows with updatedInput; cutoff allows with its own updatedInput — cutoff wins (final say)', async () => {
+    const upstream: CanUseTool = async () => ({
+      behavior: 'allow',
+      updatedInput: { from: 'upstream' },
+    });
+    const cutoff: CanUseTool = async () => ({
+      behavior: 'allow',
+      updatedInput: { from: 'cutoff' },
+    });
+    const gate = composeToolGates(upstream, cutoff);
+    const r = await gate('Read', { from: 'caller' }, {} as any);
+    expect(r.behavior).toBe('allow');
+    if (r.behavior === 'allow') {
+      expect(r.updatedInput).toEqual({ from: 'cutoff' });
+    }
+  });
+
+  it('cutoff sees upstream\'s updatedInput as effective input (verified via spy)', async () => {
+    const upstream: CanUseTool = async () => ({
+      behavior: 'allow',
+      updatedInput: { transformed: true },
+    });
+    const cutoffSpy = vi.fn<CanUseTool>(async () => ({ behavior: 'allow' as const }));
+    const gate = composeToolGates(upstream, cutoffSpy);
+    await gate('Read', { transformed: false, original: true }, { sessionId: 's' } as any);
+    expect(cutoffSpy).toHaveBeenCalledTimes(1);
+    // The second arg passed to cutoff must be the updatedInput from upstream,
+    // NOT the original input. Otherwise upstream's redaction is silently dropped.
+    expect(cutoffSpy.mock.calls[0][1]).toEqual({ transformed: true });
+  });
+
+  it('upstream allows without updatedInput; cutoff sees the original input', async () => {
+    const upstream: CanUseTool = async () => ({ behavior: 'allow' });
+    const cutoffSpy = vi.fn<CanUseTool>(async () => ({ behavior: 'allow' as const }));
+    const gate = composeToolGates(upstream, cutoffSpy);
+    const original = { foo: 'bar' };
+    await gate('Read', original, {} as any);
+    expect(cutoffSpy.mock.calls[0][1]).toBe(original);
+  });
+
+  it('no upstream; cutoff allow with own updatedInput is preserved', async () => {
+    const cutoff: CanUseTool = async () => ({
+      behavior: 'allow',
+      updatedInput: { from: 'cutoff-only' },
+    });
+    const gate = composeToolGates(undefined, cutoff);
+    const r = await gate('Read', {}, {} as any);
+    expect(r.behavior).toBe('allow');
+    if (r.behavior === 'allow') {
+      expect(r.updatedInput).toEqual({ from: 'cutoff-only' });
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -350,6 +419,23 @@ describe('agentToolGate', () => {
     const r = await gate('mcp__notion__search', {}, {} as any);
     expect(r.behavior).toBe('deny');
   });
+
+  // TQ-4: substring confusion — `mcp__foo__*` glob must not allow `mcp__foobar__*`.
+  // The implementation strips the trailing `*` to get the prefix `mcp__foo__`,
+  // which (because of the trailing double-underscore) is NOT a prefix of
+  // `mcp__foobar__list`. This test guards against any future refactor that
+  // accidentally drops the underscore boundary.
+  it('mcp__foo__* glob does not match mcp__foobar__* (substring confusion guard)', async () => {
+    const gate = agentToolGate(stubAgent({
+      config: {
+        external_mcp_servers: {
+          foo: { type: 'http', url: 'https://x' } as any,
+        } as any,
+      },
+    }));
+    expect((await gate('mcp__foo__list', {}, {} as any)).behavior).toBe('allow');
+    expect((await gate('mcp__foobar__list', {}, {} as any)).behavior).toBe('deny');
+  });
 });
 
 describe('applyCutoffOptions', () => {
@@ -475,7 +561,7 @@ describe('applyCutoffOptions', () => {
     expect((await out.canUseTool!('mcp__claude_ai_Google_Calendar__list_events', {}, {} as any)).behavior).toBe('deny');
   });
 
-  it('is idempotent — applying twice yields the same shape (modulo function identity)', () => {
+  it('is idempotent — applying twice yields the same shape (modulo function identity)', async () => {
     const agent = stubAgent();
     const once = applyCutoffOptions({ settingSources: ['user'] as any, additionalDirectories: ['/x'] } as SdkOptions, agent);
     const twice = applyCutoffOptions(once, agent);
@@ -487,6 +573,48 @@ describe('applyCutoffOptions', () => {
     // mcpServers / allowedTools pass-through preserves whatever was there
     expect(twice.mcpServers).toBe(once.mcpServers);
     expect(twice.allowedTools).toBe(once.allowedTools);
+
+    // ── Behavioral idempotency (TQ-1) ──────────────────────────────────────
+    // Structural equality is not enough — the JSDoc claims runtime semantics
+    // are identical after double-application. Verify by exercising both
+    // composed canUseTool gates with the same inputs and asserting matching
+    // results AND matching warn-log output (no double-warn from re-wrapping).
+    expect(typeof once.canUseTool).toBe('function');
+    expect(typeof twice.canUseTool).toBe('function');
+
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+    try {
+      // Allow case: 'Read' is in the built-in whitelist.
+      warnSpy.mockClear();
+      const onceAllow = await once.canUseTool!('Read', {}, {} as any);
+      const onceAllowWarns = warnSpy.mock.calls.length;
+      warnSpy.mockClear();
+      const twiceAllow = await twice.canUseTool!('Read', {}, {} as any);
+      const twiceAllowWarns = warnSpy.mock.calls.length;
+      expect(onceAllow).toEqual({ behavior: 'allow' });
+      expect(twiceAllow).toEqual({ behavior: 'allow' });
+      expect(twiceAllowWarns).toBe(onceAllowWarns);
+
+      // Deny case: cross-agent calendar tool.
+      const denyTool = 'mcp__claude_ai_Google_Calendar__list_events';
+      warnSpy.mockClear();
+      const onceDeny = await once.canUseTool!(denyTool, {}, {} as any);
+      const onceDenyWarns = warnSpy.mock.calls.length;
+      warnSpy.mockClear();
+      const twiceDeny = await twice.canUseTool!(denyTool, {}, {} as any);
+      const twiceDenyWarns = warnSpy.mock.calls.length;
+      expect(onceDeny.behavior).toBe('deny');
+      expect(twiceDeny.behavior).toBe('deny');
+      if (onceDeny.behavior === 'deny' && twiceDeny.behavior === 'deny') {
+        expect(twiceDeny.message).toBe(onceDeny.message);
+      }
+      // Each invocation should produce exactly one warn — re-wrapping must
+      // NOT cause the inner gate to fire twice.
+      expect(onceDenyWarns).toBe(1);
+      expect(twiceDenyWarns).toBe(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('preserves unrelated base options (model, systemPrompt, maxTurns)', () => {
