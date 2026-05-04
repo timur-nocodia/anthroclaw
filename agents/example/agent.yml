@@ -20,6 +20,7 @@ mcp_tools:
   - list_skills
   - manage_skills
   - manage_cron
+  - escalate
 
 queue_mode: steer
 
