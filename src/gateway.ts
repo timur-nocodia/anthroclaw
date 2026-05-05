@@ -4,12 +4,14 @@ import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path'
 import { fileURLToPath } from 'node:url';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
-  discoverPlugins,
   loadPlugin,
+  discoverPluginCatalog,
+  PluginInstallStore,
   createPluginContext,
   PluginRegistry,
   startPluginsWatcher,
   type DiscoveredPlugin,
+  type PluginCatalog,
   type PluginsWatcher,
   type ContextEngine,
 } from './plugins/index.js';
@@ -751,6 +753,7 @@ export class Gateway {
   private fileOwnershipRegistry = new FileOwnershipRegistry();
   private approvalBroker = new ApprovalBroker();
   public pluginRegistry: PluginRegistry = new PluginRegistry();
+  public pluginCatalog: PluginCatalog = { entries: [], duplicates: [] };
   private pluginsWatcher: PluginsWatcher | null = null;
   private resolvedPluginsDir: string | null = null;
   private learningStore: LearningStore | null = null;
@@ -919,7 +922,36 @@ export class Gateway {
     // ─── Plugin discovery & registration ────────────────────────────
     this.pluginRegistry = new PluginRegistry();
     this.resolvedPluginsDir = pluginsDir ?? joinPath(dataDir, '..', 'plugins');
-    const discovered = await discoverPlugins(this.resolvedPluginsDir);
+    const managedPluginsDir = joinPath(dataDir, 'plugins-installed');
+    const installStore = new PluginInstallStore(joinPath(dataDir, 'plugin-installs.json'));
+    let installRecords: ReturnType<PluginInstallStore['list']> = [];
+    try {
+      installRecords = installStore.list();
+    } catch (err) {
+      logger.error({ err }, 'plugin install store unreadable; managed install metadata ignored');
+    }
+    this.pluginCatalog = await discoverPluginCatalog({
+      bundledDir: this.resolvedPluginsDir,
+      managedDir: managedPluginsDir,
+      installRecords,
+    });
+    for (const entry of this.pluginCatalog.entries) {
+      if (entry.status !== 'ok') {
+        logger.warn({
+          plugin: entry.name,
+          sourceType: entry.sourceType,
+          status: entry.status,
+          diagnostics: entry.diagnostics,
+        }, 'plugin catalog entry is not loadable');
+      }
+    }
+    const discovered = this.pluginCatalog.entries
+      .filter((entry) => entry.loadable && entry.manifest)
+      .map((entry): DiscoveredPlugin => ({
+        manifest: entry.manifest!,
+        pluginDir: entry.pluginDir,
+        manifestPath: entry.manifestPath,
+      }));
     for (const d of discovered) {
       try {
         await this.loadAndRegisterPlugin(d, dataDir);
