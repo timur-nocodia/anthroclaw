@@ -6,6 +6,93 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+System-prompt resolution release. Closes a pre-existing pre-v0.8 bug
+discovered while diagnosing the 2026-05-04 Amina hallucination incident:
+agent CLAUDE.md files were either ignored entirely (under `public` /
+`trusted` / `private` profiles) or sent to the model as literal
+`@./SOUL.md` text without resolving the `@-imports` (under
+`chat_like_openclaw`). Both halves are now fixed.
+
+### Added
+
+- **`@-import` resolver in agent system prompts**
+  (`src/sdk/system-prompt.ts` → `resolveImports`,
+  `loadResolvedAgentClaudeMd`). Whole-line `@<path>` directives in any
+  CLAUDE.md (or any file imported by it, recursively) are now resolved
+  before the system prompt is sent to the SDK. Recursive with cycle
+  detection, depth cap = 5, 1 MiB per-file size cap (with both
+  `statSync` pre-check and post-`readFileSync` length cap to defeat
+  sparse-file bypasses), per-invocation log cap (50 non-debug entries).
+  Path policy rejects absolute paths, URL-ish schemes, workspace-escape
+  via traversal or symlinks. All log entries include `agent_id`,
+  `from_file`, `import_path`, and a `reason` code.
+- **`composeSystemPrompt` profile-aware composer**
+  (`src/sdk/system-prompt.ts`). Replaces the inline branching in
+  `buildSdkOptions`. Per profile:
+  - `chat_like_openclaw` → personality (custom or
+    `CHAT_PERSONALITY_BASELINE`) + separator + agent CLAUDE.md
+  - `public` (string mode) → profile text + separator + agent CLAUDE.md
+  - `trusted` / `private` (preset mode) → SDK preset with `append:
+    <agent CLAUDE.md>` (the SDK's documented `append` field on
+    `systemPrompt`)
+  - When agent CLAUDE.md is empty/missing, returns just the profile
+    baseline; preset profiles omit the `append` field entirely.
+
+### Fixed
+
+- **System prompt body now reaches the model under every safety
+  profile.** Previously, only `chat_like_openclaw` agents had their
+  CLAUDE.md included in `Options.systemPrompt`. `public`, `trusted`,
+  and `private` profile agents received only the profile's 6-line
+  generic placeholder (`public`) or the bare `claude_code` preset
+  (`trusted` / `private`). The agent's authored rules — identity, role,
+  guardrails, tone — were invisible to the model. Production hotfix on
+  2026-05-04 swapped `leads_agent` (Amina) from `public` to
+  `chat_like_openclaw` and inlined the @-imports by hand. This release
+  is the architectural fix; the hotfix can be reverted in a follow-up.
+- **`@-imports` no longer reach the model as literal text.** Production
+  CLAUDE.md files in the form
+  ```
+  @./SOUL.md
+  @./IDENTITY.md
+  @./TOOLS.md
+  ```
+  (Claude Code interactive CLI's native composition feature) used to
+  pass through `Options.systemPrompt` unchanged because the SDK has no
+  file resolver. The model would see the literal `@./SOUL.md` strings
+  and fall back to its personality baseline. The new resolver inlines
+  these recursively before the prompt leaves anthroclaw.
+
+### Behaviour change — operator action required
+
+Agents using `safety_profile: public | trusted | private` will now
+include their `agent/CLAUDE.md` content in the system prompt sent to
+the LLM. If your agent has a CLAUDE.md but you were running it under
+one of these profiles assuming the file was unread (e.g. CLAUDE.md
+contained developer-only notes, debug instructions, or operator
+secrets), this release will start sending that content to the model.
+
+**Verify before upgrading:**
+1. For each agent running under `public`, `trusted`, or `private`:
+   - `cat agents/<id>/CLAUDE.md` — confirm content is appropriate to
+     send to the LLM in that profile's audience.
+   - Check any files imported via `@./...` recursively.
+2. Production hotfixes from 2026-05-04 can now be reverted in a
+   follow-up commit:
+   - `agents/leads_agent/agent.yml` — restore `safety_profile: public`
+   - `agents/{leads_agent,timur_agent,content_sm_building}/CLAUDE.md` —
+     restore `@-imports` form from the `.bak-imports*` backups.
+
+### Tests
+
+- 35 new unit tests in `src/sdk/__tests__/system-prompt-resolver.test.ts`,
+  `system-prompt-composer.test.ts`, `system-prompt-e2e.test.ts`.
+- 5 new integration tests in `options-chat.test.ts` and
+  `options-profile.test.ts` asserting CLAUDE.md presence under each of
+  the 4 profiles + byte-identical backward-compat for
+  `chat_like_openclaw` with no `@-imports`.
+- Total: 1822 / 1822 green.
+
 ## [0.8.0] - 2026-05-04
 
 Capability-cutoff release. Closes a multi-tenant credential leak (one
