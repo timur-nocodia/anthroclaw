@@ -6,12 +6,15 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-05
+
 System-prompt resolution release. Closes a pre-existing pre-v0.8 bug
 discovered while diagnosing the 2026-05-04 Amina hallucination incident:
 agent CLAUDE.md files were either ignored entirely (under `public` /
 `trusted` / `private` profiles) or sent to the model as literal
 `@./SOUL.md` text without resolving the `@-imports` (under
-`chat_like_openclaw`). Both halves are now fixed.
+`chat_like_openclaw`). Both halves are now fixed. Also ships a documentation
+overhaul making safety-profile selection obvious for new operators.
 
 ### Added
 
@@ -83,6 +86,27 @@ secrets), this release will start sending that content to the model.
    - `agents/{leads_agent,timur_agent,content_sm_building}/CLAUDE.md` —
      restore `@-imports` form from the `.bak-imports*` backups.
 
+### Documentation
+
+- **`docs/guide.md` — Safety Profiles section overhauled.** Operators
+  reported the previous version made it unclear how to set up a
+  public-access bot vs. a no-restrictions personal bot. New structure:
+  - "Which profile do I want?" decision-tree + 4-row comparison table
+    (audience, allowed tools, approvals, rate limit, system-prompt
+    source) at the top of the section.
+  - Explicit `chat_like_openclaw` vs `private` comparison for personal
+    use — the most-asked question before this rewrite.
+  - Each profile sub-section now follows a consistent structure (when
+    to use → built-ins allowed → full hard-blacklist sourced from
+    `BUILTIN_META` → approval flow → sandbox / allowlist constraints →
+    system-prompt source → rate-limit floor → minimal working
+    `agent.yml`).
+  - "Common scenarios" recipe sub-section with 7 ready-made
+    configurations (public lead-capture, personal no-friction, personal
+    with approvals, team group bot, shell-enabled personal,
+    memory-reading public bot, "I don't know which profile" → migration
+    helper).
+
 ### Tests
 
 - 35 new unit tests in `src/sdk/__tests__/system-prompt-resolver.test.ts`,
@@ -92,6 +116,30 @@ secrets), this release will start sending that content to the model.
   the 4 profiles + byte-identical backward-compat for
   `chat_like_openclaw` with no `@-imports`.
 - Total: 1822 / 1822 green.
+
+### Operator actions
+
+Read the **Behaviour change** block above before deploying. After a
+successful prod deploy, the 2026-05-04 hotfixes can be reverted:
+
+```bash
+# on prod (ubuntu@46.247.41.191):
+cd /home/ubuntu/anthroclaw
+
+# leads_agent.yml: restore safety_profile: public
+mv agents/leads_agent/agent.yml.bak-pre-chat-profile-1777911287 agents/leads_agent/agent.yml
+
+# Restore @-imports CLAUDE.md (resolver does the inlining now)
+mv agents/leads_agent/CLAUDE.md.bak-imports-only-1777911469 agents/leads_agent/CLAUDE.md
+mv agents/timur_agent/CLAUDE.md.bak-imports-1777911551 agents/timur_agent/CLAUDE.md
+mv agents/content_sm_building/CLAUDE.md.bak-imports-1777911551 agents/content_sm_building/CLAUDE.md
+
+# ConfigWatcher hot-reloads on agent.yml; CLAUDE.md picked up on next session.
+```
+
+The `morning-standup` cron in `data/dynamic-cron.json` remains
+disabled — it depends on Calendar reads that are still cut off until
+v0.10.0 ships agent-driven OAuth (task #70).
 
 ## [0.8.0] - 2026-05-04
 
