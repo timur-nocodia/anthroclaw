@@ -2,11 +2,15 @@
 // files (and in files they recursively import).
 //
 // Spec: docs/superpowers/specs/2026-05-05-system-prompt-resolution-design.md
-// (sections "Resolver — exact rules" and "Logging" are load-bearing).
+// (sections "Resolver — exact rules", "Logging", and "Composer" are
+// load-bearing).
 //
-// This module is pure (no Agent / profile awareness) — it just walks the import
-// graph, with the safety policy spelled out in the spec.
+// `resolveImports` / `loadResolvedAgentClaudeMd` are pure (no Agent / profile
+// awareness) — they just walk the import graph with the safety policy spelled
+// out in the spec. `composeSystemPrompt` layers in the SafetyProfile to produce
+// the final SDK system prompt body.
 
+import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import {
   existsSync,
   readFileSync,
@@ -15,7 +19,10 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
+import type { Agent } from '../agent/agent.js';
 import { logger } from '../logger.js';
+import { CHAT_PERSONALITY_BASELINE } from '../security/profiles/chat-personality-baseline.js';
+import type { SafetyProfile } from '../security/profiles/types.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -123,6 +130,76 @@ export function loadResolvedAgentClaudeMd(
   });
 
   return resolved.trim();
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Composer — profile-aware system prompt assembly
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Visual separator between the profile/personality preamble and the agent's
+ * resolved CLAUDE.md body. Nine box-drawing horizontal lines with blank lines
+ * on either side. Matches the literal previously inlined in
+ * `src/sdk/options.ts::resolveChatSystemPrompt`.
+ */
+const SYSTEM_PROMPT_SEPARATOR = '\n\n─────────\n\n';
+
+/**
+ * Build the SDK `systemPrompt` value for an agent, layering the agent's
+ * resolved CLAUDE.md (with @-imports already inlined) on top of the safety
+ * profile's baseline:
+ *
+ *   - `chat_like_openclaw` → string: personality (custom from `agent.config.personality`
+ *     when provided, else `CHAT_PERSONALITY_BASELINE`) + separator + CLAUDE.md.
+ *     With no CLAUDE.md, returns just the personality.
+ *   - `public` (string mode) → string: `profile.systemPrompt.text` + separator
+ *     + CLAUDE.md. With no CLAUDE.md, returns just the profile text.
+ *   - `trusted` / `private` (preset mode) → preset object with
+ *     `append: <CLAUDE.md>`. With no CLAUDE.md the `append` field is omitted
+ *     entirely (no empty string), so the SDK uses just the preset baseline.
+ *
+ * The agent's CLAUDE.md is loaded via {@link loadResolvedAgentClaudeMd} —
+ * missing/unreadable file is treated as empty (silent for missing, warn for
+ * unreadable, per resolver contract).
+ */
+export function composeSystemPrompt(
+  agent: Agent,
+  profile: SafetyProfile,
+): Options['systemPrompt'] {
+  const claudeMd = loadResolvedAgentClaudeMd({
+    workspaceRoot: agent.workspacePath,
+    agentId: agent.id,
+  });
+
+  if (profile.name === 'chat_like_openclaw') {
+    const customPersonality = agent.config.personality;
+    const personality =
+      typeof customPersonality === 'string' && customPersonality.trim().length > 0
+        ? customPersonality.trim()
+        : CHAT_PERSONALITY_BASELINE;
+    if (claudeMd) {
+      return `${personality}${SYSTEM_PROMPT_SEPARATOR}${claudeMd}`;
+    }
+    return personality;
+  }
+
+  if (profile.systemPrompt.mode === 'string') {
+    const base = profile.systemPrompt.text;
+    if (claudeMd) {
+      return `${base}${SYSTEM_PROMPT_SEPARATOR}${claudeMd}`;
+    }
+    return base;
+  }
+
+  // preset mode — trusted (excludeDynamicSections: true) and private (false).
+  // Omit `append` entirely when CLAUDE.md is empty — preset profiles should
+  // get the SDK baseline alone, not be forced to consume an empty string.
+  return {
+    type: 'preset',
+    preset: profile.systemPrompt.preset,
+    excludeDynamicSections: profile.systemPrompt.excludeDynamicSections,
+    ...(claudeMd ? { append: claudeMd } : {}),
+  };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
