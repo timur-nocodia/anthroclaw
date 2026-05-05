@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { discoverPluginCatalog, PluginInstallStore, runPluginDoctor } from '../plugins/index.js';
 
 export interface CheckResult {
   name: string;
@@ -12,6 +13,7 @@ export interface CheckResult {
 export async function runDiagnostics(opts: {
   dataDir: string;
   agentsDir: string;
+  pluginsDir?: string;
   globalConfig?: unknown;
 }): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
@@ -40,6 +42,11 @@ export async function runDiagnostics(opts: {
   // 8. Dependencies
   const depResults = await checkDependencies();
   results.push(...depResults);
+
+  if (opts.pluginsDir) {
+    const pluginResults = await checkPlugins(opts.dataDir, opts.pluginsDir);
+    results.push(...pluginResults);
+  }
 
   return results;
 }
@@ -182,4 +189,15 @@ async function checkDependencies(): Promise<CheckResult[]> {
   }
 
   return results;
+}
+
+async function checkPlugins(dataDir: string, pluginsDir: string): Promise<CheckResult[]> {
+  const managedDir = join(dataDir, 'plugins-installed');
+  const store = new PluginInstallStore(join(dataDir, 'plugin-installs.json'));
+  const catalog = await discoverPluginCatalog({
+    bundledDir: pluginsDir,
+    managedDir,
+    installRecords: store.list(),
+  });
+  return runPluginDoctor({ catalog, managedDir });
 }

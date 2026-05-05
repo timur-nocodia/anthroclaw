@@ -36,6 +36,19 @@ export {
   type PluginInstallDependencyState,
   type PluginInstallStatus,
 } from './install-store.js';
+export {
+  runPluginDoctor,
+  type PluginDoctorResult,
+} from './doctor.js';
+export {
+  installLocalPlugin,
+  validatePluginSource,
+  type InstallLocalPluginInput,
+} from './installers/local.js';
+export {
+  installNpmPlugin,
+  findPackedTarball,
+} from './installers/npm.js';
 export { discoverPluginCatalog, type PluginCatalog, type DiscoverPluginCatalogInput } from './discovery.js';
 export { createPluginContext, type ContextDeps } from './context.js';
 export { runSubagent } from './subagent-runner.js';
