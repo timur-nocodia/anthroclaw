@@ -191,8 +191,9 @@ describe('@e2e: plugin admin full flow', () => {
       (p: { name: string }) => p.name === 'lcm',
     );
     expect(lcmListEntry?.hasConfigSchema).toBe(true);
-    expect(lcmListEntry?.hasContextEngine).toBe(true);
-    expect(lcmListEntry?.toolCount).toBeGreaterThanOrEqual(6);
+    expect(lcmListEntry?.loaded).toBe(false);
+    expect(lcmListEntry?.hasContextEngine).toBe(false);
+    expect(lcmListEntry?.toolCount).toBe(0);
 
     // ── Phase 2: Per-agent state — initially disabled ──────────────────
     const { GET: getAgentPlugins } = await import(
@@ -229,6 +230,15 @@ describe('@e2e: plugin admin full flow', () => {
     expect(testGateway.pluginRegistry.isEnabledFor('test-agent', 'lcm')).toBe(
       true,
     );
+
+    res = await listPlugins();
+    body = await res.json();
+    const loadedLcmListEntry = body.plugins.find(
+      (p: { name: string }) => p.name === 'lcm',
+    );
+    expect(loadedLcmListEntry?.loaded).toBe(true);
+    expect(loadedLcmListEntry?.hasContextEngine).toBe(true);
+    expect(loadedLcmListEntry?.toolCount).toBeGreaterThanOrEqual(6);
 
     // YAML on disk reflects the toggle AND preserves the operator's top
     // comment (proves parseDocument round-trip is wired through).

@@ -30,9 +30,14 @@ export async function PUT(
 
     // Eagerly toggle live registry so the UI reflects state without waiting
     // on the hot-reload watcher.
-    if (enabled && runtimeKnown) {
+    if (enabled && !runtimeKnown) {
+      const loader = (gw as unknown as { loadCatalogPluginForRuntime?: (pluginName: string) => Promise<boolean> });
+      await loader.loadCatalogPluginForRuntime?.(name);
+    }
+    const nowRuntimeKnown = gw.pluginRegistry.listPlugins().some((p) => p.manifest.name === name);
+    if (enabled && nowRuntimeKnown) {
       gw.pluginRegistry.enableForAgent(agentId, name);
-    } else if (!enabled && runtimeKnown) {
+    } else if (!enabled && nowRuntimeKnown) {
       gw.pluginRegistry.disableForAgent(agentId, name);
     }
 

@@ -7,6 +7,7 @@ import {
   loadPlugin,
   discoverPluginCatalog,
   PluginInstallStore,
+  buildPluginStartupPlan,
   createPluginContext,
   PluginRegistry,
   startPluginsWatcher,
@@ -945,8 +946,18 @@ export class Gateway {
         }, 'plugin catalog entry is not loadable');
       }
     }
+    const startupPlan = buildPluginStartupPlan({
+      catalog: this.pluginCatalog,
+      agentPluginConfigs: [...this.agents.values()].map((agent) => agent.config.plugins ?? {}),
+    });
+    for (const pluginName of startupPlan.missingEnabledNames) {
+      logger.warn({ plugin: pluginName }, 'agent enables plugin that is not present in catalog');
+    }
+    for (const pluginName of startupPlan.unloadableEnabledNames) {
+      logger.warn({ plugin: pluginName }, 'agent enables plugin that is not loadable');
+    }
     const discovered = this.pluginCatalog.entries
-      .filter((entry) => entry.loadable && entry.manifest)
+      .filter((entry) => startupPlan.loadNames.has(entry.name) && entry.loadable && entry.manifest)
       .map((entry): DiscoveredPlugin => ({
         manifest: entry.manifest!,
         pluginDir: entry.pluginDir,
@@ -1248,6 +1259,29 @@ export class Gateway {
    */
   getResolvedPluginsDir(): string | null {
     return this.resolvedPluginsDir;
+  }
+
+  async loadCatalogPluginForRuntime(pluginName: string): Promise<boolean> {
+    if (!this.dataDir) return false;
+    if (this.pluginRegistry.listPlugins().some((entry) => entry.manifest.name === pluginName)) {
+      return true;
+    }
+    const catalogEntry = this.pluginCatalog.entries.find((entry) => entry.name === pluginName);
+    if (!catalogEntry?.loadable || !catalogEntry.manifest) {
+      return false;
+    }
+    await this.loadAndRegisterPlugin({
+      manifest: catalogEntry.manifest,
+      pluginDir: catalogEntry.pluginDir,
+      manifestPath: catalogEntry.manifestPath,
+    }, this.dataDir);
+    this.pluginCatalog = {
+      ...this.pluginCatalog,
+      entries: this.pluginCatalog.entries.map((entry) =>
+        entry.name === pluginName ? { ...entry, loaded: true } : entry,
+      ),
+    };
+    return true;
   }
 
   /**

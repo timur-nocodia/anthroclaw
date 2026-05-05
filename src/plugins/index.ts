@@ -49,6 +49,11 @@ export {
   installNpmPlugin,
   findPackedTarball,
 } from './installers/npm.js';
+export {
+  buildPluginStartupPlan,
+  type BuildPluginStartupPlanInput,
+  type PluginStartupPlan,
+} from './startup-plan.js';
 export { discoverPluginCatalog, type PluginCatalog, type DiscoverPluginCatalogInput } from './discovery.js';
 export { createPluginContext, type ContextDeps } from './context.js';
 export { runSubagent } from './subagent-runner.js';
