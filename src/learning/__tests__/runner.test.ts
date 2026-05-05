@@ -107,6 +107,10 @@ describe('runLearningReview', () => {
       cwd: workspacePath,
       purpose: 'learning review',
       toolDenyMessage: 'Tools disabled for learning review.',
+      runtimeDefaults: expect.objectContaining({
+        model: 'claude-sonnet-4-6',
+        cwd: workspacePath,
+      }),
     }));
   });
 

@@ -100,6 +100,10 @@ export async function runLearningReview(params: RunLearningReviewParams): Promis
       prompt,
       model: agent.config.model ?? params.defaultModel ?? 'claude-sonnet-4-6',
       cwd: agent.workspacePath,
+      runtimeDefaults: {
+        model: agent.config.model ?? params.defaultModel,
+        cwd: agent.workspacePath,
+      },
       purpose: 'learning review',
       toolDenyMessage: 'Tools disabled for learning review.',
     });
