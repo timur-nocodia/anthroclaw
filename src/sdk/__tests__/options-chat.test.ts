@@ -102,4 +102,17 @@ describe('buildSdkOptions on chat profile', () => {
     expect(options.disallowedTools).toContain('CronCreate');
     expect(options.disallowedTools).toContain('RemoteTrigger');
   });
+
+  // Plan task #32 — backward-compat byte-equality with v0.8.0.
+  // For chat_like_openclaw + plain-text CLAUDE.md (no @-imports),
+  // the new composeSystemPrompt path must produce exactly the same string
+  // the old inlined resolveChatSystemPrompt did. Any drift here would mean
+  // existing chat agents see a different system prompt.
+  it('chat_like_openclaw + plain CLAUDE.md (no @-imports) is byte-identical to v0.8.0 output', () => {
+    const claudeMd = '# Test\n\nplain content';
+    const agent = makeAgentStub({ workspaceDir: tmpRoot, claudeMd });
+    const options = buildSdkOptions({ agent });
+    const expected = `${CHAT_PERSONALITY_BASELINE}\n\n─────────\n\n# Test\n\nplain content`;
+    expect(options.systemPrompt).toBe(expected);
+  });
 });
