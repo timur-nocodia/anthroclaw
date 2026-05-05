@@ -13,7 +13,7 @@ import {
   realpathSync,
   statSync,
 } from 'node:fs';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { logger } from '../logger.js';
 
@@ -71,6 +71,58 @@ export function resolveImports(
     agentId: opts.agentId,
     logCounter,
   });
+}
+
+export interface LoadResolvedClaudeMdOptions {
+  workspaceRoot: string;
+  /** Optional — passed through to resolveImports for log entries. */
+  agentId?: string;
+  /** Maximum recursion depth for resolveImports. Default 5. */
+  maxDepth?: number;
+}
+
+/**
+ * Read `<workspaceRoot>/CLAUDE.md` and return its content with @-imports
+ * recursively resolved. Returns '' if the file does not exist or is unreadable.
+ * The returned string is trimmed (no leading/trailing whitespace).
+ *
+ * Profile-agnostic — `composeSystemPrompt` (Task 3) layers in the SafetyProfile
+ * to produce the final SDK system prompt body.
+ */
+export function loadResolvedAgentClaudeMd(
+  opts: LoadResolvedClaudeMdOptions,
+): string {
+  const path = join(opts.workspaceRoot, 'CLAUDE.md');
+
+  // Missing file is a perfectly valid configuration — silent empty return.
+  if (!existsSync(path)) {
+    return '';
+  }
+
+  let content: string;
+  try {
+    content = readFileSync(path, 'utf-8');
+  } catch (err) {
+    const payload: Record<string, unknown> = {
+      msg: 'system-prompt: agent CLAUDE.md unreadable',
+      reason: 'unreadable',
+      from_file: path,
+      err: err instanceof Error ? err.message : String(err),
+    };
+    if (opts.agentId !== undefined) {
+      payload.agent_id = opts.agentId;
+    }
+    logger.warn(payload);
+    return '';
+  }
+
+  const resolved = resolveImports(content, path, {
+    workspaceRoot: opts.workspaceRoot,
+    agentId: opts.agentId,
+    maxDepth: opts.maxDepth,
+  });
+
+  return resolved.trim();
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

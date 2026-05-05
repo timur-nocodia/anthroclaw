@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  chmodSync,
   mkdtempSync,
   mkdirSync,
   rmSync,
   writeFileSync,
   symlinkSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, platform } from 'node:os';
 import { dirname, join } from 'node:path';
-import { resolveImports } from '../system-prompt.js';
+import { loadResolvedAgentClaudeMd, resolveImports } from '../system-prompt.js';
 import { logger } from '../../logger.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -476,6 +477,85 @@ describe('resolveImports — log flooding cap', () => {
       expect(infoSpy.mock.calls.length).toBe(50);
     } finally {
       infoSpy.mockRestore();
+    }
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// loadResolvedAgentClaudeMd — Task 2
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('loadResolvedAgentClaudeMd', () => {
+  // 16 — workspace without CLAUDE.md → returns empty string, no warn
+  it('returns empty string when CLAUDE.md is missing (no warn)', () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+    try {
+      const out = loadResolvedAgentClaudeMd({ workspaceRoot });
+      expect(out).toBe('');
+      // Missing CLAUDE.md is NOT a configuration error — must not log warn.
+      expect(warnSpy.mock.calls.length).toBe(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  // 17 — CLAUDE.md plain text → returns trimmed content unchanged
+  it('returns trimmed plain-text CLAUDE.md content', () => {
+    writeFileSync(
+      claudeMdPath,
+      '\n\n  # Title\n\nBody line.\n  \n\n',
+      'utf-8',
+    );
+    const out = loadResolvedAgentClaudeMd({ workspaceRoot });
+    expect(out).toBe('# Title\n\nBody line.');
+  });
+
+  // 18 — CLAUDE.md with @-imports → integration with Task 1 resolver
+  it('resolves @-imports in CLAUDE.md (integration)', () => {
+    writeFileSync(join(workspaceRoot, 'SOUL.md'), 'I am SOUL.', 'utf-8');
+    writeFileSync(
+      join(workspaceRoot, 'IDENTITY.md'),
+      'I am IDENTITY.',
+      'utf-8',
+    );
+    writeFileSync(
+      claudeMdPath,
+      '# Header\n\n@./SOUL.md\n@./IDENTITY.md\n\n# Footer',
+      'utf-8',
+    );
+    const out = loadResolvedAgentClaudeMd({ workspaceRoot });
+    expect(out).toContain('# Header');
+    expect(out).toContain('I am SOUL.');
+    expect(out).toContain('I am IDENTITY.');
+    expect(out).toContain('# Footer');
+  });
+
+  // 19 — CLAUDE.md unreadable → returns empty string, logs warn with reason
+  it('returns empty string and logs warn when CLAUDE.md is unreadable', () => {
+    // Create a directory at the CLAUDE.md path. readFileSync on a directory
+    // throws EISDIR, which exercises the unreadable-file branch deterministically
+    // on every platform (avoids chmod 000 quirks under root / CI).
+    mkdirSync(claudeMdPath);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+    try {
+      const out = loadResolvedAgentClaudeMd({
+        workspaceRoot,
+        agentId: 'test_agent',
+      });
+      expect(out).toBe('');
+      const sawUnreadable = warnSpy.mock.calls.some((call) => {
+        const payload = call[0];
+        return (
+          typeof payload === 'object' &&
+          payload !== null &&
+          (payload as Record<string, unknown>).reason === 'unreadable' &&
+          (payload as Record<string, unknown>).agent_id === 'test_agent' &&
+          (payload as Record<string, unknown>).from_file === claudeMdPath
+        );
+      });
+      expect(sawUnreadable).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
     }
   });
 });
