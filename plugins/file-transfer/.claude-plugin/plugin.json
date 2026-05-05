@@ -1,0 +1,7 @@
+{
+  "name": "file-transfer",
+  "version": "0.1.0",
+  "description": "Operator-controlled file transfer tools with strict path policy.",
+  "entry": "dist/index.js",
+  "configSchema": "dist/config.js"
+}
