@@ -9,6 +9,7 @@ import { exportLearningArtifacts } from './artifacts.js';
 import { applyMemoryCandidateAction } from './memory-applier.js';
 import { parseLearningReviewOutput, persistLearningReviewResult } from './reviewer.js';
 import { buildRubricLearningReviewPrompt } from './rubric.js';
+import { expandActiveSkillArtifactFiles } from './skill-artifacts.js';
 import { applySkillAction } from './skill-applier.js';
 import { LearningStore } from './store.js';
 import type { LearningActionRecord } from './types.js';
@@ -39,6 +40,10 @@ export async function runLearningReview(params: RunLearningReviewParams): Promis
     files: [
       { path: 'agent.yml', reason: 'agent config and learning rollout mode' },
       { path: '.claude/skills/anthroclaw-learning/SKILL.md', reason: 'native learning skill guidance if present' },
+      ...expandActiveSkillArtifactFiles({
+        workspacePath: agent.workspacePath,
+        activeSkills: readMetadataStringArray(job.metadata, 'activeSkills'),
+      }),
     ],
     snippets: buildReviewSnippets(job),
     limits: {
@@ -289,6 +294,11 @@ function persistArtifactManifest(
 function readMetadataString(metadata: Record<string, unknown>, key: string): string | undefined {
   const value = metadata[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+function readMetadataStringArray(metadata: Record<string, unknown>, key: string): string[] {
+  const value = metadata[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
 function toDataRelativePath(dataDir: string, path: string): string {

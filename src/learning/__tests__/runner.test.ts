@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,6 +50,7 @@ describe('runLearningReview', () => {
   });
 
   it('persists review actions and artifact records from a headless SDK reviewer result', async () => {
+    seedSkillArtifacts('publishing');
     mockedRunHeadlessReview.mockResolvedValue(JSON.stringify({
       actions: [{
         type: 'memory_candidate',
@@ -71,6 +72,7 @@ describe('runLearningReview', () => {
           userText: 'Я говорил, что финал должен быть коротким.',
           assistantText: 'I will provide a detailed summary.',
           channel: 'telegram',
+          activeSkills: ['publishing'],
         },
       }),
       agent: makeAgent({ learningMode: 'propose' }),
@@ -95,6 +97,12 @@ describe('runLearningReview', () => {
     ]);
     expect(learningStore.listArtifacts({ reviewId: reviews[0].id }).map((artifact) => artifact.kind))
       .toEqual(expect.arrayContaining(['manifest', 'file', 'snippet']));
+    const artifactPaths = learningStore.listArtifacts({ reviewId: reviews[0].id }).map((artifact) => artifact.path);
+    expect(artifactPaths).toEqual(expect.arrayContaining([
+      expect.stringContaining('.claude/skills/publishing/SKILL.md'),
+      expect.stringContaining('.claude/skills/publishing/references/checklist.md'),
+      expect.stringContaining('.claude/skills/publishing/templates/brief.md'),
+    ]));
     expect(mockedRunHeadlessReview).toHaveBeenCalledWith(expect.objectContaining({
       cwd: workspacePath,
       purpose: 'learning review',
@@ -155,6 +163,15 @@ describe('runLearningReview', () => {
         },
       },
     } as any;
+  }
+
+  function seedSkillArtifacts(skillName: string): void {
+    const skillDir = join(workspacePath, '.claude', 'skills', skillName);
+    mkdirSync(join(skillDir, 'references'), { recursive: true });
+    mkdirSync(join(skillDir, 'templates'), { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), '# Publishing\n', 'utf8');
+    writeFileSync(join(skillDir, 'references', 'checklist.md'), '# Checklist\n', 'utf8');
+    writeFileSync(join(skillDir, 'templates', 'brief.md'), '# Brief\n', 'utf8');
   }
 });
 

@@ -361,6 +361,11 @@ function readNumberMeta(meta: Record<string, unknown>, key: string): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+function readStringArrayMeta(meta: Record<string, unknown>, key: string): string[] {
+  const value = meta[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
 function sessionProvenanceFromRun(
   run: StoredAgentRunRecord | undefined,
   routeDecision?: StoredRouteDecision,
@@ -3074,6 +3079,7 @@ export class Gateway {
     const toolCalls = readNumberMeta(rawMeta, 'agentToolCalls');
     const recoveredToolErrors = readNumberMeta(rawMeta, 'agentRecoveredToolErrors');
     const skillOrMemoryActivity = rawMeta.agentSkillOrMemoryActivity === true;
+    const activeSkills = readStringArrayMeta(rawMeta, 'agentActiveSkills');
     const triggers = detectLearningTriggers({
       reviewIntervalTurns: config.review_interval_turns,
       turnCount: params.agent.getMessageCount(params.sessionKey),
@@ -3102,6 +3108,7 @@ export class Gateway {
         recoveredToolErrors,
         skillOrMemoryActivity,
         compressionOrLcmActivity: params.compressionOrLcmActivity,
+        activeSkills,
       },
     });
     logger.debug({

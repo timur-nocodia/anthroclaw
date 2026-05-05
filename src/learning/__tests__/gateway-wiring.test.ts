@@ -19,6 +19,7 @@ describe('Gateway learning wiring', () => {
           agentToolCalls: 9,
           agentRecoveredToolErrors: 1,
           agentSkillOrMemoryActivity: true,
+          agentActiveSkills: ['publishing'],
         },
       }),
       response: 'Понял, обновил чек-лист.',
@@ -48,6 +49,7 @@ describe('Gateway learning wiring', () => {
         recoveredToolErrors: 1,
         skillOrMemoryActivity: true,
         compressionOrLcmActivity: true,
+        activeSkills: ['publishing'],
       }),
     }));
   });
