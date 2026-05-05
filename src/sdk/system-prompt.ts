@@ -26,6 +26,8 @@ export interface ResolveImportsOptions {
   workspaceRoot: string;
   /** Maximum recursion depth. Default 5. */
   maxDepth?: number;
+  /** Optional — if provided, included as `agent_id` in every log entry. */
+  agentId?: string;
 }
 
 /**
@@ -57,11 +59,17 @@ export function resolveImports(
     // policy below will reject everything since nothing resolves under a
     // missing root, which is the right behaviour.
   }
+  // Per-invocation log counter — caps non-debug log output to a sane budget
+  // so a pathological CLAUDE.md with thousands of broken imports cannot
+  // flood the log buffer / stdout. Reset on every top-level call.
+  const logCounter = { count: 0 };
   return resolveContent(content, fromFile, {
     workspaceRoot: canonicalRoot,
     maxDepth,
     visited,
     depth: 0,
+    agentId: opts.agentId,
+    logCounter,
   });
 }
 
@@ -71,6 +79,9 @@ export function resolveImports(
 
 const DEFAULT_MAX_DEPTH = 5;
 const MAX_FILE_BYTES = 1024 * 1024; // 1 MiB
+/** Cap on non-debug log entries per top-level resolveImports call. Debug-level
+ * entries are uncapped — they're already gated by LOG_LEVEL in production. */
+const MAX_LOGS_PER_RESOLUTION = 50;
 
 /** Whole-line `@<path>` — leading/trailing spaces or tabs OK, no other chars. */
 const IMPORT_LINE_RE = /^[ \t]*@(\S+)[ \t]*$/;
@@ -80,6 +91,42 @@ interface InternalCtx {
   maxDepth: number;
   visited: Set<string>;
   depth: number;
+  agentId?: string;
+  /** Shared across recursion so the cap is per top-level call, not per file. */
+  logCounter: { count: number };
+}
+
+/**
+ * Emit a structured log entry, threading `agent_id` from the context and
+ * enforcing the per-invocation cap on non-debug levels.
+ *
+ * The 50th non-debug entry carries `suppressed_after: MAX_LOGS_PER_RESOLUTION`
+ * to make truncation visible in log analysis. Subsequent entries at warn/info
+ * level are silently dropped. Debug-level entries are always emitted (they're
+ * gated by LOG_LEVEL anyway and are useful for diagnosing the cap itself).
+ */
+function emitLog(
+  ctx: InternalCtx,
+  level: 'warn' | 'info' | 'debug',
+  payload: Record<string, unknown>,
+): void {
+  const enriched =
+    ctx.agentId !== undefined ? { ...payload, agent_id: ctx.agentId } : payload;
+
+  if (level === 'debug') {
+    logger.debug(enriched);
+    return;
+  }
+
+  if (ctx.logCounter.count >= MAX_LOGS_PER_RESOLUTION) {
+    return;
+  }
+  ctx.logCounter.count += 1;
+  if (ctx.logCounter.count === MAX_LOGS_PER_RESOLUTION) {
+    logger[level]({ ...enriched, suppressed_after: MAX_LOGS_PER_RESOLUTION });
+  } else {
+    logger[level](enriched);
+  }
 }
 
 /**
@@ -157,7 +204,7 @@ function resolveSingleImport(
 
   if (policy.kind === 'reject') {
     // `escape` / `absolute` / `url` → keep line, log warn.
-    logger.warn({
+    emitLog(ctx, 'warn', {
       msg: 'system-prompt resolver rejected import',
       reason: policy.reason,
       from_file: fromFile,
@@ -167,7 +214,7 @@ function resolveSingleImport(
   }
 
   if (policy.kind === 'missing') {
-    logger.info({
+    emitLog(ctx, 'info', {
       msg: 'system-prompt resolver: import target missing',
       reason: 'missing',
       from_file: fromFile,
@@ -183,7 +230,7 @@ function resolveSingleImport(
 
   // Cycle / diamond de-dupe.
   if (ctx.visited.has(absReal)) {
-    logger.info({
+    emitLog(ctx, 'info', {
       msg: 'system-prompt resolver: cycle / dedupe — dropping repeated import',
       reason: 'cycle',
       from_file: fromFile,
@@ -194,7 +241,7 @@ function resolveSingleImport(
 
   // Depth check (recursing into this file would exceed maxDepth).
   if (ctx.depth + 1 > ctx.maxDepth) {
-    logger.warn({
+    emitLog(ctx, 'warn', {
       msg: 'system-prompt resolver: max import depth exceeded',
       reason: 'depth',
       from_file: fromFile,
@@ -204,13 +251,16 @@ function resolveSingleImport(
     return DROP_LINE;
   }
 
-  // Size check.
+  // Pre-read size check (cheap). NOTE: statSync().size returns *apparent* size
+  // and lies for sparse / /proc-style files (zero-size stat, gigabytes on read).
+  // We keep this as a fast-path reject and re-check the actual length after
+  // readFileSync below — the post-read cap is the authoritative defence.
   let size: number;
   try {
     size = statSync(absReal).size;
   } catch (err) {
     // statSync should not fail (existsSync guarded earlier) but be defensive.
-    logger.warn({
+    emitLog(ctx, 'warn', {
       msg: 'system-prompt resolver: stat failed',
       reason: 'missing',
       from_file: fromFile,
@@ -220,7 +270,7 @@ function resolveSingleImport(
     return KEEP_AS_IS;
   }
   if (size > MAX_FILE_BYTES) {
-    logger.warn({
+    emitLog(ctx, 'warn', {
       msg: 'system-prompt resolver: import file exceeds 1 MiB',
       reason: 'oversize',
       from_file: fromFile,
@@ -237,7 +287,7 @@ function resolveSingleImport(
   try {
     imported = readFileSync(absReal, 'utf-8');
   } catch (err) {
-    logger.warn({
+    emitLog(ctx, 'warn', {
       msg: 'system-prompt resolver: read failed',
       reason: 'missing',
       from_file: fromFile,
@@ -247,7 +297,21 @@ function resolveSingleImport(
     return KEEP_AS_IS;
   }
 
-  logger.debug({
+  // Post-read length cap — defence-in-depth against sparse / /proc-style
+  // files where statSync().size lied. Whatever readFileSync actually returned
+  // is what would be inlined; reject if it exceeds MAX_FILE_BYTES.
+  if (imported.length > MAX_FILE_BYTES) {
+    emitLog(ctx, 'warn', {
+      msg: 'system-prompt resolver: import body exceeds 1 MiB after read',
+      reason: 'oversize',
+      from_file: fromFile,
+      import_path: importPath,
+      size: imported.length,
+    });
+    return KEEP_AS_IS;
+  }
+
+  emitLog(ctx, 'debug', {
     msg: 'system-prompt resolver: import resolved',
     from_file: fromFile,
     import_path: importPath,
@@ -261,8 +325,9 @@ function resolveSingleImport(
     depth: ctx.depth + 1,
   });
 
-  // Empty imported file → replace with empty string (the @<path> line vanishes,
-  // we still emit "" to preserve neighbouring lines' positions).
+  // Empty imported file → emit empty string. After join('\n') this manifests as
+  // a blank line where the @<path> import was — preserves neighbouring lines'
+  // vertical positions.
   return resolved;
 }
 
