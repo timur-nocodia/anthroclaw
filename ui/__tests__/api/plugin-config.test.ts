@@ -61,7 +61,16 @@ function writePluginSchemaModule(
   schemaSource: string,
   manifestRelPath: string = 'dist/config.js',
 ): string {
-  const pluginDir = join(pluginsDir, pluginName);
+  return writePluginSchemaModuleAt(join(pluginsDir, pluginName), pluginName, exportName, schemaSource, manifestRelPath);
+}
+
+function writePluginSchemaModuleAt(
+  pluginDir: string,
+  pluginName: string,
+  exportName: 'default' | 'configSchema' | 'named',
+  schemaSource: string,
+  manifestRelPath: string = 'dist/config.js',
+): string {
   mkdirSync(join(pluginDir, '.claude-plugin'), { recursive: true });
   mkdirSync(join(pluginDir, 'dist'), { recursive: true });
 
@@ -107,13 +116,28 @@ interface FakePluginEntry {
   tools?: Array<{ name: string }>;
 }
 
-function makeFakeGateway(plugins: FakePluginEntry[], resolvedPluginsDir?: string) {
+function makeFakeGateway(plugins: FakePluginEntry[], resolvedPluginsDir?: string, catalogEntries?: Array<Record<string, unknown>>) {
   const enabled = new Map<string, Set<string>>();
   return {
     refreshAgentPluginTools: vi.fn(),
     notifyAgentConfigChanged: vi.fn().mockResolvedValue(undefined),
     resolvedPluginsDir: resolvedPluginsDir ?? pluginsDir,
     getResolvedPluginsDir: vi.fn(() => resolvedPluginsDir ?? pluginsDir),
+    pluginCatalog: {
+      entries: catalogEntries ?? plugins.map((p) => ({
+        name: p.manifest.name,
+        version: p.manifest.version,
+        sourceType: 'bundled',
+        pluginDir: join(resolvedPluginsDir ?? pluginsDir, p.manifest.name),
+        manifestPath: join(resolvedPluginsDir ?? pluginsDir, p.manifest.name, '.claude-plugin', 'plugin.json'),
+        manifest: p.manifest,
+        loadable: true,
+        loaded: true,
+        status: 'ok',
+        diagnostics: [],
+      })),
+      duplicates: [],
+    },
     pluginRegistry: {
       listPlugins: vi.fn(() =>
         plugins.map((p) => ({ manifest: p.manifest, instance: {} })),
@@ -190,6 +214,44 @@ describe('GET /api/plugins/[name]/config-schema', () => {
     expect(json.jsonSchema.type).toBe('object');
     expect(json.jsonSchema.properties).toHaveProperty('enabled');
     expect(json.jsonSchema.properties).toHaveProperty('triggers');
+    expect(json.defaults).toEqual({ enabled: false, triggers: { threshold: 40000 } });
+  });
+
+  it('returns config schema for catalog-only managed plugins', async () => {
+    const managedPluginDir = join(tmpRoot, 'data', 'plugins-installed', 'file-transfer');
+    writePluginSchemaModuleAt(managedPluginDir, 'file-transfer', 'default', SAMPLE_SCHEMA_SOURCE);
+
+    const fakeGw = makeFakeGateway([], pluginsDir, [
+      {
+        name: 'file-transfer',
+        version: '1.2.3',
+        sourceType: 'managed',
+        pluginDir: managedPluginDir,
+        manifestPath: join(managedPluginDir, '.claude-plugin', 'plugin.json'),
+        manifest: {
+          name: 'file-transfer',
+          version: '1.2.3',
+          entry: 'dist/index.js',
+          configSchema: 'dist/config.js',
+        },
+        loadable: true,
+        loaded: false,
+        status: 'ok',
+        diagnostics: [],
+      },
+    ]);
+    vi.doMock('@/lib/gateway', () => ({
+      getGateway: vi.fn().mockResolvedValue(fakeGw),
+    }));
+
+    const { GET } = await import('@/app/api/plugins/[name]/config-schema/route');
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/plugins/file-transfer/config-schema'),
+      { params: Promise.resolve({ name: 'file-transfer' }) },
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.name).toBe('file-transfer');
     expect(json.defaults).toEqual({ enabled: false, triggers: { threshold: 40000 } });
   });
 

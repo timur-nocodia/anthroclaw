@@ -17,7 +17,10 @@ export async function PUT(
     const enabled = body.enabled;
 
     const gw = await getGateway();
-    const known = gw.pluginRegistry.listPlugins().some((p) => p.manifest.name === name);
+    const runtimeKnown = gw.pluginRegistry.listPlugins().some((p) => p.manifest.name === name);
+    const catalog = (gw as unknown as { pluginCatalog?: { entries?: Array<{ name: string }> } }).pluginCatalog;
+    const catalogKnown = Array.isArray(catalog?.entries) && catalog.entries.some((p) => p.name === name);
+    const known = runtimeKnown || catalogKnown;
     if (!known) {
       throw new ValidationError('unknown_plugin', `Plugin not installed: ${name}`);
     }
@@ -27,9 +30,9 @@ export async function PUT(
 
     // Eagerly toggle live registry so the UI reflects state without waiting
     // on the hot-reload watcher.
-    if (enabled) {
+    if (enabled && runtimeKnown) {
       gw.pluginRegistry.enableForAgent(agentId, name);
-    } else {
+    } else if (!enabled && runtimeKnown) {
       gw.pluginRegistry.disableForAgent(agentId, name);
     }
 

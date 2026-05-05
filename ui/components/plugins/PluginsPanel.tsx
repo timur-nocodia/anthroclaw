@@ -28,6 +28,13 @@ export interface PluginListItem {
   hasMcpTools: boolean;
   hasContextEngine: boolean;
   toolCount: number;
+  sourceType?: string;
+  sourceSpec?: string;
+  installRoot?: string;
+  managed?: boolean;
+  loaded?: boolean;
+  dependencyState?: string;
+  status?: string;
 }
 
 export interface AgentPluginEntry {
@@ -598,6 +605,10 @@ function PluginCard(props: PluginCardProps) {
                 Config schema
               </Badge>
             )}
+            {plugin.managed && <Badge>Managed</Badge>}
+            {plugin.loaded === false && <Badge>Not loaded</Badge>}
+            {plugin.dependencyState && <Badge>deps {plugin.dependencyState}</Badge>}
+            {plugin.status && plugin.status !== "ok" && <Badge>{plugin.status}</Badge>}
           </div>
         </div>
 

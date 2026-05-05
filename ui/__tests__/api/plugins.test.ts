@@ -60,13 +60,28 @@ interface FakePluginEntry {
   hasEngine: boolean;
 }
 
-function makeFakeGateway(plugins: FakePluginEntry[]) {
+function makeFakeGateway(plugins: FakePluginEntry[], catalogEntries?: Array<Record<string, unknown>>) {
   const enabled = new Map<string, Set<string>>();
   return {
     enableForAgentSpy: vi.fn(),
     disableForAgentSpy: vi.fn(),
     refreshAgentPluginTools: vi.fn(),
     notifyAgentConfigChanged: vi.fn().mockResolvedValue(undefined),
+    pluginCatalog: {
+      entries: catalogEntries ?? plugins.map((p) => ({
+        name: p.manifest.name,
+        version: p.manifest.version,
+        sourceType: 'bundled',
+        pluginDir: `/tmp/plugins/${p.manifest.name}`,
+        manifestPath: `/tmp/plugins/${p.manifest.name}/.claude-plugin/plugin.json`,
+        manifest: p.manifest,
+        loadable: true,
+        loaded: true,
+        status: 'ok',
+        diagnostics: [],
+      })),
+      duplicates: [],
+    },
     pluginRegistry: {
       listPlugins: vi.fn(() =>
         plugins.map((p) => ({ manifest: p.manifest, instance: p.instance })),
@@ -142,6 +157,13 @@ describe('GET /api/plugins', () => {
       hasMcpTools: true,
       hasContextEngine: true,
       toolCount: 2,
+      sourceType: 'bundled',
+      sourceSpec: undefined,
+      installRoot: '/tmp/plugins/lcm',
+      managed: false,
+      loaded: true,
+      dependencyState: undefined,
+      status: 'ok',
     });
     expect(json.plugins[1]).toEqual({
       name: 'example',
@@ -151,7 +173,59 @@ describe('GET /api/plugins', () => {
       hasMcpTools: false,
       hasContextEngine: false,
       toolCount: 0,
+      sourceType: 'bundled',
+      sourceSpec: undefined,
+      installRoot: '/tmp/plugins/example',
+      managed: false,
+      loaded: true,
+      dependencyState: undefined,
+      status: 'ok',
     });
+  });
+
+  it('returns catalog-only managed plugins that are installed but not runtime-loaded', async () => {
+    const fakeGw = makeFakeGateway([], [
+      {
+        name: 'file-transfer',
+        version: '1.2.3',
+        sourceType: 'managed',
+        sourceSpec: '/tmp/source/file-transfer',
+        pluginDir: '/tmp/data/plugins-installed/file-transfer',
+        manifestPath: '/tmp/data/plugins-installed/file-transfer/.claude-plugin/plugin.json',
+        manifest: {
+          name: 'file-transfer',
+          version: '1.2.3',
+          description: 'File transfer',
+          entry: 'dist/index.js',
+        },
+        loadable: true,
+        loaded: false,
+        dependencyState: 'ok',
+        status: 'ok',
+        diagnostics: [],
+      },
+    ]);
+
+    vi.doMock('@/lib/gateway', () => ({
+      getGateway: vi.fn().mockResolvedValue(fakeGw),
+    }));
+
+    const { GET } = await import('@/app/api/plugins/route');
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.plugins).toEqual([
+      expect.objectContaining({
+        name: 'file-transfer',
+        sourceType: 'managed',
+        sourceSpec: '/tmp/source/file-transfer',
+        installRoot: '/tmp/data/plugins-installed/file-transfer',
+        managed: true,
+        loaded: false,
+        dependencyState: 'ok',
+        status: 'ok',
+      }),
+    ]);
   });
 });
 
@@ -196,6 +270,46 @@ describe('GET /api/agents/[agentId]/plugins', () => {
     expect(json.plugins).toEqual([
       { name: 'lcm', enabled: true, config: { enabled: true, threshold: 0.7 } },
       { name: 'example', enabled: false, config: {} },
+    ]);
+  });
+
+  it('returns catalog-only plugins in per-agent state responses', async () => {
+    writeAgentYml('alpha', {
+      model: 'claude-sonnet-4-6',
+      routes: [{ channel: 'telegram', scope: 'dm' }],
+      plugins: {
+        'file-transfer': { enabled: true, root: '/safe' },
+      },
+    });
+
+    const fakeGw = makeFakeGateway([], [
+      {
+        name: 'file-transfer',
+        version: '1.2.3',
+        sourceType: 'managed',
+        pluginDir: '/tmp/data/plugins-installed/file-transfer',
+        manifestPath: '/tmp/data/plugins-installed/file-transfer/.claude-plugin/plugin.json',
+        manifest: { name: 'file-transfer', version: '1.2.3', entry: 'dist/index.js' },
+        loadable: true,
+        loaded: false,
+        status: 'ok',
+        diagnostics: [],
+      },
+    ]);
+
+    vi.doMock('@/lib/gateway', () => ({
+      getGateway: vi.fn().mockResolvedValue(fakeGw),
+    }));
+
+    const { GET } = await import('@/app/api/agents/[agentId]/plugins/route');
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/agents/alpha/plugins'),
+      { params: Promise.resolve({ agentId: 'alpha' }) },
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.plugins).toEqual([
+      { name: 'file-transfer', enabled: true, config: { enabled: true, root: '/safe' } },
     ]);
   });
 

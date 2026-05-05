@@ -24,18 +24,35 @@ export async function GET(
     getAgentConfig(agentId);
 
     const gw = await getGateway();
-    const entries = gw.pluginRegistry.listPlugins();
+    const entries = getKnownPluginNames(gw);
 
-    const plugins: AgentPluginEntry[] = entries.map((entry) => {
-      const name = entry.manifest.name;
+    const plugins: AgentPluginEntry[] = entries.map((name) => {
+      const config = getAgentPluginConfig(agentId, name);
       return {
         name,
-        enabled: gw.pluginRegistry.isEnabledFor(agentId, name),
-        config: getAgentPluginConfig(agentId, name),
+        enabled: isEnabledConfig(config) || gw.pluginRegistry.isEnabledFor(agentId, name),
+        config,
       };
     });
 
     const response: AgentPluginsResponse = { agentId, plugins };
     return NextResponse.json(response);
   });
+}
+
+function getKnownPluginNames(gw: Awaited<ReturnType<typeof getGateway>>): string[] {
+  const catalog = (gw as unknown as { pluginCatalog?: { entries?: Array<{ name: string }> } }).pluginCatalog;
+  if (Array.isArray(catalog?.entries) && catalog.entries.length > 0) {
+    return catalog.entries.map((entry) => entry.name);
+  }
+  return gw.pluginRegistry.listPlugins().map((entry) => entry.manifest.name);
+}
+
+function isEnabledConfig(config: unknown): boolean {
+  return Boolean(
+    config &&
+    typeof config === 'object' &&
+    !Array.isArray(config) &&
+    (config as { enabled?: unknown }).enabled === true,
+  );
 }
