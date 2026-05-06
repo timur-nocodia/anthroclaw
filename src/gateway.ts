@@ -3206,6 +3206,23 @@ export class Gateway {
       }
     }
 
+    if (decision.kind === 'learning_skill' && decision.status === 'approved') {
+      const action = this.learningStore.getAction(decision.learningActionId);
+      if (action && action.status === 'proposed') {
+        this.learningStore.updateActionStatus(action.id, 'approved', { updatedAt: Date.now() });
+      }
+    }
+
+    if (decision.status === 'edit_requested') {
+      const action = this.learningStore.getAction(decision.learningActionId);
+      if (action && (action.status === 'proposed' || action.status === 'approved')) {
+        this.learningStore.updateActionStatus(action.id, 'rejected', {
+          updatedAt: Date.now(),
+          error: 'edit_requested',
+        });
+      }
+    }
+
     if (decision.status === 'rejected') {
       const action = this.learningStore.getAction(decision.learningActionId);
       if (action && (action.status === 'proposed' || action.status === 'approved')) {

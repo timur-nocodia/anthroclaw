@@ -226,6 +226,113 @@ describe('Gateway decision wiring', () => {
     });
   });
 
+  it('marks linked learning skill actions approved when admin chat approves the decision', async () => {
+    const review = learningStore.createReview({
+      id: 'review-skill-approve',
+      agentId: 'agent-a',
+      trigger: 'manual',
+      mode: 'propose',
+    });
+    const action = learningStore.addAction({
+      id: 'action-skill-approve',
+      reviewId: review.id,
+      agentId: 'agent-a',
+      actionType: 'skill_create',
+      status: 'proposed',
+      confidence: 0.8,
+      title: 'Create publishing skill',
+      rationale: 'Reusable workflow.',
+      payload: {
+        skillName: 'publishing',
+        body: '# Publishing\n\nUse this skill for publishing workflows.\n',
+      },
+      createdAt: 1000,
+    });
+    store.createDecision({
+      id: 'decision-admin-linked-skill',
+      shortCode: 'SKL123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      learningActionId: action.id,
+      reviewId: review.id,
+      subject: 'Create publishing skill',
+      body: 'Reusable workflow.',
+      risk: 'medium',
+      payload: action.payload,
+      createdAt: 1000,
+    });
+
+    const handled = await (gateway as any).handleDecisionTextReply(makeMessage({
+      channel: 'telegram',
+      accountId: 'main',
+      peerId: 'admin-peer',
+      senderId: 'admin-sender',
+      threadId: 'topic-1',
+      text: '/learn approve SKL123',
+    }));
+
+    expect(handled).toBe(true);
+    expect(store.getDecision('decision-admin-linked-skill')).toMatchObject({ status: 'approved' });
+    expect(learningStore.getAction(action.id)).toMatchObject({ status: 'approved' });
+  });
+
+  it('marks linked learning skill actions rejected when admin chat requests edits', async () => {
+    const review = learningStore.createReview({
+      id: 'review-skill-edit',
+      agentId: 'agent-a',
+      trigger: 'manual',
+      mode: 'propose',
+    });
+    const action = learningStore.addAction({
+      id: 'action-skill-edit',
+      reviewId: review.id,
+      agentId: 'agent-a',
+      actionType: 'skill_create',
+      status: 'proposed',
+      confidence: 0.8,
+      title: 'Create publishing skill',
+      rationale: 'Reusable workflow.',
+      payload: {
+        skillName: 'publishing',
+        body: '# Publishing\n\nUse this skill for publishing workflows.\n',
+      },
+      createdAt: 1000,
+    });
+    store.createDecision({
+      id: 'decision-admin-edit-skill',
+      shortCode: 'SKL456',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      learningActionId: action.id,
+      reviewId: review.id,
+      subject: 'Create publishing skill',
+      body: 'Reusable workflow.',
+      risk: 'medium',
+      payload: action.payload,
+      createdAt: 1000,
+    });
+
+    const handled = await (gateway as any).handleDecisionTextReply(makeMessage({
+      channel: 'telegram',
+      accountId: 'main',
+      peerId: 'admin-peer',
+      senderId: 'admin-sender',
+      threadId: 'topic-1',
+      text: '/learn edit SKL456',
+    }));
+
+    expect(handled).toBe(true);
+    expect(store.getDecision('decision-admin-edit-skill')).toMatchObject({ status: 'edit_requested' });
+    expect(learningStore.getAction(action.id)).toMatchObject({
+      status: 'rejected',
+      error: 'edit_requested',
+    });
+  });
+
   it('rejects admin decision commands from non-allowlisted senders', async () => {
     store.createDecision({
       id: 'decision-admin-unauthorized',
