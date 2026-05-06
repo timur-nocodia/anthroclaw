@@ -36,7 +36,11 @@ export async function GET(
       const reviews = store.listReviews({ agentId, limit: 50 });
       const artifacts = store.listArtifacts({ limit: 1000 }).filter((artifact) => artifact.agentId === agentId);
       const snapshots = store.listSkillSnapshots({ agentId, limit: 1000 });
-      const decisions = decisionStore.listDecisions({ agentId, limit: 200 });
+      const decisions = decisionStore.listDecisions({ agentId, limit: 200 }).map((decision) => ({
+        ...decision,
+        delivery: decisionStore.listDeliveries(decision.id),
+        auditEvents: decisionStore.listAuditEvents(decision.id),
+      }));
       return NextResponse.json({
         config: {
           safety_profile: config.safety_profile,

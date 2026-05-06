@@ -70,6 +70,7 @@ import {
   type LearningAdminApprovalsConfig,
   type LearningDecisionKind,
 } from "@/components/learning/LearningAdminApprovalsEditor";
+import { LearningDecisionRow, type LearningDecisionRecord } from "@/components/learning/LearningDecisionRow";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -478,7 +479,6 @@ interface LearningConfig {
 
 type LearningActionStatus = "proposed" | "approved" | "rejected" | "applied" | "failed";
 type LearningActionType = "memory_candidate" | "skill_patch" | "skill_create" | "skill_update_full" | "none";
-type LearningDecisionStatus = "pending" | "approved" | "rejected" | "edit_requested" | "expired" | "applied" | "failed";
 
 interface LearningActionRecord {
   id: string;
@@ -492,33 +492,6 @@ interface LearningActionRecord {
   payload: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
-  appliedAt?: number;
-  error?: string;
-}
-
-interface LearningDecisionRecord {
-  id: string;
-  shortCode: string;
-  kind: LearningDecisionKind;
-  scope: "user" | "agent" | "system";
-  actor: "originating_user" | "admin" | "operator";
-  status: LearningDecisionStatus;
-  agentId: string;
-  learningActionId?: string;
-  reviewId?: string;
-  subject: string;
-  body: string;
-  risk: "low" | "medium" | "high";
-  payload: Record<string, unknown>;
-  originChannel?: string;
-  originAccountId?: string;
-  originPeerId?: string;
-  originSenderId?: string;
-  delivery?: Array<{ channel: string; status: string; messageId?: string; error?: string }>;
-  createdAt: number;
-  updatedAt: number;
-  decidedAt?: number;
-  decidedBy?: string;
   appliedAt?: number;
   error?: string;
 }
@@ -4125,48 +4098,6 @@ function LearningMetric({ label, value, tone = "muted" }: { label: string; value
   );
 }
 
-function LearningDecisionRow({
-  decision,
-  onApprove,
-  onReject,
-  onApply,
-}: {
-  decision: LearningDecisionRecord;
-  onApprove: () => void;
-  onReject: () => void;
-  onApply: () => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b px-3.5 py-3 last:border-b-0" style={{ borderColor: "var(--oc-border)" }}>
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[12.5px] font-medium" style={{ color: "var(--color-foreground)" }}>{decision.subject || learningDecisionKindLabel(decision.kind)}</span>
-          <span className="rounded px-1.5 py-px text-[10px]" style={learningDecisionStatusStyle(decision.status)}>{decision.status}</span>
-          <span className="rounded px-1.5 py-px text-[10px]" style={{ background: "var(--oc-bg3)", color: "var(--oc-text-muted)" }}>{learningDecisionKindLabel(decision.kind)}</span>
-          <span className="rounded px-1.5 py-px text-[10px]" style={{ background: "var(--oc-bg3)", color: "var(--oc-text-muted)" }}>{decision.actor}</span>
-        </div>
-        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10.5px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
-          <span>{decision.shortCode}</span>
-          <span>{shortRuntimeId(decision.id, 10)}</span>
-          {decision.learningActionId && <span>action {shortRuntimeId(decision.learningActionId, 10)}</span>}
-          <span>{formatRuntimeTime(decision.createdAt)}</span>
-          {decision.decidedBy && <span>by {decision.decidedBy}</span>}
-        </div>
-        {decision.body && (
-          <div className="mt-1 truncate text-[11.5px]" style={{ color: "var(--oc-text-muted)" }}>
-            {decision.body}
-          </div>
-        )}
-      </div>
-      <div className="flex items-center gap-1.5">
-        <Button variant="outline" size="sm" onClick={onApprove} disabled={decision.status !== "pending"}><CheckCircle2 className="h-3.5 w-3.5" />Approve</Button>
-        <Button variant="outline" size="sm" onClick={onReject} disabled={decision.status !== "pending"}><XCircle className="h-3.5 w-3.5" />Reject</Button>
-        <Button variant="outline" size="sm" onClick={onApply} disabled={decision.status !== "approved"}><Zap className="h-3.5 w-3.5" />Apply</Button>
-      </div>
-    </div>
-  );
-}
-
 function LearningActionRow({
   action,
   onOpen,
@@ -4256,32 +4187,6 @@ function learningActionTypeLabel(type: LearningActionType): string {
     case "none":
       return "none";
   }
-}
-
-function learningDecisionKindLabel(type: LearningDecisionKind): string {
-  switch (type) {
-    case "learning_memory":
-      return "memory decision";
-    case "learning_skill":
-      return "skill decision";
-    case "curator_action":
-      return "curator";
-    case "tool_approval":
-      return "tool approval";
-  }
-}
-
-function learningDecisionStatusStyle(status: LearningDecisionStatus): React.CSSProperties {
-  if (status === "approved" || status === "applied") {
-    return { background: "rgba(74,222,128,0.13)", border: "1px solid rgba(74,222,128,0.32)", color: "var(--oc-green)" };
-  }
-  if (status === "rejected" || status === "failed" || status === "expired") {
-    return { background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.32)", color: "var(--oc-red)" };
-  }
-  if (status === "edit_requested") {
-    return { background: "rgba(96,165,250,0.12)", border: "1px solid rgba(96,165,250,0.32)", color: "var(--oc-accent)" };
-  }
-  return { background: "rgba(250,204,21,0.12)", border: "1px solid rgba(250,204,21,0.32)", color: "var(--oc-yellow)" };
 }
 
 function learningStatusStyle(status: LearningActionStatus): React.CSSProperties {

@@ -98,6 +98,72 @@ describe('/api/agents/[agentId]/learning decisions', () => {
     expect(body.summary.pendingDecisions).toBe(1);
   });
 
+  it('returns decision audit events and delivery attempts for dashboard inspection', async () => {
+    const action = seedSkillAction({ status: 'proposed' });
+    decisionStore.createDecision({
+      id: 'decision-1',
+      shortCode: 'ABC123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      learningActionId: action.id,
+      reviewId: action.reviewId,
+      subject: 'Create publishing skill',
+      body: 'Reusable workflow.',
+      risk: 'medium',
+      payload: action.payload,
+      createdAt: 2000,
+    });
+    decisionStore.recordDelivery('decision-1', {
+      channel: 'telegram',
+      accountId: 'main',
+      peerId: '48705953',
+      messageId: 'tg-msg-1',
+      status: 'sent',
+      createdAt: 2100,
+    });
+    decisionStore.updateDecisionStatus('decision-1', 'approved', {
+      updatedAt: 2200,
+      decidedBy: 'admin',
+      actorSenderId: '48705953',
+      channel: 'telegram',
+      reason: 'admin_approved',
+    });
+
+    const { GET } = await import('@/app/api/agents/[agentId]/learning/route');
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/agents/agent-a/learning'),
+      { params: Promise.resolve({ agentId: 'agent-a' }) },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.decisions[0]).toMatchObject({
+      id: 'decision-1',
+      status: 'approved',
+      delivery: [
+        expect.objectContaining({
+          channel: 'telegram',
+          accountId: 'main',
+          peerId: '48705953',
+          messageId: 'tg-msg-1',
+          status: 'sent',
+        }),
+      ],
+      auditEvents: [
+        expect.objectContaining({ toStatus: 'pending', reason: 'created' }),
+        expect.objectContaining({
+          fromStatus: 'pending',
+          toStatus: 'approved',
+          actorSenderId: '48705953',
+          channel: 'telegram',
+          reason: 'admin_approved',
+        }),
+      ],
+    });
+  });
+
   it('returns learning admin approval config for dashboard saves', async () => {
     writeFileSync(join(root, 'agents', 'agent-a', 'agent.yml'), [
       'safety_profile: private',
