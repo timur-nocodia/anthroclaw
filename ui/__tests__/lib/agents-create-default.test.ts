@@ -46,4 +46,39 @@ describe('createAgent default safety_profile', () => {
     const config = readAgentYml('blank-test') as { routes: unknown };
     expect(Array.isArray(config.routes)).toBe(true);
   });
+
+  it('blank template enables value-safe agent defaults', () => {
+    agentsModule.createAgent('blank-test', undefined, 'blank');
+    const config = readAgentYml('blank-test') as {
+      memory_extraction?: Record<string, unknown>;
+      learning?: Record<string, unknown>;
+      plugins?: Record<string, Record<string, unknown>>;
+      sdk?: Record<string, unknown>;
+    };
+
+    expect(config.memory_extraction).toMatchObject({ enabled: true });
+    expect(config.learning).toMatchObject({ enabled: true, mode: 'propose' });
+    expect(config.plugins?.lcm).toMatchObject({ enabled: true });
+    expect(config.plugins?.['file-transfer']).toMatchObject({
+      enabled: true,
+      allowWrite: false,
+      roots: ['agents/blank-test'],
+    });
+    expect(config.sdk).toMatchObject({
+      promptSuggestions: true,
+      agentProgressSummaries: true,
+      includePartialMessages: true,
+    });
+  });
+
+  it('example template enables heartbeat with a task file', () => {
+    agentsModule.createAgent('example-test', undefined, 'example');
+    const config = readAgentYml('example-test') as {
+      heartbeat?: Record<string, unknown>;
+      plugins?: Record<string, Record<string, unknown>>;
+    };
+
+    expect(config.heartbeat).toMatchObject({ enabled: true });
+    expect(config.plugins?.lcm).toMatchObject({ enabled: true });
+  });
 });

@@ -617,8 +617,8 @@ function envTextToMap(value: string): Record<string, string> | undefined {
 
 function normalizeLearningConfig(value?: LearningConfig): Required<LearningConfig> & { artifacts: Required<NonNullable<LearningConfig["artifacts"]>> } {
   return {
-    enabled: value?.enabled ?? false,
-    mode: value?.mode ?? "off",
+    enabled: value?.enabled ?? true,
+    mode: value?.mode ?? "propose",
     review_interval_turns: value?.review_interval_turns ?? 10,
     skill_review_min_tool_calls: value?.skill_review_min_tool_calls ?? 8,
     max_actions_per_review: value?.max_actions_per_review ?? 8,
@@ -1024,7 +1024,7 @@ function ConfigTab({
     channel_context: agent.channel_context ?? { reply_to_mode: "always" as ReplyToMode },
     mcp_tools: agent.mcp_tools ?? [],
     memory_extraction: {
-      enabled: agent.memory_extraction?.enabled ?? false,
+      enabled: agent.memory_extraction?.enabled ?? true,
       max_candidates: agent.memory_extraction?.max_candidates ?? 5,
       max_input_chars: agent.memory_extraction?.max_input_chars ?? 6000,
     },
@@ -1048,9 +1048,9 @@ function ConfigTab({
       allowedTools: agent.sdk?.allowedTools ?? [],
       disallowedTools: agent.sdk?.disallowedTools ?? [],
       fallbackModel: agent.sdk?.fallbackModel ?? "",
-      promptSuggestions: agent.sdk?.promptSuggestions ?? false,
-      agentProgressSummaries: agent.sdk?.agentProgressSummaries ?? false,
-      includePartialMessages: agent.sdk?.includePartialMessages ?? false,
+      promptSuggestions: agent.sdk?.promptSuggestions ?? true,
+      agentProgressSummaries: agent.sdk?.agentProgressSummaries ?? true,
+      includePartialMessages: agent.sdk?.includePartialMessages ?? true,
       includeHookEvents: agent.sdk?.includeHookEvents ?? false,
       enableFileCheckpointing: agent.sdk?.enableFileCheckpointing ?? false,
       permissions: {

@@ -86,6 +86,17 @@ describe('buildSdkOptions on chat profile', () => {
     expect(options.disallowedTools).toContain('RemoteTrigger');
   });
 
+  it('enables value-safe SDK visibility flags by default', () => {
+    const agent = makeAgentStub({ workspaceDir: tmpRoot, claudeMd: '# test' });
+    const options = buildSdkOptions({ agent });
+
+    expect(options.promptSuggestions).toBe(true);
+    expect(options.agentProgressSummaries).toBe(true);
+    expect(options.includePartialMessages).toBe(true);
+    expect(options.includeHookEvents).toBeUndefined();
+    expect(options.enableFileCheckpointing).toBeUndefined();
+  });
+
   it('keeps manage_cron in allowedTools when registered on the MCP server', () => {
     const agent = makeAgentStub({
       workspaceDir: tmpRoot,

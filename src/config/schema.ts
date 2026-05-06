@@ -287,14 +287,18 @@ const SubagentPolicySchema = z.object({
 }).optional();
 
 const MemoryExtractionSchema = z.object({
-  enabled: z.boolean().default(false),
+  enabled: z.boolean().default(true),
   max_candidates: z.number().int().min(1).max(10).default(5),
   max_input_chars: z.number().int().min(500).max(20_000).default(6000),
-}).optional();
+}).default({
+  enabled: true,
+  max_candidates: 5,
+  max_input_chars: 6000,
+});
 
 const LearningConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  mode: z.enum(['off', 'propose', 'auto_private']).default('off'),
+  enabled: z.boolean().default(true),
+  mode: z.enum(['off', 'propose', 'auto_private']).default('propose'),
   review_interval_turns: z.number().int().min(1).max(500).default(10),
   skill_review_min_tool_calls: z.number().int().min(1).max(500).default(8),
   max_actions_per_review: z.number().int().min(1).max(20).default(8),
@@ -313,8 +317,8 @@ const LearningConfigSchema = z.object({
     max_snippet_chars: 4_000,
   }),
 }).default({
-  enabled: false,
-  mode: 'off',
+  enabled: true,
+  mode: 'propose',
   review_interval_turns: 10,
   skill_review_min_tool_calls: 8,
   max_actions_per_review: 8,
