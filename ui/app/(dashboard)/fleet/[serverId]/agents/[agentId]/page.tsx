@@ -535,6 +535,16 @@ interface LearningSummary {
   actionsByStatus: Record<string, number>;
   actionsByType: Record<string, number>;
   pendingDecisions: number;
+  pendingDecisionAge: {
+    oldestCreatedAt?: number;
+    oldestAgeMs?: number;
+    buckets: {
+      under1h: number;
+      oneTo24h: number;
+      oneTo7d: number;
+      over7d: number;
+    };
+  };
   decisionsByStatus: Record<string, number>;
   decisionsByKind: Record<string, number>;
   artifactCount: number;
@@ -3923,11 +3933,12 @@ function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: 
 
   return (
     <div className="flex max-w-[1180px] flex-col gap-3.5 p-5">
-      <div className="grid gap-2.5 md:grid-cols-5">
+      <div className="grid gap-2.5 md:grid-cols-6">
         <LearningMetric label="Mode" value={cfg.enabled ? cfg.mode : "off"} tone={cfg.mode === "auto_private" ? "warn" : cfg.enabled ? "good" : "muted"} />
         <LearningMetric label="Safety profile" value={safetyProfile} tone={safetyProfile === "private" ? "good" : "muted"} />
         <LearningMetric label="Pending proposals" value={String(summary?.pending ?? 0)} tone={(summary?.pending ?? 0) > 0 ? "warn" : "muted"} />
         <LearningMetric label="Pending decisions" value={String(summary?.pendingDecisions ?? 0)} tone={(summary?.pendingDecisions ?? 0) > 0 ? "warn" : "muted"} />
+        <LearningMetric label="Oldest pending" value={formatDecisionAge(summary?.pendingDecisionAge?.oldestAgeMs)} tone={decisionAgeTone(summary?.pendingDecisionAge?.oldestAgeMs)} />
         <LearningMetric label="Last review" value={summary?.lastReviewAt ? formatRuntimeTime(summary.lastReviewAt) : "none"} tone={summary?.lastFailure ? "bad" : "muted"} />
       </div>
 
@@ -4018,6 +4029,14 @@ function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: 
         action={<Button variant="outline" size="sm" onClick={loadLearning} disabled={loading}><RefreshCw className="h-3.5 w-3.5" />Refresh</Button>}
       >
         <LearningDecisionFilters value={decisionFilters} onChange={setDecisionFilters} />
+        {summary?.pendingDecisionAge && (
+          <div className="mb-3 grid gap-2 sm:grid-cols-4">
+            <LearningAgeBucket label="<1h" value={summary.pendingDecisionAge.buckets.under1h} tone="muted" />
+            <LearningAgeBucket label="1-24h" value={summary.pendingDecisionAge.buckets.oneTo24h} tone={summary.pendingDecisionAge.buckets.oneTo24h > 0 ? "warn" : "muted"} />
+            <LearningAgeBucket label="1-7d" value={summary.pendingDecisionAge.buckets.oneTo7d} tone={summary.pendingDecisionAge.buckets.oneTo7d > 0 ? "warn" : "muted"} />
+            <LearningAgeBucket label=">7d" value={summary.pendingDecisionAge.buckets.over7d} tone={summary.pendingDecisionAge.buckets.over7d > 0 ? "bad" : "muted"} />
+          </div>
+        )}
         <div className="overflow-hidden rounded-[6px] border" style={{ borderColor: "var(--oc-border)" }}>
           {loading ? (
             <LearningSkeletonRows />
@@ -4123,6 +4142,16 @@ function LearningMetric({ label, value, tone = "muted" }: { label: string; value
     <div className="rounded-[6px] border px-3 py-2.5" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}>
       <div className="text-[10px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>{label}</div>
       <div className="mt-1 truncate text-[16px] font-semibold" style={{ color, fontFamily: "var(--oc-mono)" }}>{value}</div>
+    </div>
+  );
+}
+
+function LearningAgeBucket({ label, value, tone = "muted" }: { label: string; value: number; tone?: "warn" | "bad" | "muted" }) {
+  const color = tone === "warn" ? "var(--oc-yellow)" : tone === "bad" ? "var(--oc-red)" : "var(--oc-text-muted)";
+  return (
+    <div className="flex items-center justify-between rounded-[5px] border px-2.5 py-1.5 text-[11.5px]" style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}>
+      <span style={{ color: "var(--oc-text-muted)" }}>{label}</span>
+      <span className="font-semibold" style={{ color, fontFamily: "var(--oc-mono)" }}>{value}</span>
     </div>
   );
 }
@@ -5203,6 +5232,24 @@ function formatRuntimeDuration(value: number): string {
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return `${minutes}m ${rest}s`;
+}
+
+function formatDecisionAge(value?: number): string {
+  if (value === undefined) return "none";
+  const safe = Math.max(0, value);
+  const hour = 60 * 60 * 1000;
+  const day = 24 * hour;
+  if (safe < hour) return `${Math.floor(safe / (60 * 1000))}m`;
+  if (safe < day) return `${Math.floor(safe / hour)}h`;
+  return `${Math.floor(safe / day)}d`;
+}
+
+function decisionAgeTone(value?: number): "good" | "warn" | "bad" | "muted" {
+  if (value === undefined) return "muted";
+  const day = 24 * 60 * 60 * 1000;
+  if (value >= 7 * day) return "bad";
+  if (value >= day) return "warn";
+  return "muted";
 }
 
 /* ------------------------------------------------------------------ */

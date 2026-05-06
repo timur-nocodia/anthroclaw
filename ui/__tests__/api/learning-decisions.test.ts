@@ -99,6 +99,86 @@ describe('/api/agents/[agentId]/learning decisions', () => {
     expect(body.summary.pendingDecisions).toBe(1);
   });
 
+  it('summarizes pending decision age for stale queue visibility', async () => {
+    const now = 10 * 24 * 60 * 60 * 1000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const hour = 60 * 60 * 1000;
+    const day = 24 * hour;
+
+    decisionStore.createDecision({
+      id: 'decision-fresh',
+      shortCode: 'AGE001',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Fresh proposal',
+      body: 'Just created.',
+      risk: 'medium',
+      payload: {},
+      createdAt: now - 30 * 60 * 1000,
+    });
+    decisionStore.createDecision({
+      id: 'decision-day-old',
+      shortCode: 'AGE002',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Day-old proposal',
+      body: 'Needs operator review.',
+      risk: 'medium',
+      payload: {},
+      createdAt: now - 25 * hour,
+    });
+    decisionStore.createDecision({
+      id: 'decision-week-old',
+      shortCode: 'AGE003',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Week-old proposal',
+      body: 'Stale operator review.',
+      risk: 'medium',
+      payload: {},
+      createdAt: now - 8 * day,
+    });
+    decisionStore.createDecision({
+      id: 'decision-approved',
+      shortCode: 'AGE004',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      status: 'approved',
+      agentId: 'agent-a',
+      subject: 'Approved proposal',
+      body: 'Not pending.',
+      risk: 'medium',
+      payload: {},
+      createdAt: now - 12 * day,
+    });
+
+    const { GET } = await import('@/app/api/agents/[agentId]/learning/route');
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/agents/agent-a/learning'),
+      { params: Promise.resolve({ agentId: 'agent-a' }) },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.summary.pendingDecisionAge).toEqual({
+      oldestCreatedAt: now - 8 * day,
+      oldestAgeMs: 8 * day,
+      buckets: {
+        under1h: 1,
+        oneTo24h: 0,
+        oneTo7d: 1,
+        over7d: 1,
+      },
+    });
+  });
+
   it('filters decision center records by status, kind, and actor', async () => {
     decisionStore.createDecision({
       id: 'decision-pending-skill-admin',

@@ -55,6 +55,7 @@ export async function GET(
         delivery: decisionStore.listDeliveries(decision.id),
         auditEvents: decisionStore.listAuditEvents(decision.id),
       }));
+      const pendingDecisionAge = summarizePendingDecisionAge(decisions);
       return NextResponse.json({
         config: {
           safety_profile: config.safety_profile,
@@ -68,6 +69,7 @@ export async function GET(
           actionsByStatus: countBy(actions.map((action) => action.status)),
           actionsByType: countBy(actions.map((action) => action.actionType)),
           pendingDecisions: decisions.filter((decision) => decision.status === 'pending').length,
+          pendingDecisionAge,
           decisionsByStatus: countBy(decisions.map((decision) => decision.status)),
           decisionsByKind: countBy(decisions.map((decision) => decision.kind)),
           artifactCount: artifacts.length,
@@ -344,6 +346,51 @@ function invalidDecisionTransition(decisionId: string, from: DecisionStatus, to:
     from,
     to,
   }, { status: 400 });
+}
+
+function summarizePendingDecisionAge(decisions: Array<{ status: DecisionStatus; createdAt: number }>): {
+  oldestCreatedAt?: number;
+  oldestAgeMs?: number;
+  buckets: {
+    under1h: number;
+    oneTo24h: number;
+    oneTo7d: number;
+    over7d: number;
+  };
+} {
+  const now = Date.now();
+  const hour = 60 * 60 * 1000;
+  const day = 24 * hour;
+  const summary = {
+    oldestCreatedAt: undefined as number | undefined,
+    oldestAgeMs: undefined as number | undefined,
+    buckets: {
+      under1h: 0,
+      oneTo24h: 0,
+      oneTo7d: 0,
+      over7d: 0,
+    },
+  };
+
+  for (const decision of decisions) {
+    if (decision.status !== 'pending') continue;
+    const ageMs = Math.max(0, now - decision.createdAt);
+    if (summary.oldestAgeMs === undefined || ageMs > summary.oldestAgeMs) {
+      summary.oldestAgeMs = ageMs;
+      summary.oldestCreatedAt = decision.createdAt;
+    }
+    if (ageMs < hour) {
+      summary.buckets.under1h += 1;
+    } else if (ageMs < day) {
+      summary.buckets.oneTo24h += 1;
+    } else if (ageMs < 7 * day) {
+      summary.buckets.oneTo7d += 1;
+    } else {
+      summary.buckets.over7d += 1;
+    }
+  }
+
+  return summary;
 }
 
 function optionalNumber(value: string | null): number | undefined {
