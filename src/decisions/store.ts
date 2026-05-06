@@ -189,6 +189,7 @@ export class DecisionStore {
   ): DecisionRecord | null {
     const current = this.getDecision(decisionId);
     if (!current) return null;
+    if (!isValidStatusTransition(current.status, status)) return null;
     const now = params.updatedAt ?? Date.now();
     const decidedAt = params.decidedAt ?? (isDecidedStatus(status) ? now : current.decidedAt);
     const appliedAt = params.appliedAt ?? (status === 'applied' ? now : current.appliedAt);
@@ -526,4 +527,20 @@ function isDecidedStatus(status: DecisionStatus): boolean {
     || status === 'rejected'
     || status === 'edit_requested'
     || status === 'expired';
+}
+
+function isValidStatusTransition(from: DecisionStatus, to: DecisionStatus): boolean {
+  if (from === to) return false;
+  switch (from) {
+    case 'pending':
+      return to === 'approved'
+        || to === 'rejected'
+        || to === 'edit_requested'
+        || to === 'expired'
+        || to === 'failed';
+    case 'approved':
+      return to === 'applied' || to === 'failed';
+    default:
+      return false;
+  }
 }

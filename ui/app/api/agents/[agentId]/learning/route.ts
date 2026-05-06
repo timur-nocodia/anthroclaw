@@ -145,6 +145,9 @@ export async function PATCH(
             channel: 'dashboard',
             reason: 'admin_approved',
           });
+          if (!updated) {
+            return invalidDecisionTransition(decision.id, decision.status, 'approved');
+          }
           if (action && action.status === 'proposed') {
             store.updateActionStatus(action.id, 'approved', { updatedAt: Date.now() });
           }
@@ -160,6 +163,9 @@ export async function PATCH(
             reason: 'admin_rejected',
             error: reason,
           });
+          if (!updated) {
+            return invalidDecisionTransition(decision.id, decision.status, 'rejected');
+          }
           if (action && (action.status === 'proposed' || action.status === 'approved')) {
             store.updateActionStatus(action.id, 'rejected', { updatedAt: Date.now(), error: reason });
           }
@@ -176,6 +182,9 @@ export async function PATCH(
             reason: 'admin_edit_requested',
             error: reason,
           });
+          if (!updated) {
+            return invalidDecisionTransition(decision.id, decision.status, 'edit_requested');
+          }
           if (action && (action.status === 'proposed' || action.status === 'approved')) {
             store.updateActionStatus(action.id, 'rejected', { updatedAt: Date.now(), error: reason });
           }
@@ -191,6 +200,9 @@ export async function PATCH(
             reason: 'admin_expired',
             error: reason,
           });
+          if (!updated) {
+            return invalidDecisionTransition(decision.id, decision.status, 'expired');
+          }
           return NextResponse.json({ ok: true, decision: updated, action: action ? store.getAction(action.id) : null });
         }
 
@@ -205,6 +217,9 @@ export async function PATCH(
           appliedAt: Date.now(),
           reason: 'admin_applied',
         });
+        if (!updated) {
+          return invalidDecisionTransition(decision.id, decision.status, 'applied');
+        }
         return NextResponse.json({ ok: true, decision: updated, action: store.getAction(action.id), applied });
       } finally {
         store.close();
@@ -302,6 +317,15 @@ function applyLearningAction(params: {
 
   params.store.updateActionStatus(params.action.id, 'applied', { appliedAt: Date.now() });
   return { kind: 'none' };
+}
+
+function invalidDecisionTransition(decisionId: string, from: DecisionStatus, to: DecisionStatus): NextResponse {
+  return NextResponse.json({
+    error: 'invalid_transition',
+    decisionId,
+    from,
+    to,
+  }, { status: 400 });
 }
 
 function optionalNumber(value: string | null): number | undefined {

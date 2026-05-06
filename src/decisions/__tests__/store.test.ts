@@ -212,4 +212,29 @@ describe('DecisionStore', () => {
     expect(store.listDecisions({ agentId: 'agent-a' }).map((decision) => decision.id))
       .toEqual(['decision-2', 'decision-1']);
   });
+
+  it('rejects invalid state transitions without mutating audit history', () => {
+    store.createDecision({
+      id: 'decision-1',
+      shortCode: 'ABC123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Skill patch',
+      body: 'Patch skill.',
+      risk: 'medium',
+      createdAt: 1000,
+    });
+    store.updateDecisionStatus('decision-1', 'expired', { reason: 'admin_expired', updatedAt: 2000 });
+
+    const approved = store.updateDecisionStatus('decision-1', 'approved', { reason: 'late_approve', updatedAt: 3000 });
+    const applied = store.updateDecisionStatus('decision-1', 'applied', { reason: 'late_apply', updatedAt: 4000 });
+
+    expect(approved).toBeNull();
+    expect(applied).toBeNull();
+    expect(store.getDecision('decision-1')).toMatchObject({ status: 'expired', updatedAt: 2000 });
+    expect(store.listAuditEvents('decision-1').map((event) => event.toStatus))
+      .toEqual(['pending', 'expired']);
+  });
 });

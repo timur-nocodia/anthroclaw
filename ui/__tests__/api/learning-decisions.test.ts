@@ -353,6 +353,39 @@ describe('/api/agents/[agentId]/learning decisions', () => {
     ]));
   });
 
+  it('rejects dashboard transitions for already terminal decisions', async () => {
+    const action = seedSkillAction({ status: 'proposed' });
+    decisionStore.createDecision({
+      id: 'decision-expired',
+      shortCode: 'EXP123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      status: 'expired',
+      agentId: 'agent-a',
+      learningActionId: action.id,
+      reviewId: action.reviewId,
+      subject: 'Create stale skill',
+      body: 'Old proposal.',
+      risk: 'medium',
+      payload: action.payload,
+      createdAt: 2000,
+    });
+
+    const { PATCH } = await import('@/app/api/agents/[agentId]/learning/route');
+    const res = await PATCH(jsonRequest('/api/agents/agent-a/learning', {
+      operation: 'approve_decision',
+      decisionId: 'decision-expired',
+    }), { params: Promise.resolve({ agentId: 'agent-a' }) });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_transition' });
+    expect(decisionStore.getDecision('decision-expired')).toMatchObject({ status: 'expired' });
+    expect(learningStore.getAction(action.id)).toMatchObject({ status: 'proposed' });
+    expect(decisionStore.listAuditEvents('decision-expired').map((event) => event.toStatus))
+      .toEqual(['expired']);
+  });
+
   it('resends a pending decision through the runtime gateway', async () => {
     const resendDecisionPrompt = vi.fn(async () => ({
       ok: true,
