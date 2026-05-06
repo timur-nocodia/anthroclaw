@@ -309,6 +309,46 @@ describe('Gateway decision wiring', () => {
     });
   });
 
+  it('accepts bare numbered replies for an unambiguous admin decision on text-only channels', async () => {
+    const agent = (gateway as any).agents.get('agent-a');
+    agent.config.learning.approvals.admin.routes = [
+      { channel: 'whatsapp', account_id: 'main', peer_id: 'admin-wa-peer' },
+    ];
+    agent.config.learning.approvals.admin.senders = {
+      whatsapp: {
+        main: ['admin-wa-sender'],
+      },
+    };
+
+    store.createDecision({
+      id: 'decision-admin-bare-whatsapp',
+      shortCode: 'WHA777',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Create sales skill',
+      body: 'Reusable workflow.',
+      risk: 'medium',
+      payload: { skillName: 'sales' },
+      createdAt: 1000,
+    });
+
+    const handled = await (gateway as any).handleDecisionTextReply(makeMessage({
+      channel: 'whatsapp',
+      accountId: 'main',
+      peerId: 'admin-wa-peer',
+      senderId: 'admin-wa-sender',
+      text: '1',
+    }));
+
+    expect(handled).toBe(true);
+    expect(store.getDecision('decision-admin-bare-whatsapp')).toMatchObject({
+      status: 'approved',
+      decidedBy: 'admin-wa-sender',
+    });
+  });
+
   it('resends pending decisions through the same delivery targets', async () => {
     store.createDecision({
       id: 'decision-admin-resend',

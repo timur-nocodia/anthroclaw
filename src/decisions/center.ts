@@ -102,14 +102,7 @@ export class DecisionCenter {
     const selected = parseBareDecisionReply(input.rawText);
     if (!selected) return { handled: false, reason: 'not_decision_reply' };
 
-    const matches = this.store.listPendingForOrigin({
-      channel: input.channel,
-      accountId: input.accountId,
-      peerId: input.peerId,
-      senderId: input.senderId,
-      threadId: input.threadId,
-      limit: 2,
-    });
+    const matches = this.listBareReplyCandidates(input, selected);
     if (matches.length === 0) return { handled: false, reason: 'not_found' };
     if (matches.length > 1) {
       return {
@@ -125,6 +118,49 @@ export class DecisionCenter {
       selected,
       rawText: input.rawText,
     });
+  }
+
+  private listBareReplyCandidates(
+    input: {
+      rawText: string;
+      channel: DecisionEvent['channel'];
+      accountId: string;
+      peerId: string;
+      senderId: string;
+      threadId?: string;
+      messageId?: string;
+    },
+    selected: DecisionEvent['selected'],
+  ): DecisionRecord[] {
+    const now = Date.now();
+    const event: DecisionEvent = {
+      ...input,
+      selected,
+      rawText: input.rawText,
+    };
+    const candidates = new Map<string, DecisionRecord>();
+
+    for (const decision of this.store.listPendingForOrigin({
+      channel: input.channel,
+      accountId: input.accountId,
+      peerId: input.peerId,
+      senderId: input.senderId,
+      threadId: input.threadId,
+      now,
+      limit: 2,
+    })) {
+      candidates.set(decision.id, decision);
+    }
+
+    for (const decision of this.store.listDecisions({ status: 'pending', actor: 'admin', limit: 100 })) {
+      if (decision.expiresAt && decision.expiresAt <= now) continue;
+      if (this.isAuthorized(decision, event)) {
+        candidates.set(decision.id, decision);
+        if (candidates.size > 1) break;
+      }
+    }
+
+    return [...candidates.values()];
   }
 
   private isAuthorized(decision: DecisionRecord, event: DecisionEvent): boolean {
