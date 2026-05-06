@@ -1488,8 +1488,10 @@ iteration_budget:
 ## Learning Loop
 
 AnthroClaw can be configured to propose durable learning actions after completed
-runs. It is disabled by default. Proposed actions are stored for review; automatic
-private application is only valid for `safety_profile: private`.
+runs. Newly scaffolded agents use `enabled: true` with `mode: propose`; set
+`enabled: false` and `mode: off` to disable the loop. Proposed actions are
+stored for review; automatic private application is only valid for
+`safety_profile: private`.
 
 ```yaml
 # agent.yml
@@ -1506,6 +1508,22 @@ learning:
     max_total_bytes: 262144
     max_prompt_chars: 24000
     max_snippet_chars: 4000
+  approvals:
+    admin:
+      notify: true
+      routes:
+        - channel: telegram
+          account_id: main
+          peer_id: "48705953"
+          # thread_id: "123"      # optional forum topic/thread id
+      senders:
+        telegram:
+          main:
+            - "48705953"
+      notify_admin_for:
+        - learning_skill
+        - curator_action
+        - tool_approval
 ```
 
 Use `mode: propose` for public and trusted agents. `mode: auto_private` is
@@ -1513,7 +1531,7 @@ rejected unless the agent uses `safety_profile: private`.
 
 ### Rollout Guidance
 
-The schema default is disabled:
+To disable learning explicitly:
 
 ```yaml
 learning:
@@ -1524,15 +1542,75 @@ learning:
 Recommended rollout:
 
 1. Start with `mode: propose` on one private test agent.
-2. Review proposal quality with `pnpm learning list` and `pnpm learning show`.
-3. Apply approved actions manually with `pnpm learning apply`.
-4. Keep public and trusted agents on `propose`; they must not auto-apply skill
+2. Open the dashboard Agent -> Learning tab and check the Decision Center,
+   not only the raw Proposals list. An empty Proposals list means there are no
+   currently matching raw learning actions; it does not prove the reviewer never
+   ran.
+3. Configure admin approval delivery if skill, curator, or tool decisions
+   should arrive in an operator chat.
+4. Review proposal quality with `pnpm learning list` and `pnpm learning show`.
+5. Apply approved actions manually with `pnpm learning apply` or from the
+   dashboard Decision Center.
+6. Keep public and trusted agents on `propose`; they must not auto-apply skill
    changes.
-5. Enable `auto_private` only for a private agent after proposal quality is
+7. Enable `auto_private` only for a private agent after proposal quality is
    manually validated and snapshots/reverts are understood.
 
 The example private agent uses `mode: propose` as a rollout test. It does not
 auto-apply memory or skill changes.
+
+### Decision Center Approvals
+
+Learning uses the durable Decision Center for messenger and dashboard approvals.
+This is separate from the older synchronous tool approval prompt, which is
+in-memory and meant for short SDK tool waits.
+
+User-scoped memory decisions:
+
+- `kind: learning_memory`
+- `actor: originating_user`
+- delivered back to the channel, account, peer, sender, and thread where the
+  candidate was observed
+- approved/rejected by Telegram buttons when available, or by text replies such
+  as `1`, `2`, `/learn approve CODE`, and `/learn reject CODE`
+
+Admin-owned decisions:
+
+- `kind: learning_skill`, `curator_action`, or `tool_approval`
+- `actor: admin`
+- delivered only when `learning.approvals.admin.notify: true`
+- delivered to `learning.approvals.admin.routes`
+- accepted only from sender ids listed under
+  `learning.approvals.admin.senders.<channel>.<account_id>`
+
+For Telegram, `peer_id` is the target chat id for the admin route, and each
+allowed sender id is the Telegram user id that is allowed to approve. In a forum
+topic, add `thread_id`. For WhatsApp/Baileys, inline buttons are not assumed;
+the prompt includes text commands, and the sender must still match the configured
+sender allowlist.
+
+Admin setup in the dashboard:
+
+1. Open Agent -> Learning.
+2. Enable learning and keep `mode: propose` for the initial rollout.
+3. In Admin approval delivery, enable Notify admin chats.
+4. Add a Route for the operator chat: channel, account, peer id, optional thread
+   id.
+5. Add Allowed senders for the same channel/account and the admin user ids that
+   may approve.
+6. Select which decision kinds notify the admin route. The default is skill,
+   curator, and tool decisions; memory decisions usually go to the originating
+   user.
+7. Save learning.
+
+Operational checks:
+
+- Pending approvals appear under Decision Center, with status, actor, delivery,
+  age, audit timeline, and resend controls.
+- Raw learning actions appear under Proposals. They may be empty when decisions
+  are already applied/rejected, filtered out, or no reviewer action was proposed.
+- Use `runDiagnostics()` from `src/cli/doctor.ts` to catch missing admin sender
+  allowlists for admin-chat approval routes.
 
 ### Reviewer Contract
 
@@ -2584,6 +2662,7 @@ Diagnostic checks for validating your setup.
 | Agents directory | Exists with agent subdirectories |
 | Config file | Valid and parseable |
 | Native SDK auth | Claude Code OAuth credentials or `CLAUDE_CODE_OAUTH_TOKEN` available |
+| Learning admin approvals | Admin approval routes have matching sender allowlists |
 | Memory store | SQLite database exists |
 | Rate limits | Persistence file exists |
 | Dependencies | pino, zod, better-sqlite3 importable |
@@ -2886,7 +2965,7 @@ In your cron prompt, add: "If everything is OK, respond with [SILENT]". The agen
 Not through the main runtime config anymore. Primary agent calls now rely on native Claude Code / Agent SDK authentication and retry behavior only.
 
 **Q: How do I diagnose setup issues?**
-Use `runDiagnostics()` from `src/cli/doctor.ts`. It checks Node version, directories, native SDK auth, dependencies, and database integrity.
+Use `runDiagnostics()` from `src/cli/doctor.ts`. It checks Node version, directories, native SDK auth, learning admin approval allowlists, dependencies, and database integrity.
 
 **Q: What security measures are built in?**
 Secret redaction (API keys masked in logs), file write safety (denylist for sensitive paths), SSRF protection (blocks private networks), prompt injection scanning (detects override attempts in context files), PII redaction (hashes user IDs in logs).

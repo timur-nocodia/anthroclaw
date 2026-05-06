@@ -26,6 +26,7 @@ import type {
   OutboundMedia,
   SendOptions,
   ApprovalRequest,
+  ChannelCapabilities,
 } from './types.js';
 import { logger } from '../logger.js';
 import { chunkText, mimeToExtension } from './utils.js';
@@ -94,7 +95,15 @@ const baileysLogger = pino({ level: 'silent' });
 export class WhatsAppChannel implements ChannelAdapter {
   readonly id = 'whatsapp' as const;
   static readonly supportsApproval = false;
+  static readonly capabilities: ChannelCapabilities = {
+    callbacks: false,
+    textReplies: true,
+    editMessage: false,
+    threads: false,
+    reactions: false,
+  };
   readonly supportsApproval = false as const;
+  readonly capabilities = WhatsAppChannel.capabilities;
 
   private config: WhatsAppConfig;
   private sockets = new Map<string, WASocket>();

@@ -136,6 +136,42 @@ describe('plugins config schema', () => {
     }
   });
 
+  it('AgentYmlSchema accepts learning admin approval routes and senders', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...minimalValidAgentYml,
+      learning: {
+        enabled: true,
+        mode: 'propose',
+        approvals: {
+          admin: {
+            notify: true,
+            routes: [
+              {
+                channel: 'telegram',
+                account_id: 'main',
+                peer_id: '48705953',
+                thread_id: '10',
+              },
+            ],
+            senders: {
+              telegram: {
+                main: ['48705953'],
+              },
+            },
+            notify_admin_for: ['learning_skill', 'curator_action'],
+          },
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.learning.approvals.admin.routes).toEqual([
+        expect.objectContaining({ channel: 'telegram', account_id: 'main', peer_id: '48705953' }),
+      ]);
+      expect(result.data.learning.approvals.admin.senders.telegram.main).toEqual(['48705953']);
+    }
+  });
+
   it('example agent is configured for propose-only learning rollout', () => {
     const config = loadAgentYml(resolve(process.cwd(), 'agents', 'example'));
     expect(config.safety_profile).toBe('chat_like_openclaw');

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { loadAgentYml } from '../config/loader.js';
 import { discoverPluginCatalog, PluginInstallStore, runPluginDoctor } from '../plugins/index.js';
 
 export interface CheckResult {
@@ -33,13 +34,16 @@ export async function runDiagnostics(opts: {
   // 5. Native SDK auth
   results.push(checkNativeSdkAuth());
 
-  // 6. Memory store
+  // 6. Learning admin approvals
+  results.push(checkLearningAdminApprovals(opts.agentsDir));
+
+  // 7. Memory store
   results.push(checkMemoryStore(opts.dataDir));
 
-  // 7. Rate limits
+  // 8. Rate limits
   results.push(checkRateLimits(opts.dataDir));
 
-  // 8. Dependencies
+  // 9. Dependencies
   const depResults = await checkDependencies();
   results.push(...depResults);
 
@@ -139,6 +143,56 @@ function checkNativeSdkAuth(): CheckResult {
     status: 'error',
     message: 'Claude Code OAuth credentials not found',
     fix: 'Run claude login or set CLAUDE_CODE_OAUTH_TOKEN',
+  };
+}
+
+function checkLearningAdminApprovals(agentsDir: string): CheckResult {
+  if (!existsSync(agentsDir)) {
+    return { name: 'Learning admin approvals', status: 'ok', message: 'Agents directory missing; skipped' };
+  }
+
+  const findings: string[] = [];
+  let inspected = 0;
+  for (const entry of readdirSync(agentsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    inspected += 1;
+    const agentId = entry.name;
+    const agentDir = join(agentsDir, agentId);
+    const agentYmlPath = join(agentDir, 'agent.yml');
+    if (!existsSync(agentYmlPath)) continue;
+
+    try {
+      const config = loadAgentYml(agentDir);
+      const admin = config.learning.approvals.admin;
+      if (!admin.notify || admin.routes.length === 0) continue;
+      for (const route of admin.routes) {
+        const sendersByAccount = admin.senders[route.channel] ?? {};
+        const allowed = route.account_id
+          ? sendersByAccount[route.account_id] ?? []
+          : Object.values(sendersByAccount).flat();
+        if (allowed.length === 0) {
+          const account = route.account_id ?? '*';
+          findings.push(`${agentId}: ${route.channel}/${account} has admin approval delivery but no sender allowlist`);
+        }
+      }
+    } catch (err) {
+      findings.push(`${agentId}: cannot inspect agent.yml (${err instanceof Error ? err.message : String(err)})`);
+    }
+  }
+
+  if (findings.length > 0) {
+    return {
+      name: 'Learning admin approvals',
+      status: 'warn',
+      message: findings.join('; '),
+      fix: 'Add learning.approvals.admin.senders.<channel>.<account_id> operator sender IDs, or disable learning.approvals.admin.notify.',
+    };
+  }
+
+  return {
+    name: 'Learning admin approvals',
+    status: 'ok',
+    message: inspected === 0 ? 'No agents found' : 'No missing admin sender allowlists',
   };
 }
 

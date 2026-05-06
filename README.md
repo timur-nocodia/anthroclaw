@@ -113,8 +113,10 @@ SDK-native headless reviewer that proposes memory or skill updates after agent r
 - runs a separate review prompt against the run transcript (artifacts exported to `data/learning-artifacts/<agent>/<job>/`)
 - emits **typed proposals** (memory write, skill create/update) into a durable queue
 - two modes: `propose` (review-only, requires operator approval) or `auto_private` (auto-apply, only allowed in `private` profile)
+- Decision Center turns learning actions into durable approvals: user-scoped memory asks the originating messenger user; skill/curator/tool decisions require admin approval
+- Telegram renders inline buttons; WhatsApp and future text-only channels render `/learn approve CODE`, `/learn reject CODE`, and numbered replies
 - CLI to review/apply proposals: `pnpm learning`
-- dashboard Learning tab to inspect and act on proposals
+- dashboard Learning tab to inspect decisions, delivery attempts, audit history, and raw proposals
 - native learning skill at `.claude/skills/anthroclaw-learning/SKILL.md` for stable reviewer guidance
 
 ### Scheduled tasks (cron) as a runtime primitive
@@ -420,11 +422,26 @@ plugins:
   lcm:
     enabled: true
 
-# Optional: enable propose-only learning loop.
+# Optional: configure the propose-only learning loop.
 # learning:
 #   enabled: true
 #   mode: propose
 #   review_interval_turns: 10
+#   approvals:
+#     admin:
+#       notify: true
+#       routes:
+#         - channel: telegram
+#           account_id: main
+#           peer_id: "ADMIN_CHAT_ID"
+#       senders:
+#         telegram:
+#           main:
+#             - "ADMIN_USER_ID"
+#       notify_admin_for:
+#         - learning_skill
+#         - curator_action
+#         - tool_approval
 ```
 
 For other profiles (`public`, `trusted`, `private`), see the [agent.yml reference](docs/guide.md#agentyml-reference) in the guide.

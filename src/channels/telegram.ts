@@ -12,6 +12,7 @@ import type {
   SendOptions,
   InlineButton,
   ApprovalRequest,
+  ChannelCapabilities,
 } from './types.js';
 import { chunkText, mimeToExtension } from './utils.js';
 
@@ -50,7 +51,15 @@ function buildInlineKeyboard(buttons: InlineButton[][]): {
 export class TelegramChannel implements ChannelAdapter {
   readonly id = 'telegram' as const;
   static readonly supportsApproval = true;
+  static readonly capabilities: ChannelCapabilities = {
+    callbacks: true,
+    textReplies: true,
+    editMessage: true,
+    threads: true,
+    reactions: true,
+  };
   readonly supportsApproval = true as const;
+  readonly capabilities = TelegramChannel.capabilities;
 
   private bots = new Map<string, Bot>();
   private handler: ((msg: InboundMessage) => Promise<void>) | null = null;

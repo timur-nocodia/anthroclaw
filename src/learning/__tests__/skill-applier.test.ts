@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -73,6 +74,26 @@ describe('applySkillAction', () => {
         reason: 'before skill_patch',
       }),
     ]);
+  });
+
+  it('rejects stale skill patches when the base content hash changed', () => {
+    const skillPath = seedSkill('publishing', VALID_SKILL);
+    writeFileSync(skillPath, `${VALID_SKILL}\nManual admin edit.\n`, 'utf8');
+
+    expect(() => applySkillAction(baseParams(action({
+      id: 'action-stale-patch',
+      actionType: 'skill_patch',
+      payload: {
+        skillName: 'publishing',
+        oldText: 'Always ask before publishing.',
+        newText: 'Always ask before publishing or scheduling.',
+        baseContentHash: sha256(VALID_SKILL),
+      },
+    })))).toThrow(/stale skill payload/);
+
+    expect(readFileSync(skillPath, 'utf8')).toBe(`${VALID_SKILL}\nManual admin edit.\n`);
+    expect(learningStore.getAction('action-stale-patch')).toMatchObject({ status: 'proposed' });
+    expect(learningStore.listSkillSnapshots({ actionId: 'action-stale-patch' })).toHaveLength(0);
   });
 
   it('updates full skill content with a snapshot before write', () => {
@@ -211,4 +232,8 @@ function action(overrides: Partial<LearningActionRecord> = {}): LearningActionRe
     updatedAt: now,
     ...overrides,
   };
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }

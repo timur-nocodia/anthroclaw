@@ -52,6 +52,14 @@ export interface SendOptions {
   parseMode?: 'markdown' | 'html' | 'plain';
 }
 
+export interface ChannelCapabilities {
+  callbacks: boolean;
+  textReplies: boolean;
+  editMessage: boolean;
+  threads: boolean;
+  reactions: boolean;
+}
+
 export interface InlineButton {
   text: string;
   callbackData?: string;
@@ -109,6 +117,7 @@ export interface ChannelAdapter {
   sendMedia(peerId: string, media: OutboundMedia, opts?: SendOptions): Promise<string>;
   sendTyping(peerId: string, accountId?: string, threadId?: string): Promise<void>;
   setReaction?(peerId: string, messageId: string, emoji: string, accountId?: string): Promise<void>;
+  readonly capabilities?: ChannelCapabilities;
   readonly supportsApproval: boolean;
   promptForApproval(req: ApprovalRequest): Promise<void>;
   /** Subscribe to adapter-level events such as `operator_outbound`. */

@@ -114,6 +114,8 @@ function applySkillUpdateFull(
   const body = requirePayloadString(params.action.payload, 'body');
   validateSkillDocument(body);
   assertSkillExists(skillPath);
+  const current = readFileSync(skillPath, 'utf8');
+  assertBaseContentHashMatches(params.action.payload, current);
   const snapshotId = snapshotExistingSkill(params, skillName, skillPath, 'before skill_update_full');
   atomicWriteFile(skillPath, body);
   if (params.autoApply ?? true) {
@@ -142,6 +144,7 @@ function applySkillPatch(
     throw new Error('skill_patch payload.oldText must not be empty');
   }
   const current = readFileSync(skillPath, 'utf8');
+  assertBaseContentHashMatches(params.action.payload, current);
   const occurrences = countOccurrences(current, oldText);
   if (occurrences === 0) {
     throw new Error('skill_patch oldText target was not found');
@@ -211,6 +214,16 @@ function validateOptionalPayloadPath(workspacePath: string, payload: Record<stri
   const relativePath = toPortablePath(relative(workspacePath, resolved.skillPath));
   if (relativePath !== expected) {
     throw new Error('Resolved skill path did not match expected native skill path');
+  }
+}
+
+function assertBaseContentHashMatches(payload: Record<string, unknown>, current: string): void {
+  const expected = readPayloadString(payload, 'baseContentHash')
+    ?? readPayloadString(payload, 'expectedContentHash');
+  if (!expected) return;
+  const actual = sha256(current);
+  if (actual !== expected) {
+    throw new Error(`stale skill payload: baseContentHash ${expected} does not match current content hash ${actual}`);
   }
 }
 

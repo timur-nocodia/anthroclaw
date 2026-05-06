@@ -26,6 +26,7 @@ describe('learning rubric protocol', () => {
     expect(prompt).toContain('reusability');
     expect(prompt).toContain('safety');
     expect(prompt).toContain('recommendedActionClass');
+    expect(prompt).toContain('baseContentHash');
     expect(prompt).toContain('Return ONLY strict JSON');
     expect(prompt).toContain('artifact body');
   });

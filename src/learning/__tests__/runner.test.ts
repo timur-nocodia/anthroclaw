@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryStore } from '../../memory/store.js';
+import { DecisionStore } from '../../decisions/store.js';
 import { LearningStore } from '../store.js';
 import { runLearningReview } from '../runner.js';
 import type { LearningReviewJob } from '../queue.js';
@@ -20,6 +21,7 @@ describe('runLearningReview', () => {
   let dataDir: string;
   let workspacePath: string;
   let learningStore: LearningStore;
+  let decisionStore: DecisionStore;
   let memoryStore: MemoryStore;
 
   beforeEach(() => {
@@ -39,12 +41,14 @@ describe('runLearningReview', () => {
       '  mode: propose',
     ].join('\n'));
     learningStore = new LearningStore(join(dataDir, 'learning.sqlite'));
+    decisionStore = new DecisionStore(join(dataDir, 'decision-center.sqlite'));
     memoryStore = new MemoryStore(join(dataDir, 'memory-db', 'agent-a.sqlite'));
     mockedRunHeadlessReview.mockReset();
   });
 
   afterEach(() => {
     learningStore?.close();
+    decisionStore?.close();
     memoryStore?.close();
     rmSync(root, { recursive: true, force: true });
   });
@@ -140,6 +144,72 @@ describe('runLearningReview', () => {
       status: 'applied',
     });
     expect(memoryStore.textSearch('local plan checklist untracked', 5)).toHaveLength(1);
+  });
+
+  it('creates originating-user decisions for proposed memory candidates with messenger origin metadata', async () => {
+    mockedRunHeadlessReview.mockResolvedValue(JSON.stringify({
+      actions: [{
+        type: 'memory_candidate',
+        confidence: 0.72,
+        title: 'Remember Russian replies',
+        rationale: 'User explicitly asked for Russian.',
+        payload: {
+          kind: 'preference',
+          text: 'The user prefers Russian replies.',
+          reason: 'Explicit user preference.',
+        },
+      }],
+    }));
+
+    const result = await runLearningReview({
+      job: makeJob({
+        metadata: {
+          userText: 'Запомни: отвечай мне по-русски.',
+          assistantText: 'Понял.',
+          channel: 'telegram',
+          originChannel: 'telegram',
+          originAccountId: 'main',
+          originPeerId: 'peer-1',
+          originSenderId: 'sender-1',
+          originMessageId: 'msg-1',
+        },
+      }),
+      agent: makeAgent({ learningMode: 'propose' }),
+      dataDir,
+      store: learningStore,
+      decisionStore,
+    });
+
+    const [action] = learningStore.listActions({ agentId: 'agent-a' });
+    const [decision] = decisionStore.listPendingForOrigin({
+      channel: 'telegram',
+      accountId: 'main',
+      peerId: 'peer-1',
+      senderId: 'sender-1',
+      now: 2,
+    });
+
+    expect(decision).toMatchObject({
+      kind: 'learning_memory',
+      scope: 'user',
+      actor: 'originating_user',
+      status: 'pending',
+      agentId: 'agent-a',
+      learningActionId: action.id,
+      reviewId: action.reviewId,
+      subject: 'Remember Russian replies',
+      payload: expect.objectContaining({
+        text: 'The user prefers Russian replies.',
+      }),
+      originChannel: 'telegram',
+      originAccountId: 'main',
+      originPeerId: 'peer-1',
+      originSenderId: 'sender-1',
+      originMessageId: 'msg-1',
+    });
+    expect(result?.decisions).toEqual([
+      expect.objectContaining({ id: decision.id, learningActionId: action.id }),
+    ]);
   });
 
   function makeAgent(input: { learningMode: 'propose' | 'auto_private' }) {

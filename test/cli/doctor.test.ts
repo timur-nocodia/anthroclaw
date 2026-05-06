@@ -113,6 +113,37 @@ describe('runDiagnostics', () => {
     expect(check.fix).toBe('Create config.yml');
   });
 
+  it('warns when learning admin approval routes have no sender allowlist', async () => {
+    mkdirSync(dataDir, { recursive: true });
+    mkdirSync(join(agentsDir, 'lead-agent'), { recursive: true });
+    writeFileSync(join(agentsDir, 'lead-agent', 'agent.yml'), [
+      'safety_profile: private',
+      'routes:',
+      '  - channel: telegram',
+      '    scope: dm',
+      'learning:',
+      '  enabled: true',
+      '  mode: propose',
+      '  approvals:',
+      '    admin:',
+      '      notify: true',
+      '      routes:',
+      '        - channel: telegram',
+      '          account_id: main',
+      '          peer_id: "48705953"',
+      '      notify_admin_for:',
+      '        - learning_skill',
+    ].join('\n'));
+
+    const results = await runDiagnostics({ dataDir, agentsDir, globalConfig: true });
+    const check = findCheck(results, 'Learning admin approvals');
+
+    expect(check.status).toBe('warn');
+    expect(check.message).toContain('lead-agent');
+    expect(check.message).toContain('telegram/main');
+    expect(check.fix).toContain('learning.approvals.admin.senders');
+  });
+
   // ─── Native SDK auth ───────────────────────────────────────────
 
   it('reports native SDK auth status based on env var', async () => {
@@ -216,11 +247,12 @@ describe('runDiagnostics', () => {
     expect(names).toContain('Agents directory');
     expect(names).toContain('Config file');
     expect(names).toContain('Native SDK auth');
+    expect(names).toContain('Learning admin approvals');
     expect(names).toContain('Memory store');
     expect(names).toContain('Rate limits');
     expect(names).toContain('Dependency: pino');
     expect(names).toContain('Dependency: zod');
     expect(names).toContain('Dependency: better-sqlite3');
-    expect(results.length).toBe(10);
+    expect(results.length).toBe(11);
   });
 });
