@@ -8,6 +8,7 @@ import type {
   LearningActionType,
 } from './types.js';
 import { LearningStore } from './store.js';
+import { LearningReviewRubricSchema, type LearningReviewRubric } from './rubric.js';
 
 const DEFAULT_MAX_ACTIONS = 8;
 const DEFAULT_MAX_PAYLOAD_CHARS = 16_000;
@@ -26,6 +27,7 @@ const ReviewerActionSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
   title: z.string().max(240).optional(),
   rationale: z.string().max(4_000).optional(),
+  rubric: LearningReviewRubricSchema.optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
 }).strict();
 
@@ -44,6 +46,7 @@ export interface NormalizedLearningAction {
   confidence?: number;
   title: string;
   rationale: string;
+  rubric?: LearningReviewRubric;
   payload: Record<string, unknown>;
 }
 
@@ -94,6 +97,7 @@ export function parseLearningReviewOutput(
       confidence: action.confidence,
       title: action.title ?? defaultTitle(action.type),
       rationale: action.rationale ?? '',
+      rubric: action.rubric,
       payload,
     };
   });

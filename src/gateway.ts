@@ -4,12 +4,15 @@ import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path'
 import { fileURLToPath } from 'node:url';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
-  discoverPlugins,
   loadPlugin,
+  discoverPluginCatalog,
+  PluginInstallStore,
+  buildPluginStartupPlan,
   createPluginContext,
   PluginRegistry,
   startPluginsWatcher,
   type DiscoveredPlugin,
+  type PluginCatalog,
   type PluginsWatcher,
   type ContextEngine,
 } from './plugins/index.js';
@@ -357,6 +360,11 @@ function readStringMeta(meta: Record<string, unknown>, key: string): string | un
 function readNumberMeta(meta: Record<string, unknown>, key: string): number {
   const value = meta[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function readStringArrayMeta(meta: Record<string, unknown>, key: string): string[] {
+  const value = meta[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
 function sessionProvenanceFromRun(
@@ -752,6 +760,7 @@ export class Gateway {
   private fileOwnershipRegistry = new FileOwnershipRegistry();
   private approvalBroker = new ApprovalBroker();
   public pluginRegistry: PluginRegistry = new PluginRegistry();
+  public pluginCatalog: PluginCatalog = { entries: [], duplicates: [] };
   private pluginsWatcher: PluginsWatcher | null = null;
   private resolvedPluginsDir: string | null = null;
   private learningStore: LearningStore | null = null;
@@ -920,7 +929,46 @@ export class Gateway {
     // ─── Plugin discovery & registration ────────────────────────────
     this.pluginRegistry = new PluginRegistry();
     this.resolvedPluginsDir = pluginsDir ?? joinPath(dataDir, '..', 'plugins');
-    const discovered = await discoverPlugins(this.resolvedPluginsDir);
+    const managedPluginsDir = joinPath(dataDir, 'plugins-installed');
+    const installStore = new PluginInstallStore(joinPath(dataDir, 'plugin-installs.json'));
+    let installRecords: ReturnType<PluginInstallStore['list']> = [];
+    try {
+      installRecords = installStore.list();
+    } catch (err) {
+      logger.error({ err }, 'plugin install store unreadable; managed install metadata ignored');
+    }
+    this.pluginCatalog = await discoverPluginCatalog({
+      bundledDir: this.resolvedPluginsDir,
+      managedDir: managedPluginsDir,
+      installRecords,
+    });
+    for (const entry of this.pluginCatalog.entries) {
+      if (entry.status !== 'ok') {
+        logger.warn({
+          plugin: entry.name,
+          sourceType: entry.sourceType,
+          status: entry.status,
+          diagnostics: entry.diagnostics,
+        }, 'plugin catalog entry is not loadable');
+      }
+    }
+    const startupPlan = buildPluginStartupPlan({
+      catalog: this.pluginCatalog,
+      agentPluginConfigs: [...this.agents.values()].map((agent) => agent.config.plugins ?? {}),
+    });
+    for (const pluginName of startupPlan.missingEnabledNames) {
+      logger.warn({ plugin: pluginName }, 'agent enables plugin that is not present in catalog');
+    }
+    for (const pluginName of startupPlan.unloadableEnabledNames) {
+      logger.warn({ plugin: pluginName }, 'agent enables plugin that is not loadable');
+    }
+    const discovered = this.pluginCatalog.entries
+      .filter((entry) => startupPlan.loadNames.has(entry.name) && entry.loadable && entry.manifest)
+      .map((entry): DiscoveredPlugin => ({
+        manifest: entry.manifest!,
+        pluginDir: entry.pluginDir,
+        manifestPath: entry.manifestPath,
+      }));
     for (const d of discovered) {
       try {
         await this.loadAndRegisterPlugin(d, dataDir);
@@ -1217,6 +1265,29 @@ export class Gateway {
    */
   getResolvedPluginsDir(): string | null {
     return this.resolvedPluginsDir;
+  }
+
+  async loadCatalogPluginForRuntime(pluginName: string): Promise<boolean> {
+    if (!this.dataDir) return false;
+    if (this.pluginRegistry.listPlugins().some((entry) => entry.manifest.name === pluginName)) {
+      return true;
+    }
+    const catalogEntry = this.pluginCatalog.entries.find((entry) => entry.name === pluginName);
+    if (!catalogEntry?.loadable || !catalogEntry.manifest) {
+      return false;
+    }
+    await this.loadAndRegisterPlugin({
+      manifest: catalogEntry.manifest,
+      pluginDir: catalogEntry.pluginDir,
+      manifestPath: catalogEntry.manifestPath,
+    }, this.dataDir);
+    this.pluginCatalog = {
+      ...this.pluginCatalog,
+      entries: this.pluginCatalog.entries.map((entry) =>
+        entry.name === pluginName ? { ...entry, loaded: true } : entry,
+      ),
+    };
+    return true;
   }
 
   /**
@@ -3009,6 +3080,7 @@ export class Gateway {
     const toolCalls = readNumberMeta(rawMeta, 'agentToolCalls');
     const recoveredToolErrors = readNumberMeta(rawMeta, 'agentRecoveredToolErrors');
     const skillOrMemoryActivity = rawMeta.agentSkillOrMemoryActivity === true;
+    const activeSkills = readStringArrayMeta(rawMeta, 'agentActiveSkills');
     const triggers = detectLearningTriggers({
       reviewIntervalTurns: config.review_interval_turns,
       turnCount: params.agent.getMessageCount(params.sessionKey),
@@ -3037,6 +3109,7 @@ export class Gateway {
         recoveredToolErrors,
         skillOrMemoryActivity,
         compressionOrLcmActivity: params.compressionOrLcmActivity,
+        activeSkills,
       },
     });
     logger.debug({

@@ -286,6 +286,7 @@ export function createAgent(
   mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
 
   const agentModel = model ?? 'claude-sonnet-4-6';
+  const valueSafeDefaults = createValueSafeDefaults(id);
 
   if (template === 'example') {
     const config = {
@@ -296,11 +297,26 @@ export function createAgent(
       pairing: { mode: 'off' },
       mcp_tools: ['memory_search', 'memory_write', 'send_message', 'list_skills', 'manage_cron'],
       queue_mode: 'collect',
+      ...valueSafeDefaults,
+      heartbeat: {
+        enabled: true,
+        every: '30m',
+        target: 'last',
+        isolated_session: true,
+        show_ok: false,
+        ack_token: 'HEARTBEAT_OK',
+        prompt: 'Read HEARTBEAT.md and run due tasks only. If nothing needs attention, reply HEARTBEAT_OK.',
+      },
     };
     writeFileSync(join(dir, 'agent.yml'), stringifyYaml(config), 'utf-8');
     writeFileSync(
       join(dir, 'CLAUDE.md'),
       `# ${id}\n\nYou are ${id}, a friendly conversational assistant available via messaging.\n\nBe warm and curious. Search memory before answering questions about past events. Write important facts to daily memory proactively.\n`,
+      'utf-8',
+    );
+    writeFileSync(
+      join(dir, 'HEARTBEAT.md'),
+      '# Heartbeat Tasks\n\n- [ ] Review recent activity and report only actionable issues.\n',
       'utf-8',
     );
   } else {
@@ -309,10 +325,51 @@ export function createAgent(
       model: agentModel,
       safety_profile: getDefaultProfile(),
       routes: [{ channel: 'telegram', scope: 'dm' }],
+      ...valueSafeDefaults,
     };
     writeFileSync(join(dir, 'agent.yml'), stringifyYaml(config), 'utf-8');
     writeFileSync(join(dir, 'CLAUDE.md'), `# ${id}\n`, 'utf-8');
   }
+}
+
+function createValueSafeDefaults(agentId: string): Record<string, unknown> {
+  return {
+    memory_extraction: {
+      enabled: true,
+      max_candidates: 5,
+      max_input_chars: 6000,
+    },
+    learning: {
+      enabled: true,
+      mode: 'propose',
+      review_interval_turns: 10,
+      skill_review_min_tool_calls: 8,
+      max_actions_per_review: 8,
+      max_input_chars: 24_000,
+      artifacts: {
+        max_files: 32,
+        max_file_bytes: 65_536,
+        max_total_bytes: 262_144,
+        max_prompt_chars: 24_000,
+        max_snippet_chars: 4_000,
+      },
+    },
+    plugins: {
+      lcm: {
+        enabled: true,
+      },
+      'file-transfer': {
+        enabled: true,
+        roots: [`agents/${agentId}`],
+        allowWrite: false,
+      },
+    },
+    sdk: {
+      promptSuggestions: true,
+      agentProgressSummaries: true,
+      includePartialMessages: true,
+    },
+  };
 }
 
 /**

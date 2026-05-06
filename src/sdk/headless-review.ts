@@ -9,6 +9,12 @@ export interface HeadlessReviewOptions {
   model?: string;
   cwd?: string;
   timeoutMs?: number;
+  runtimeDefaults?: {
+    model?: string;
+    cwd?: string;
+    timeoutMs?: number;
+    allowedTools?: string[];
+  };
   purpose?: string;
   toolDenyMessage?: string;
 }
@@ -21,13 +27,13 @@ export interface HeadlessReviewOptions {
  * reviewers.
  */
 export async function runHeadlessReview(opts: HeadlessReviewOptions): Promise<string> {
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeoutMs = opts.timeoutMs ?? opts.runtimeDefaults?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
   const purpose = opts.purpose ?? 'headless review';
 
   const sdkOptions: Options = {
-    model: opts.model ?? 'claude-sonnet-4-6',
-    cwd: opts.cwd ?? process.cwd(),
+    model: opts.model ?? opts.runtimeDefaults?.model ?? 'claude-sonnet-4-6',
+    cwd: opts.cwd ?? opts.runtimeDefaults?.cwd ?? process.cwd(),
     tools: [],
     allowedTools: [],
     permissionMode: 'dontAsk',

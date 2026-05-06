@@ -29,11 +29,13 @@ export async function GET(
 
     const gw = await getGateway();
     const entry = gw.pluginRegistry.listPlugins().find((p) => p.manifest.name === name);
-    if (!entry) {
+    const catalogEntry = getCatalogEntry(gw, name);
+    const manifest = entry?.manifest ?? catalogEntry?.manifest;
+    if (!manifest) {
       return NextResponse.json({ error: 'unknown_plugin' }, { status: 404 });
     }
 
-    const configSchemaRel = entry.manifest.configSchema;
+    const configSchemaRel = manifest.configSchema;
     if (!configSchemaRel || typeof configSchemaRel !== 'string') {
       return NextResponse.json({ error: 'no_config_schema' }, { status: 404 });
     }
@@ -44,7 +46,7 @@ export async function GET(
       typeof (gw as unknown as { getResolvedPluginsDir?: () => string }).getResolvedPluginsDir === 'function'
         ? (gw as unknown as { getResolvedPluginsDir: () => string }).getResolvedPluginsDir()
         : undefined;
-    const pluginDir = getPluginDir(name, pluginsDirOverride);
+    const pluginDir = catalogEntry?.pluginDir ?? getPluginDir(name, pluginsDirOverride);
     const schemaPath = resolveConfigSchemaPath(pluginDir, configSchemaRel);
 
     const schema = await loadPluginConfigSchema(name, schemaPath);
@@ -66,4 +68,19 @@ export async function GET(
     const response: PluginConfigSchemaResponse = { name, jsonSchema, defaults };
     return NextResponse.json(response);
   });
+}
+
+interface CatalogConfigEntry {
+  name: string;
+  pluginDir: string;
+  manifest?: {
+    name: string;
+    version: string;
+    configSchema?: string;
+  };
+}
+
+function getCatalogEntry(gw: Awaited<ReturnType<typeof getGateway>>, name: string): CatalogConfigEntry | null {
+  const catalog = (gw as unknown as { pluginCatalog?: { entries?: CatalogConfigEntry[] } }).pluginCatalog;
+  return catalog?.entries?.find((entry) => entry.name === name) ?? null;
 }

@@ -250,6 +250,15 @@ describe('AgentYmlSchema', () => {
     expect(result.routes[0].channel).toBe('telegram');
     expect(result.routes[0].scope).toBe('any');
     expect(result.routes[0].mention_only).toBe(false);
+    expect(result.memory_extraction).toMatchObject({
+      enabled: true,
+      max_candidates: 5,
+      max_input_chars: 6000,
+    });
+    expect(result.learning).toMatchObject({
+      enabled: true,
+      mode: 'propose',
+    });
   });
 
   it('rejects routes with zero entries', () => {

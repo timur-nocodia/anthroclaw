@@ -58,19 +58,21 @@ export async function PUT(
 
     const gw = await getGateway();
     const entry = gw.pluginRegistry.listPlugins().find((p) => p.manifest.name === name);
-    if (!entry) {
+    const catalogEntry = getCatalogEntry(gw, name);
+    const manifest = entry?.manifest ?? catalogEntry?.manifest;
+    if (!manifest) {
       throw new ValidationError('unknown_plugin', `Plugin not installed: ${name}`);
     }
 
     // Validate against the plugin's Zod schema before writing — operators
     // shouldn't be able to push invalid configs through the UI.
-    const configSchemaRel = entry.manifest.configSchema;
+    const configSchemaRel = manifest.configSchema;
     if (configSchemaRel && typeof configSchemaRel === 'string') {
       const pluginsDirOverride =
         typeof (gw as unknown as { getResolvedPluginsDir?: () => string }).getResolvedPluginsDir === 'function'
           ? (gw as unknown as { getResolvedPluginsDir: () => string }).getResolvedPluginsDir()
           : undefined;
-      const pluginDir = getPluginDir(name, pluginsDirOverride);
+      const pluginDir = catalogEntry?.pluginDir ?? getPluginDir(name, pluginsDirOverride);
       const schemaPath = resolveConfigSchemaPath(pluginDir, configSchemaRel);
       const schema = await loadPluginConfigSchema(name, schemaPath);
       if (schema) {
@@ -98,4 +100,19 @@ export async function PUT(
 
     return NextResponse.json({ ok: true });
   });
+}
+
+interface CatalogConfigEntry {
+  name: string;
+  pluginDir: string;
+  manifest?: {
+    name: string;
+    version: string;
+    configSchema?: string;
+  };
+}
+
+function getCatalogEntry(gw: Awaited<ReturnType<typeof getGateway>>, name: string): CatalogConfigEntry | null {
+  const catalog = (gw as unknown as { pluginCatalog?: { entries?: CatalogConfigEntry[] } }).pluginCatalog;
+  return catalog?.entries?.find((entry) => entry.name === name) ?? null;
 }

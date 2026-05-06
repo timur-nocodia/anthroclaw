@@ -84,6 +84,11 @@ const PLUGIN_LCM = {
   hasMcpTools: true,
   hasContextEngine: true,
   toolCount: 2,
+  sourceType: "bundled",
+  installRoot: "/tmp/plugins/lcm",
+  managed: false,
+  loaded: true,
+  status: "ok",
 };
 
 const PLUGIN_EXAMPLE = {
@@ -94,6 +99,28 @@ const PLUGIN_EXAMPLE = {
   hasMcpTools: false,
   hasContextEngine: false,
   toolCount: 0,
+  sourceType: "bundled",
+  installRoot: "/tmp/plugins/example",
+  managed: false,
+  loaded: true,
+  status: "ok",
+};
+
+const PLUGIN_FILE_TRANSFER = {
+  name: "file-transfer",
+  version: "1.2.3",
+  description: "File transfer",
+  hasConfigSchema: false,
+  hasMcpTools: false,
+  hasContextEngine: false,
+  toolCount: 0,
+  sourceType: "managed",
+  sourceSpec: "/tmp/source/file-transfer",
+  installRoot: "/tmp/data/plugins-installed/file-transfer",
+  managed: true,
+  loaded: false,
+  dependencyState: "ok",
+  status: "ok",
 };
 
 const LCM_SCHEMA = {
@@ -175,6 +202,28 @@ describe("<PluginsPanel />", () => {
     const exampleCard = screen.getByTestId("plugin-card-example");
     expect(within(exampleCard).getByText("example")).toBeInTheDocument();
     expect(within(exampleCard).getByText(/v0\.0\.1/)).toBeInTheDocument();
+  });
+
+  it("renders managed catalog metadata for installed-but-not-loaded plugins", async () => {
+    on("GET", /\/api\/plugins$/, () => ({
+      body: { plugins: [PLUGIN_FILE_TRANSFER] },
+    }));
+    on("GET", /\/api\/agents\/.+\/plugins$/, () => ({
+      body: {
+        agentId: "alpha",
+        plugins: [{ name: "file-transfer", enabled: false, config: {} }],
+      },
+    }));
+
+    render(<PluginsPanel agentId="alpha" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("plugin-card-file-transfer")).toBeInTheDocument();
+    });
+    const card = screen.getByTestId("plugin-card-file-transfer");
+    expect(within(card).getByText(/Managed/)).toBeInTheDocument();
+    expect(within(card).getByText(/Not loaded/)).toBeInTheDocument();
+    expect(within(card).getByText(/deps ok/)).toBeInTheDocument();
   });
 
   it("renders enabled/disabled state correctly per agent", async () => {

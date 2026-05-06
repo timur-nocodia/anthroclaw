@@ -199,9 +199,9 @@ function normalizeLearningConfig(value: unknown): {
     : {};
   const mode: LearningMode = input.mode === 'propose' || input.mode === 'auto_private' || input.mode === 'off'
     ? input.mode
-    : 'off';
+    : 'propose';
   return {
-    enabled: input.enabled === true,
+    enabled: input.enabled !== false,
     mode,
     review_interval_turns: finiteNumber(input.review_interval_turns, 10),
     skill_review_min_tool_calls: finiteNumber(input.skill_review_min_tool_calls, 8),

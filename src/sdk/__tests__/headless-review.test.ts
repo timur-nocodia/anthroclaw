@@ -58,6 +58,33 @@ describe('runHeadlessReview', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it('inherits safe runtime defaults but never inherits tool access', async () => {
+    const events = (async function* () {
+      yield { type: 'result', result: 'review-json' };
+    })();
+    mockedQuery.mockReturnValue({
+      [Symbol.asyncIterator]: () => events,
+      close: vi.fn(),
+    });
+
+    await runHeadlessReview({
+      prompt: 'review this',
+      runtimeDefaults: {
+        model: 'claude-opus-4-5',
+        cwd: '/workspace/agent',
+        timeoutMs: 12_000,
+        allowedTools: ['Bash', 'Read'],
+      },
+    });
+
+    const callArg = mockedQuery.mock.calls[0][0];
+    expect(callArg.options.model).toBe('claude-opus-4-5');
+    expect(callArg.options.cwd).toBe('/workspace/agent');
+    expect(callArg.options.tools).toEqual([]);
+    expect(callArg.options.allowedTools).toEqual([]);
+    await expect(callArg.options.canUseTool()).resolves.toMatchObject({ behavior: 'deny' });
+  });
+
   it('extracts assistant text blocks if no result event is emitted', async () => {
     const events = (async function* () {
       yield {

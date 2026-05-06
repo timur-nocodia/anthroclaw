@@ -60,23 +60,51 @@ interface FakePluginEntry {
   hasEngine: boolean;
 }
 
-function makeFakeGateway(plugins: FakePluginEntry[]) {
+function makeFakeGateway(plugins: FakePluginEntry[], catalogEntries?: Array<Record<string, unknown>>) {
   const enabled = new Map<string, Set<string>>();
+  const runtimePlugins = [...plugins];
+  const catalog = {
+    entries: catalogEntries ?? runtimePlugins.map((p) => ({
+      name: p.manifest.name,
+      version: p.manifest.version,
+      sourceType: 'bundled',
+      pluginDir: `/tmp/plugins/${p.manifest.name}`,
+      manifestPath: `/tmp/plugins/${p.manifest.name}/.claude-plugin/plugin.json`,
+      manifest: p.manifest,
+      loadable: true,
+      loaded: true,
+      status: 'ok',
+      diagnostics: [],
+    })),
+    duplicates: [],
+  };
   return {
     enableForAgentSpy: vi.fn(),
     disableForAgentSpy: vi.fn(),
     refreshAgentPluginTools: vi.fn(),
     notifyAgentConfigChanged: vi.fn().mockResolvedValue(undefined),
+    pluginCatalog: catalog,
+    loadCatalogPluginForRuntime: vi.fn(async (name: string) => {
+      const catalogEntry = catalog.entries.find((entry) => entry.name === name);
+      if (!catalogEntry?.manifest) return false;
+      runtimePlugins.push({
+        manifest: catalogEntry.manifest as FakePluginEntry['manifest'],
+        instance: {},
+        tools: [],
+        hasEngine: false,
+      });
+      return true;
+    }),
     pluginRegistry: {
       listPlugins: vi.fn(() =>
-        plugins.map((p) => ({ manifest: p.manifest, instance: p.instance })),
+        runtimePlugins.map((p) => ({ manifest: p.manifest, instance: p.instance })),
       ),
       getMcpToolsForPlugin: vi.fn((name: string) => {
-        const p = plugins.find((x) => x.manifest.name === name);
+        const p = runtimePlugins.find((x) => x.manifest.name === name);
         return p ? p.tools : [];
       }),
       hasContextEngineForPlugin: vi.fn((name: string) => {
-        const p = plugins.find((x) => x.manifest.name === name);
+        const p = runtimePlugins.find((x) => x.manifest.name === name);
         return p?.hasEngine ?? false;
       }),
       isEnabledFor: vi.fn(
@@ -84,7 +112,7 @@ function makeFakeGateway(plugins: FakePluginEntry[]) {
           enabled.get(agentId)?.has(pluginName) ?? false,
       ),
       enableForAgent: vi.fn((agentId: string, pluginName: string) => {
-        if (!plugins.some((p) => p.manifest.name === pluginName)) {
+        if (!runtimePlugins.some((p) => p.manifest.name === pluginName)) {
           throw new Error(`unknown plugin: ${pluginName}`);
         }
         const set = enabled.get(agentId) ?? new Set<string>();
@@ -142,6 +170,13 @@ describe('GET /api/plugins', () => {
       hasMcpTools: true,
       hasContextEngine: true,
       toolCount: 2,
+      sourceType: 'bundled',
+      sourceSpec: undefined,
+      installRoot: '/tmp/plugins/lcm',
+      managed: false,
+      loaded: true,
+      dependencyState: undefined,
+      status: 'ok',
     });
     expect(json.plugins[1]).toEqual({
       name: 'example',
@@ -151,7 +186,59 @@ describe('GET /api/plugins', () => {
       hasMcpTools: false,
       hasContextEngine: false,
       toolCount: 0,
+      sourceType: 'bundled',
+      sourceSpec: undefined,
+      installRoot: '/tmp/plugins/example',
+      managed: false,
+      loaded: true,
+      dependencyState: undefined,
+      status: 'ok',
     });
+  });
+
+  it('returns catalog-only managed plugins that are installed but not runtime-loaded', async () => {
+    const fakeGw = makeFakeGateway([], [
+      {
+        name: 'file-transfer',
+        version: '1.2.3',
+        sourceType: 'managed',
+        sourceSpec: '/tmp/source/file-transfer',
+        pluginDir: '/tmp/data/plugins-installed/file-transfer',
+        manifestPath: '/tmp/data/plugins-installed/file-transfer/.claude-plugin/plugin.json',
+        manifest: {
+          name: 'file-transfer',
+          version: '1.2.3',
+          description: 'File transfer',
+          entry: 'dist/index.js',
+        },
+        loadable: true,
+        loaded: false,
+        dependencyState: 'ok',
+        status: 'ok',
+        diagnostics: [],
+      },
+    ]);
+
+    vi.doMock('@/lib/gateway', () => ({
+      getGateway: vi.fn().mockResolvedValue(fakeGw),
+    }));
+
+    const { GET } = await import('@/app/api/plugins/route');
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.plugins).toEqual([
+      expect.objectContaining({
+        name: 'file-transfer',
+        sourceType: 'managed',
+        sourceSpec: '/tmp/source/file-transfer',
+        installRoot: '/tmp/data/plugins-installed/file-transfer',
+        managed: true,
+        loaded: false,
+        dependencyState: 'ok',
+        status: 'ok',
+      }),
+    ]);
   });
 });
 
@@ -196,6 +283,46 @@ describe('GET /api/agents/[agentId]/plugins', () => {
     expect(json.plugins).toEqual([
       { name: 'lcm', enabled: true, config: { enabled: true, threshold: 0.7 } },
       { name: 'example', enabled: false, config: {} },
+    ]);
+  });
+
+  it('returns catalog-only plugins in per-agent state responses', async () => {
+    writeAgentYml('alpha', {
+      model: 'claude-sonnet-4-6',
+      routes: [{ channel: 'telegram', scope: 'dm' }],
+      plugins: {
+        'file-transfer': { enabled: true, root: '/safe' },
+      },
+    });
+
+    const fakeGw = makeFakeGateway([], [
+      {
+        name: 'file-transfer',
+        version: '1.2.3',
+        sourceType: 'managed',
+        pluginDir: '/tmp/data/plugins-installed/file-transfer',
+        manifestPath: '/tmp/data/plugins-installed/file-transfer/.claude-plugin/plugin.json',
+        manifest: { name: 'file-transfer', version: '1.2.3', entry: 'dist/index.js' },
+        loadable: true,
+        loaded: false,
+        status: 'ok',
+        diagnostics: [],
+      },
+    ]);
+
+    vi.doMock('@/lib/gateway', () => ({
+      getGateway: vi.fn().mockResolvedValue(fakeGw),
+    }));
+
+    const { GET } = await import('@/app/api/agents/[agentId]/plugins/route');
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/agents/alpha/plugins'),
+      { params: Promise.resolve({ agentId: 'alpha' }) },
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.plugins).toEqual([
+      { name: 'file-transfer', enabled: true, config: { enabled: true, root: '/safe' } },
     ]);
   });
 
@@ -251,6 +378,41 @@ describe('PUT /api/agents/[agentId]/plugins/[name]', () => {
     expect(fakeGw.refreshAgentPluginTools).toHaveBeenCalledWith('alpha');
     // Verify plugins caching per-agent state were notified to invalidate.
     expect(fakeGw.notifyAgentConfigChanged).toHaveBeenCalledWith('alpha');
+  });
+
+  it('loads a catalog-only plugin into runtime before enabling it', async () => {
+    writeAgentYml('alpha', {
+      model: 'claude-sonnet-4-6',
+      routes: [{ channel: 'telegram', scope: 'dm' }],
+    });
+
+    const fakeGw = makeFakeGateway([], [
+      {
+        name: 'file-transfer',
+        version: '1.2.3',
+        sourceType: 'managed',
+        pluginDir: '/tmp/data/plugins-installed/file-transfer',
+        manifestPath: '/tmp/data/plugins-installed/file-transfer/.claude-plugin/plugin.json',
+        manifest: { name: 'file-transfer', version: '1.2.3', entry: 'dist/index.js' },
+        loadable: true,
+        loaded: false,
+        status: 'ok',
+        diagnostics: [],
+      },
+    ]);
+
+    vi.doMock('@/lib/gateway', () => ({
+      getGateway: vi.fn().mockResolvedValue(fakeGw),
+    }));
+
+    const { PUT } = await import('@/app/api/agents/[agentId]/plugins/[name]/route');
+    const res = await PUT(
+      jsonRequest('http://localhost:3000/api/agents/alpha/plugins/file-transfer', { enabled: true }),
+      { params: Promise.resolve({ agentId: 'alpha', name: 'file-transfer' }) },
+    );
+    expect(res.status).toBe(200);
+    expect(fakeGw.loadCatalogPluginForRuntime).toHaveBeenCalledWith('file-transfer');
+    expect(fakeGw.pluginRegistry.enableForAgent).toHaveBeenCalledWith('alpha', 'file-transfer');
   });
 
   it('preserves YAML comments and blank lines on toggle', async () => {

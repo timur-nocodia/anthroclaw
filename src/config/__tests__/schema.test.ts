@@ -62,13 +62,18 @@ describe('plugins config schema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('AgentYmlSchema defaults learning to disabled/off', () => {
+  it('AgentYmlSchema defaults learning to propose mode and memory extraction on', () => {
     const result = AgentYmlSchema.safeParse(minimalValidAgentYml);
     expect(result.success).toBe(true);
     if (result.success) {
+      expect(result.data.memory_extraction).toMatchObject({
+        enabled: true,
+        max_candidates: 5,
+        max_input_chars: 6000,
+      });
       expect(result.data.learning).toMatchObject({
-        enabled: false,
-        mode: 'off',
+        enabled: true,
+        mode: 'propose',
         review_interval_turns: 10,
         skill_review_min_tool_calls: 8,
         max_actions_per_review: 8,
