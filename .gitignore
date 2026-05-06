@@ -32,3 +32,9 @@ docs/*
 .worktrees/
 
 CLAUDE.md
+AGENTS.md
+
+# Local-only drafts — handoffs, presentations, briefs, longreads-in-progress
+drafts/
+*-draft.md
+*-brief.md
