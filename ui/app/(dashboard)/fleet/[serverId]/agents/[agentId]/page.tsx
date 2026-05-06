@@ -669,6 +669,15 @@ function normalizeLearningConfig(value?: LearningConfig): Required<LearningConfi
   };
 }
 
+function decisionReasonPrompt(
+  operation: "approve_decision" | "reject_decision" | "request_edit_decision" | "expire_decision" | "apply_decision" | "resend_decision",
+): string | null {
+  if (operation === "reject_decision") return "Reject reason";
+  if (operation === "request_edit_decision") return "Edit request reason";
+  if (operation === "expire_decision") return "Expire reason";
+  return null;
+}
+
 const TIMEZONES = [
   "UTC",
   "Europe/Moscow",
@@ -3891,9 +3900,13 @@ function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: 
     await loadLearning();
   };
 
-  const runDecision = async (operation: "approve_decision" | "reject_decision" | "apply_decision" | "resend_decision", decision: LearningDecisionRecord) => {
-    const reason = operation === "reject_decision" ? window.prompt("Reject reason") ?? undefined : undefined;
-    if (operation === "reject_decision" && reason === undefined) return;
+  const runDecision = async (
+    operation: "approve_decision" | "reject_decision" | "request_edit_decision" | "expire_decision" | "apply_decision" | "resend_decision",
+    decision: LearningDecisionRecord,
+  ) => {
+    const reasonPrompt = decisionReasonPrompt(operation);
+    const reason = reasonPrompt ? window.prompt(reasonPrompt) ?? undefined : undefined;
+    if (reasonPrompt && reason === undefined) return;
     const res = await fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/learning`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -4019,6 +4032,8 @@ function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: 
                 decision={decision}
                 onApprove={() => runDecision("approve_decision", decision)}
                 onReject={() => runDecision("reject_decision", decision)}
+                onRequestEdit={() => runDecision("request_edit_decision", decision)}
+                onExpire={() => runDecision("expire_decision", decision)}
                 onApply={() => runDecision("apply_decision", decision)}
                 onResend={() => runDecision("resend_decision", decision)}
               />

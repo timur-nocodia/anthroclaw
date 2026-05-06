@@ -34,6 +34,8 @@ describe("LearningDecisionRow", () => {
         onApprove={vi.fn()}
         onReject={vi.fn()}
         onApply={vi.fn()}
+        onRequestEdit={vi.fn()}
+        onExpire={vi.fn()}
         onResend={onResend}
       />,
     );
@@ -41,6 +43,28 @@ describe("LearningDecisionRow", () => {
     fireEvent.click(screen.getByRole("button", { name: /notify again/i }));
 
     expect(onResend).toHaveBeenCalledOnce();
+  });
+
+  it("lets operators request edits and expire pending decisions", () => {
+    const onRequestEdit = vi.fn();
+    const onExpire = vi.fn();
+    render(
+      <LearningDecisionRow
+        decision={{ ...decisionFixture(), status: "pending", decidedAt: undefined, decidedBy: undefined }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onApply={vi.fn()}
+        onRequestEdit={onRequestEdit}
+        onExpire={onExpire}
+        onResend={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /request edit/i }));
+    fireEvent.click(screen.getByRole("button", { name: /expire/i }));
+
+    expect(onRequestEdit).toHaveBeenCalledOnce();
+    expect(onExpire).toHaveBeenCalledOnce();
   });
 });
 

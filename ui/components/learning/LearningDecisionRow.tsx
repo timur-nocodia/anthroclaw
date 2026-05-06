@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { CheckCircle2, Clock, Send, XCircle, Zap } from "lucide-react";
+import { CheckCircle2, Clock, Pencil, Send, XCircle, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { LearningDecisionKind } from "@/components/learning/LearningAdminApprovalsEditor";
 
@@ -66,12 +66,16 @@ export function LearningDecisionRow({
   onApprove,
   onReject,
   onApply,
+  onRequestEdit,
+  onExpire,
   onResend,
 }: {
   decision: LearningDecisionRecord;
   onApprove: () => void;
   onReject: () => void;
   onApply: () => void;
+  onRequestEdit?: () => void;
+  onExpire?: () => void;
   onResend?: () => void;
 }) {
   const deliveries = decision.delivery ?? [];
@@ -100,9 +104,21 @@ export function LearningDecisionRow({
             </div>
           )}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
           <Button variant="outline" size="sm" onClick={onApprove} disabled={decision.status !== "pending"}><CheckCircle2 className="h-3.5 w-3.5" />Approve</Button>
           <Button variant="outline" size="sm" onClick={onReject} disabled={decision.status !== "pending"}><XCircle className="h-3.5 w-3.5" />Reject</Button>
+          {onRequestEdit && (
+            <Button variant="outline" size="sm" onClick={onRequestEdit} disabled={decision.status !== "pending"}>
+              <Pencil className="h-3.5 w-3.5" />
+              Request edit
+            </Button>
+          )}
+          {onExpire && (
+            <Button variant="outline" size="sm" onClick={onExpire} disabled={decision.status !== "pending"}>
+              <Clock className="h-3.5 w-3.5" />
+              Expire
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={onApply} disabled={decision.status !== "approved"}><Zap className="h-3.5 w-3.5" />Apply</Button>
           {onResend && (
             <Button variant="outline" size="sm" onClick={onResend} disabled={decision.status !== "pending"}>

@@ -297,6 +297,62 @@ describe('/api/agents/[agentId]/learning decisions', () => {
       .toContain('Publishing');
   });
 
+  it('requests edits and expires pending decisions from the dashboard', async () => {
+    const action = seedSkillAction({ status: 'proposed' });
+    decisionStore.createDecision({
+      id: 'decision-edit',
+      shortCode: 'EDT123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      learningActionId: action.id,
+      reviewId: action.reviewId,
+      subject: 'Create publishing skill',
+      body: 'Reusable workflow.',
+      risk: 'medium',
+      payload: action.payload,
+      createdAt: 2000,
+    });
+    decisionStore.createDecision({
+      id: 'decision-expire',
+      shortCode: 'EXP123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Create stale skill',
+      body: 'Old proposal.',
+      risk: 'medium',
+      payload: {},
+      createdAt: 2100,
+    });
+
+    const { PATCH } = await import('@/app/api/agents/[agentId]/learning/route');
+    const edit = await PATCH(jsonRequest('/api/agents/agent-a/learning', {
+      operation: 'request_edit_decision',
+      decisionId: 'decision-edit',
+      reason: 'needs narrower scope',
+    }), { params: Promise.resolve({ agentId: 'agent-a' }) });
+    const expire = await PATCH(jsonRequest('/api/agents/agent-a/learning', {
+      operation: 'expire_decision',
+      decisionId: 'decision-expire',
+      reason: 'stale proposal',
+    }), { params: Promise.resolve({ agentId: 'agent-a' }) });
+
+    expect(edit.status).toBe(200);
+    expect(expire.status).toBe(200);
+    expect(decisionStore.getDecision('decision-edit')).toMatchObject({ status: 'edit_requested', decidedBy: 'admin', error: 'needs narrower scope' });
+    expect(decisionStore.getDecision('decision-expire')).toMatchObject({ status: 'expired', decidedBy: 'admin', error: 'stale proposal' });
+    expect(learningStore.getAction(action.id)).toMatchObject({ status: 'rejected', error: 'needs narrower scope' });
+    expect(decisionStore.listAuditEvents('decision-edit')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fromStatus: 'pending', toStatus: 'edit_requested', reason: 'admin_edit_requested' }),
+    ]));
+    expect(decisionStore.listAuditEvents('decision-expire')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fromStatus: 'pending', toStatus: 'expired', reason: 'admin_expired' }),
+    ]));
+  });
+
   it('resends a pending decision through the runtime gateway', async () => {
     const resendDecisionPrompt = vi.fn(async () => ({
       ok: true,

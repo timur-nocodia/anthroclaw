@@ -115,7 +115,13 @@ export async function PATCH(
       return NextResponse.json({ ok: resend.ok, resend }, { status });
     }
 
-    if (operation === 'approve_decision' || operation === 'reject_decision' || operation === 'apply_decision') {
+    if (
+      operation === 'approve_decision'
+      || operation === 'reject_decision'
+      || operation === 'request_edit_decision'
+      || operation === 'expire_decision'
+      || operation === 'apply_decision'
+    ) {
       const decisionId = typeof body.decisionId === 'string' ? body.decisionId : '';
       if (!decisionId) {
         throw new ValidationError('bad_request', 'Expected decisionId');
@@ -158,6 +164,33 @@ export async function PATCH(
             store.updateActionStatus(action.id, 'rejected', { updatedAt: Date.now(), error: reason });
           }
           metrics.increment('learning_actions_rejected');
+          return NextResponse.json({ ok: true, decision: updated, action: action ? store.getAction(action.id) : null });
+        }
+
+        if (operation === 'request_edit_decision') {
+          const reason = typeof body.reason === 'string' ? body.reason : undefined;
+          const updated = decisionStore.updateDecisionStatus(decision.id, 'edit_requested', {
+            decidedBy: 'admin',
+            actorSenderId: 'admin',
+            channel: 'dashboard',
+            reason: 'admin_edit_requested',
+            error: reason,
+          });
+          if (action && (action.status === 'proposed' || action.status === 'approved')) {
+            store.updateActionStatus(action.id, 'rejected', { updatedAt: Date.now(), error: reason });
+          }
+          return NextResponse.json({ ok: true, decision: updated, action: action ? store.getAction(action.id) : null });
+        }
+
+        if (operation === 'expire_decision') {
+          const reason = typeof body.reason === 'string' ? body.reason : undefined;
+          const updated = decisionStore.updateDecisionStatus(decision.id, 'expired', {
+            decidedBy: 'admin',
+            actorSenderId: 'admin',
+            channel: 'dashboard',
+            reason: 'admin_expired',
+            error: reason,
+          });
           return NextResponse.json({ ok: true, decision: updated, action: action ? store.getAction(action.id) : null });
         }
 
