@@ -83,7 +83,7 @@ interface AgentConfig {
   timezone?: string;
   queue_mode?: string;
   session_policy?: string;
-  auto_compress?: number;
+  auto_compress?: { enabled: boolean; threshold_messages: number };
   iteration_budget?: {
     tool_call_limit?: number;
     max_tool_calls?: number;
@@ -1010,7 +1010,7 @@ function ConfigTab({
     timezone: agent.timezone ?? "UTC",
     queue_mode: agent.queue_mode ?? "collect",
     session_policy: agent.session_policy ?? "daily",
-    auto_compress: agent.auto_compress ?? 0,
+    auto_compress: agent.auto_compress,
     iteration_budget: {
       tool_call_limit: agent.iteration_budget?.tool_call_limit ?? agent.iteration_budget?.max_tool_calls ?? 20,
       timeout_ms: agent.iteration_budget?.timeout_ms ?? 120000,
@@ -1528,8 +1528,8 @@ function ConfigTab({
         body: JSON.stringify(payload),
       });
       setDirty(false);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to save agent config:", err);
     } finally {
       setSaving(false);
     }
@@ -1658,11 +1658,24 @@ function ConfigTab({
                   ))}
                 </select>
               </Field>
-              <Field label="Auto-compress (tokens)" tooltip="When conversation context exceeds this token count, older messages are automatically compressed into a summary. 0 to disable.">
+              <Field label="Auto-compress (messages)" tooltip="When conversation reaches this many messages, older messages are summarized. Schema minimum is 5. Set to 0 to disable auto-compression.">
                 <input
                   type="number"
-                  value={cfg.auto_compress}
-                  onChange={(e) => update({ auto_compress: +e.target.value || 0 })}
+                  min={0}
+                  value={cfg.auto_compress?.threshold_messages ?? 0}
+                  onChange={(e) => {
+                    const raw = +e.target.value || 0;
+                    if (raw <= 0) {
+                      update({ auto_compress: undefined });
+                    } else {
+                      update({
+                        auto_compress: {
+                          enabled: true,
+                          threshold_messages: Math.max(raw, 5),
+                        },
+                      });
+                    }
+                  }}
                   className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
                   style={{
                     background: "var(--oc-bg3)",
