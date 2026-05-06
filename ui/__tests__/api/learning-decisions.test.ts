@@ -98,6 +98,60 @@ describe('/api/agents/[agentId]/learning decisions', () => {
     expect(body.summary.pendingDecisions).toBe(1);
   });
 
+  it('filters decision center records by status, kind, and actor', async () => {
+    decisionStore.createDecision({
+      id: 'decision-pending-skill-admin',
+      shortCode: 'SKL111',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Create sales skill',
+      body: 'Reusable workflow.',
+      risk: 'medium',
+      payload: {},
+      createdAt: 3000,
+    });
+    decisionStore.createDecision({
+      id: 'decision-approved-skill-admin',
+      shortCode: 'SKL222',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      status: 'approved',
+      agentId: 'agent-a',
+      subject: 'Create publishing skill',
+      body: 'Reusable workflow.',
+      risk: 'medium',
+      payload: {},
+      createdAt: 2000,
+    });
+    decisionStore.createDecision({
+      id: 'decision-pending-memory-user',
+      shortCode: 'MEM111',
+      kind: 'learning_memory',
+      scope: 'user',
+      actor: 'originating_user',
+      agentId: 'agent-a',
+      subject: 'Remember preference',
+      body: 'Save user preference.',
+      risk: 'low',
+      payload: {},
+      createdAt: 1000,
+    });
+
+    const { GET } = await import('@/app/api/agents/[agentId]/learning/route');
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/agents/agent-a/learning?decisionStatus=pending&decisionKind=learning_skill&decisionActor=admin'),
+      { params: Promise.resolve({ agentId: 'agent-a' }) },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.decisions.map((decision: { id: string }) => decision.id)).toEqual(['decision-pending-skill-admin']);
+    expect(body.summary.pendingDecisions).toBe(1);
+  });
+
   it('returns decision audit events and delivery attempts for dashboard inspection', async () => {
     const action = seedSkillAction({ status: 'proposed' });
     decisionStore.createDecision({

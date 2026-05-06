@@ -11,12 +11,16 @@ import { applySkillAction } from '@backend/learning/skill-applier.js';
 import { MemoryStore } from '@backend/memory/store.js';
 import { metrics } from '@backend/metrics/collector.js';
 import type { LearningActionRecord, LearningMode } from '@backend/learning/types.js';
+import type { DecisionActor, DecisionKind, DecisionStatus } from '@backend/decisions/types.js';
 
 const DATA_DIR = resolve(process.cwd(), '..', 'data');
 const AGENTS_DIR = resolve(process.cwd(), '..', 'agents');
 
 const ACTION_STATUSES = new Set(['proposed', 'approved', 'rejected', 'applied', 'failed']);
 const ACTION_TYPES = new Set(['memory_candidate', 'skill_patch', 'skill_create', 'skill_update_full', 'none']);
+const DECISION_STATUSES = new Set(['pending', 'approved', 'rejected', 'edit_requested', 'expired', 'applied', 'failed']);
+const DECISION_KINDS = new Set(['learning_memory', 'learning_skill', 'curator_action', 'tool_approval']);
+const DECISION_ACTORS = new Set(['originating_user', 'admin', 'operator']);
 
 export async function GET(
   req: NextRequest,
@@ -27,6 +31,9 @@ export async function GET(
     const url = new URL(req.url);
     const status = parseActionStatus(url.searchParams.get('status'));
     const actionType = parseActionType(url.searchParams.get('type'));
+    const decisionStatus = parseDecisionStatus(url.searchParams.get('decisionStatus'));
+    const decisionKind = parseDecisionKind(url.searchParams.get('decisionKind'));
+    const decisionActor = parseDecisionActor(url.searchParams.get('decisionActor'));
     const limit = optionalNumber(url.searchParams.get('limit')) ?? 100;
     const offset = optionalNumber(url.searchParams.get('offset')) ?? 0;
     const config = getAgentConfig(agentId).parsed;
@@ -37,7 +44,13 @@ export async function GET(
       const reviews = store.listReviews({ agentId, limit: 50 });
       const artifacts = store.listArtifacts({ limit: 1000 }).filter((artifact) => artifact.agentId === agentId);
       const snapshots = store.listSkillSnapshots({ agentId, limit: 1000 });
-      const decisions = decisionStore.listDecisions({ agentId, limit: 200 }).map((decision) => ({
+      const decisions = decisionStore.listDecisions({
+        agentId,
+        status: decisionStatus,
+        kind: decisionKind,
+        actor: decisionActor,
+        limit: 200,
+      }).map((decision) => ({
         ...decision,
         delivery: decisionStore.listDeliveries(decision.id),
         auditEvents: decisionStore.listAuditEvents(decision.id),
@@ -274,6 +287,18 @@ function parseActionType(value: string | null) {
   return value && ACTION_TYPES.has(value)
     ? value as 'memory_candidate' | 'skill_patch' | 'skill_create' | 'skill_update_full' | 'none'
     : undefined;
+}
+
+function parseDecisionStatus(value: string | null): DecisionStatus | undefined {
+  return value && DECISION_STATUSES.has(value) ? value as DecisionStatus : undefined;
+}
+
+function parseDecisionKind(value: string | null): DecisionKind | undefined {
+  return value && DECISION_KINDS.has(value) ? value as DecisionKind : undefined;
+}
+
+function parseDecisionActor(value: string | null): DecisionActor | undefined {
+  return value && DECISION_ACTORS.has(value) ? value as DecisionActor : undefined;
 }
 
 function parseSafetyProfile(value: unknown): 'public' | 'trusted' | 'private' {

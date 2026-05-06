@@ -70,6 +70,10 @@ import {
   type LearningAdminApprovalsConfig,
   type LearningDecisionKind,
 } from "@/components/learning/LearningAdminApprovalsEditor";
+import {
+  LearningDecisionFilters,
+  type LearningDecisionFilterValue,
+} from "@/components/learning/LearningDecisionFilters";
 import { LearningDecisionRow, type LearningDecisionRecord } from "@/components/learning/LearningDecisionRow";
 
 /* ------------------------------------------------------------------ */
@@ -3814,6 +3818,11 @@ function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: 
   const [cfg, setCfg] = useState(normalizeLearningConfig(agent.learning));
   const [status, setStatus] = useState<LearningActionStatus | "all">("proposed");
   const [type, setType] = useState<LearningActionType | "all">("all");
+  const [decisionFilters, setDecisionFilters] = useState<LearningDecisionFilterValue>({
+    status: "all",
+    kind: "all",
+    actor: "all",
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<LearningActionRecord | null>(null);
@@ -3825,6 +3834,9 @@ function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: 
       const params = new URLSearchParams({ limit: "100" });
       if (status !== "all") params.set("status", status);
       if (type !== "all") params.set("type", type);
+      if (decisionFilters.status !== "all") params.set("decisionStatus", decisionFilters.status);
+      if (decisionFilters.kind !== "all") params.set("decisionKind", decisionFilters.kind);
+      if (decisionFilters.actor !== "all") params.set("decisionActor", decisionFilters.actor);
       const res = await fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/learning?${params.toString()}`);
       if (!res.ok) throw new Error(`learning ${res.status}`);
       const payload = await res.json() as LearningPayload;
@@ -3833,7 +3845,7 @@ function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: 
     } finally {
       setLoading(false);
     }
-  }, [serverId, agentId, status, type]);
+  }, [serverId, agentId, status, type, decisionFilters]);
 
   useEffect(() => {
     void loadLearning();
@@ -3992,6 +4004,7 @@ function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: 
         icon={<Shield className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
         action={<Button variant="outline" size="sm" onClick={loadLearning} disabled={loading}><RefreshCw className="h-3.5 w-3.5" />Refresh</Button>}
       >
+        <LearningDecisionFilters value={decisionFilters} onChange={setDecisionFilters} />
         <div className="overflow-hidden rounded-[6px] border" style={{ borderColor: "var(--oc-border)" }}>
           {loading ? (
             <LearningSkeletonRows />
