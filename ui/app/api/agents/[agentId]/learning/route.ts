@@ -212,7 +212,25 @@ export async function PATCH(
         if (!action) {
           throw new ValidationError('bad_request', `Decision ${decisionId} has no linked learning action`);
         }
-        const applied = applyLearningAction({ store, action, agentId });
+        let applied: Record<string, unknown>;
+        try {
+          applied = applyLearningAction({ store, action, agentId });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          store.updateActionStatus(action.id, 'failed', { updatedAt: Date.now(), error: message });
+          const failedDecision = decisionStore.updateDecisionStatus(decision.id, 'failed', {
+            reason: 'admin_apply_failed',
+            error: message,
+          });
+          return NextResponse.json({
+            error: 'apply_failed',
+            decisionId: decision.id,
+            actionId: action.id,
+            message,
+            decision: failedDecision ?? decisionStore.getDecision(decision.id),
+            action: store.getAction(action.id),
+          }, { status: 400 });
+        }
         const updated = decisionStore.updateDecisionStatus(decision.id, 'applied', {
           appliedAt: Date.now(),
           reason: 'admin_applied',

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -297,6 +298,82 @@ describe('/api/agents/[agentId]/learning decisions', () => {
       .toContain('Publishing');
   });
 
+  it('fails stale skill decision apply without mutating the skill file', async () => {
+    const originalSkill = [
+      '---',
+      'name: publishing',
+      'description: Publishing rules',
+      '---',
+      '# Publishing',
+      '',
+      'Always ask before publishing.',
+      '',
+    ].join('\n');
+    const changedSkill = `${originalSkill}\nManual admin edit.\n`;
+    const skillDir = join(root, 'agents', 'agent-a', '.claude', 'skills', 'publishing');
+    const skillPath = join(skillDir, 'SKILL.md');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(skillPath, changedSkill, 'utf8');
+
+    const review = learningStore.createReview({
+      id: 'review-stale',
+      agentId: 'agent-a',
+      trigger: 'manual',
+      mode: 'propose',
+    });
+    const action = learningStore.addAction({
+      id: 'action-stale',
+      reviewId: review.id,
+      agentId: 'agent-a',
+      actionType: 'skill_patch',
+      status: 'approved',
+      confidence: 0.8,
+      title: 'Patch publishing skill',
+      rationale: 'Reusable workflow.',
+      payload: {
+        skillName: 'publishing',
+        oldText: 'Always ask before publishing.',
+        newText: 'Always ask before publishing or scheduling.',
+        baseContentHash: sha256(originalSkill),
+      },
+      createdAt: 1000,
+    });
+    decisionStore.createDecision({
+      id: 'decision-stale',
+      shortCode: 'STL123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      status: 'approved',
+      agentId: 'agent-a',
+      learningActionId: action.id,
+      reviewId: action.reviewId,
+      subject: 'Patch publishing skill',
+      body: 'Reusable workflow.',
+      risk: 'medium',
+      payload: action.payload,
+      createdAt: 2000,
+    });
+
+    const { PATCH } = await import('@/app/api/agents/[agentId]/learning/route');
+    const res = await PATCH(jsonRequest('/api/agents/agent-a/learning', {
+      operation: 'apply_decision',
+      decisionId: 'decision-stale',
+    }), { params: Promise.resolve({ agentId: 'agent-a' }) });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'apply_failed',
+      decisionId: 'decision-stale',
+      actionId: 'action-stale',
+    });
+    expect(readFileSync(skillPath, 'utf8')).toBe(changedSkill);
+    expect(learningStore.getAction(action.id)).toMatchObject({ status: 'failed' });
+    expect(decisionStore.getDecision('decision-stale')).toMatchObject({ status: 'failed' });
+    expect(decisionStore.listAuditEvents('decision-stale').map((event) => event.toStatus))
+      .toEqual(['approved', 'failed']);
+  });
+
   it('requests edits and expires pending decisions from the dashboard', async () => {
     const action = seedSkillAction({ status: 'proposed' });
     decisionStore.createDecision({
@@ -456,4 +533,8 @@ function jsonRequest(url: string, body: unknown): NextRequest {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }
