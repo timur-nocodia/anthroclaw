@@ -1,6 +1,6 @@
 # Operator-Safe Continuous Learning - Design Spec
 
-**Status:** Draft for review
+**Status:** V1 core implemented in draft PR; curator/undo follow-ups deferred
 **Date:** 2026-05-06
 **Scope type:** Multi-phase runtime + admin UX design
 
@@ -20,6 +20,30 @@ The target v1 posture is **operator-safe continuous loop**:
 - dashboard remains the canonical admin surface
 - admin-chat approvals use the same durable decision primitive as dashboard
 - channel rendering is capability-based, not Telegram-specific
+
+## Implementation Checkpoint
+
+Implemented in the V1 PR:
+
+- Decision Center storage, audit events, delivery attempts, short codes, active
+  learning-action dedupe, and guarded state transitions
+- learning memory decisions routed to the originating messenger user
+- learning skill decisions routed to dashboard/admin chat
+- Telegram callback rendering and text command fallback
+- WhatsApp/text-only fallback through numbered replies and `/learn ... CODE`
+- admin sender allowlists for chat approvals
+- dashboard Decision Center list, filters, delivery/audit visibility, resend,
+  approve/reject/request-edit/expire/apply controls
+- stale skill apply protection through base-content hash checks
+- doctor diagnostics for missing admin sender allowlists
+
+Deferred follow-ups:
+
+- full private-memory auto-apply undo receipts
+- autonomous curator proposal generation and mutation gating
+- unifying synchronous SDK tool approvals under Decision Center
+- Discord/Facebook adapters and richer channel-native components
+- direct Honcho-compatible external memory provider
 
 ## Motivation
 

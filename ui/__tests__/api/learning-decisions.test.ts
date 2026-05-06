@@ -510,6 +510,46 @@ describe('/api/agents/[agentId]/learning decisions', () => {
     ]));
   });
 
+  it('rejects a pending decision from the dashboard and marks the linked learning action rejected', async () => {
+    const action = seedSkillAction({ status: 'proposed' });
+    decisionStore.createDecision({
+      id: 'decision-reject',
+      shortCode: 'REJ123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      learningActionId: action.id,
+      reviewId: action.reviewId,
+      subject: 'Create publishing skill',
+      body: 'Reusable workflow.',
+      risk: 'medium',
+      payload: action.payload,
+      createdAt: 2000,
+    });
+
+    const { PATCH } = await import('@/app/api/agents/[agentId]/learning/route');
+    const res = await PATCH(jsonRequest('/api/agents/agent-a/learning', {
+      operation: 'reject_decision',
+      decisionId: 'decision-reject',
+      reason: 'too broad',
+    }), { params: Promise.resolve({ agentId: 'agent-a' }) });
+
+    expect(res.status).toBe(200);
+    expect(decisionStore.getDecision('decision-reject')).toMatchObject({
+      status: 'rejected',
+      decidedBy: 'admin',
+      error: 'too broad',
+    });
+    expect(learningStore.getAction(action.id)).toMatchObject({
+      status: 'rejected',
+      error: 'too broad',
+    });
+    expect(decisionStore.listAuditEvents('decision-reject')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fromStatus: 'pending', toStatus: 'rejected', reason: 'admin_rejected' }),
+    ]));
+  });
+
   it('rejects dashboard transitions for already terminal decisions', async () => {
     const action = seedSkillAction({ status: 'proposed' });
     decisionStore.createDecision({

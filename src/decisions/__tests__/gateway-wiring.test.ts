@@ -226,6 +226,89 @@ describe('Gateway decision wiring', () => {
     });
   });
 
+  it('rejects admin decision commands from non-allowlisted senders', async () => {
+    store.createDecision({
+      id: 'decision-admin-unauthorized',
+      shortCode: 'ADM401',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Create publishing skill',
+      body: 'Reusable workflow.',
+      risk: 'medium',
+      payload: { skillName: 'publishing' },
+      createdAt: 1000,
+    });
+
+    const handled = await (gateway as any).handleDecisionTextReply(makeMessage({
+      channel: 'telegram',
+      accountId: 'main',
+      peerId: 'admin-peer',
+      senderId: 'ordinary-user',
+      threadId: 'topic-1',
+      text: '/learn approve ADM401',
+    }));
+
+    expect(handled).toBe(true);
+    expect(store.getDecision('decision-admin-unauthorized')).toMatchObject({
+      status: 'pending',
+      decidedBy: undefined,
+    });
+    expect(sendText).toHaveBeenCalledWith('admin-peer', expect.stringMatching(/not authorized/i), {
+      accountId: 'main',
+      threadId: 'topic-1',
+    });
+  });
+
+  it('renders admin decisions as text on channels without callbacks and accepts command replies', async () => {
+    const agent = (gateway as any).agents.get('agent-a');
+    agent.config.learning.approvals.admin.routes = [
+      { channel: 'whatsapp', account_id: 'main', peer_id: 'admin-wa-peer' },
+    ];
+    agent.config.learning.approvals.admin.senders = {
+      whatsapp: {
+        main: ['admin-wa-sender'],
+      },
+    };
+
+    const decision = store.createDecision({
+      id: 'decision-admin-whatsapp',
+      shortCode: 'WHA123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Create sales skill',
+      body: 'Reusable workflow.',
+      risk: 'medium',
+      payload: { skillName: 'sales' },
+      createdAt: 1000,
+    });
+
+    await (gateway as any).deliverDecisionPrompt(decision);
+
+    expect(sendText).toHaveBeenCalledWith('admin-wa-peer', expect.stringContaining('/learn approve WHA123'), {
+      accountId: 'main',
+      threadId: undefined,
+      buttons: undefined,
+    });
+
+    const handled = await (gateway as any).handleDecisionTextReply(makeMessage({
+      channel: 'whatsapp',
+      accountId: 'main',
+      peerId: 'admin-wa-peer',
+      senderId: 'admin-wa-sender',
+      text: '/learn approve WHA123',
+    }));
+
+    expect(handled).toBe(true);
+    expect(store.getDecision('decision-admin-whatsapp')).toMatchObject({
+      status: 'approved',
+      decidedBy: 'admin-wa-sender',
+    });
+  });
+
   it('resends pending decisions through the same delivery targets', async () => {
     store.createDecision({
       id: 'decision-admin-resend',
@@ -340,6 +423,57 @@ describe('Gateway decision wiring', () => {
     expect(learningStore.getAction('action-1')).toMatchObject({ status: 'applied' });
     expect(store.getDecision('decision-4')).toMatchObject({ status: 'applied' });
     expect(memoryStore.textSearch('Russian replies default', 5)).toHaveLength(1);
+  });
+
+  it('marks linked learning actions rejected when a memory decision is rejected', async () => {
+    const review = learningStore.createReview({
+      id: 'review-reject',
+      agentId: 'agent-a',
+      trigger: 'user_correction',
+      mode: 'propose',
+    });
+    const action = learningStore.addAction({
+      id: 'action-reject',
+      reviewId: review.id,
+      agentId: 'agent-a',
+      actionType: 'memory_candidate',
+      status: 'proposed',
+      confidence: 0.7,
+      title: 'Remember preferred language',
+      rationale: 'User rejected the learning proposal.',
+      payload: {
+        kind: 'preference',
+        text: 'The user wants short replies.',
+        reason: 'Proposed from messenger interaction.',
+      },
+      createdAt: 1000,
+    });
+    store.createDecision({
+      id: 'decision-reject',
+      shortCode: 'REJ123',
+      kind: 'learning_memory',
+      scope: 'user',
+      actor: 'originating_user',
+      agentId: 'agent-a',
+      learningActionId: action.id,
+      reviewId: review.id,
+      subject: 'Remember preferred language',
+      body: 'Save preference.',
+      risk: 'low',
+      payload: action.payload,
+      originChannel: 'whatsapp',
+      originAccountId: 'main',
+      originPeerId: 'peer-1',
+      originSenderId: 'sender-1',
+      createdAt: 1000,
+    });
+
+    const handled = await (gateway as any).handleDecisionTextReply(makeMessage({ text: '2' }));
+
+    expect(handled).toBe(true);
+    expect(learningStore.getAction(action.id)).toMatchObject({ status: 'rejected' });
+    expect(store.getDecision('decision-reject')).toMatchObject({ status: 'rejected' });
+    expect(memoryStore.textSearch('short replies', 5)).toHaveLength(0);
   });
 });
 
