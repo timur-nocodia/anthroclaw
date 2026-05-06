@@ -140,7 +140,7 @@ import { DecisionCenter } from './decisions/center.js';
 import { parseDecisionCallbackData } from './decisions/events.js';
 import { renderDecisionPrompt } from './decisions/renderer.js';
 import { DecisionStore } from './decisions/store.js';
-import type { DecisionChannel, DecisionEvent, DecisionRecord } from './decisions/types.js';
+import type { DecisionChannel, DecisionDeliveryRecord, DecisionEvent, DecisionRecord } from './decisions/types.js';
 import { getSdkActiveInputStatus, type SdkActiveInputStatus } from './sdk/active-input.js';
 import {
   asAgentMcpServerSpec,
@@ -739,6 +739,13 @@ interface DecisionPromptDeliveryTarget {
   threadId?: string;
 }
 
+export interface DecisionResendResult {
+  ok: boolean;
+  reason: 'resent' | 'not_found' | 'not_pending' | 'no_targets' | 'delivery_failed';
+  decision?: DecisionRecord;
+  deliveries: DecisionDeliveryRecord[];
+}
+
 export class Gateway {
   private agents = new Map<string, Agent>();
   private channels = new Map<string, ChannelAdapter>();
@@ -825,6 +832,39 @@ export class Gateway {
    */
   getAccessControl(): AccessControl | null {
     return this.accessControl;
+  }
+
+  async resendDecisionPrompt(decisionId: string, agentId?: string): Promise<DecisionResendResult> {
+    if (!this.decisionStore) {
+      return { ok: false, reason: 'not_found', deliveries: [] };
+    }
+    const decision = this.decisionStore.getDecision(decisionId);
+    if (!decision || (agentId && decision.agentId !== agentId)) {
+      return { ok: false, reason: 'not_found', deliveries: [] };
+    }
+    if (decision.status !== 'pending') {
+      return { ok: false, reason: 'not_pending', decision, deliveries: [] };
+    }
+
+    const targets = this.getDecisionDeliveryTargets(decision);
+    if (targets.length === 0) {
+      return { ok: false, reason: 'no_targets', decision, deliveries: [] };
+    }
+
+    const beforeIds = new Set(this.decisionStore.listDeliveries(decision.id).map((delivery) => delivery.id));
+    for (const target of targets) {
+      await this.deliverDecisionPromptToTarget(decision, target);
+    }
+    const deliveries = this.decisionStore
+      .listDeliveries(decision.id)
+      .filter((delivery) => !beforeIds.has(delivery.id));
+    const sent = deliveries.some((delivery) => delivery.status === 'sent');
+    return {
+      ok: sent,
+      reason: sent ? 'resent' : 'delivery_failed',
+      decision: this.decisionStore.getDecision(decision.id) ?? decision,
+      deliveries,
+    };
   }
 
   async start(config: GlobalConfig, agentsDir: string, dataDir: string, pluginsDir?: string): Promise<void> {
@@ -3229,7 +3269,16 @@ export class Gateway {
     target: DecisionPromptDeliveryTarget,
   ): Promise<void> {
     const channel = this.channels.get(target.channel);
-    if (!channel) return;
+    if (!channel) {
+      this.decisionStore?.recordDelivery(decision.id, {
+        channel: target.channel,
+        accountId: target.accountId,
+        peerId: target.peerId,
+        status: 'failed',
+        error: `Channel ${target.channel} is not connected`,
+      });
+      return;
+    }
 
     const callbacks = this.getDecisionChannelCapabilities(channel, target.channel).callbacks;
     const rendered = renderDecisionPrompt(decision, { callbacks });

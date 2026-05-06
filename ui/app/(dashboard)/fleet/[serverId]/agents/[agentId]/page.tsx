@@ -3879,7 +3879,7 @@ function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: 
     await loadLearning();
   };
 
-  const runDecision = async (operation: "approve_decision" | "reject_decision" | "apply_decision", decision: LearningDecisionRecord) => {
+  const runDecision = async (operation: "approve_decision" | "reject_decision" | "apply_decision" | "resend_decision", decision: LearningDecisionRecord) => {
     const reason = operation === "reject_decision" ? window.prompt("Reject reason") ?? undefined : undefined;
     if (operation === "reject_decision" && reason === undefined) return;
     const res = await fetch(`/api/fleet/${serverId}/agents/${encodeURIComponent(agentId)}/learning`, {
@@ -4007,6 +4007,7 @@ function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: 
                 onApprove={() => runDecision("approve_decision", decision)}
                 onReject={() => runDecision("reject_decision", decision)}
                 onApply={() => runDecision("apply_decision", decision)}
+                onResend={() => runDecision("resend_decision", decision)}
               />
             ))
           )}

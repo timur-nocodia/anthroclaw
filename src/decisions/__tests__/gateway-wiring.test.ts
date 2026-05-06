@@ -226,6 +226,71 @@ describe('Gateway decision wiring', () => {
     });
   });
 
+  it('resends pending decisions through the same delivery targets', async () => {
+    store.createDecision({
+      id: 'decision-admin-resend',
+      shortCode: 'RSN123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Create sales skill',
+      body: 'Reusable operator workflow.',
+      risk: 'medium',
+      payload: { skillName: 'sales' },
+      createdAt: 1000,
+    });
+
+    const result = await gateway.resendDecisionPrompt('decision-admin-resend', 'agent-a');
+
+    expect(result).toMatchObject({ ok: true, reason: 'resent' });
+    expect(sendText).toHaveBeenCalledWith('admin-peer', expect.stringContaining('RSN123'), {
+      accountId: 'main',
+      threadId: 'topic-1',
+      buttons: [[
+        { text: 'Save', callbackData: 'decision:RSN123:approve' },
+        { text: 'Skip', callbackData: 'decision:RSN123:reject' },
+        { text: 'Edit', callbackData: 'decision:RSN123:edit' },
+      ]],
+    });
+    expect(result.deliveries).toEqual([
+      expect.objectContaining({
+        channel: 'telegram',
+        accountId: 'main',
+        peerId: 'admin-peer',
+        messageId: 'ack-msg',
+        status: 'sent',
+      }),
+    ]);
+  });
+
+  it('does not resend already resolved decisions', async () => {
+    store.createDecision({
+      id: 'decision-admin-resolved',
+      shortCode: 'RSN999',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      status: 'approved',
+      subject: 'Create sales skill',
+      body: 'Reusable operator workflow.',
+      risk: 'medium',
+      payload: { skillName: 'sales' },
+      createdAt: 1000,
+    });
+
+    const result = await gateway.resendDecisionPrompt('decision-admin-resolved', 'agent-a');
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'not_pending',
+      deliveries: [],
+      decision: expect.objectContaining({ id: 'decision-admin-resolved', status: 'approved' }),
+    });
+    expect(sendText).not.toHaveBeenCalled();
+  });
+
   it('applies approved learning memory decisions to the agent memory store', async () => {
     const review = learningStore.createReview({
       id: 'review-1',

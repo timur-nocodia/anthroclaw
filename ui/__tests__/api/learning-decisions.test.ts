@@ -243,6 +243,45 @@ describe('/api/agents/[agentId]/learning decisions', () => {
       .toContain('Publishing');
   });
 
+  it('resends a pending decision through the runtime gateway', async () => {
+    const resendDecisionPrompt = vi.fn(async () => ({
+      ok: true,
+      reason: 'resent',
+      deliveries: [
+        {
+          id: 'delivery-1',
+          decisionId: 'decision-1',
+          channel: 'telegram',
+          accountId: 'main',
+          peerId: '48705953',
+          messageId: 'resent-msg-1',
+          status: 'sent',
+        },
+      ],
+      decision: { id: 'decision-1', status: 'pending' },
+    }));
+    vi.doMock('@/lib/gateway', () => ({
+      getGateway: vi.fn(async () => ({ resendDecisionPrompt })),
+    }));
+
+    const { PATCH } = await import('@/app/api/agents/[agentId]/learning/route');
+    const res = await PATCH(jsonRequest('/api/agents/agent-a/learning', {
+      operation: 'resend_decision',
+      decisionId: 'decision-1',
+    }), { params: Promise.resolve({ agentId: 'agent-a' }) });
+
+    expect(res.status).toBe(200);
+    expect(resendDecisionPrompt).toHaveBeenCalledWith('decision-1', 'agent-a');
+    await expect(res.json()).resolves.toMatchObject({
+      ok: true,
+      resend: {
+        ok: true,
+        reason: 'resent',
+        deliveries: [expect.objectContaining({ messageId: 'resent-msg-1', status: 'sent' })],
+      },
+    });
+  });
+
   function seedSkillAction(input: { status: 'proposed' | 'approved' }) {
     const review = learningStore.createReview({
       id: 'review-1',

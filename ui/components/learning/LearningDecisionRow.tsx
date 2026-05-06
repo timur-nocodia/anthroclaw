@@ -66,11 +66,13 @@ export function LearningDecisionRow({
   onApprove,
   onReject,
   onApply,
+  onResend,
 }: {
   decision: LearningDecisionRecord;
   onApprove: () => void;
   onReject: () => void;
   onApply: () => void;
+  onResend?: () => void;
 }) {
   const deliveries = decision.delivery ?? [];
   const auditEvents = decision.auditEvents ?? [];
@@ -102,6 +104,12 @@ export function LearningDecisionRow({
           <Button variant="outline" size="sm" onClick={onApprove} disabled={decision.status !== "pending"}><CheckCircle2 className="h-3.5 w-3.5" />Approve</Button>
           <Button variant="outline" size="sm" onClick={onReject} disabled={decision.status !== "pending"}><XCircle className="h-3.5 w-3.5" />Reject</Button>
           <Button variant="outline" size="sm" onClick={onApply} disabled={decision.status !== "approved"}><Zap className="h-3.5 w-3.5" />Apply</Button>
+          {onResend && (
+            <Button variant="outline" size="sm" onClick={onResend} disabled={decision.status !== "pending"}>
+              <Send className="h-3.5 w-3.5" />
+              Notify again
+            </Button>
+          )}
         </div>
       </div>
 

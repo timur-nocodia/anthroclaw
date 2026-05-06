@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/route-handler';
 import { getAgentConfig, setAgentLearningConfig, ValidationError } from '@/lib/agents';
+import { getGateway } from '@/lib/gateway';
 import { DecisionStore } from '@backend/decisions/store.js';
 import { LearningStore } from '@backend/learning/store.js';
 import { applyMemoryCandidateAction } from '@backend/learning/memory-applier.js';
@@ -84,6 +85,21 @@ export async function PATCH(
       const learning = normalizeLearningConfig(body.learning);
       setAgentLearningConfig(agentId, learning);
       return NextResponse.json({ ok: true, learning });
+    }
+
+    if (operation === 'resend_decision') {
+      const decisionId = typeof body.decisionId === 'string' ? body.decisionId : '';
+      if (!decisionId) {
+        throw new ValidationError('bad_request', 'Expected decisionId');
+      }
+      const gateway = await getGateway();
+      const resend = await gateway.resendDecisionPrompt(decisionId, agentId);
+      const status = resend.reason === 'not_found'
+        ? 404
+        : resend.ok
+          ? 200
+          : 400;
+      return NextResponse.json({ ok: resend.ok, resend }, { status });
     }
 
     if (operation === 'approve_decision' || operation === 'reject_decision' || operation === 'apply_decision') {

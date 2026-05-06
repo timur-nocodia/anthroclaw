@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { LearningDecisionRow, type LearningDecisionRecord } from "@/components/learning/LearningDecisionRow";
 
@@ -11,6 +11,7 @@ describe("LearningDecisionRow", () => {
         onApprove={vi.fn()}
         onReject={vi.fn()}
         onApply={vi.fn()}
+        onResend={vi.fn()}
       />,
     );
 
@@ -23,6 +24,23 @@ describe("LearningDecisionRow", () => {
     expect(screen.getByText(/pending -> approved/)).toBeInTheDocument();
     expect(screen.getByText(/admin_approved/)).toBeInTheDocument();
     expect(screen.getByText(/operator-1/)).toBeInTheDocument();
+  });
+
+  it("lets operators notify a pending decision again", () => {
+    const onResend = vi.fn();
+    render(
+      <LearningDecisionRow
+        decision={{ ...decisionFixture(), status: "pending", decidedAt: undefined, decidedBy: undefined }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onApply={vi.fn()}
+        onResend={onResend}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /notify again/i }));
+
+    expect(onResend).toHaveBeenCalledOnce();
   });
 });
 
