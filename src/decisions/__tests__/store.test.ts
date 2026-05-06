@@ -158,4 +158,58 @@ describe('DecisionStore', () => {
     expect(store.listDecisions({ agentId: 'agent-a', status: 'pending' }).map((decision) => decision.id))
       .toEqual(['decision-2', 'decision-1']);
   });
+
+  it('reuses an active decision for the same learning action', () => {
+    const first = store.createDecision({
+      id: 'decision-1',
+      shortCode: 'ABC123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      learningActionId: 'action-1',
+      subject: 'Skill patch',
+      body: 'Patch skill.',
+      risk: 'medium',
+      createdAt: 1000,
+    });
+    const duplicate = store.createDecision({
+      id: 'decision-duplicate',
+      shortCode: 'DUP123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      learningActionId: 'action-1',
+      subject: 'Duplicate skill patch',
+      body: 'Duplicate patch.',
+      risk: 'medium',
+      createdAt: 2000,
+    });
+
+    expect(duplicate).toMatchObject({ id: first.id, shortCode: 'ABC123' });
+    expect(store.listDecisions({ agentId: 'agent-a' }).map((decision) => decision.id))
+      .toEqual(['decision-1']);
+    expect(store.listAuditEvents('decision-1')).toHaveLength(1);
+
+    store.updateDecisionStatus('decision-1', 'rejected', { reason: 'admin_rejected', updatedAt: 3000 });
+
+    const next = store.createDecision({
+      id: 'decision-2',
+      shortCode: 'DEF456',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      learningActionId: 'action-1',
+      subject: 'Retry skill patch',
+      body: 'Retry patch.',
+      risk: 'medium',
+      createdAt: 4000,
+    });
+
+    expect(next).toMatchObject({ id: 'decision-2', shortCode: 'DEF456' });
+    expect(store.listDecisions({ agentId: 'agent-a' }).map((decision) => decision.id))
+      .toEqual(['decision-2', 'decision-1']);
+  });
 });

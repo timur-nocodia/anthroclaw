@@ -86,6 +86,9 @@ export class DecisionStore {
         ON decisions(agent_id, status, created_at);
       CREATE INDEX IF NOT EXISTS idx_decisions_origin_pending
         ON decisions(status, actor, origin_channel, origin_account_id, origin_peer_id, origin_sender_id, origin_thread_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_decisions_active_learning_action
+        ON decisions(learning_action_id)
+        WHERE learning_action_id IS NOT NULL AND status IN ('pending', 'approved');
       CREATE INDEX IF NOT EXISTS idx_decision_audit_decision
         ON decision_audit_events(decision_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_decision_deliveries_decision
@@ -94,6 +97,11 @@ export class DecisionStore {
   }
 
   createDecision(params: CreateDecisionParams): DecisionRecord {
+    if (params.learningActionId) {
+      const active = this.getActiveDecisionForLearningAction(params.learningActionId);
+      if (active) return active;
+    }
+
     const id = params.id ?? randomUUID();
     const now = params.createdAt ?? Date.now();
     const shortCode = (params.shortCode ?? this.generateShortCode()).toUpperCase();
@@ -150,6 +158,17 @@ export class DecisionStore {
   getDecisionByShortCode(shortCode: string): DecisionRecord | null {
     const row = this.db.prepare('SELECT * FROM decisions WHERE UPPER(short_code) = ?')
       .get(shortCode.toUpperCase()) as DecisionRow | undefined;
+    return row ? rowToDecision(row) : null;
+  }
+
+  getActiveDecisionForLearningAction(learningActionId: string): DecisionRecord | null {
+    const row = this.db.prepare(`
+      SELECT * FROM decisions
+      WHERE learning_action_id = ?
+        AND status IN ('pending', 'approved')
+      ORDER BY created_at ASC, id ASC
+      LIMIT 1
+    `).get(learningActionId) as DecisionRow | undefined;
     return row ? rowToDecision(row) : null;
   }
 
