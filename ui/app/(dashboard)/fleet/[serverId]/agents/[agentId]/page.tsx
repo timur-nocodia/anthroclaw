@@ -64,6 +64,12 @@ import { HandoffTab } from "@/components/handoff/HandoffTab";
 import { Section } from "@/components/ui/section";
 import { WhereAgentListensSection } from "@/components/binding/WhereAgentListensSection";
 import { ANTHROPIC_MODELS as MODELS } from "@/lib/anthropic-models";
+import {
+  LearningAdminApprovalsEditor,
+  type LearningAdminApprovalRoute,
+  type LearningAdminApprovalsConfig,
+  type LearningDecisionKind,
+} from "@/components/learning/LearningAdminApprovalsEditor";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -463,7 +469,7 @@ interface LearningConfig {
   approvals?: {
     admin?: {
       notify?: boolean;
-      routes?: Array<{ channel: string; account_id?: string; peer_id: string; thread_id?: string }>;
+      routes?: LearningAdminApprovalRoute[];
       senders?: Record<string, Record<string, string[]>>;
       notify_admin_for?: LearningDecisionKind[];
     };
@@ -473,7 +479,6 @@ interface LearningConfig {
 type LearningActionStatus = "proposed" | "approved" | "rejected" | "applied" | "failed";
 type LearningActionType = "memory_candidate" | "skill_patch" | "skill_create" | "skill_update_full" | "none";
 type LearningDecisionStatus = "pending" | "approved" | "rejected" | "edit_requested" | "expired" | "applied" | "failed";
-type LearningDecisionKind = "learning_memory" | "learning_skill" | "curator_action" | "tool_approval";
 
 interface LearningActionRecord {
   id: string;
@@ -659,12 +664,7 @@ function envTextToMap(value: string): Record<string, string> | undefined {
 function normalizeLearningConfig(value?: LearningConfig): Required<LearningConfig> & {
   artifacts: Required<NonNullable<LearningConfig["artifacts"]>>;
   approvals: {
-    admin: {
-      notify: boolean;
-      routes: Array<{ channel: string; account_id?: string; peer_id: string; thread_id?: string }>;
-      senders: Record<string, Record<string, string[]>>;
-      notify_admin_for: LearningDecisionKind[];
-    };
+    admin: LearningAdminApprovalsConfig;
   };
 } {
   return {
@@ -3874,6 +3874,10 @@ function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: 
     setCfg((current) => ({ ...current, artifacts: { ...current.artifacts, ...patch } }));
   };
 
+  const updateAdminApprovals = (admin: LearningAdminApprovalsConfig) => {
+    setCfg((current) => ({ ...current, approvals: { ...current.approvals, admin } }));
+  };
+
   const saveLearningConfig = async () => {
     setSaving(true);
     try {
@@ -4006,6 +4010,7 @@ function LearningTab({ serverId, agentId, agent }: { serverId: string; agentId: 
             )}
           </div>
         </div>
+        <LearningAdminApprovalsEditor value={cfg.approvals.admin} onChange={updateAdminApprovals} />
       </Section>
 
       <Section
