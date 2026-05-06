@@ -6,6 +6,132 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-05-06
+
+Agent extensibility and smarter defaults release. This release turns the
+plugin system into an operator-visible product surface, adds the first
+safe file-transfer plugin, and changes new/default agent behavior so a
+fresh agent immediately gets more useful memory, learning, context, and
+progress features without breaking AnthroClaw's native Claude Agent SDK
+runtime boundary.
+
+### Added
+
+- **Plugin catalog and managed install lifecycle.**
+  AnthroClaw now discovers bundled plugins from `plugins/` and managed
+  installs from `data/plugins-installed/`, with install metadata stored
+  in `data/plugin-installs.json`. Invalid manifests, missing manifests,
+  duplicate plugin names, dependency state, source type, and loaded state
+  are represented explicitly in the catalog rather than hidden inside
+  runtime loading.
+- **Plugin lifecycle CLI.**
+  New `pnpm plugins` commands:
+  - `pnpm plugins list`
+  - `pnpm plugins install <local-path|npm-spec>`
+  - `pnpm plugins update <name>`
+  - `pnpm plugins remove <name>`
+  - `pnpm plugins doctor`
+- **Plugin admin APIs and UI lifecycle state.**
+  The Plugins panel now shows installed/catalog plugins even when they
+  are not loaded into runtime, including version, description, managed
+  state, source type/spec, install root, dependency state, loaded state,
+  MCP tool count, context-engine presence, and config-schema presence.
+  Added/extended API surfaces:
+  - `GET /api/plugins`
+  - `GET /api/plugins/:name/config-schema`
+  - `GET /api/agents/:agentId/plugins`
+  - `PUT /api/agents/:agentId/plugins/:name`
+  - `GET /api/agents/:agentId/plugins/:name/config`
+  - `PUT /api/agents/:agentId/plugins/:name/config`
+- **Lazy plugin runtime loading.**
+  Gateway startup now builds a catalog first, then loads only plugins
+  enabled by at least one agent. Enabling a catalog-present plugin from
+  the UI can load it into runtime on demand and refresh the agent's MCP
+  tools immediately. This keeps Agent SDK execution native while moving
+  plugin lifecycle policy outside the SDK runtime.
+- **Rubric-based learning review.**
+  Learning review prompts now require explicit action rubric metadata:
+  `evidenceStrength`, `durability`, `reusability`, `safety`, and
+  `recommendedActionClass`. This makes memory/skill proposals easier to
+  audit and lowers the chance of storing one-off or unsafe observations.
+- **Active skill artifact context for learning.**
+  Learning reviews now include context from active skill artifacts:
+  `SKILL.md`, plus bounded files from `references/` and `templates/`.
+  This biases review toward improving reusable procedures instead of
+  treating every turn as generic memory.
+- **Safe `file-transfer` plugin.**
+  New first-party plugin `plugins/file-transfer` registers MCP tools:
+  `file_fetch`, `dir_list`, `dir_fetch`, and `file_write`. Paths are
+  resolved through strict allowed roots with realpath checks to block
+  traversal and symlink escapes. Writes are disabled unless
+  `allowWrite=true`.
+
+### Changed
+
+- **Value-safe defaults are now on.**
+  Agents that rely on schema/scaffold defaults now get:
+  - `learning.enabled=true`
+  - `learning.mode=propose`
+  - `memory_extraction.enabled=true`
+  - SDK `promptSuggestions=true`
+  - SDK `agentProgressSummaries=true`
+  - SDK `includePartialMessages=true`
+- **New agent scaffolds are more useful out of the box.**
+  Newly created agents now include `plugins.lcm.enabled=true` and
+  `plugins.file-transfer.enabled=true` with `allowWrite=false` and
+  `roots: ["agents/<agentId>"]`. The example template also creates
+  `HEARTBEAT.md` and enables heartbeat; the blank template keeps
+  heartbeat off.
+- **Plugin config saves preserve live agent behavior.**
+  UI plugin enable/config changes refresh the agent's MCP tool list and
+  notify loaded plugins about per-agent config changes so cached state
+  is invalidated without waiting for watcher debounce.
+- **Headless learning review inherits runtime defaults safely.**
+  Background learning reviews now inherit model/cwd defaults from the
+  agent runtime path while still denying tools and running single-turn
+  SDK review calls.
+
+### Behaviour change — operator action recommended
+
+- Agents that omit `learning` now parse as `learning.enabled=true` with
+  `mode=propose`. This does not auto-apply memory or skill changes, but
+  it will create background proposals for operator review.
+- Agents that omit `memory_extraction` now parse as
+  `memory_extraction.enabled=true`. Candidates still go through the
+  existing review flow rather than becoming trusted memory silently.
+- New agents scaffold with LCM and read-only file transfer enabled. If a
+  deployment wants fully minimal agents, explicitly set:
+  ```yaml
+  learning:
+    enabled: false
+    mode: off
+  memory_extraction:
+    enabled: false
+  plugins:
+    lcm:
+      enabled: false
+    file-transfer:
+      enabled: false
+  ```
+
+### Safety notes
+
+- File-transfer writes remain opt-in via `allowWrite=true`.
+- `operator-console`, `human_takeover`, outbound notifications, LCM
+  auto-repair, and LCM operator slash commands remain opt-in.
+- Plugins still do not bypass the native Claude Agent SDK runtime: they
+  register tools/context around the runtime; LLM calls still go through
+  the SDK-native path.
+
+### Tests
+
+- Full verification after merging with `main`:
+  - `pnpm test`: 198 files / 1847 tests
+  - `pnpm build`: passed, including 4 plugin workspaces
+  - `pnpm --dir ui test`: 51 files / 502 tests
+  - `pnpm ui:build`: passed
+  - `pnpm --dir plugins/file-transfer test`: 2 files / 6 tests
+
 ## [0.9.0] - 2026-05-05
 
 System-prompt resolution release. Closes a pre-existing pre-v0.8 bug
@@ -139,7 +265,7 @@ mv agents/content_sm_building/CLAUDE.md.bak-imports-1777911551 agents/content_sm
 
 The `morning-standup` cron in `data/dynamic-cron.json` remains
 disabled — it depends on Calendar reads that are still cut off until
-v0.10.0 ships agent-driven OAuth (task #70).
+a future agent-driven OAuth release ships (task #70).
 
 ## [0.8.0] - 2026-05-04
 
