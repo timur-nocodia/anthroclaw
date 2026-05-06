@@ -6,6 +6,313 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-05
+
+System-prompt resolution release. Closes a pre-existing pre-v0.8 bug
+discovered while diagnosing the 2026-05-04 Amina hallucination incident:
+agent CLAUDE.md files were either ignored entirely (under `public` /
+`trusted` / `private` profiles) or sent to the model as literal
+`@./SOUL.md` text without resolving the `@-imports` (under
+`chat_like_openclaw`). Both halves are now fixed. Also ships a documentation
+overhaul making safety-profile selection obvious for new operators.
+
+### Added
+
+- **`@-import` resolver in agent system prompts**
+  (`src/sdk/system-prompt.ts` → `resolveImports`,
+  `loadResolvedAgentClaudeMd`). Whole-line `@<path>` directives in any
+  CLAUDE.md (or any file imported by it, recursively) are now resolved
+  before the system prompt is sent to the SDK. Recursive with cycle
+  detection, depth cap = 5, 1 MiB per-file size cap (with both
+  `statSync` pre-check and post-`readFileSync` length cap to defeat
+  sparse-file bypasses), per-invocation log cap (50 non-debug entries).
+  Path policy rejects absolute paths, URL-ish schemes, workspace-escape
+  via traversal or symlinks. All log entries include `agent_id`,
+  `from_file`, `import_path`, and a `reason` code.
+- **`composeSystemPrompt` profile-aware composer**
+  (`src/sdk/system-prompt.ts`). Replaces the inline branching in
+  `buildSdkOptions`. Per profile:
+  - `chat_like_openclaw` → personality (custom or
+    `CHAT_PERSONALITY_BASELINE`) + separator + agent CLAUDE.md
+  - `public` (string mode) → profile text + separator + agent CLAUDE.md
+  - `trusted` / `private` (preset mode) → SDK preset with `append:
+    <agent CLAUDE.md>` (the SDK's documented `append` field on
+    `systemPrompt`)
+  - When agent CLAUDE.md is empty/missing, returns just the profile
+    baseline; preset profiles omit the `append` field entirely.
+
+### Fixed
+
+- **System prompt body now reaches the model under every safety
+  profile.** Previously, only `chat_like_openclaw` agents had their
+  CLAUDE.md included in `Options.systemPrompt`. `public`, `trusted`,
+  and `private` profile agents received only the profile's 6-line
+  generic placeholder (`public`) or the bare `claude_code` preset
+  (`trusted` / `private`). The agent's authored rules — identity, role,
+  guardrails, tone — were invisible to the model. Production hotfix on
+  2026-05-04 swapped `leads_agent` (Amina) from `public` to
+  `chat_like_openclaw` and inlined the @-imports by hand. This release
+  is the architectural fix; the hotfix can be reverted in a follow-up.
+- **`@-imports` no longer reach the model as literal text.** Production
+  CLAUDE.md files in the form
+  ```
+  @./SOUL.md
+  @./IDENTITY.md
+  @./TOOLS.md
+  ```
+  (Claude Code interactive CLI's native composition feature) used to
+  pass through `Options.systemPrompt` unchanged because the SDK has no
+  file resolver. The model would see the literal `@./SOUL.md` strings
+  and fall back to its personality baseline. The new resolver inlines
+  these recursively before the prompt leaves anthroclaw.
+
+### Behaviour change — operator action required
+
+Agents using `safety_profile: public | trusted | private` will now
+include their `agent/CLAUDE.md` content in the system prompt sent to
+the LLM. If your agent has a CLAUDE.md but you were running it under
+one of these profiles assuming the file was unread (e.g. CLAUDE.md
+contained developer-only notes, debug instructions, or operator
+secrets), this release will start sending that content to the model.
+
+**Verify before upgrading:**
+1. For each agent running under `public`, `trusted`, or `private`:
+   - `cat agents/<id>/CLAUDE.md` — confirm content is appropriate to
+     send to the LLM in that profile's audience.
+   - Check any files imported via `@./...` recursively.
+2. Production hotfixes from 2026-05-04 can now be reverted in a
+   follow-up commit:
+   - `agents/leads_agent/agent.yml` — restore `safety_profile: public`
+   - `agents/{leads_agent,timur_agent,content_sm_building}/CLAUDE.md` —
+     restore `@-imports` form from the `.bak-imports*` backups.
+
+### Documentation
+
+- **`docs/guide.md` — Safety Profiles section overhauled.** Operators
+  reported the previous version made it unclear how to set up a
+  public-access bot vs. a no-restrictions personal bot. New structure:
+  - "Which profile do I want?" decision-tree + 4-row comparison table
+    (audience, allowed tools, approvals, rate limit, system-prompt
+    source) at the top of the section.
+  - Explicit `chat_like_openclaw` vs `private` comparison for personal
+    use — the most-asked question before this rewrite.
+  - Each profile sub-section now follows a consistent structure (when
+    to use → built-ins allowed → full hard-blacklist sourced from
+    `BUILTIN_META` → approval flow → sandbox / allowlist constraints →
+    system-prompt source → rate-limit floor → minimal working
+    `agent.yml`).
+  - "Common scenarios" recipe sub-section with 7 ready-made
+    configurations (public lead-capture, personal no-friction, personal
+    with approvals, team group bot, shell-enabled personal,
+    memory-reading public bot, "I don't know which profile" → migration
+    helper).
+
+### Tests
+
+- 35 new unit tests in `src/sdk/__tests__/system-prompt-resolver.test.ts`,
+  `system-prompt-composer.test.ts`, `system-prompt-e2e.test.ts`.
+- 5 new integration tests in `options-chat.test.ts` and
+  `options-profile.test.ts` asserting CLAUDE.md presence under each of
+  the 4 profiles + byte-identical backward-compat for
+  `chat_like_openclaw` with no `@-imports`.
+- Total: 1822 / 1822 green.
+
+### Operator actions
+
+Read the **Behaviour change** block above before deploying. After a
+successful prod deploy, the 2026-05-04 hotfixes can be reverted:
+
+```bash
+# on prod (ubuntu@46.247.41.191):
+cd /home/ubuntu/anthroclaw
+
+# leads_agent.yml: restore safety_profile: public
+mv agents/leads_agent/agent.yml.bak-pre-chat-profile-1777911287 agents/leads_agent/agent.yml
+
+# Restore @-imports CLAUDE.md (resolver does the inlining now)
+mv agents/leads_agent/CLAUDE.md.bak-imports-only-1777911469 agents/leads_agent/CLAUDE.md
+mv agents/timur_agent/CLAUDE.md.bak-imports-1777911551 agents/timur_agent/CLAUDE.md
+mv agents/content_sm_building/CLAUDE.md.bak-imports-1777911551 agents/content_sm_building/CLAUDE.md
+
+# ConfigWatcher hot-reloads on agent.yml; CLAUDE.md picked up on next session.
+```
+
+The `morning-standup` cron in `data/dynamic-cron.json` remains
+disabled — it depends on Calendar reads that are still cut off until
+v0.10.0 ships agent-driven OAuth (task #70).
+
+## [0.8.0] - 2026-05-04
+
+Capability-cutoff release. Closes a multi-tenant credential leak (one
+agent could reach Claude.ai-bound MCP servers like Google Calendar,
+Notion, Linear, Gmail bound to the host Claude account) and two
+related production bugs found 2026-05-04.
+
+### Added
+
+- **Capability cutoff** (`src/sdk/cutoff.ts` → `applyCutoffOptions`).
+  Every agent's SDK invocation now runs with `enabledMcpjsonServers: []`,
+  `settingSources: []`, `additionalDirectories: []`, scrubbed
+  `process.env`, and an agent-scoped `cwd`. A composed `canUseTool`
+  gate denies any tool the agent has not declared in its
+  `mcp_tools` / `external_mcp_servers`. Cutoff is the LAST step in
+  `buildSdkOptions` and applies to both normal and `trustedBypass`
+  paths — capability != permission.
+  - Built-in agent tool whitelist: `Read, Write, Edit, Bash, Glob,
+    Grep, TodoWrite`. Anything else (WebFetch, WebSearch,
+    NotebookEdit, Task, Claude.ai built-in MCP tools) requires
+    explicit per-agent declaration.
+  - Env scrub: case-insensitive denylist + prefix denylist covers
+    Anthropic / Claude / Google / Notion / Linear / Gmail / OpenAI /
+    AWS / GCP / Azure / Vault / GitHub plus project-internal
+    secrets (`JWT_SECRET`, `ADMIN_PASSWORD`, `DATABASE_URL` family,
+    `OC_AGENTS_DIR` / `OC_DATA_DIR`, `ANTHROCLAW_MASTER_KEY`).
+
+- **Filesystem sandbox** (`src/agent/sandbox/agent-workspace.ts`).
+  Canonical `agentWorkspaceDir(agentId)` resolved independently of
+  the loader-supplied `agent.workspacePath` so cutoff catches loader
+  regressions. Agent-id regex `^[a-z0-9][a-z0-9_-]*$` enforced both
+  in the helper and in `Gateway.discoverAgentDirs`.
+  - **Bash sibling-dir denylist** + cwd-guard wrapper: Bash commands
+    that substring-match a sibling agent's absolute workspace path
+    are denied; allowed commands are rewritten with a `cd "<ws>" ||
+    exit 1` preamble. Sibling paths are normalised with a trailing
+    `/` to prevent prefix-collision self-DoS (`agent_b` ⊂
+    `agent_bc`).
+
+- **Credential storage** (`src/agent/credentials/`).
+  - `master-key.ts` — `loadMasterKey()` validates
+    `ANTHROCLAW_MASTER_KEY` (32 bytes / 64 hex chars exactly).
+  - `audit.ts` — append-only JSONL audit log
+    (`<OC_DATA_DIR>/credential-access.jsonl`, mode `0o640`).
+    Concurrent writes serialized through a chain that survives
+    transient write failures.
+  - `encrypted-fs-store.ts` — `EncryptedFilesystemCredentialStore`.
+    AES-256-GCM with HKDF-SHA256-derived per-(agentId, service)
+    key. File layout `[version=1 | iv (12) | auth tag (16) |
+    ciphertext]` at `agents/<id>/credentials/<service>.enc` (mode
+    `0o600`, parent dir `0o700`). Cross-agent decryption fails;
+    tampering fails AES-GCM auth.
+  - `index.ts` — `CredentialStore` interface for future Vault
+    migration.
+
+- **Cron→DM session continuity** (`src/gateway.ts:handleCronJob`).
+  Cron dispatches with `deliverTo` now mirror the captured SDK
+  session id under the user-shaped sessionKey, so a follow-up user
+  reply resumes the same conversation. Background cron (no
+  `deliverTo`) stays isolated.
+
+- **`escalate` MCP tool** (`src/agent/tools/escalate.ts`). Universal
+  tool for routing client questions to a human operator when the
+  agent genuinely cannot fulfill the request. Writes structured
+  events to `<OC_DATA_DIR>/escalations/<agentId>.jsonl`.
+
+- **Customer-facing agent template**
+  (`docs/customer-facing-agent-template.md`). Anti-hallucination
+  addendum (don't invent technical excuses involving internal
+  architecture; refusal must be plain) plus instructions for adding
+  `escalate` to the agent's `mcp_tools`. Operators of customer-facing
+  agents (e.g. `leads_agent`/Amina) apply this at deploy time.
+
+- **`escalate` in example agent** — `agents/example/agent.yml`
+  ships with `escalate` registered.
+
+### Changed
+
+- `buildSdkOptions` wraps both return paths through
+  `applyCutoffOptions`. Profile-supplied `settingSources` is
+  overridden to `[]` (cutoff is ground truth).
+- `summarizeSessionRecallWithSdk` (`src/agent/agent.ts`) extracted
+  into `buildSessionRecallSdkOptions` and hardened with `settingSources:
+  []`, `additionalDirectories: []`, `env: scrubAgentEnv(process.env)`
+  even though all tools are denied — `.mcp.json` discovery still
+  fires at startup otherwise.
+- `composeToolGates` threads upstream's `updatedInput` into the
+  cutoff invocation and preserves it when cutoff allows without
+  supplying its own. Cutoff retains final say.
+
+### Required action for operators upgrading from 0.7.x
+
+1. **Set canonical agent / data paths in prod `.env`** (REQUIRED):
+   ```env
+   OC_AGENTS_DIR=/app/agents
+   OC_DATA_DIR=/app/data
+   ```
+   The cutoff layer resolves each agent's SDK `cwd` via
+   `agentWorkspaceDir(agentId)`, which falls back to
+   `<process.cwd()>/agents`. In our docker-compose `working_dir` is
+   `/app/ui` (Next.js host), so the fallback resolves to
+   `/app/ui/agents/<id>` — a non-existent path, causing spawned SDK
+   processes to die instantly with a misleading
+   "Claude Code native binary not found" error. Set explicitly.
+
+2. Generate the credential-store master key (optional for v0.8.0,
+   required from v0.9.0):
+   ```bash
+   openssl rand -hex 32 > /tmp/master-key
+   echo "ANTHROCLAW_MASTER_KEY=$(cat /tmp/master-key)" >> /path/to/prod/.env
+   shred /tmp/master-key
+   ```
+   v0.8.0 ships the encrypted store but no agent reads it yet (that's
+   v0.9.0 agent-driven OAuth). Set the env var now anyway so the v0.9
+   deploy doesn't surprise.
+
+3. **Disable cron jobs that relied on inherited Claude.ai MCP
+   servers.** After deploy, `mcp__claude_ai_*` tools return deny
+   from the cutoff gate. Most affected: `morning-standup` for
+   `timur_agent` (calendar reads). Disable in
+   `data/dynamic-cron.json` (set `enabled: false`) until v0.9.0
+   ships agent-driven OAuth.
+
+4. **Customer-facing agents:** apply the addendum from
+   `docs/customer-facing-agent-template.md` to the agent's
+   `CLAUDE.md` (or its first `@./*.md` import) and add `escalate`
+   to the agent's `mcp_tools`. Hardens against the
+   operator-console hallucination found 2026-05-04.
+
+### Bug fixes
+
+- **Bug #1 (cron amnesia):** cron-fired briefing went to one SDK
+  session, follow-up user message started a different session.
+  Fixed by mirroring the captured session id to the user-shaped
+  sessionKey in `handleCronJob`.
+- **Bug #2 (cross-tenant calendar leak):** Klavdia (`timur_agent`)
+  read Roman's Google Calendar via the inherited Claude.ai MCP
+  server. Closed structurally by the cutoff (Subsystem 1).
+- **Bug #3 (Amina hallucination):** `leads_agent` invented an
+  "operator console is disabled" excuse to refuse a client.
+  Mitigated by the customer-facing addendum + `escalate` tool.
+- **Bug #4 (cross-agent MCP credential leak):** parent of #2;
+  same fix.
+
+### Removed
+
+- Implicit access to Claude account-bound MCP servers from agent
+  runtime. (Was a security hazard, not a feature.)
+
+### Known limitations
+
+- **`mcp__claude_ai_*` names still appear in `deferred_tools_delta`.**
+  The Claude Code native binary reads its own `~/.claude/` settings on
+  startup and announces those tool names to the model regardless of
+  `enabledMcpjsonServers: []`. The cutoff `canUseTool` gate denies the
+  actual call (whitelist), and the names are not in `--allowedTools`
+  the SDK passes, so the model cannot directly invoke them; `ToolSearch`
+  is now in HARNESS_BLOCKLIST as additional defence-in-depth. End
+  result is structurally safe but the names leak at the
+  "model-knows-they-exist" layer. A clean closure requires moving the
+  OAuth-token storage out of `~/.claude/` so the bind-mount is no
+  longer needed — deferred to v0.9.0.
+- **Bug #3 behavioural discipline (Amina) only partially fixed.** The
+  structural cause (hallucinated technical excuses about internal
+  architecture) is closed by the cutoff + `escalate` tool. But the
+  customer-facing addendum's hard rules (no competitor names, no
+  markdown in WhatsApp, plain refusals) are imperfectly followed by
+  Opus 4.6 with adaptive thinking — the model still drifts toward
+  "helpful" comparisons. A second-pass critique agent (review the
+  pre-send response, regenerate if it violates rules) is the fix —
+  scheduled for v0.9.0.
+
 ## [0.7.1] - 2026-05-02
 
 Patch release with UX polish and small fixes shipped after v0.7.0 production

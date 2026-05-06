@@ -26,6 +26,7 @@ openclaw-path-alias-*/
 docs/*
 !docs/superpowers/
 !docs/safety-profiles.md
+!docs/customer-facing-agent-template.md
 
 # Git worktrees (used by superpowers subagent-driven workflow)
 .worktrees/

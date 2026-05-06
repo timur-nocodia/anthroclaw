@@ -27,10 +27,13 @@ AnthroClaw is inspired by OpenClaw and Hermes-style agent infrastructure, but it
    - [Pairing Modes](#pairing-modes)
    - [Managing Access via Chat](#managing-access-via-chat)
 7. [Safety Profiles](#safety-profiles)
+   - [Which profile do I want?](#which-profile-do-i-want)
    - [`chat_like_openclaw`](#chat_like_openclaw)
    - [`public`](#public)
    - [`trusted`](#trusted)
    - [`private`](#private)
+   - [Common scenarios](#common-scenarios)
+   - [Tool Metadata](#tool-metadata)
    - [Migration](#migration)
 8. [Memory System](#memory-system)
    - [Daily Memory](#daily-memory)
@@ -668,9 +671,40 @@ three things at load time:
 - what happens when a tool is destructive, public-facing, or unsupported by a
   channel approval flow
 
-```yaml
-safety_profile: chat_like_openclaw  # chat_like_openclaw | public | trusted | private
+The validator fails fast when an agent combines a profile with unsafe tool
+access, unsupported overrides, or an invalid allowlist shape.
 
+### Which profile do I want?
+
+```
+                         ┌─ Strangers can DM the bot? ──── YES ──→ public
+                         │
+Who talks to this bot? ──┤        ┌─ exactly 1 person, no approval prompts ──→ private
+                         │        │
+                         └─ NO ───┤
+                                  │  ┌─ small group, trust each other ──→ chat_like_openclaw
+                                  └──┤
+                                     └─ team / known users, want guardrails ──→ trusted
+```
+
+Quick comparison:
+
+| Profile               | Audience              | Read-only tools | Edit/Write           | Bash | Approval prompts | Rate limit  | System prompt source                |
+| --------------------- | --------------------- | --------------- | -------------------- | ---- | ---------------- | ----------- | ----------------------------------- |
+| `public`              | Anonymous strangers   | yes             | NO (hard-blocked)    | NO   | none (auto-deny) | 30/hr/peer  | profile baseline + `CLAUDE.md`      |
+| `trusted`             | Known multi-user team | yes             | yes, behind approval | NO   | interactive      | 100/hr/peer | `claude_code` preset + `CLAUDE.md`  |
+| `chat_like_openclaw`  | Personal / small      | yes             | yes                  | yes  | none (auto-allow)| none        | warm baseline + `CLAUDE.md`         |
+| `private`             | Single owner          | yes             | yes                  | yes  | interactive      | none        | `claude_code` preset + `CLAUDE.md`  |
+
+The two "personal" profiles differ:
+- `chat_like_openclaw` — friendly conversational tone, sandbox off, zero approval prompts. Allowlist can be `["*"]`. Ergonomic.
+- `private` — full Claude Code preset (skills, plan mode, all dynamic sections), exactly 1 peer per channel, destructive tools prompt for approval unless `permission_mode: bypass` is set. Stricter.
+
+If you want "just my own bot, no friction" → `chat_like_openclaw`. If you want "single-owner power-user setup with explicit approval gates" → `private`.
+
+Common overrides apply to any profile:
+
+```yaml
 safety_overrides:
   allow_tools:
     - manage_cron                   # opens specific tools, logs WARN
@@ -679,75 +713,172 @@ safety_overrides:
     allowUnsandboxedCommands: true
 ```
 
-The validator fails fast when an agent combines a profile with unsafe tool
-access, unsupported overrides, or an invalid allowlist shape. Profiles also
-enforce rate-limit floors: `public` is capped more aggressively than
-single-user/private agents.
-
 ### `chat_like_openclaw`
 
-Default for newly scaffolded agents. Use this for personal bots where every
-allowed peer is trusted.
+The default for newly scaffolded agents. Use this for personal / small-circle bots where every allowed peer is trusted.
 
-- System prompt: pure string, no `claude_code` preset. The profile baseline
-  provides a warm conversational tone and is concatenated with `CLAUDE.md`.
-- Optional `personality` field in `agent.yml` replaces the baseline.
-- Tools: all configured built-ins and MCP tools are allowed, except explicitly
-  denied tools.
-- Approval flow: disabled.
-- Allowlist: any shape is accepted, including wildcard `["*"]`.
-- Sandbox: off by default.
+- **Built-ins allowed:** all (`Read`, `Glob`, `Grep`, `LS`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Bash`, `WebFetch`, `TodoWrite`, plus all `manage_*` tools and `show_config`)
+- **Hard-blacklisted:** none
+- **Approval flow:** disabled (auto-allow)
+- **Sandbox:** off by default
+- **Allowlist:** any shape accepted, including wildcard `["*"]`
+- **System prompt:** warm conversational baseline (or your `personality` override) concatenated with `CLAUDE.md`
+- **Rate limit:** none
+
+Minimal `agent.yml`:
 
 ```yaml
 safety_profile: chat_like_openclaw
+model: claude-sonnet-4-6
+timezone: Asia/Almaty
+
+routes:
+  - channel: telegram
+    scope: dm
+
+allowlist:
+  telegram: ["123456789"]   # your Telegram user ID
+
+mcp_tools:
+  - memory_search
+  - memory_write
+```
+
+Optional `personality` override (replaces the warm baseline):
+
+```yaml
 personality: |
   You are a warm personal assistant. Be direct, practical, and concise only
   when it helps the user.
 ```
 
-Do not use this for public Telegram or WhatsApp entry points where strangers
-can DM the bot.
+Do not use this for Telegram or WhatsApp entry points where strangers can DM the bot — use `public` for that.
 
 ### `public`
 
-For public lead-capture/info bots and anonymous-user threat models.
+For public lead-capture / info bots that any stranger can DM.
 
-- Custom non-Claude-Code system prompt.
-- No project `.claude` settings are loaded.
-- Read-only built-ins only: `Read`, `Glob`, `Grep`, `LS`.
-- MCP tools must opt into public safety via tool metadata.
-- No interactive approval flow.
-- Rate-limit floor: 30 messages/hour per peer.
+- **Built-ins allowed:** read-only only — `Read`, `Glob`, `Grep`, `LS`, `show_config`
+- **Hard-blacklisted:** `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Bash`, `WebFetch`, `TodoWrite`, `manage_skills`, `manage_notifications`, `manage_human_takeover`, `manage_operator_console`, `access_control`
+- **MCP tools:** must opt into public safety via tool metadata (`safe_in_public: true`)
+- **Approval flow:** none (any tool that would require approval is auto-denied — `strict-deny`)
+- **Sandbox:** on, no unsandboxed commands
+- **Allowlist:** wildcard `["*"]` typical; specific peers warn (use `trusted` if you want a known list)
+- **System prompt:** profile baseline (6-line public-facing description) concatenated with `CLAUDE.md` (since v0.9.0; pre-v0.9 ignored `CLAUDE.md`)
+- **Rate limit floor:** 30 messages/hour/peer (gateway enforces at minimum)
 
-Hard-blacklisted examples include `Bash`, `Write`, `Edit`, `MultiEdit`,
-`WebFetch`, `manage_skills`, and `access_control`.
+Minimal `agent.yml`:
+
+```yaml
+safety_profile: public
+model: claude-sonnet-4-6
+timezone: Asia/Almaty
+
+routes:
+  - channel: telegram
+    scope: dm
+
+allowlist:
+  telegram: ["*"]            # anyone can DM
+
+pairing:
+  mode: open                  # first message = automatic access
+
+mcp_tools:
+  - memory_search             # read-only memory recall
+  - memory_wiki               # read-only wiki access (action: read|list only)
+  - send_message              # reply to user
+```
 
 ### `trusted`
 
-For known users: allowlisted users, paired users, internal teams, or private
-groups where mistakes are more likely than hostile use.
+For known users — allowlisted users, paired users, internal teams, or private groups where mistakes are more likely than hostile use.
 
-- Claude Code preset and project settings can be used.
-- Edit-style tools can be available behind channel approval.
-- `manage_cron`, `memory_write`, and `send_media` are available when enabled.
-- Telegram supports inline approval prompts for destructive operations.
-- Rate-limit floor: 100 messages/hour per peer.
+- **Built-ins allowed:** `Read`, `Glob`, `Grep`, `LS`, `Write`, `Edit`, `MultiEdit`, `WebFetch`, `TodoWrite`, all `manage_*` tools, `show_config`
+- **Hard-blacklisted:** `Bash`, `NotebookEdit`, `manage_skills`, `access_control`
+- **Approval flow:** interactive — destructive tools (`Write`, `Edit`, `MultiEdit`, `WebFetch`, `manage_*`) prompt the user via Telegram inline buttons before running
+- **Sandbox:** on, no unsandboxed commands
+- **Allowlist:** specific peers required; wildcard `["*"]` rejected (use `public` for that)
+- **System prompt:** `claude_code` preset (with dynamic sections excluded) + `CLAUDE.md` appended (since v0.9.0)
+- **Rate limit floor:** 100 messages/hour/peer
 
-Hard-blacklisted examples include `manage_skills`, `access_control`, `Bash`,
-and `NotebookEdit`.
+Minimal `agent.yml`:
+
+```yaml
+safety_profile: trusted
+model: claude-sonnet-4-6
+timezone: Asia/Almaty
+
+routes:
+  - channel: telegram
+    scope: group
+    peers: ["-1001234567890"]   # specific group chat
+
+allowlist:
+  telegram: ["111111111", "222222222", "333333333"]
+
+mcp_tools:
+  - memory_search
+  - memory_write
+  - send_message
+  - send_media
+```
 
 ### `private`
 
-For a single-owner assistant.
+For a single-owner assistant — your personal bot with everything wired up.
 
-- Allowlist must contain exactly one peer per configured channel.
-- All configured tools can be available subject to explicit `mcp_tools`.
-- Destructive operations can still require approval depending on overrides.
-- `safety_overrides.permission_mode: bypass` is allowed when you intentionally
-  want no approval flow.
+- **Built-ins allowed:** all
+- **Hard-blacklisted:** none
+- **Approval flow:** interactive by default — destructive tools prompt for approval; set `safety_overrides.permission_mode: bypass` to skip prompts
+- **Sandbox:** on by default; can be turned off via override
+- **Allowlist:** **must contain exactly one peer per configured channel** (validator rejects 0 or 2+)
+- **System prompt:** `claude_code` preset (full, with dynamic sections) + `CLAUDE.md` appended (since v0.9.0)
+- **Rate limit:** none
 
-Use `private` for `learning.mode: auto_private`; public/trusted agents can
-propose learning actions but cannot auto-apply skill or memory changes.
+Minimal `agent.yml`:
+
+```yaml
+safety_profile: private
+model: claude-sonnet-4-6
+timezone: Asia/Almaty
+
+routes:
+  - channel: telegram
+    scope: dm
+
+allowlist:
+  telegram: ["123456789"]   # exactly one peer
+
+safety_overrides:
+  permission_mode: bypass    # optional: skip approval prompts
+
+mcp_tools:
+  - memory_search
+  - memory_write
+  - memory_wiki
+  - send_message
+  - manage_cron
+  - manage_skills            # learn new skills via /skill
+```
+
+`private` is also the only profile that supports `learning.mode: auto_private` — `public` and `trusted` agents can *propose* skill/memory learnings but cannot auto-apply them.
+
+### Common scenarios
+
+**"I want a public lead-capture bot for my landing page"** → `public` + `pairing.mode: open` + `allowlist.telegram: ["*"]`. Add `mcp_tools: [memory_search, memory_wiki, send_message]` (read-only). Anyone can DM, no approval friction, the bot can answer questions and take leads but cannot write/exec/web-fetch. See [`public`](#public) above for the full minimal yaml.
+
+**"I want a personal assistant just for me, no friction"** → `chat_like_openclaw` + your Telegram ID in `allowlist`. No approval prompts, all tools available. See [`chat_like_openclaw`](#chat_like_openclaw).
+
+**"I want a personal assistant with explicit approval gates"** → `private` + your Telegram ID in `allowlist`. Tools that mutate state will ask for approval before running. Don't set `permission_mode: bypass`.
+
+**"I want a team bot for our company group chat"** → `trusted` + the group ID in `routes.peers` + every team member's user ID in `allowlist.telegram`. Edit-style tools require approval, `Bash` is hard-blocked. See [`trusted`](#trusted).
+
+**"I want my personal bot to be able to run shell commands"** → `chat_like_openclaw` (auto-allow) or `private` (with `permission_mode: bypass`). `Bash` is hard-blocked in `public` and `trusted` and cannot be re-enabled via `safety_overrides`.
+
+**"I want a public bot that can also remember information"** → `public` + `mcp_tools: [memory_search, memory_wiki]`. Memory writes are not allowed under `public`; only the bot's owner (in another agent under `private`/`trusted`) can populate memory; the public bot reads it.
+
+**"I'm migrating an existing agent and don't know which profile to pick"** → run `pnpm migrate:safety-profile` (dry-run). The helper inspects allowlist, `permission_mode`, and tools and suggests the right profile. See [Migration](#migration) below.
 
 ### Tool Metadata
 

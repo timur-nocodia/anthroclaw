@@ -1,11 +1,9 @@
 import type { AgentDefinition, OnElicitation, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionStore } from '@anthropic-ai/claude-agent-sdk';
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
 import type { Agent } from '../agent/agent.js';
 import type { HookEmitter } from '../hooks/emitter.js';
-import { CHAT_PERSONALITY_BASELINE } from '../security/profiles/chat-personality-baseline.js';
 import { buildSdkHookBridge, mergeSdkHooks } from './hooks.js';
+import { composeSystemPrompt } from './system-prompt.js';
 import {
   buildAllowedTools,
   buildPermissionHooks,
@@ -13,6 +11,7 @@ import {
   type FileOwnershipPermissionHooks,
 } from './permissions.js';
 import { buildExternalMcpServerSpec } from './external-mcp.js';
+import { applyCutoffOptions } from './cutoff.js';
 import { normalizeSandboxSettings } from './sandbox.js';
 import { ApprovalBroker } from '../security/approval-broker.js';
 import type { ChannelAdapter } from '../channels/types.js';
@@ -34,33 +33,6 @@ function applySandboxProfile(
     // Spread remaining agent-level fields so nothing is lost
     ...agentSandbox,
   };
-}
-
-/**
- * Resolves system prompt for chat_like_openclaw profile by combining:
- *   1. personality baseline (per-agent override OR CHAT_PERSONALITY_BASELINE)
- *   2. agent's CLAUDE.md content
- *
- * If CLAUDE.md doesn't exist, returns just the baseline.
- */
-function resolveChatSystemPrompt(agent: Agent): string {
-  const personality =
-    typeof agent.config.personality === 'string' && agent.config.personality.trim().length > 0
-      ? agent.config.personality.trim()
-      : CHAT_PERSONALITY_BASELINE;
-
-  const claudeMdPath = join(agent.workspacePath, 'CLAUDE.md');
-  let claudeMd = '';
-  if (existsSync(claudeMdPath)) {
-    try {
-      claudeMd = readFileSync(claudeMdPath, 'utf-8').trim();
-    } catch {
-      claudeMd = '';
-    }
-  }
-
-  if (!claudeMd) return personality;
-  return `${personality}\n\n─────────\n\n${claudeMd}`;
 }
 
 export interface BuildSdkOptionsParams {
@@ -87,18 +59,7 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
   const hasSubagents = Boolean(subagents && Object.keys(subagents).length > 0);
   const profile = agent.safetyProfile;
 
-  let systemPrompt: Options['systemPrompt'];
-  if (profile.name === 'chat_like_openclaw') {
-    systemPrompt = resolveChatSystemPrompt(agent);
-  } else if (profile.systemPrompt.mode === 'string') {
-    systemPrompt = profile.systemPrompt.text;
-  } else {
-    systemPrompt = {
-      type: 'preset',
-      preset: profile.systemPrompt.preset,
-      excludeDynamicSections: profile.systemPrompt.excludeDynamicSections,
-    };
-  }
+  const systemPrompt = composeSystemPrompt(agent, profile);
 
   const options: Options = {
     model: modelOverride ?? agent.config.model ?? 'claude-sonnet-4-6',
@@ -147,7 +108,12 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
   if (trustedBypass) {
     options.permissionMode = 'bypassPermissions';
     options.allowDangerouslySkipPermissions = true;
-    return options;
+    // Capability cutoff applies even on trustedBypass: capability ≠ permission.
+    // A trusted agent still must not reach another tenant's MCP-exposed
+    // resources (e.g. another operator's Google Calendar). The cutoff layer
+    // hardens cwd, env, settingSources, and adds a runtime canUseTool gate
+    // limited to declared capabilities — independent of permission mode.
+    return applyCutoffOptions(options, agent);
   }
 
   const allowedTools = buildAllowedTools(agent, hasSubagents);
@@ -164,5 +130,5 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
     sessionContext: params.sessionContext ?? { peerId: '__headless__' },
   });
 
-  return options;
+  return applyCutoffOptions(options, agent);
 }

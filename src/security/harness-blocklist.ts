@@ -54,4 +54,13 @@ export const HARNESS_BLOCKLIST: readonly string[] = [
   // Generic MCP enumeration the model should never need.
   'ReadMcpResourceTool',
   'ListMcpResourcesTool',
+
+  // Deferred-tool discovery from the host Claude Code runtime. Without this,
+  // an agent can ToolSearch its way to mcp__claude_ai_* tools that leak in
+  // via the bind-mounted ~/.claude/ (host OAuth-token mount). Names appear
+  // in `deferred_tools_delta` regardless of `enabledMcpjsonServers: []`
+  // because Claude Code reads its own settings on startup. The cutoff
+  // canUseTool gate would deny the actual call, but blocking ToolSearch at
+  // SDK-option layer is a cleaner closure (defence-in-depth).
+  'ToolSearch',
 ];
