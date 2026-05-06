@@ -88,8 +88,8 @@ export default function AgentsListPage() {
         const d = await res.json();
         setAgents(Array.isArray(d) ? d : d.agents ?? []);
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to fetch agents list:", err);
     } finally {
       setLoading(false);
     }
@@ -125,8 +125,8 @@ export default function AgentsListPage() {
         setNewId("");
         router.push(`/fleet/${serverId}/agents/${newId}`);
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to create agent:", err);
     } finally {
       setCreating(false);
     }
@@ -140,8 +140,8 @@ export default function AgentsListPage() {
         method: "DELETE",
       });
       setAgents((prev) => prev.filter((a) => a.id !== deleteTarget));
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to delete agent:", err);
     } finally {
       setDeleting(false);
       setDeleteTarget(null);

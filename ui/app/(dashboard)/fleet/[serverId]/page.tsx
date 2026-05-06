@@ -433,8 +433,8 @@ export default function ServerDashboard() {
       if (metricsRes.ok) {
         setMetrics(await metricsRes.json());
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to fetch fleet dashboard data:", err);
     } finally {
       setLoading(false);
     }

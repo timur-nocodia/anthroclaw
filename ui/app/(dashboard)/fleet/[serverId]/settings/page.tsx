@@ -327,8 +327,8 @@ function GeneralSection({ serverId }: { serverId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ environment: env }),
       });
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to save server environment:", err);
     } finally {
       setEnvSaving(false);
     }
@@ -338,8 +338,8 @@ function GeneralSection({ serverId }: { serverId: string }) {
     setRestarting(true);
     try {
       await fetch(`/api/fleet/${serverId}/gateway/restart`, { method: "POST" });
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to restart gateway:", err);
     } finally {
       setRestarting(false);
       setRestartOpen(false);
@@ -355,8 +355,8 @@ function GeneralSection({ serverId }: { serverId: string }) {
         body: JSON.stringify({ yaml: config }),
       });
       setEditMode(false);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to save gateway config:", err);
     } finally {
       setSaving(false);
     }

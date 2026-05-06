@@ -782,8 +782,8 @@ export default function AgentEditorPage() {
         const config = d.parsed ?? d;
         setAgent({ id: agentId, raw: d.raw, ...config });
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to fetch agent config:", err);
     } finally {
       setLoading(false);
     }
@@ -5122,8 +5122,8 @@ function FilesTab({ serverId, agentId }: { serverId: string; agentId: string }) 
           setSelected(list[0].name);
         }
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to fetch agent files list:", err);
     }
   }, [serverId, agentId, selected]);
 
@@ -5138,8 +5138,8 @@ function FilesTab({ serverId, agentId }: { serverId: string; agentId: string }) 
         setContent(d.content ?? "");
         setDirty(false);
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to fetch agent file content:", err);
     }
   }, [serverId, agentId, selected]);
 
@@ -5176,8 +5176,8 @@ function FilesTab({ serverId, agentId }: { serverId: string; agentId: string }) 
         },
       );
       setDirty(false);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to save agent file:", err);
     } finally {
       setSaving(false);
     }
@@ -5198,8 +5198,8 @@ function FilesTab({ serverId, agentId }: { serverId: string; agentId: string }) 
       setNewFileName("");
       setSelected(newFileName);
       await fetchFiles();
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to create new agent file:", err);
     }
   };
 
@@ -5212,8 +5212,8 @@ function FilesTab({ serverId, agentId }: { serverId: string; agentId: string }) 
       );
       setSelected("");
       await fetchFiles();
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to delete agent file:", err);
     }
   };
 
@@ -5451,8 +5451,8 @@ function SkillsTab({ serverId, agentId }: { serverId: string; agentId: string })
         const d = await res.json();
         setSkills(Array.isArray(d) ? d : d.skills ?? []);
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to fetch agent skills:", err);
     }
   }, [serverId, agentId]);
 
@@ -5470,8 +5470,8 @@ function SkillsTab({ serverId, agentId }: { serverId: string; agentId: string })
       });
       setUploadOpen(false);
       await fetchSkills();
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to upload skill:", err);
     }
   };
 
@@ -5490,8 +5490,8 @@ function SkillsTab({ serverId, agentId }: { serverId: string; agentId: string })
       setGitOpen(false);
       setGitUrl("");
       await fetchSkills();
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to clone skill from git:", err);
     }
   };
 
@@ -5506,8 +5506,8 @@ function SkillsTab({ serverId, agentId }: { serverId: string; agentId: string })
         }),
       });
       await fetchSkills();
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to update skill attachment:", err);
     }
   };
 

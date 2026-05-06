@@ -9,8 +9,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (email === getAdminEmail()) {
     try {
       createResetToken();
-    } catch {
-      // silently fail — no enumeration
+    } catch (err) {
+      console.error("Failed to create reset token:", err);
+      // no enumeration — still return 200 below
     }
   }
 
