@@ -112,4 +112,50 @@ describe('DecisionStore', () => {
       ],
     });
   });
+
+  it('lists decisions by agent, status, kind, and actor', () => {
+    store.createDecision({
+      id: 'decision-1',
+      shortCode: 'ABC123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Skill patch',
+      body: 'Patch skill.',
+      risk: 'medium',
+      createdAt: 1000,
+    });
+    store.createDecision({
+      id: 'decision-2',
+      shortCode: 'DEF456',
+      kind: 'learning_memory',
+      scope: 'user',
+      actor: 'originating_user',
+      agentId: 'agent-a',
+      subject: 'Memory',
+      body: 'Save memory.',
+      risk: 'low',
+      createdAt: 2000,
+    });
+    store.createDecision({
+      id: 'decision-3',
+      shortCode: 'GHI789',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-b',
+      subject: 'Other agent',
+      body: 'Patch other skill.',
+      risk: 'medium',
+      createdAt: 3000,
+    });
+
+    expect(store.listDecisions({ agentId: 'agent-a', kind: 'learning_skill', actor: 'admin' }))
+      .toEqual([
+        expect.objectContaining({ id: 'decision-1' }),
+      ]);
+    expect(store.listDecisions({ agentId: 'agent-a', status: 'pending' }).map((decision) => decision.id))
+      .toEqual(['decision-2', 'decision-1']);
+  });
 });

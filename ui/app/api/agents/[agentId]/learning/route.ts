@@ -3,12 +3,13 @@ import { join, resolve } from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/route-handler';
 import { getAgentConfig, setAgentLearningConfig, ValidationError } from '@/lib/agents';
+import { DecisionStore } from '@backend/decisions/store.js';
 import { LearningStore } from '@backend/learning/store.js';
 import { applyMemoryCandidateAction } from '@backend/learning/memory-applier.js';
 import { applySkillAction } from '@backend/learning/skill-applier.js';
 import { MemoryStore } from '@backend/memory/store.js';
 import { metrics } from '@backend/metrics/collector.js';
-import type { LearningMode } from '@backend/learning/types.js';
+import type { LearningActionRecord, LearningMode } from '@backend/learning/types.js';
 
 const DATA_DIR = resolve(process.cwd(), '..', 'data');
 const AGENTS_DIR = resolve(process.cwd(), '..', 'agents');
@@ -29,11 +30,13 @@ export async function GET(
     const offset = optionalNumber(url.searchParams.get('offset')) ?? 0;
     const config = getAgentConfig(agentId).parsed;
     const store = openLearningStore();
+    const decisionStore = openDecisionStore();
     try {
       const actions = store.listActions({ agentId, status, actionType, limit, offset });
       const reviews = store.listReviews({ agentId, limit: 50 });
       const artifacts = store.listArtifacts({ limit: 1000 }).filter((artifact) => artifact.agentId === agentId);
       const snapshots = store.listSkillSnapshots({ agentId, limit: 1000 });
+      const decisions = decisionStore.listDecisions({ agentId, limit: 200 });
       return NextResponse.json({
         config: {
           safety_profile: config.safety_profile,
@@ -46,15 +49,20 @@ export async function GET(
           reviewsByStatus: countBy(reviews.map((review) => review.status)),
           actionsByStatus: countBy(actions.map((action) => action.status)),
           actionsByType: countBy(actions.map((action) => action.actionType)),
+          pendingDecisions: decisions.filter((decision) => decision.status === 'pending').length,
+          decisionsByStatus: countBy(decisions.map((decision) => decision.status)),
+          decisionsByKind: countBy(decisions.map((decision) => decision.kind)),
           artifactCount: artifacts.length,
           skillSnapshotCount: snapshots.length,
         },
         actions,
+        decisions,
         reviews,
         artifacts: artifacts.slice(0, 100),
       });
     } finally {
       store.close();
+      decisionStore.close();
     }
   });
 }
@@ -72,6 +80,70 @@ export async function PATCH(
       const learning = normalizeLearningConfig(body.learning);
       setAgentLearningConfig(agentId, learning);
       return NextResponse.json({ ok: true, learning });
+    }
+
+    if (operation === 'approve_decision' || operation === 'reject_decision' || operation === 'apply_decision') {
+      const decisionId = typeof body.decisionId === 'string' ? body.decisionId : '';
+      if (!decisionId) {
+        throw new ValidationError('bad_request', 'Expected decisionId');
+      }
+      const store = openLearningStore();
+      const decisionStore = openDecisionStore();
+      try {
+        const decision = decisionStore.getDecision(decisionId);
+        if (!decision || decision.agentId !== agentId) {
+          return NextResponse.json({ error: 'not_found' }, { status: 404 });
+        }
+        const action = decision.learningActionId ? store.getAction(decision.learningActionId) : null;
+        if (decision.learningActionId && (!action || action.agentId !== agentId)) {
+          return NextResponse.json({ error: 'not_found' }, { status: 404 });
+        }
+
+        if (operation === 'approve_decision') {
+          const updated = decisionStore.updateDecisionStatus(decision.id, 'approved', {
+            decidedBy: 'admin',
+            actorSenderId: 'admin',
+            channel: 'dashboard',
+            reason: 'admin_approved',
+          });
+          if (action && action.status === 'proposed') {
+            store.updateActionStatus(action.id, 'approved', { updatedAt: Date.now() });
+          }
+          return NextResponse.json({ ok: true, decision: updated, action: action ? store.getAction(action.id) : null });
+        }
+
+        if (operation === 'reject_decision') {
+          const reason = typeof body.reason === 'string' ? body.reason : undefined;
+          const updated = decisionStore.updateDecisionStatus(decision.id, 'rejected', {
+            decidedBy: 'admin',
+            actorSenderId: 'admin',
+            channel: 'dashboard',
+            reason: 'admin_rejected',
+            error: reason,
+          });
+          if (action && (action.status === 'proposed' || action.status === 'approved')) {
+            store.updateActionStatus(action.id, 'rejected', { updatedAt: Date.now(), error: reason });
+          }
+          metrics.increment('learning_actions_rejected');
+          return NextResponse.json({ ok: true, decision: updated, action: action ? store.getAction(action.id) : null });
+        }
+
+        if (decision.status !== 'approved') {
+          throw new ValidationError('bad_request', `Decision ${decisionId} must be approved before apply`);
+        }
+        if (!action) {
+          throw new ValidationError('bad_request', `Decision ${decisionId} has no linked learning action`);
+        }
+        const applied = applyLearningAction({ store, action, agentId });
+        const updated = decisionStore.updateDecisionStatus(decision.id, 'applied', {
+          appliedAt: Date.now(),
+          reason: 'admin_applied',
+        });
+        return NextResponse.json({ ok: true, decision: updated, action: store.getAction(action.id), applied });
+      } finally {
+        store.close();
+        decisionStore.close();
+      }
     }
 
     const actionId = typeof body.actionId === 'string' ? body.actionId : '';
@@ -102,45 +174,7 @@ export async function PATCH(
         if (action.status !== 'approved') {
           throw new ValidationError('bad_request', `Action ${actionId} must be approved before apply`);
         }
-        const config = getAgentConfig(agentId).parsed;
-        const safetyProfile = parseSafetyProfile(config.safety_profile);
-        const learning = normalizeLearningConfig(config.learning);
-
-        if (action.actionType === 'memory_candidate') {
-          const memoryDbDir = join(DATA_DIR, 'memory-db');
-          mkdirSync(memoryDbDir, { recursive: true });
-          const memoryStore = new MemoryStore(join(memoryDbDir, `${agentId}.sqlite`));
-          try {
-            const result = applyMemoryCandidateAction({
-              memoryStore,
-              action,
-              safetyProfile,
-              mode: learning.mode,
-              agentId,
-              reviewStatusOverride: 'approved',
-            });
-            store.updateActionStatus(actionId, 'applied', { appliedAt: Date.now() });
-            return NextResponse.json({ ok: true, applied: { kind: 'memory', path: result.entry.path } });
-          } finally {
-            memoryStore.close();
-          }
-        }
-
-        if (action.actionType === 'skill_patch' || action.actionType === 'skill_create' || action.actionType === 'skill_update_full') {
-          const result = applySkillAction({
-            workspacePath: join(AGENTS_DIR, agentId),
-            learningStore: store,
-            action,
-            safetyProfile,
-            mode: learning.mode,
-            agentId,
-            autoApply: false,
-          });
-          return NextResponse.json({ ok: true, applied: { kind: 'skill', skillName: result.skillName, skillPath: result.skillPath } });
-        }
-
-        store.updateActionStatus(actionId, 'applied', { appliedAt: Date.now() });
-        return NextResponse.json({ ok: true, applied: { kind: 'none' } });
+        return NextResponse.json({ ok: true, applied: applyLearningAction({ store, action, agentId }) });
       }
     } finally {
       store.close();
@@ -152,6 +186,56 @@ export async function PATCH(
 
 function openLearningStore(): LearningStore {
   return new LearningStore(join(DATA_DIR, 'learning.sqlite'));
+}
+
+function openDecisionStore(): DecisionStore {
+  return new DecisionStore(join(DATA_DIR, 'decision-center.sqlite'));
+}
+
+function applyLearningAction(params: {
+  store: LearningStore;
+  action: LearningActionRecord;
+  agentId: string;
+}): Record<string, unknown> {
+  const config = getAgentConfig(params.agentId).parsed;
+  const safetyProfile = parseSafetyProfile(config.safety_profile);
+  const learning = normalizeLearningConfig(config.learning);
+
+  if (params.action.actionType === 'memory_candidate') {
+    const memoryDbDir = join(DATA_DIR, 'memory-db');
+    mkdirSync(memoryDbDir, { recursive: true });
+    const memoryStore = new MemoryStore(join(memoryDbDir, `${params.agentId}.sqlite`));
+    try {
+      const result = applyMemoryCandidateAction({
+        memoryStore,
+        action: params.action,
+        safetyProfile,
+        mode: learning.mode,
+        agentId: params.agentId,
+        reviewStatusOverride: 'approved',
+      });
+      params.store.updateActionStatus(params.action.id, 'applied', { appliedAt: Date.now() });
+      return { kind: 'memory', path: result.entry.path };
+    } finally {
+      memoryStore.close();
+    }
+  }
+
+  if (params.action.actionType === 'skill_patch' || params.action.actionType === 'skill_create' || params.action.actionType === 'skill_update_full') {
+    const result = applySkillAction({
+      workspacePath: join(AGENTS_DIR, params.agentId),
+      learningStore: params.store,
+      action: params.action,
+      safetyProfile,
+      mode: learning.mode,
+      agentId: params.agentId,
+      autoApply: false,
+    });
+    return { kind: 'skill', skillName: result.skillName, skillPath: result.skillPath };
+  }
+
+  params.store.updateActionStatus(params.action.id, 'applied', { appliedAt: Date.now() });
+  return { kind: 'none' };
 }
 
 function optionalNumber(value: string | null): number | undefined {

@@ -234,6 +234,48 @@ export class DecisionStore {
     return rows.map(rowToDecision);
   }
 
+  listDecisions(params: {
+    agentId?: string;
+    status?: DecisionStatus;
+    kind?: DecisionRecord['kind'];
+    actor?: DecisionActor;
+    scope?: DecisionRecord['scope'];
+    limit?: number;
+    offset?: number;
+  } = {}): DecisionRecord[] {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+    if (params.agentId) {
+      clauses.push('agent_id = ?');
+      values.push(params.agentId);
+    }
+    if (params.status) {
+      clauses.push('status = ?');
+      values.push(params.status);
+    }
+    if (params.kind) {
+      clauses.push('kind = ?');
+      values.push(params.kind);
+    }
+    if (params.actor) {
+      clauses.push('actor = ?');
+      values.push(params.actor);
+    }
+    if (params.scope) {
+      clauses.push('scope = ?');
+      values.push(params.scope);
+    }
+    values.push(params.limit ?? 100, params.offset ?? 0);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT * FROM decisions
+      ${where}
+      ORDER BY created_at DESC, id ASC
+      LIMIT ? OFFSET ?
+    `).all(...values) as DecisionRow[];
+    return rows.map(rowToDecision);
+  }
+
   recordDelivery(
     decisionId: string,
     params: Omit<DecisionDeliveryRecord, 'id' | 'decisionId' | 'updatedAt'> & { updatedAt?: number },
