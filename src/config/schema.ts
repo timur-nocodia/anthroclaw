@@ -296,6 +296,43 @@ const MemoryExtractionSchema = z.object({
   max_input_chars: 6000,
 });
 
+const DecisionKindSchema = z.enum([
+  'learning_memory',
+  'learning_skill',
+  'curator_action',
+  'tool_approval',
+]);
+
+const LearningApprovalRouteSchema = z.object({
+  channel: z.string().min(1),
+  account_id: z.string().min(1).optional(),
+  peer_id: z.string().min(1),
+  thread_id: z.string().min(1).optional(),
+});
+
+const LearningAdminApprovalsSchema = z.object({
+  notify: z.boolean().default(false),
+  routes: z.array(LearningApprovalRouteSchema).default([]),
+  senders: z.record(z.string(), z.record(z.string(), z.array(z.string().min(1)))).default({}),
+  notify_admin_for: z.array(DecisionKindSchema).default(['learning_skill', 'curator_action', 'tool_approval']),
+}).default({
+  notify: false,
+  routes: [],
+  senders: {},
+  notify_admin_for: ['learning_skill', 'curator_action', 'tool_approval'],
+});
+
+const LearningApprovalsSchema = z.object({
+  admin: LearningAdminApprovalsSchema,
+}).default({
+  admin: {
+    notify: false,
+    routes: [],
+    senders: {},
+    notify_admin_for: ['learning_skill', 'curator_action', 'tool_approval'],
+  },
+});
+
 const LearningConfigSchema = z.object({
   enabled: z.boolean().default(true),
   mode: z.enum(['off', 'propose', 'auto_private']).default('propose'),
@@ -316,6 +353,7 @@ const LearningConfigSchema = z.object({
     max_prompt_chars: 24_000,
     max_snippet_chars: 4_000,
   }),
+  approvals: LearningApprovalsSchema,
 }).default({
   enabled: true,
   mode: 'propose',
@@ -329,6 +367,14 @@ const LearningConfigSchema = z.object({
     max_total_bytes: 262_144,
     max_prompt_chars: 24_000,
     max_snippet_chars: 4_000,
+  },
+  approvals: {
+    admin: {
+      notify: false,
+      routes: [],
+      senders: {},
+      notify_admin_for: ['learning_skill', 'curator_action', 'tool_approval'],
+    },
   },
 });
 

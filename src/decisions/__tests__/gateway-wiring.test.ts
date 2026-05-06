@@ -27,7 +27,10 @@ describe('Gateway decision wiring', () => {
     sendText = vi.fn(async () => 'ack-msg');
     answerCallbackQuery = vi.fn(async () => undefined);
     (gateway as any).decisionStore = store;
-    (gateway as any).decisionCenter = new DecisionCenter({ store });
+    (gateway as any).decisionCenter = new DecisionCenter({
+      store,
+      isAdminEvent: (decision, event) => (gateway as any).isAdminDecisionEvent(decision, event),
+    });
     (gateway as any).learningStore = learningStore;
     (gateway as any).agents = new Map([
       ['agent-a', {
@@ -35,7 +38,23 @@ describe('Gateway decision wiring', () => {
         memoryStore,
         config: {
           safety_profile: 'private',
-          learning: { mode: 'propose' },
+          learning: {
+            mode: 'propose',
+            approvals: {
+              admin: {
+                notify: true,
+                routes: [
+                  { channel: 'telegram', account_id: 'main', peer_id: 'admin-peer', thread_id: 'topic-1' },
+                ],
+                senders: {
+                  telegram: {
+                    main: ['admin-sender'],
+                  },
+                },
+                notify_admin_for: ['learning_skill'],
+              },
+            },
+          },
         },
       }],
     ]);
@@ -153,6 +172,58 @@ describe('Gateway decision wiring', () => {
         status: 'sent',
       }),
     ]);
+  });
+
+  it('delivers admin decisions to configured admin routes and accepts admin chat commands', async () => {
+    const decision = store.createDecision({
+      id: 'decision-admin-1',
+      shortCode: 'ADM123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Create publishing skill',
+      body: 'Reusable workflow.',
+      risk: 'medium',
+      payload: { skillName: 'publishing' },
+      createdAt: 1000,
+    });
+
+    await (gateway as any).deliverDecisionPrompt(decision);
+
+    expect(sendText).toHaveBeenCalledWith('admin-peer', expect.stringContaining('ADM123'), {
+      accountId: 'main',
+      threadId: 'topic-1',
+      buttons: [[
+        { text: 'Save', callbackData: 'decision:ADM123:approve' },
+        { text: 'Skip', callbackData: 'decision:ADM123:reject' },
+        { text: 'Edit', callbackData: 'decision:ADM123:edit' },
+      ]],
+    });
+    expect(store.listDeliveries('decision-admin-1')).toEqual([
+      expect.objectContaining({
+        channel: 'telegram',
+        accountId: 'main',
+        peerId: 'admin-peer',
+        messageId: 'ack-msg',
+        status: 'sent',
+      }),
+    ]);
+
+    const handled = await (gateway as any).handleDecisionTextReply(makeMessage({
+      channel: 'telegram',
+      accountId: 'main',
+      peerId: 'admin-peer',
+      senderId: 'admin-sender',
+      threadId: 'topic-1',
+      text: '/learn approve ADM123',
+    }));
+
+    expect(handled).toBe(true);
+    expect(store.getDecision('decision-admin-1')).toMatchObject({
+      status: 'approved',
+      decidedBy: 'admin-sender',
+    });
   });
 
   it('applies approved learning memory decisions to the agent memory store', async () => {

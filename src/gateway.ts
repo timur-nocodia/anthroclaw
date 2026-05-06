@@ -140,7 +140,7 @@ import { DecisionCenter } from './decisions/center.js';
 import { parseDecisionCallbackData } from './decisions/events.js';
 import { renderDecisionPrompt } from './decisions/renderer.js';
 import { DecisionStore } from './decisions/store.js';
-import type { DecisionRecord } from './decisions/types.js';
+import type { DecisionChannel, DecisionEvent, DecisionRecord } from './decisions/types.js';
 import { getSdkActiveInputStatus, type SdkActiveInputStatus } from './sdk/active-input.js';
 import {
   asAgentMcpServerSpec,
@@ -732,6 +732,13 @@ function cleanupOrphanTmpFiles(agentsDir: string): void {
   }
 }
 
+interface DecisionPromptDeliveryTarget {
+  channel: DecisionChannel;
+  accountId?: string;
+  peerId: string;
+  threadId?: string;
+}
+
 export class Gateway {
   private agents = new Map<string, Agent>();
   private channels = new Map<string, ChannelAdapter>();
@@ -832,7 +839,10 @@ export class Gateway {
     metrics.setStore(new MetricsStore(join(dataDir, 'metrics.sqlite')));
     this.learningStore = new LearningStore(join(dataDir, 'learning.sqlite'));
     this.decisionStore = new DecisionStore(join(dataDir, 'decision-center.sqlite'));
-    this.decisionCenter = new DecisionCenter({ store: this.decisionStore });
+    this.decisionCenter = new DecisionCenter({
+      store: this.decisionStore,
+      isAdminEvent: (decision, event) => this.isAdminDecisionEvent(decision, event),
+    });
     this.learningQueue = new LearningQueue({
       runner: (job) => this.runLearningReviewJob(job),
     });
@@ -3182,36 +3192,94 @@ export class Gateway {
   }
 
   private async deliverDecisionPrompt(decision: DecisionRecord): Promise<void> {
-    if (decision.actor !== 'originating_user' || decision.scope !== 'user') return;
-    if (!decision.originChannel || !decision.originPeerId) return;
-    const channel = this.channels.get(decision.originChannel);
-    if (!channel) return;
+    const targets = this.getDecisionDeliveryTargets(decision);
+    for (const target of targets) {
+      await this.deliverDecisionPromptToTarget(decision, target);
+    }
+  }
 
-    const callbacks = decision.originChannel === 'telegram' || channel.supportsApproval === true;
-    const rendered = renderDecisionPrompt(decision, { callbacks });
-    try {
-      const messageId = await channel.sendText(decision.originPeerId, rendered.text, {
-        accountId: decision.originAccountId,
-        threadId: decision.originThreadId,
-        buttons: rendered.buttons,
-      });
-      this.decisionStore?.recordDelivery(decision.id, {
+  private getDecisionDeliveryTargets(decision: DecisionRecord): DecisionPromptDeliveryTarget[] {
+    if (decision.actor === 'originating_user' && decision.scope === 'user') {
+      if (!decision.originChannel || !decision.originPeerId) return [];
+      return [{
         channel: decision.originChannel,
         accountId: decision.originAccountId,
         peerId: decision.originPeerId,
+        threadId: decision.originThreadId,
+      }];
+    }
+
+    if (decision.actor !== 'admin') return [];
+    const agent = this.agents.get(decision.agentId);
+    const admin = agent?.config.learning.approvals?.admin;
+    if (!admin?.notify) return [];
+    const notifyKinds = new Set((admin.notify_admin_for ?? ['learning_skill', 'curator_action', 'tool_approval']) as string[]);
+    if (!notifyKinds.has(decision.kind)) return [];
+
+    return (admin.routes ?? []).map((route) => ({
+      channel: route.channel as DecisionChannel,
+      accountId: route.account_id,
+      peerId: route.peer_id,
+      threadId: route.thread_id,
+    })).filter((route) => route.channel && route.peerId);
+  }
+
+  private async deliverDecisionPromptToTarget(
+    decision: DecisionRecord,
+    target: DecisionPromptDeliveryTarget,
+  ): Promise<void> {
+    const channel = this.channels.get(target.channel);
+    if (!channel) return;
+
+    const callbacks = this.getDecisionChannelCapabilities(channel, target.channel).callbacks;
+    const rendered = renderDecisionPrompt(decision, { callbacks });
+    try {
+      const messageId = await channel.sendText(target.peerId, rendered.text, {
+        accountId: target.accountId,
+        threadId: target.threadId,
+        buttons: rendered.buttons,
+      });
+      this.decisionStore?.recordDelivery(decision.id, {
+        channel: target.channel,
+        accountId: target.accountId,
+        peerId: target.peerId,
         messageId,
         status: 'sent',
       });
     } catch (err) {
       this.decisionStore?.recordDelivery(decision.id, {
-        channel: decision.originChannel,
-        accountId: decision.originAccountId,
-        peerId: decision.originPeerId,
+        channel: target.channel,
+        accountId: target.accountId,
+        peerId: target.peerId,
         status: 'failed',
         error: err instanceof Error ? err.message : String(err),
       });
       logger.warn({ err, decisionId: decision.id }, 'Decision prompt delivery failed');
     }
+  }
+
+  private getDecisionChannelCapabilities(channel: ChannelAdapter, channelId: string): { callbacks: boolean } {
+    return {
+      callbacks: channel.capabilities?.callbacks ?? (channel.supportsApproval === true || channelId === 'telegram'),
+    };
+  }
+
+  private isAdminDecisionEvent(decision: DecisionRecord, event: DecisionEvent): boolean {
+    if (decision.actor !== 'admin') return false;
+    if (decision.scope !== 'agent' && decision.scope !== 'system') return false;
+    const agent = this.agents.get(decision.agentId);
+    const admin = agent?.config.learning.approvals?.admin;
+    if (!admin) return false;
+
+    const allowedSenders = admin.senders?.[event.channel]?.[event.accountId] ?? [];
+    if (!allowedSenders.includes(event.senderId)) return false;
+    return (admin.routes ?? []).some((route) => {
+      if (route.channel !== event.channel) return false;
+      if (route.account_id && route.account_id !== event.accountId) return false;
+      if (route.peer_id !== event.peerId) return false;
+      if (route.thread_id && route.thread_id !== event.threadId) return false;
+      return true;
+    });
   }
 
   private enqueueLearningReviewAfterResponse(params: {

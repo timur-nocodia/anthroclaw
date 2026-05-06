@@ -98,6 +98,46 @@ describe('/api/agents/[agentId]/learning decisions', () => {
     expect(body.summary.pendingDecisions).toBe(1);
   });
 
+  it('returns learning admin approval config for dashboard saves', async () => {
+    writeFileSync(join(root, 'agents', 'agent-a', 'agent.yml'), [
+      'safety_profile: private',
+      'routes:',
+      '  - channel: telegram',
+      '    scope: dm',
+      'learning:',
+      '  enabled: true',
+      '  mode: propose',
+      '  approvals:',
+      '    admin:',
+      '      notify: true',
+      '      routes:',
+      '        - channel: telegram',
+      '          account_id: main',
+      '          peer_id: "48705953"',
+      '      senders:',
+      '        telegram:',
+      '          main:',
+      '            - "48705953"',
+      '      notify_admin_for:',
+      '        - learning_skill',
+    ].join('\n'));
+
+    const { GET } = await import('@/app/api/agents/[agentId]/learning/route');
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/agents/agent-a/learning'),
+      { params: Promise.resolve({ agentId: 'agent-a' }) },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.config.learning.approvals.admin).toMatchObject({
+      notify: true,
+      routes: [expect.objectContaining({ channel: 'telegram', account_id: 'main', peer_id: '48705953' })],
+      senders: { telegram: { main: ['48705953'] } },
+      notify_admin_for: ['learning_skill'],
+    });
+  });
+
   it('approves and applies a learning skill decision', async () => {
     const action = seedSkillAction({ status: 'proposed' });
     decisionStore.createDecision({

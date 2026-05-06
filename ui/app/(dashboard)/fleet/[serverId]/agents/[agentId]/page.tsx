@@ -460,6 +460,14 @@ interface LearningConfig {
     max_prompt_chars?: number;
     max_snippet_chars?: number;
   };
+  approvals?: {
+    admin?: {
+      notify?: boolean;
+      routes?: Array<{ channel: string; account_id?: string; peer_id: string; thread_id?: string }>;
+      senders?: Record<string, Record<string, string[]>>;
+      notify_admin_for?: LearningDecisionKind[];
+    };
+  };
 }
 
 type LearningActionStatus = "proposed" | "approved" | "rejected" | "applied" | "failed";
@@ -648,7 +656,17 @@ function envTextToMap(value: string): Record<string, string> | undefined {
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
-function normalizeLearningConfig(value?: LearningConfig): Required<LearningConfig> & { artifacts: Required<NonNullable<LearningConfig["artifacts"]>> } {
+function normalizeLearningConfig(value?: LearningConfig): Required<LearningConfig> & {
+  artifacts: Required<NonNullable<LearningConfig["artifacts"]>>;
+  approvals: {
+    admin: {
+      notify: boolean;
+      routes: Array<{ channel: string; account_id?: string; peer_id: string; thread_id?: string }>;
+      senders: Record<string, Record<string, string[]>>;
+      notify_admin_for: LearningDecisionKind[];
+    };
+  };
+} {
   return {
     enabled: value?.enabled ?? true,
     mode: value?.mode ?? "propose",
@@ -662,6 +680,14 @@ function normalizeLearningConfig(value?: LearningConfig): Required<LearningConfi
       max_total_bytes: value?.artifacts?.max_total_bytes ?? 262144,
       max_prompt_chars: value?.artifacts?.max_prompt_chars ?? 24000,
       max_snippet_chars: value?.artifacts?.max_snippet_chars ?? 4000,
+    },
+    approvals: {
+      admin: {
+        notify: value?.approvals?.admin?.notify ?? false,
+        routes: value?.approvals?.admin?.routes ?? [],
+        senders: value?.approvals?.admin?.senders ?? {},
+        notify_admin_for: value?.approvals?.admin?.notify_admin_for ?? ["learning_skill", "curator_action", "tool_approval"],
+      },
     },
   };
 }

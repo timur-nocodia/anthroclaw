@@ -7,11 +7,19 @@ import type {
   DecisionStatus,
 } from './types.js';
 
+export interface DecisionCenterPolicy {
+  isAdminEvent?: (decision: DecisionRecord, event: DecisionEvent) => boolean;
+}
+
 export class DecisionCenter {
   private store: DecisionStore;
+  private policy: DecisionCenterPolicy;
 
-  constructor(params: { store: DecisionStore }) {
+  constructor(params: { store: DecisionStore } & DecisionCenterPolicy) {
     this.store = params.store;
+    this.policy = {
+      isAdminEvent: params.isAdminEvent,
+    };
   }
 
   resolveEvent(event: DecisionEvent): DecisionResolution {
@@ -36,7 +44,7 @@ export class DecisionCenter {
       };
     }
 
-    if (!isAuthorized(decision, event)) {
+    if (!this.isAuthorized(decision, event)) {
       return {
         handled: true,
         status: decision.status,
@@ -118,6 +126,16 @@ export class DecisionCenter {
       rawText: input.rawText,
     });
   }
+
+  private isAuthorized(decision: DecisionRecord, event: DecisionEvent): boolean {
+    if (decision.actor === 'originating_user') {
+      return isOriginatingUserAuthorized(decision, event);
+    }
+    if (decision.actor === 'admin') {
+      return this.policy.isAdminEvent?.(decision, event) === true;
+    }
+    return false;
+  }
 }
 
 function selectedToStatus(selected: DecisionEvent['selected']): DecisionStatus | null {
@@ -139,10 +157,7 @@ function expireIfNeeded(store: DecisionStore, decision: DecisionRecord): Decisio
   return store.updateDecisionStatus(decision.id, 'expired', { reason: 'expired' });
 }
 
-function isAuthorized(decision: DecisionRecord, event: DecisionEvent): boolean {
-  if (decision.actor !== 'originating_user') {
-    return false;
-  }
+function isOriginatingUserAuthorized(decision: DecisionRecord, event: DecisionEvent): boolean {
   if (decision.scope !== 'user') return false;
   if (decision.originChannel !== event.channel) return false;
   if (decision.originAccountId !== event.accountId) return false;

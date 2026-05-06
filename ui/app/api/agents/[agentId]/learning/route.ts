@@ -274,6 +274,14 @@ function normalizeLearningConfig(value: unknown): {
     max_prompt_chars: number;
     max_snippet_chars: number;
   };
+  approvals: {
+    admin: {
+      notify: boolean;
+      routes: Array<{ channel: string; account_id?: string; peer_id: string; thread_id?: string }>;
+      senders: Record<string, Record<string, string[]>>;
+      notify_admin_for: Array<'learning_memory' | 'learning_skill' | 'curator_action' | 'tool_approval'>;
+    };
+  };
 } {
   const input = value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -298,7 +306,76 @@ function normalizeLearningConfig(value: unknown): {
       max_prompt_chars: finiteNumber(artifacts.max_prompt_chars, 24_000),
       max_snippet_chars: finiteNumber(artifacts.max_snippet_chars, 4_000),
     },
+    approvals: normalizeLearningApprovals(input.approvals),
   };
+}
+
+function normalizeLearningApprovals(value: unknown): {
+  admin: {
+    notify: boolean;
+    routes: Array<{ channel: string; account_id?: string; peer_id: string; thread_id?: string }>;
+    senders: Record<string, Record<string, string[]>>;
+    notify_admin_for: Array<'learning_memory' | 'learning_skill' | 'curator_action' | 'tool_approval'>;
+  };
+} {
+  const input = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  const admin = input.admin && typeof input.admin === 'object' && !Array.isArray(input.admin)
+    ? input.admin as Record<string, unknown>
+    : {};
+  const routes = Array.isArray(admin.routes)
+    ? admin.routes.map(normalizeApprovalRoute).filter((route): route is NonNullable<typeof route> => Boolean(route))
+    : [];
+  return {
+    admin: {
+      notify: admin.notify === true,
+      routes,
+      senders: normalizeApprovalSenders(admin.senders),
+      notify_admin_for: normalizeDecisionKinds(admin.notify_admin_for),
+    },
+  };
+}
+
+function normalizeApprovalRoute(value: unknown): { channel: string; account_id?: string; peer_id: string; thread_id?: string } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const route = value as Record<string, unknown>;
+  const channel = typeof route.channel === 'string' ? route.channel.trim() : '';
+  const peerId = typeof route.peer_id === 'string' ? route.peer_id.trim() : '';
+  if (!channel || !peerId) return null;
+  return {
+    channel,
+    account_id: typeof route.account_id === 'string' && route.account_id.trim() ? route.account_id.trim() : undefined,
+    peer_id: peerId,
+    thread_id: typeof route.thread_id === 'string' && route.thread_id.trim() ? route.thread_id.trim() : undefined,
+  };
+}
+
+function normalizeApprovalSenders(value: unknown): Record<string, Record<string, string[]>> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const result: Record<string, Record<string, string[]>> = {};
+  for (const [channel, accounts] of Object.entries(value as Record<string, unknown>)) {
+    if (!accounts || typeof accounts !== 'object' || Array.isArray(accounts)) continue;
+    const normalizedAccounts: Record<string, string[]> = {};
+    for (const [accountId, senders] of Object.entries(accounts as Record<string, unknown>)) {
+      if (!Array.isArray(senders)) continue;
+      const normalizedSenders = senders
+        .filter((sender): sender is string => typeof sender === 'string')
+        .map((sender) => sender.trim())
+        .filter(Boolean);
+      if (normalizedSenders.length > 0) normalizedAccounts[accountId] = normalizedSenders;
+    }
+    if (Object.keys(normalizedAccounts).length > 0) result[channel] = normalizedAccounts;
+  }
+  return result;
+}
+
+function normalizeDecisionKinds(value: unknown): Array<'learning_memory' | 'learning_skill' | 'curator_action' | 'tool_approval'> {
+  const allowed = new Set(['learning_memory', 'learning_skill', 'curator_action', 'tool_approval']);
+  const values = Array.isArray(value)
+    ? value.filter((entry): entry is 'learning_memory' | 'learning_skill' | 'curator_action' | 'tool_approval' => typeof entry === 'string' && allowed.has(entry))
+    : [];
+  return values.length > 0 ? values : ['learning_skill', 'curator_action', 'tool_approval'];
 }
 
 function finiteNumber(value: unknown, fallback: number): number {

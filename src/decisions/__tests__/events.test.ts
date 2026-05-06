@@ -112,6 +112,60 @@ describe('DecisionCenter', () => {
     ]));
   });
 
+  it('approves admin decisions only when the injected admin policy allows the event', () => {
+    center = new DecisionCenter({
+      store,
+      isAdminEvent: (decision, event) => decision.agentId === 'agent-a'
+        && event.channel === 'telegram'
+        && event.accountId === 'main'
+        && event.senderId === 'admin-1',
+    });
+    store.createDecision({
+      id: 'decision-admin-1',
+      shortCode: 'ADM123',
+      kind: 'learning_skill',
+      scope: 'agent',
+      actor: 'admin',
+      agentId: 'agent-a',
+      subject: 'Create skill',
+      body: 'Create a reusable skill.',
+      risk: 'medium',
+      payload: { skillName: 'publishing' },
+      createdAt: 1000,
+    });
+
+    expect(center.resolveEvent({
+      shortCode: 'ADM123',
+      selected: 'approve',
+      channel: 'telegram',
+      accountId: 'main',
+      peerId: 'admin-peer',
+      senderId: 'ordinary-user',
+      messageId: 'msg-1',
+    })).toMatchObject({
+      handled: true,
+      status: 'pending',
+      reason: 'unauthorized',
+    });
+
+    expect(center.resolveEvent({
+      shortCode: 'ADM123',
+      selected: 'approve',
+      channel: 'telegram',
+      accountId: 'main',
+      peerId: 'admin-peer',
+      senderId: 'admin-1',
+      messageId: 'msg-2',
+    })).toMatchObject({
+      handled: true,
+      status: 'approved',
+    });
+    expect(store.getDecision('decision-admin-1')).toMatchObject({
+      status: 'approved',
+      decidedBy: 'admin-1',
+    });
+  });
+
   it('resolves bare text replies only when exactly one pending decision matches the origin', () => {
     store.createDecision({
       id: 'decision-1',
