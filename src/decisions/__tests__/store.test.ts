@@ -1,0 +1,115 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DecisionStore } from '../store.js';
+
+describe('DecisionStore', () => {
+  let dir: string;
+  let store: DecisionStore;
+  let dbPath: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'anthroclaw-decisions-'));
+    dbPath = join(dir, 'decision-center.sqlite');
+    store = new DecisionStore(dbPath);
+  });
+
+  afterEach(() => {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('bootstraps decision tables', () => {
+    expect(store.listTables()).toEqual(expect.arrayContaining([
+      'decisions',
+      'decision_audit_events',
+      'decision_deliveries',
+    ]));
+  });
+
+  it('creates decisions, records audit, and looks up by short code', () => {
+    const decision = store.createDecision({
+      id: 'decision-1',
+      shortCode: 'ABC123',
+      kind: 'learning_memory',
+      scope: 'user',
+      actor: 'originating_user',
+      agentId: 'agent-a',
+      learningActionId: 'action-1',
+      reviewId: 'review-1',
+      subject: 'Remember preferred language',
+      body: 'Save that this user prefers Russian responses.',
+      risk: 'low',
+      payload: { text: 'Prefer Russian responses.' },
+      originChannel: 'telegram',
+      originAccountId: 'main',
+      originPeerId: 'peer-1',
+      originSenderId: 'sender-1',
+      originMessageId: 'msg-1',
+      delivery: [{ channel: 'telegram', status: 'sent', messageId: 'out-1' }],
+      expiresAt: 2000,
+      createdAt: 1000,
+    });
+
+    expect(decision).toMatchObject({
+      id: 'decision-1',
+      shortCode: 'ABC123',
+      status: 'pending',
+      payload: { text: 'Prefer Russian responses.' },
+      delivery: [{ channel: 'telegram', status: 'sent', messageId: 'out-1' }],
+    });
+    expect(store.getDecisionByShortCode('abc123')).toMatchObject({ id: 'decision-1' });
+    expect(store.listAuditEvents('decision-1')).toEqual([
+      expect.objectContaining({
+        decisionId: 'decision-1',
+        toStatus: 'pending',
+        reason: 'created',
+        createdAt: 1000,
+      }),
+    ]);
+  });
+
+  it('records delivery attempts and keeps the decision delivery summary current', () => {
+    store.createDecision({
+      id: 'decision-1',
+      shortCode: 'ABC123',
+      kind: 'learning_memory',
+      scope: 'user',
+      actor: 'originating_user',
+      agentId: 'agent-a',
+      subject: 'Remember preference',
+      body: 'Save preference.',
+      risk: 'low',
+      createdAt: 1000,
+    });
+
+    const delivery = store.recordDelivery('decision-1', {
+      channel: 'whatsapp',
+      accountId: 'main',
+      peerId: 'peer-1',
+      messageId: 'out-1',
+      status: 'sent',
+      createdAt: 1100,
+    });
+
+    expect(delivery).toMatchObject({
+      decisionId: 'decision-1',
+      channel: 'whatsapp',
+      status: 'sent',
+      messageId: 'out-1',
+    });
+    expect(store.listDeliveries('decision-1')).toEqual([
+      expect.objectContaining({ id: delivery.id, status: 'sent' }),
+    ]);
+    expect(store.getDecision('decision-1')).toMatchObject({
+      delivery: [
+        expect.objectContaining({
+          channel: 'whatsapp',
+          messageId: 'out-1',
+          status: 'sent',
+        }),
+      ],
+    });
+  });
+});

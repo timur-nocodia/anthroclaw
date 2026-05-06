@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
 import type { Agent } from '../agent/agent.js';
 import { logger } from '../logger.js';
+import { DecisionStore } from '../decisions/store.js';
+import type { DecisionChannel, DecisionRecord } from '../decisions/types.js';
 import { runHeadlessReview } from '../sdk/headless-review.js';
 import type { LearningReviewJob } from './queue.js';
 import { exportLearningArtifacts } from './artifacts.js';
@@ -22,10 +24,16 @@ export interface RunLearningReviewParams {
   agent: Agent;
   dataDir: string;
   store: LearningStore;
+  decisionStore?: DecisionStore;
   defaultModel?: string;
 }
 
-export async function runLearningReview(params: RunLearningReviewParams): Promise<void> {
+export interface RunLearningReviewResult {
+  actions: LearningActionRecord[];
+  decisions: DecisionRecord[];
+}
+
+export async function runLearningReview(params: RunLearningReviewParams): Promise<RunLearningReviewResult | undefined> {
   const { agent, dataDir, job, store } = params;
   const config = agent.config.learning;
   if (!config.enabled || config.mode === 'off') return;
@@ -118,6 +126,12 @@ export async function runLearningReview(params: RunLearningReviewParams): Promis
       result: parsed,
       completedAt: Date.now(),
     });
+    const decisions = createLearningActionDecisions({
+      decisionStore: params.decisionStore,
+      agent,
+      actions,
+      job,
+    });
     autoApplyPrivateActions({
       agent,
       store,
@@ -125,6 +139,7 @@ export async function runLearningReview(params: RunLearningReviewParams): Promis
       job,
       runId,
     });
+    return { actions, decisions };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     store.completeReview(review.id, {
@@ -134,6 +149,56 @@ export async function runLearningReview(params: RunLearningReviewParams): Promis
     });
     throw err;
   }
+}
+
+function createLearningActionDecisions(params: {
+  decisionStore?: DecisionStore;
+  agent: Agent;
+  actions: LearningActionRecord[];
+  job: LearningReviewJob;
+}): DecisionRecord[] {
+  if (!params.decisionStore) return [];
+  if (params.agent.config.learning.mode !== 'propose') return [];
+
+  const originChannel = readMetadataString(params.job.metadata, 'originChannel')
+    ?? readMetadataString(params.job.metadata, 'channel');
+  const originAccountId = readMetadataString(params.job.metadata, 'originAccountId');
+  const originPeerId = readMetadataString(params.job.metadata, 'originPeerId');
+  const originSenderId = readMetadataString(params.job.metadata, 'originSenderId');
+  const originThreadId = readMetadataString(params.job.metadata, 'originThreadId');
+  const originMessageId = readMetadataString(params.job.metadata, 'originMessageId');
+  const decisions: DecisionRecord[] = [];
+
+  for (const action of params.actions) {
+    if (action.actionType === 'none') continue;
+    const userScopedMemory = action.actionType === 'memory_candidate'
+      && Boolean(originChannel && originAccountId && originPeerId && originSenderId);
+    decisions.push(params.decisionStore.createDecision({
+      kind: action.actionType === 'memory_candidate' ? 'learning_memory' : 'learning_skill',
+      scope: userScopedMemory ? 'user' : 'agent',
+      actor: userScopedMemory ? 'originating_user' : 'admin',
+      agentId: params.agent.id,
+      learningActionId: action.id,
+      reviewId: action.reviewId,
+      subject: action.title,
+      body: action.rationale || summarizeActionPayload(action.payload),
+      risk: action.actionType === 'memory_candidate' ? 'low' : 'medium',
+      payload: {
+        ...action.payload,
+        actionType: action.actionType,
+        confidence: action.confidence,
+      },
+      originChannel: userScopedMemory ? originChannel as DecisionChannel : undefined,
+      originAccountId: userScopedMemory ? originAccountId : undefined,
+      originPeerId: userScopedMemory ? originPeerId : undefined,
+      originSenderId: userScopedMemory ? originSenderId : undefined,
+      originThreadId: userScopedMemory ? originThreadId : undefined,
+      originMessageId: userScopedMemory ? originMessageId : undefined,
+      expiresAt: userScopedMemory ? Date.now() + 24 * 60 * 60 * 1000 : undefined,
+      createdAt: action.createdAt,
+    }));
+  }
+  return decisions;
 }
 
 function buildReviewSnippets(job: LearningReviewJob) {
@@ -172,6 +237,12 @@ function buildReviewSnippets(job: LearningReviewJob) {
     },
   ];
   return snippets.filter((snippet): snippet is NonNullable<typeof snippet> => Boolean(snippet));
+}
+
+function summarizeActionPayload(payload: Record<string, unknown>): string {
+  const text = payload.text;
+  if (typeof text === 'string' && text.trim()) return text.trim();
+  return JSON.stringify(payload).slice(0, 1000);
 }
 
 function autoApplyPrivateActions(params: {
