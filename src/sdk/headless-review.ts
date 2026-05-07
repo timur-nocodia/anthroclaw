@@ -61,10 +61,12 @@ export async function runHeadlessReview(opts: HeadlessReviewOptions): Promise<st
     for await (const evt of stream) {
       const e = evt as Record<string, unknown>;
 
-      const isErrorResult = e.type === 'result' && Boolean((e as { is_error?: boolean }).is_error);
+      const subtype = (e as { subtype?: string }).subtype ?? 'unknown';
+      const isErrorResult = e.type === 'result'
+        && Boolean((e as { is_error?: boolean }).is_error)
+        && subtype !== 'success';
       if (isErrorResult) {
         const errors = (e as { errors?: string[] }).errors ?? [];
-        const subtype = (e as { subtype?: string }).subtype ?? 'unknown';
         throw new Error(`${purpose} LLM error (${subtype}): ${errors.join('; ') || subtype}`);
       }
 

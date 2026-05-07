@@ -179,6 +179,44 @@ describe('/api/agents/[agentId]/learning decisions', () => {
     });
   });
 
+  it('does not show an older failed review as the current learning failure', async () => {
+    const failed = learningStore.createReview({
+      id: 'review-old-failed',
+      agentId: 'agent-a',
+      trigger: 'turn_interval',
+      mode: 'propose',
+      startedAt: 1000,
+    });
+    learningStore.completeReview(failed.id, {
+      status: 'failed',
+      completedAt: 1100,
+      error: 'old transient failure',
+    });
+    const completed = learningStore.createReview({
+      id: 'review-new-completed',
+      agentId: 'agent-a',
+      trigger: 'turn_interval',
+      mode: 'propose',
+      startedAt: 2000,
+    });
+    learningStore.completeReview(completed.id, {
+      status: 'completed',
+      completedAt: 2100,
+      output: { actionCount: 0 },
+    });
+
+    const { GET } = await import('@/app/api/agents/[agentId]/learning/route');
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/agents/agent-a/learning'),
+      { params: Promise.resolve({ agentId: 'agent-a' }) },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.summary.lastReviewAt).toBe(2100);
+    expect(body.summary.lastFailure).toBeUndefined();
+  });
+
   it('filters decision center records by status, kind, and actor', async () => {
     decisionStore.createDecision({
       id: 'decision-pending-skill-admin',

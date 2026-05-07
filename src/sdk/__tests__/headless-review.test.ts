@@ -123,6 +123,25 @@ describe('runHeadlessReview', () => {
       .rejects.toThrow(/learning review LLM error.*error_during_execution.*auth_failed/);
   });
 
+  it('does not treat a successful SDK result marker as an error', async () => {
+    const events = (async function* () {
+      yield {
+        type: 'result',
+        is_error: true,
+        subtype: 'success',
+        errors: ['success'],
+        result: '{"actions":[]}',
+      };
+    })();
+    mockedQuery.mockReturnValue({
+      [Symbol.asyncIterator]: () => events,
+      close: vi.fn(),
+    });
+
+    await expect(runHeadlessReview({ prompt: 'p', purpose: 'learning review' }))
+      .resolves.toBe('{"actions":[]}');
+  });
+
   it('aborts and closes the stream on timeout', async () => {
     vi.useFakeTimers();
     const events = (async function* () {

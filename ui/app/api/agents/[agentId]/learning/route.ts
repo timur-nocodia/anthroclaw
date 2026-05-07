@@ -64,7 +64,7 @@ export async function GET(
         summary: {
           pending: actions.filter((action) => action.status === 'proposed').length,
           lastReviewAt: reviews[0]?.completedAt ?? reviews[0]?.startedAt,
-          lastFailure: reviews.find((review) => review.status === 'failed')?.error,
+          lastFailure: reviews[0]?.status === 'failed' ? reviews[0].error : undefined,
           reviewsByStatus: countBy(reviews.map((review) => review.status)),
           actionsByStatus: countBy(actions.map((action) => action.status)),
           actionsByType: countBy(actions.map((action) => action.actionType)),
