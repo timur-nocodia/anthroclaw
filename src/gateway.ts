@@ -30,6 +30,8 @@ import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, Elicitati
 import { Agent } from './agent/agent.js';
 import { AGENT_ID_MAX_LEN, AGENT_ID_RE } from './agent/sandbox/agent-workspace.js';
 import { createManageCronTool } from './agent/tools/manage-cron.js';
+import { createSendMessageTool } from './agent/tools/send-message.js';
+import { createSendMediaTool } from './agent/tools/send-media.js';
 import { RouteTable, type RouteEntry } from './routing/table.js';
 import { AccessControl } from './routing/access.js';
 import { buildSessionKey } from './routing/session-key.js';
@@ -1481,23 +1483,39 @@ export class Gateway {
       ...this.sdkSessionService?.getQueryOptions(),
     });
 
-    if (msg && this.dynamicCronStore && agent.config.mcp_tools?.includes('manage_cron')) {
-      const dispatchManageCron = createManageCronTool(
-        agent.id,
-        this.dynamicCronStore,
-        () => this.reloadDynamicCron(),
-        {
-          agentId: agent.id,
-          channel: msg.channel,
-          peerId: msg.peerId,
-          senderId: msg.senderId,
-          accountId: msg.accountId,
-          threadId: msg.threadId,
-        },
-      );
-      const dispatchTools = agent.tools.map((tool) =>
-        tool.name === 'manage_cron' ? dispatchManageCron : tool,
-      );
+    if (msg) {
+      const dispatchContext = {
+        agentId: agent.id,
+        channel: msg.channel,
+        peerId: msg.peerId,
+        senderId: msg.senderId,
+        accountId: msg.accountId,
+        threadId: msg.threadId,
+      };
+      const dispatchTools = agent.tools.map((tool) => {
+        if (tool.name === 'send_message') {
+          return createSendMessageTool((id) => this.channels.get(id), {
+            agentId: agent.id,
+            peerPauseStore: this.peerPauseStore ?? null,
+            notificationsEmitter: this.notificationsEmitter ?? null,
+            dispatchContext,
+          });
+        }
+        if (tool.name === 'send_media') {
+          return createSendMediaTool(agent.workspacePath, (id) => this.channels.get(id), {
+            dispatchContext,
+          });
+        }
+        if (tool.name === 'manage_cron' && this.dynamicCronStore) {
+          return createManageCronTool(
+            agent.id,
+            this.dynamicCronStore,
+            () => this.reloadDynamicCron(),
+            dispatchContext,
+          );
+        }
+        return tool;
+      });
       options.mcpServers = {
         ...(options.mcpServers ?? {}),
         [agent.mcpServer.name]: createSdkMcpServer({

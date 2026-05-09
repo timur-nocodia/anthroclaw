@@ -12,6 +12,12 @@ import type { ToolMeta } from '../../security/types.js';
 export function createSendMediaTool(
   workspacePath: string,
   getChannel: (id: string) => ChannelAdapter | undefined,
+  opts: {
+    dispatchContext?: {
+      channel?: 'telegram' | 'whatsapp';
+      accountId?: string;
+    };
+  } = {},
 ): ToolDefinition {
   const sdkTool = tool(
     'send_media',
@@ -30,7 +36,9 @@ export function createSendMediaTool(
       const filePath = args.file_path as string;
       const mediaType = args.type as OutboundMedia['type'];
       const caption = args.caption as string | undefined;
-      const accountId = args.account_id as string | undefined;
+      const explicitAccountId = args.account_id as string | undefined;
+      const accountId = explicitAccountId
+        ?? (opts.dispatchContext?.channel === channel ? opts.dispatchContext.accountId : undefined);
 
       // Resolve path and block traversal
       const resolvedPath = resolve(workspacePath, filePath);

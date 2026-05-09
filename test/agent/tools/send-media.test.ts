@@ -185,4 +185,46 @@ describe('createSendMediaTool', () => {
       { accountId: 'acc-2' },
     );
   });
+
+  it('defaults account_id from active dispatch context for the same channel', async () => {
+    const adapter = makeAdapter();
+    const getChannel = vi.fn(() => adapter);
+
+    const tool = createSendMediaTool(workspacePath, getChannel, {
+      dispatchContext: { channel: 'telegram', accountId: 'content_sm' },
+    });
+    await tool.handler({
+      channel: 'telegram',
+      peer_id: 'user-1',
+      file_path: 'output/preview.html',
+      type: 'document',
+    });
+
+    expect(adapter.sendMedia).toHaveBeenCalledWith(
+      'user-1',
+      expect.any(Object),
+      { accountId: 'content_sm' },
+    );
+  });
+
+  it('does not default account_id across channels', async () => {
+    const adapter = makeAdapter();
+    const getChannel = vi.fn(() => adapter);
+
+    const tool = createSendMediaTool(workspacePath, getChannel, {
+      dispatchContext: { channel: 'telegram', accountId: 'content_sm' },
+    });
+    await tool.handler({
+      channel: 'whatsapp',
+      peer_id: 'user-1',
+      file_path: 'output/preview.html',
+      type: 'document',
+    });
+
+    expect(adapter.sendMedia).toHaveBeenCalledWith(
+      'user-1',
+      expect.any(Object),
+      {},
+    );
+  });
 });

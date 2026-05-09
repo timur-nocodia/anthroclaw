@@ -169,6 +169,43 @@ describe('send_message — pause suppression', () => {
     isPausedSpy.mockRestore();
   });
 
+  it('defaults account_id from active dispatch context for the same channel', async () => {
+    const store = createPeerPauseStore({ filePath: ':memory:' });
+    const { adapter, sendText } = makeFakeAdapter();
+    const tool = createSendMessageTool(() => adapter, {
+      agentId: 'amina',
+      peerPauseStore: store,
+      dispatchContext: { channel: 'whatsapp', accountId: 'business' },
+    });
+
+    const handler = getHandler(tool);
+    await handler({
+      channel: 'whatsapp',
+      peer_id: '37120@s.whatsapp.net',
+      text: 'uses active account',
+    });
+
+    expect(sendText).toHaveBeenCalledWith('37120@s.whatsapp.net', 'uses active account', {
+      accountId: 'business',
+    });
+  });
+
+  it('does not default account_id across channels', async () => {
+    const { adapter, sendText } = makeFakeAdapter();
+    const tool = createSendMessageTool(() => adapter, {
+      dispatchContext: { channel: 'telegram', accountId: 'content_sm' },
+    });
+
+    const handler = getHandler(tool);
+    await handler({
+      channel: 'whatsapp',
+      peer_id: '37120@s.whatsapp.net',
+      text: 'cross channel send',
+    });
+
+    expect(sendText).toHaveBeenCalledWith('37120@s.whatsapp.net', 'cross channel send', {});
+  });
+
   it('omits agentId/peerPauseStore => standard send (subsystem disabled at construction)', async () => {
     const { adapter, sendText } = makeFakeAdapter();
     const tool = createSendMessageTool(() => adapter);

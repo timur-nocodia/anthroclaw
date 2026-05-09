@@ -22,6 +22,15 @@ export interface SendMessageToolOptions {
    * sees the agent tried (and was blocked) mid-turn.
    */
   notificationsEmitter?: Pick<NotificationsEmitter, 'emit'> | null;
+  /**
+   * Active inbound chat context. When the model omits account_id while sending
+   * back through the same channel, use the account that received the message
+   * instead of letting the channel adapter fall back to an arbitrary default.
+   */
+  dispatchContext?: {
+    channel?: 'telegram' | 'whatsapp';
+    accountId?: string;
+  };
 }
 
 export function createSendMessageTool(
@@ -41,7 +50,9 @@ export function createSendMessageTool(
       const channel = args.channel as 'telegram' | 'whatsapp';
       const peerId = args.peer_id as string;
       const text = args.text as string;
-      const accountId = args.account_id as string | undefined;
+      const explicitAccountId = args.account_id as string | undefined;
+      const accountId = explicitAccountId
+        ?? (opts.dispatchContext?.channel === channel ? opts.dispatchContext.accountId : undefined);
 
       // ─── human_takeover pause check ────────────────────────────────
       // If the operator is currently driving this peer, suppress the send
