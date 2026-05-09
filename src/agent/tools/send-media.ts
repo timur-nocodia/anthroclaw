@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { extname, resolve } from 'node:path';
 import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type {
@@ -60,7 +60,7 @@ export function createSendMediaTool(
         const media: OutboundMedia = {
           type: mediaType,
           path: resolvedPath,
-          mimeType: guessMimeType(mediaType),
+          mimeType: guessMimeType(mediaType, filePath),
         };
         if (caption) media.caption = caption;
 
@@ -92,6 +92,7 @@ export function createSendMediaTool(
 
 function guessMimeType(
   type: 'image' | 'video' | 'audio' | 'voice' | 'document',
+  filePath?: string,
 ): string {
   switch (type) {
     case 'image':
@@ -102,6 +103,13 @@ function guessMimeType(
     case 'voice':
       return 'audio/mpeg';
     case 'document':
+      switch (extname(filePath ?? '').toLowerCase()) {
+        case '.html':
+        case '.htm':
+          return 'text/html';
+        case '.pdf':
+          return 'application/pdf';
+      }
       return 'application/octet-stream';
   }
 }

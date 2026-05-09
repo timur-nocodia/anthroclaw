@@ -52,6 +52,7 @@ import type {
 import { formatTestDispatch } from './notifications/formatters.js';
 import type { OperatorConsoleConfigShape } from './security/cross-agent-perm.js';
 import type { OperatorOutboundEvent } from './channels/types.js';
+import { planResponseArtifactDelivery } from './channels/response-artifact.js';
 import { TelegramChannel } from './channels/telegram.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import { CronScheduler } from './cron/scheduler.js';
@@ -4134,7 +4135,25 @@ export class Gateway {
             'Agent response is NO_REPLY sentinel — suppressing delivery',
           );
         } else {
-          await channel.sendText(msg.peerId, deliverable, sendOpts);
+          const artifactPlan = planResponseArtifactDelivery(deliverable, agent.workspacePath);
+          if (artifactPlan) {
+            await channel.sendMedia(msg.peerId, artifactPlan.media, sendOpts);
+            logger.info(
+              {
+                agentId: route.agentId,
+                sessionKey,
+                channel: msg.channel,
+                reason: artifactPlan.reason,
+                fileName: artifactPlan.media.fileName,
+              },
+              'Agent response delivered as artifact',
+            );
+            if (!artifactPlan.suppressText) {
+              await channel.sendText(msg.peerId, deliverable, sendOpts);
+            }
+          } else {
+            await channel.sendText(msg.peerId, deliverable, sendOpts);
+          }
         }
       }
 

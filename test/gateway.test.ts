@@ -34,6 +34,7 @@ import type { GlobalConfig } from '../src/config/schema.js';
 class MockChannel implements ChannelAdapter {
   readonly id: 'telegram' | 'whatsapp';
   messages: { peerId: string; text: string; opts?: SendOptions }[] = [];
+  media: { peerId: string; media: OutboundMedia; opts?: SendOptions }[] = [];
   edits: { peerId: string; messageId: string; text: string; opts?: SendOptions }[] = [];
   typingCalls: string[] = [];
   private handler?: (msg: InboundMessage) => Promise<void>;
@@ -55,7 +56,8 @@ class MockChannel implements ChannelAdapter {
     this.edits.push({ peerId, messageId, text, opts });
   }
 
-  async sendMedia(_peerId: string, _media: OutboundMedia, _opts?: SendOptions): Promise<string> {
+  async sendMedia(peerId: string, media: OutboundMedia, opts?: SendOptions): Promise<string> {
+    this.media.push({ peerId, media, opts });
     return 'msg1';
   }
 
@@ -214,6 +216,48 @@ pairing:
     // Should have sent a response
     expect(mockTg.messages.length).toBe(1);
     expect(mockTg.messages[0].text).toContain('Agent test-bot received: hi there');
+
+    await gw.stop();
+  });
+
+  it('dispatch sends referenced workspace HTML as a document instead of text chunks', async () => {
+    const botDir = join(agentsDir, 'test-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+    mkdirSync(join(botDir, 'output', 'carousels'), { recursive: true });
+    writeFileSync(
+      join(botDir, 'output', 'carousels', 'carousel.html'),
+      '<!doctype html><html><body>slides</body></html>',
+    );
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const mockTg = new MockChannel('telegram');
+    gw._setChannel('telegram', mockTg);
+
+    await gw.dispatch(makeMsg({ text: 'see output/carousels/carousel.html' }));
+
+    expect(mockTg.messages).toHaveLength(0);
+    expect(mockTg.media).toHaveLength(1);
+    expect(mockTg.media[0]).toMatchObject({
+      peerId: 'peer-123',
+      media: {
+        type: 'document',
+        mimeType: 'text/html',
+        fileName: 'carousel.html',
+        caption: 'HTML preview: carousel.html',
+      },
+      opts: {
+        accountId: 'default',
+      },
+    });
 
     await gw.stop();
   });

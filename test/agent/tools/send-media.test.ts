@@ -76,6 +76,28 @@ describe('createSendMediaTool', () => {
     );
   });
 
+  it('uses text/html mime type for HTML documents', async () => {
+    const adapter = makeAdapter();
+    const getChannel = vi.fn(() => adapter);
+
+    const tool = createSendMediaTool(workspacePath, getChannel);
+    await tool.handler({
+      channel: 'telegram',
+      peer_id: 'user-1',
+      file_path: 'output/carousels/preview.html',
+      type: 'document',
+    });
+
+    expect(adapter.sendMedia).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({
+        type: 'document',
+        mimeType: 'text/html',
+      }),
+      {},
+    );
+  });
+
   it('blocks path traversal with ../', async () => {
     const adapter = makeAdapter();
     const getChannel = vi.fn(() => adapter);
