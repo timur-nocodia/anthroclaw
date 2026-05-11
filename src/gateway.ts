@@ -1483,16 +1483,18 @@ export class Gateway {
       ...this.sdkSessionService?.getQueryOptions(),
     });
 
-    if (msg) {
-      const dispatchContext = {
-        agentId: agent.id,
-        channel: msg.channel,
-        peerId: msg.peerId,
-        senderId: msg.senderId,
-        accountId: msg.accountId,
-        threadId: msg.threadId,
-      };
-      const dispatchTools = agent.tools.map((tool) => {
+    if (msg || sessionKey) {
+      const dispatchContext = msg
+        ? {
+            agentId: agent.id,
+            channel: msg.channel,
+            peerId: msg.peerId,
+            senderId: msg.senderId,
+            accountId: msg.accountId,
+            threadId: msg.threadId,
+          }
+        : undefined;
+      const dispatchTools = agent.buildToolsForDispatch(sessionKey).map((tool) => {
         if (tool.name === 'send_message') {
           return createSendMessageTool((id) => this.channels.get(id), {
             agentId: agent.id,

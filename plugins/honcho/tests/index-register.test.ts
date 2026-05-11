@@ -17,10 +17,15 @@ describe('Honcho plugin register()', () => {
     await register(ctx);
 
     expect(ctx.registerContextEngine).toHaveBeenCalledOnce();
-    expect(ctx.registerMcpTool).toHaveBeenCalledOnce();
-    expect(ctx.registerMcpTool).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'status' }),
-    );
+    expect(ctx.registerMcpTool).toHaveBeenCalledTimes(6);
+    expect((ctx.registerMcpTool as ReturnType<typeof vi.fn>).mock.calls.map(([tool]) => tool.name).sort()).toEqual([
+      'ask',
+      'context',
+      'search_conclusions',
+      'search_messages',
+      'session',
+      'status',
+    ]);
     expect(ctx.registerHook).toHaveBeenCalledWith('on_after_query', expect.any(Function));
   });
 });

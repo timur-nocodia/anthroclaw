@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
+import { z } from 'zod';
 import { Agent } from '../../src/agent/agent.js';
 
 function writeMinimalAgentYml(dir: string, mcpTools?: string[], profile: 'public' | 'trusted' | 'private' = 'trusted'): void {
@@ -106,6 +107,34 @@ describe('Agent', () => {
     const agent = await Agent.load(agentDir, dataDir);
 
     expect(agent.tools).toHaveLength(0);
+  });
+
+  it('binds plugin tools with dispatch session key when available', async () => {
+    writeMinimalAgentYml(agentDir);
+    const agent = await Agent.load(agentDir, dataDir);
+    const observed: Array<{ agentId: string; sessionKey?: string }> = [];
+
+    agent.refreshPluginTools([{
+      name: 'plugin_spy',
+      description: 'records plugin MCP context',
+      inputSchema: z.object({}),
+      handler: async (_input, ctx) => {
+        observed.push(ctx);
+        return { content: [{ type: 'text', text: JSON.stringify(ctx) }] };
+      },
+    }]);
+
+    const dispatchTool = agent.buildToolsForDispatch('my-bot:telegram:dm:123')
+      .find((tool) => tool.name === 'plugin_spy');
+    expect(dispatchTool).toBeDefined();
+
+    await dispatchTool!.handler({});
+    await agent.tools.find((tool) => tool.name === 'plugin_spy')!.handler({});
+
+    expect(observed).toEqual([
+      { agentId: 'my-bot', sessionKey: 'my-bot:telegram:dm:123' },
+      { agentId: 'my-bot' },
+    ]);
   });
 
   // ─── 5. session management: getSessionId returns undefined ──────

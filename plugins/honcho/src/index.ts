@@ -1,15 +1,14 @@
-import { z } from 'zod';
 import { join } from 'node:path';
 import type {
   ContextEngine,
   PluginContext,
   PluginInstance,
-  PluginMcpTool,
 } from './types-shim.js';
-import { resolveConfig, type HonchoConfig } from './config.js';
+import { resolveConfig } from './config.js';
 import { createHonchoClient } from './client.js';
 import { observeHonchoTurn, type HonchoIngestSdk } from './ingest.js';
 import { assembleHonchoContext, type HonchoContextSdk } from './context.js';
+import { createHonchoTools, type HonchoToolSdk } from './tools.js';
 
 export async function register(ctx: PluginContext): Promise<PluginInstance> {
   ctx.logger.info({ version: ctx.pluginVersion }, 'honcho plugin loading');
@@ -75,8 +74,16 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
     }
   });
 
-  if (config.tools.status) {
-    ctx.registerMcpTool(createStatusTool(config));
+  for (const tool of createHonchoTools({
+    resolveConfig(agentId) {
+      return resolveCurrentConfig(ctx, globalDefaults, agentId);
+    },
+    async resolveSdk(_agentId, currentConfig) {
+      const client = await createHonchoClient(currentConfig);
+      return client.sdk as HonchoToolSdk;
+    },
+  })) {
+    ctx.registerMcpTool(tool);
   }
 
   ctx.logger.info({ mode: config.mode }, 'honcho plugin loaded');
@@ -97,25 +104,9 @@ function readGlobalDefaults(ctx: PluginContext): unknown {
   return raw?.plugins?.honcho?.defaults ?? {};
 }
 
-function createStatusTool(config: HonchoConfig): PluginMcpTool {
-  return {
-    name: 'status',
-    description: 'Report Honcho plugin runtime status for this agent.',
-    inputSchema: z.object({}),
-    async handler() {
-      const host = new URL(config.connection.base_url).host;
-      return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({
-            enabled: config.enabled,
-            mode: config.mode,
-            workspace_id: config.connection.workspace_id,
-            base_url_host: host,
-            status: 'configured',
-          }),
-        }],
-      };
-    },
-  };
+function resolveCurrentConfig(ctx: PluginContext, globalDefaults: unknown, agentId: string) {
+  const agentConfig = ctx.getAgentConfig(agentId) as
+    | { plugins?: { honcho?: unknown } }
+    | undefined;
+  return resolveConfig(globalDefaults, agentConfig?.plugins?.honcho ?? {});
 }

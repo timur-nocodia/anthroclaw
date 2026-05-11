@@ -164,6 +164,9 @@ export class Agent {
   /** Original built-in tools registered at construction time. Plugin tools are layered on top. */
   private readonly builtinTools: ToolDefinition[];
 
+  /** Raw plugin tool definitions, re-wrapped per dispatch when session context is known. */
+  private pluginTools: PluginMcpTool[] = [];
+
   private sessions: Map<string, string>;
   private sessionLastUsed: Map<string, number>;
   private sessionStarted: Map<string, number>;
@@ -245,23 +248,26 @@ export class Agent {
    * Called by Gateway after plugins are loaded and enabled for this agent.
    */
   refreshPluginTools(pluginTools: PluginMcpTool[]): void {
-    const agentId = this.id;
-    const wrapped: ToolDefinition[] = pluginTools.map((pt) => ({
-      name: pt.name,
-      description: pt.description,
-      inputSchema: pt.inputSchema,
-      // Bind agentId at refresh time. sessionKey is left undefined here —
-      // it varies per dispatch and is reserved for future plumbing.
-      handler: (input: unknown) => pt.handler(input, { agentId }),
-    }) as unknown as ToolDefinition);
-    // Reset plugin tools each refresh — exclude any previously-attached plugin
-    // tools so we don't accumulate stale entries across reloads. We keep the
-    // original built-in tools (passed at construction time) intact.
-    this.tools = [...this.builtinTools, ...wrapped];
+    this.pluginTools = pluginTools;
+    this.tools = [...this.builtinTools, ...this.wrapPluginTools(pluginTools)];
     this.mcpServer = createSdkMcpServer({
       name: `${this.id}-tools`,
       tools: this.tools as unknown as any[],
     });
+  }
+
+  buildToolsForDispatch(sessionKey?: string): ToolDefinition[] {
+    return [...this.builtinTools, ...this.wrapPluginTools(this.pluginTools, sessionKey)];
+  }
+
+  private wrapPluginTools(pluginTools: PluginMcpTool[], sessionKey?: string): ToolDefinition[] {
+    const agentId = this.id;
+    return pluginTools.map((pt) => ({
+      name: pt.name,
+      description: pt.description,
+      inputSchema: pt.inputSchema,
+      handler: (input: unknown) => pt.handler(input, sessionKey ? { agentId, sessionKey } : { agentId }),
+    }) as unknown as ToolDefinition);
   }
 
   private loadSessionMappings(): void {
