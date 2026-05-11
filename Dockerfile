@@ -21,9 +21,12 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY ui/package.json ./ui/
 # Plugin workspace package.jsons are needed before `pnpm install` so the
 # workspace resolver registers them — without this, `pnpm --filter
-# "@anthroclaw/plugin-*" build` matches nothing and the UI's runtime imports
-# of `plugins/lcm/dist/*` 404 at next build time.
+# "@anthroclaw/plugin-*" build` misses plugin dependencies and runtime imports
+# of `plugins/*/dist/*` can fail at next build time.
+COPY plugins/file-transfer/package.json ./plugins/file-transfer/
 COPY plugins/lcm/package.json ./plugins/lcm/
+COPY plugins/operator-console/package.json ./plugins/operator-console/
+COPY plugins/honcho/package.json ./plugins/honcho/
 COPY plugins/__example/package.json ./plugins/__example/
 
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
