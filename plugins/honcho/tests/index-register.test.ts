@@ -21,6 +21,7 @@ describe('Honcho plugin register()', () => {
     expect(ctx.registerMcpTool).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'status' }),
     );
+    expect(ctx.registerHook).toHaveBeenCalledWith('on_after_query', expect.any(Function));
   });
 });
 

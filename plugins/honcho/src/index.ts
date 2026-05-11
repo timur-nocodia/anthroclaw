@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { join } from 'node:path';
 import type {
   ContextEngine,
   PluginContext,
@@ -6,6 +7,8 @@ import type {
   PluginMcpTool,
 } from './types-shim.js';
 import { resolveConfig, type HonchoConfig } from './config.js';
+import { createHonchoClient } from './client.js';
+import { observeHonchoTurn, type HonchoIngestSdk } from './ingest.js';
 
 export async function register(ctx: PluginContext): Promise<PluginInstance> {
   ctx.logger.info({ version: ctx.pluginVersion }, 'honcho plugin loading');
@@ -19,6 +22,35 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
     },
   };
   ctx.registerContextEngine(engine);
+  ctx.registerHook('on_after_query', async (payload) => {
+    const agentId = typeof payload.agentId === 'string' ? payload.agentId : undefined;
+    const sessionKey = typeof payload.sessionKey === 'string' ? payload.sessionKey : undefined;
+    if (!agentId || !sessionKey) return;
+
+    const agentConfig = ctx.getAgentConfig(agentId) as
+      | { plugins?: { honcho?: unknown }; group_sessions?: 'shared' | 'per_user' }
+      | undefined;
+    const currentConfig = resolveConfig(globalDefaults, agentConfig?.plugins?.honcho ?? {});
+    if (!currentConfig.enabled || currentConfig.mode === 'off') return;
+
+    try {
+      const client = await createHonchoClient(currentConfig);
+      await observeHonchoTurn({
+        sdk: client.sdk as HonchoIngestSdk,
+        config: currentConfig,
+        agentId,
+        sessionKey,
+        payload,
+        groupSessionMode: agentConfig?.group_sessions,
+        offlineQueuePath: join(ctx.dataDir, 'offline-queue', `${agentId}.jsonl`),
+      });
+    } catch (err) {
+      ctx.logger.warn(
+        { err: err instanceof Error ? err.message : String(err), agentId },
+        'honcho observe hook failed',
+      );
+    }
+  });
 
   if (config.tools.status) {
     ctx.registerMcpTool(createStatusTool(config));
