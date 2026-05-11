@@ -157,6 +157,10 @@ Each message should include metadata:
 
 Create `plugins/honcho/src/config.ts`:
 
+Operator-facing explanations live in `plugins/honcho/README.md`, section
+`Operator Config Guide`. Keep that section in sync with this schema whenever
+new Honcho settings are added.
+
 ```ts
 import { z } from 'zod';
 

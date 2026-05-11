@@ -75,6 +75,186 @@ plugins:
       max_chars: 8000
 ```
 
+## Operator Config Guide
+
+Use this block as a readable template. The comments are written as questions
+because that is how operators usually decide whether a setting should change.
+
+```yaml
+plugins:
+  honcho:
+    # Question: should this agent use Honcho at all?
+    # false = the plugin stays inactive for this agent.
+    # true = the selected mode below starts applying.
+    enabled: true
+
+    # Question: how much should Honcho participate in the turn?
+    # observe = only write turns to Honcho after the agent answers.
+    # context = write turns and inject Honcho context before the next query.
+    # tools = write turns and expose honcho_* tools, but no automatic context.
+    # hybrid = context + tools.
+    mode: context
+
+    connection:
+      # Question: which Honcho memory namespace are we writing to?
+      # Use one workspace per deployment/environment, for example:
+      # anthroclaw-prod, anthroclaw-staging, anthroclaw-smoke.
+      workspace_id: anthroclaw-prod
+
+      # Question: is this an authenticated/managed Honcho endpoint or a local
+      # self-host endpoint?
+      # production = API key is required from api_key_env.
+      # local = API key is not required by AnthroClaw.
+      environment: local
+
+      # Question: where can the AnthroClaw process reach Honcho API?
+      # If both processes run on the same host without Docker, localhost works.
+      # If AnthroClaw is inside Docker and Honcho is in another Compose project,
+      # localhost points to the AnthroClaw container itself, so use the Honcho
+      # service/container URL, e.g. http://honcho-api-1:8000.
+      base_url: http://honcho-api-1:8000
+
+      # Question: which environment variable contains the Honcho API key?
+      # Needed only when environment is production.
+      api_key_env: HONCHO_API_KEY
+
+      # Question: how long can one Honcho HTTP call block the turn?
+      # Keep this bounded so memory problems do not stall Telegram/WhatsApp.
+      timeout_ms: 15000
+
+      # Question: how many times should the SDK retry transient failures?
+      # 0 = fail fast; 2 is a reasonable default for flaky network.
+      max_retries: 2
+
+    peers:
+      # Question: what prefix marks AnthroClaw agents inside Honcho?
+      # Final peer id looks like agent_<agentId>.
+      agent_peer_prefix: agent
+
+      # Question: what prefix marks human users inside Honcho?
+      # Final peer id looks like user_<channel>_<account>_<hash>.
+      user_peer_prefix: user
+
+      # Question: what prefix marks group chats inside Honcho?
+      # Used only for shared group sessions.
+      group_peer_prefix: group
+
+      # Question: should Telegram IDs, WhatsApp JIDs, and group IDs be hidden?
+      # true = store stable hashes, safer default.
+      # false = store sanitized raw IDs; use only for private/debug installs.
+      hash_ids: true
+
+    observe:
+      # Question: should user messages be saved to Honcho?
+      include_user_messages: true
+
+      # Question: should assistant replies be saved to Honcho?
+      include_assistant_messages: true
+
+      # Question: should extracted media text be allowed into saved messages?
+      # Applies to text AnthroClaw already extracted, such as transcripts/PDF text.
+      include_media_text: true
+
+      # Question: what is the max size of one saved message?
+      # Larger messages are truncated before upload.
+      max_message_chars: 12000
+
+      # Question: if Honcho is down, should failed writes be saved locally?
+      # true = write JSONL rows and retry on a later successful observe.
+      queue_on_failure: true
+
+    context:
+      # Question: should Honcho be allowed to auto-inject context?
+      # This only matters in mode: context or mode: hybrid.
+      enabled: true
+
+      # Question: how much Honcho context can be requested from Honcho?
+      # This is a token request budget for the Honcho context call, not the
+      # whole Claude prompt budget.
+      token_budget: 1800
+
+      # Question: should Honcho's compact peer card/representation be included?
+      # Useful for stable user preferences and relationship context.
+      include_peer_card: true
+
+      # Question: should recent/session-specific Honcho context be included?
+      # Useful for remembering what happened in this chat/session.
+      include_session_context: true
+
+      # Question: should the agent's own perspective be included too?
+      # More experimental; keep false until we need agent self-representation.
+      include_agent_view: false
+
+      # Question: what is the hard character cap for injected Honcho text?
+      # Prevents Honcho context from flooding the model prompt.
+      max_chars: 8000
+
+    tools:
+      # Question: can the agent manually request current Honcho context?
+      context: true
+
+      # Question: can the agent ask Honcho a natural-language memory question?
+      ask: true
+
+      # Question: can the agent search stored Honcho messages?
+      search_messages: true
+
+      # Question: can the agent search Honcho conclusions/representations?
+      search_conclusions: true
+
+      # Question: can the agent inspect current session context/summaries?
+      session: true
+
+      # Question: can the agent inspect Honcho config/status?
+      status: true
+
+    privacy:
+      # Question: should display names be uploaded as metadata?
+      # false avoids sending names to Honcho unless explicitly needed.
+      include_display_names: false
+
+      # Question: should injected context blocks be stripped before saving?
+      # true prevents Honcho from memorizing its own prompt context.
+      strip_prompt_context_blocks: true
+
+      # Question: should tool progress/noise be stripped before saving?
+      # true keeps memory focused on user/assistant substance.
+      strip_tool_progress: true
+
+      # Question: should obvious secrets be redacted before saving?
+      redact_secrets: true
+```
+
+### Self-host Docker Networking
+
+If AnthroClaw and Honcho run in different Docker Compose projects, the
+AnthroClaw container must be on the Honcho network to reach
+`http://honcho-api-1:8000`.
+
+Temporary fix after each app recreate:
+
+```bash
+docker network connect honcho_default anthroclaw-app-1
+```
+
+Production fix in the AnthroClaw Compose file:
+
+```yaml
+services:
+  app:
+    networks:
+      - default
+      - honcho
+
+networks:
+  honcho:
+    external: true
+    name: honcho_default
+```
+
+After this is in Compose, recreating `app` will keep the Honcho network
+attachment automatically.
+
 ## Modes
 
 - `off`: no Honcho work.
