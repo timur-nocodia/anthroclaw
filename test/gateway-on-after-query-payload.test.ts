@@ -92,10 +92,14 @@ describe('@e2e: gateway on_after_query payload includes newMessages', () => {
         chatType: 'dm',
         peerId: '12345',
         senderId: '12345',
+        senderName: 'Alice',
         text: 'ping',
         messageId: 'msg-1',
+        threadId: 'topic-1',
         mentionedBot: false,
         raw: {},
+        transcript: 'voice transcript',
+        pdfText: 'pdf text',
       };
 
       await gateway.dispatch(inbound);
@@ -111,6 +115,16 @@ describe('@e2e: gateway on_after_query payload includes newMessages', () => {
       expect(payload.sessionKey).toMatch(/^test-agent:telegram:dm:12345/);
       expect(payload.response).toBe('hello world reply');
       expect(payload.source).toBe('telegram');
+      expect(payload.channel).toBe('telegram');
+      expect(payload.accountId).toBe('main');
+      expect(payload.peerId).toBe('12345');
+      expect(payload.senderId).toBe('12345');
+      expect(payload.senderName).toBe('Alice');
+      expect(payload.chatType).toBe('dm');
+      expect(payload.threadId).toBe('topic-1');
+      expect(payload.messageId).toBe('msg-1');
+      expect(payload.transcript).toBe('voice transcript');
+      expect(payload.pdfText).toBe('pdf text');
 
       const newMessages = payload.newMessages as Array<{ role: string; content: string; ts: number }>;
       expect(Array.isArray(newMessages)).toBe(true);

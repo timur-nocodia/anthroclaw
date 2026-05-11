@@ -4141,6 +4141,21 @@ export class Gateway {
           sessionKey,
           response,
           source: msg.channel,
+          channel: msg.channel,
+          accountId: msg.accountId,
+          peerId: msg.peerId,
+          senderId: msg.senderId,
+          senderName: msg.senderName,
+          chatType: msg.chatType,
+          threadId: msg.threadId,
+          messageId: msg.messageId,
+          sdkSessionId: readStringMeta(
+            msg.raw && typeof msg.raw === 'object' ? msg.raw as Record<string, unknown> : {},
+            'agentSdkSessionId',
+          ),
+          media: msg.media ? { type: msg.media.type, path: msg.media.path } : undefined,
+          transcript: msg.transcript,
+          pdfText: msg.pdfText,
           newMessages,
         });
       }
