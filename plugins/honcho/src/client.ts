@@ -43,7 +43,7 @@ export async function createHonchoClient(
     apiKey,
     baseURL: config.connection.base_url,
     workspaceId: config.connection.workspace_id,
-    environment: config.connection.environment,
+    environment: resolveSdkEnvironment(config.connection.environment, config.connection.base_url),
     timeout: config.connection.timeout_ms,
     maxRetries: config.connection.max_retries,
   };
@@ -70,6 +70,22 @@ async function loadDefaultFactory(): Promise<HonchoSdkFactory> {
     (specifier: string) => Promise<typeof import('@honcho-ai/sdk')>;
   const mod = await dynamicImport('@honcho-ai/sdk');
   return (options) => new mod.Honcho(options);
+}
+
+function resolveSdkEnvironment(
+  environment: HonchoSdkOptions['environment'],
+  baseURL: string,
+): HonchoSdkOptions['environment'] {
+  if (environment !== 'local') return environment;
+  const host = new URL(baseURL).hostname;
+  // The Honcho SDK treats `environment: "local"` as a shortcut and overrides
+  // baseURL to localhost. In Docker/self-host networks we must preserve the
+  // configured service URL while still allowing AnthroClaw config to stay local
+  // and keyless.
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+    return 'local';
+  }
+  return 'production';
 }
 
 function redactSecrets(text: string): string {

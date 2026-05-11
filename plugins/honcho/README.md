@@ -41,6 +41,10 @@ plugins:
 ```
 
 `environment: local` does not require an API key. `environment: production` requires `api_key_env` to resolve.
+When AnthroClaw runs in Docker and Honcho runs in another Compose project,
+use the Honcho API service/container URL instead of `localhost`, for example
+`base_url: http://honcho-api-1:8000`, and connect the AnthroClaw container to
+the Honcho Docker network.
 
 ## Enable Per Agent
 

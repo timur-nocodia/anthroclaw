@@ -59,6 +59,31 @@ describe('Honcho client adapter', () => {
     );
   });
 
+  it('keeps Docker self-host base URLs even when config is local and keyless', async () => {
+    const factory: HonchoSdkFactory = vi.fn(() => ({ ok: true }));
+    const config = resolveConfig({}, {
+      connection: {
+        environment: 'local',
+        base_url: 'http://honcho-api-1:8000',
+        workspace_id: 'anthroclaw-smoke',
+      },
+    });
+
+    await createHonchoClient(config, {
+      env: {},
+      sdkFactory: factory,
+    });
+
+    expect(factory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: undefined,
+        environment: 'production',
+        baseURL: 'http://honcho-api-1:8000',
+        workspaceId: 'anthroclaw-smoke',
+      }),
+    );
+  });
+
   it('fails fast when production mode has no configured API key', async () => {
     const config = resolveConfig({}, {
       connection: { api_key_env: 'HONCHO_MISSING_KEY' },
