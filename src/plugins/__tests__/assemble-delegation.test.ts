@@ -300,9 +300,28 @@ describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () =
     expect(infoSpy).not.toHaveBeenCalled();
   });
 
-  it('falls back to original when assembled exceeds 4x ratio', async () => {
+  it('allows bounded plugin context even when the user prompt is short', async () => {
+    const original = 'short prompt';
+    const context = 'remembered context'.repeat(40);
+    const engine: ContextEngine = {
+      assemble: vi.fn(async () => ({
+        messages: [
+          { role: 'system', content: context },
+          { role: 'user', content: original },
+        ],
+      })),
+    };
+    const out = await tryPluginAssemble(engine, 'a', 's', original, 'honcho');
+
+    expect(out).toContain(context);
+    expect(out).toContain(original);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('falls back to original when assembled adds excessive plugin context', async () => {
     const original = 'a'.repeat(100);
-    const big = 'b'.repeat(401); // 401 > 100*4 = 400
+    const big = `${original}${'b'.repeat(100_001)}`;
     const engine: ContextEngine = {
       assemble: vi.fn(async () => ({
         messages: [{ role: 'user', content: big }],

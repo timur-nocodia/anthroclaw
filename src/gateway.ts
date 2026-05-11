@@ -617,7 +617,7 @@ export function flattenAssembledMessages(messages: unknown[]): string {
  * trust it as a prompt. A buggy plugin could blow the prompt up to MBs;
  * we'd rather fall back to the original than push that into `query()`.
  */
-const MAX_ASSEMBLED_RATIO = 4;             // assembled may grow up to 4x original
+const MAX_ASSEMBLED_ADDED_LEN = 100_000;    // plugin context is additive and may dwarf short prompts
 const ABSOLUTE_MAX_ASSEMBLED_LEN = 500_000; // ~125k tokens upper bound
 
 /**
@@ -685,7 +685,7 @@ export async function tryPluginAssemble(
     if (!flattened) return null;
     if (
       flattened.length > ABSOLUTE_MAX_ASSEMBLED_LEN ||
-      (prompt.length > 0 && flattened.length > prompt.length * MAX_ASSEMBLED_RATIO)
+      flattened.length - prompt.length > MAX_ASSEMBLED_ADDED_LEN
     ) {
       logger.warn(
         {
