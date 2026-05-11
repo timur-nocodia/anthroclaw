@@ -9,6 +9,7 @@ import type {
 import { resolveConfig, type HonchoConfig } from './config.js';
 import { createHonchoClient } from './client.js';
 import { observeHonchoTurn, type HonchoIngestSdk } from './ingest.js';
+import { assembleHonchoContext, type HonchoContextSdk } from './context.js';
 
 export async function register(ctx: PluginContext): Promise<PluginInstance> {
   ctx.logger.info({ version: ctx.pluginVersion }, 'honcho plugin loading');
@@ -17,8 +18,30 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
   const config = resolveConfig(globalDefaults, {});
 
   const engine: ContextEngine = {
-    async assemble() {
-      return null;
+    async assemble(input) {
+      const agentConfig = ctx.getAgentConfig(input.agentId) as
+        | { plugins?: { honcho?: unknown } }
+        | undefined;
+      const currentConfig = resolveConfig(globalDefaults, agentConfig?.plugins?.honcho ?? {});
+      if (!currentConfig.enabled || (currentConfig.mode !== 'context' && currentConfig.mode !== 'hybrid')) {
+        return null;
+      }
+      try {
+        const client = await createHonchoClient(currentConfig);
+        return await assembleHonchoContext({
+          sdk: client.sdk as HonchoContextSdk,
+          config: currentConfig,
+          agentId: input.agentId,
+          sessionKey: input.sessionKey,
+          messages: input.messages,
+        });
+      } catch (err) {
+        ctx.logger.warn(
+          { err: err instanceof Error ? err.message : String(err), agentId: input.agentId },
+          'honcho context assemble failed',
+        );
+        return null;
+      }
     },
   };
   ctx.registerContextEngine(engine);
