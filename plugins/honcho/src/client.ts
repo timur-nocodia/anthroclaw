@@ -43,7 +43,7 @@ export async function createHonchoClient(
     apiKey,
     baseURL: config.connection.base_url,
     workspaceId: config.connection.workspace_id,
-    environment: config.connection.environment === 'local' ? 'local' : 'production',
+    environment: config.connection.environment,
     timeout: config.connection.timeout_ms,
     maxRetries: config.connection.max_retries,
   };

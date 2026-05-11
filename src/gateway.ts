@@ -651,6 +651,14 @@ export async function tryPluginAssemble(
   sessionKey: string,
   prompt: string,
   pluginName: string | null = null,
+  sessionContext?: {
+    channel?: 'telegram' | 'whatsapp';
+    accountId?: string;
+    peerId?: string;
+    senderId?: string;
+    chatType?: 'dm' | 'group';
+    threadId?: string;
+  },
 ): Promise<string | null> {
   if (!engine?.assemble) return null;
   try {
@@ -658,6 +666,7 @@ export async function tryPluginAssemble(
       engine.assemble({
         agentId,
         sessionKey,
+        ...(sessionContext ? { sessionContext } : {}),
         messages: [{ role: 'user', content: prompt }],
       }),
       new Promise<typeof TIMEOUT_SENTINEL>((resolve) =>
@@ -4475,6 +4484,14 @@ export class Gateway {
         sessionKey,
         prompt,
         assembleEntry?.name ?? null,
+        {
+          channel: msg.channel,
+          accountId: msg.accountId,
+          peerId: msg.peerId,
+          senderId: msg.senderId,
+          chatType: msg.chatType,
+          threadId: msg.threadId,
+        },
       );
       if (assembledPrompt !== null) {
         prompt = assembledPrompt;

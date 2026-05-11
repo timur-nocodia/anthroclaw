@@ -100,6 +100,38 @@ describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () =
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
+  it('passes dispatch session context to assemble when available', async () => {
+    const result: AssembleResult = {
+      messages: [{ role: 'user', content: 'original prompt with enough padding' }],
+    };
+    const assembleFn = vi.fn(
+      async (_input: AssembleInput): Promise<AssembleResult | null> => result,
+    );
+    const sessionContext = {
+      channel: 'telegram' as const,
+      accountId: 'main',
+      peerId: 'chat-1',
+      senderId: 'user-1',
+      chatType: 'group' as const,
+      threadId: 'topic-1',
+    };
+
+    await tryPluginAssemble(
+      { assemble: assembleFn },
+      'agent-7',
+      'sk-99',
+      'original prompt with enough padding',
+      'honcho',
+      sessionContext,
+    );
+
+    expect(assembleFn).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: 'agent-7',
+      sessionKey: 'sk-99',
+      sessionContext,
+    }));
+  });
+
   it('returns null and logs warn (with redacted err) when assemble() throws', async () => {
     const boom = new Error('engine kaboom');
     const assembleFn = vi.fn(async (): Promise<AssembleResult | null> => {

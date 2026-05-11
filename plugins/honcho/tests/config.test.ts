@@ -82,4 +82,16 @@ describe('Honcho config', () => {
     expect(parsed.mode).toBe('tools');
     expect(parsed.context.max_chars).toBe(4000);
   });
+
+  it('caps max_retries at the Honcho TypeScript SDK limit', () => {
+    expect(() => resolveConfig({}, {
+      connection: { max_retries: 4 },
+    })).toThrow();
+  });
+
+  it('rejects unsupported SDK environments', () => {
+    expect(() => resolveConfig({}, {
+      connection: { environment: 'demo' },
+    })).toThrow();
+  });
 });

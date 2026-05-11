@@ -16,7 +16,7 @@ describe('Honcho client adapter', () => {
         base_url: 'https://memory.example.test',
         api_key_env: 'HONCHO_PROD_KEY',
         timeout_ms: 9000,
-        max_retries: 4,
+        max_retries: 3,
       },
     });
 
@@ -32,7 +32,7 @@ describe('Honcho client adapter', () => {
       workspaceId: 'anthroclaw-prod',
       environment: 'production',
       timeout: 9000,
-      maxRetries: 4,
+      maxRetries: 3,
     });
   });
 

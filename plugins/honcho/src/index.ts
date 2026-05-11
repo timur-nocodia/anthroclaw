@@ -19,7 +19,7 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
   const engine: ContextEngine = {
     async assemble(input) {
       const agentConfig = ctx.getAgentConfig(input.agentId) as
-        | { plugins?: { honcho?: unknown } }
+        | { plugins?: { honcho?: unknown }; group_sessions?: 'shared' | 'per_user' }
         | undefined;
       const currentConfig = resolveConfig(globalDefaults, agentConfig?.plugins?.honcho ?? {});
       if (!currentConfig.enabled || (currentConfig.mode !== 'context' && currentConfig.mode !== 'hybrid')) {
@@ -32,6 +32,8 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
           config: currentConfig,
           agentId: input.agentId,
           sessionKey: input.sessionKey,
+          sessionContext: input.sessionContext,
+          groupSessionMode: agentConfig?.group_sessions,
           messages: input.messages,
         });
       } catch (err) {

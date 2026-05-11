@@ -62,6 +62,14 @@ export interface ContextEngine {
 export interface AssembleInput {
   agentId: string;
   sessionKey: string;
+  sessionContext?: {
+    channel?: 'telegram' | 'whatsapp';
+    accountId?: string;
+    peerId?: string;
+    senderId?: string;
+    chatType?: 'dm' | 'group';
+    threadId?: string;
+  };
   messages: unknown[];
 }
 

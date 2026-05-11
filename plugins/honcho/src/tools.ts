@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { PluginMcpTool, McpToolContext } from './types-shim.js';
 import type { HonchoConfig } from './config.js';
-import { buildHonchoSessionId } from './ids.js';
+import { buildHonchoPeerId, buildHonchoSessionId } from './ids.js';
 
 type ToolKey = keyof HonchoConfig['tools'];
 type ToolMode = 'status' | 'session-scoped';
@@ -19,6 +19,7 @@ export interface HonchoToolSessionLike {
   context?(options?: {
     summary?: boolean;
     tokens?: number;
+    peerTarget?: string;
     peerPerspective?: string;
     limitToSession?: boolean;
   }): Promise<unknown>;
@@ -75,6 +76,7 @@ export function createHonchoTools(deps: HonchoToolDeps): PluginMcpTool[] {
       const context = await session.context({
         summary: config.context.include_session_context,
         tokens: input.tokens ?? config.context.token_budget,
+        peerTarget: agentPeerId(config, ctx.agentId),
         peerPerspective: agentPeerId(config, ctx.agentId),
         limitToSession: true,
       });
@@ -137,6 +139,7 @@ export function createHonchoTools(deps: HonchoToolDeps): PluginMcpTool[] {
         session.context?.({
           summary: true,
           tokens: input.tokens ?? config.context.token_budget,
+          peerTarget: agentPeerId(config, ctx.agentId),
           peerPerspective: agentPeerId(config, ctx.agentId),
           limitToSession: true,
         }) ?? Promise.resolve(null),
@@ -207,7 +210,7 @@ function requireSessionKey(ctx: McpToolContext): { ok: true; value: string } | {
 }
 
 function agentPeerId(config: HonchoConfig, agentId: string): string {
-  return `${config.peers.agent_peer_prefix}:${agentId}`;
+  return buildHonchoPeerId(config.peers.agent_peer_prefix, agentId);
 }
 
 function toolText(text: string): { content: Array<{ type: 'text'; text: string }> } {
@@ -231,11 +234,60 @@ function renderContextBlock(context: unknown, maxChars: number): string {
 
 function stringifyContext(value: unknown): string {
   if (!value) return '';
+  const structured = renderStructuredSessionContext(value);
+  if (structured) return structured;
   if (typeof (value as { toString?: unknown }).toString === 'function') {
     const rendered = String((value as { toString: () => string }).toString());
     if (rendered && rendered !== '[object Object]') return rendered;
   }
   return renderUnknown(value);
+}
+
+function renderStructuredSessionContext(context: unknown): string {
+  if (!context || typeof context !== 'object') return '';
+  const value = context as {
+    summary?: { content?: unknown } | null;
+    shortSummary?: { content?: unknown } | null;
+    longSummary?: { content?: unknown } | null;
+    peerRepresentation?: unknown;
+    peerCard?: unknown;
+    messages?: unknown;
+  };
+  const sections: string[] = [];
+
+  if (typeof value.summary?.content === 'string' && value.summary.content.trim()) {
+    sections.push(`## Summary\n${value.summary.content.trim()}`);
+  }
+  if (typeof value.shortSummary?.content === 'string' && value.shortSummary.content.trim()) {
+    sections.push(`## Short Summary\n${value.shortSummary.content.trim()}`);
+  }
+  if (typeof value.longSummary?.content === 'string' && value.longSummary.content.trim()) {
+    sections.push(`## Long Summary\n${value.longSummary.content.trim()}`);
+  }
+  if (typeof value.peerRepresentation === 'string' && value.peerRepresentation.trim()) {
+    sections.push(`## Peer Representation\n${value.peerRepresentation.trim()}`);
+  }
+  if (Array.isArray(value.peerCard) && value.peerCard.length > 0) {
+    const facts = value.peerCard
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .map((item) => `- ${item.trim()}`);
+    if (facts.length > 0) sections.push(`## Peer Card\n${facts.join('\n')}`);
+  }
+  if (Array.isArray(value.messages) && value.messages.length > 0) {
+    const renderedMessages = value.messages.flatMap((message): string[] => {
+      if (!message || typeof message !== 'object') return [];
+      const msg = message as { peerId?: unknown; content?: unknown; createdAt?: unknown };
+      if (typeof msg.content !== 'string' || !msg.content.trim()) return [];
+      const speaker = typeof msg.peerId === 'string' ? msg.peerId : 'peer';
+      const timestamp = typeof msg.createdAt === 'string' ? ` (${msg.createdAt})` : '';
+      return [`${speaker}${timestamp}: ${msg.content.trim()}`];
+    });
+    if (renderedMessages.length > 0) {
+      sections.push(`## Recent Messages\n${renderedMessages.join('\n\n')}`);
+    }
+  }
+
+  return sections.join('\n\n').trim();
 }
 
 function renderUnknown(value: unknown): string {

@@ -26,8 +26,8 @@ describe('Honcho ID mapping', () => {
       config: resolveConfig(),
     });
 
-    expect(peers.agentPeerId).toBe('agent:amina');
-    expect(peers.userPeerId).toMatch(/^user:telegram:main:[a-f0-9]{24}$/);
+    expect(peers.agentPeerId).toBe('agent_amina');
+    expect(peers.userPeerId).toMatch(/^user_telegram_main_[a-f0-9]{24}$/);
     expect(peers.userPeerId).not.toContain('123456789');
     expect(peers.groupPeerId).toBeUndefined();
   });
@@ -44,9 +44,9 @@ describe('Honcho ID mapping', () => {
       config: resolveConfig(),
     });
 
-    expect(peers.agentPeerId).toBe('agent:sales');
-    expect(peers.userPeerId).toMatch(/^user:whatsapp:main:[a-f0-9]{24}$/);
-    expect(peers.groupPeerId).toMatch(/^group:whatsapp:main:[a-f0-9]{24}$/);
+    expect(peers.agentPeerId).toBe('agent_sales');
+    expect(peers.userPeerId).toMatch(/^user_whatsapp_main_[a-f0-9]{24}$/);
+    expect(peers.groupPeerId).toMatch(/^group_whatsapp_main_[a-f0-9]{24}$/);
     expect(peers.groupPeerId).not.toContain('120363111');
   });
 
@@ -61,13 +61,30 @@ describe('Honcho ID mapping', () => {
       config: resolveConfig({}, { peers: { hash_ids: false } }),
     });
 
-    expect(peers.userPeerId).toBe('user:telegram:main:12345');
+    expect(peers.userPeerId).toBe('user_telegram_main_12345');
+  });
+
+  it('sanitizes raw IDs when hash_ids is disabled so SDK validation still passes', () => {
+    const peers = deriveHonchoPeers({
+      agentId: 'debug.bot',
+      channel: 'whatsapp',
+      accountId: 'main',
+      chatType: 'group',
+      peerId: '120363111@g.us',
+      senderId: '77015550000@s.whatsapp.net',
+      groupSessionMode: 'shared',
+      config: resolveConfig({}, { peers: { hash_ids: false } }),
+    });
+
+    expect(peers.agentPeerId).toBe('agent_debug_bot');
+    expect(peers.userPeerId).toBe('user_whatsapp_main_77015550000_s_whatsapp_net');
+    expect(peers.groupPeerId).toBe('group_whatsapp_main_120363111_g_us');
   });
 
   it('builds a stable hashed session ID from the AnthroClaw session key', () => {
     const sessionId = buildHonchoSessionId('amina:telegram:dm:123456789');
 
-    expect(sessionId).toMatch(/^session:[a-f0-9]{24}$/);
+    expect(sessionId).toMatch(/^session_[a-f0-9]{24}$/);
     expect(sessionId).toBe(buildHonchoSessionId('amina:telegram:dm:123456789'));
     expect(sessionId).not.toContain('123456789');
   });

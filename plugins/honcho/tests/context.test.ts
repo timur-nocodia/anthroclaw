@@ -11,6 +11,13 @@ describe('Honcho context assembly', () => {
       config: resolveConfig({}, { enabled: true, mode: 'context' }),
       agentId: 'amina',
       sessionKey: 'amina:telegram:dm:123',
+      sessionContext: {
+        channel: 'telegram',
+        accountId: 'main',
+        peerId: '123',
+        senderId: '123',
+        chatType: 'dm',
+      },
       messages: [{ role: 'user', content: 'What should I remember?' }],
     });
 
@@ -28,9 +35,42 @@ describe('Honcho context assembly', () => {
     expect(sdk.sessionRecord.context).toHaveBeenCalledWith({
       summary: true,
       tokens: 1800,
-      peerPerspective: 'agent:amina',
+      peerTarget: expect.stringMatching(/^user_telegram_main_[a-f0-9]{24}$/),
+      peerPerspective: 'agent_amina',
       limitToSession: true,
     });
+  });
+
+  it('renders real SessionContext fields instead of the SDK diagnostic toString()', async () => {
+    const sdk = createSdk({
+      messages: [{ peerId: 'user_telegram_main_abc', content: 'likes concise updates' }],
+      summary: { content: 'Earlier summary' },
+      peerRepresentation: 'User prefers direct answers.',
+      peerCard: ['Prefers Russian language'],
+      toString: () => 'SessionContext(messages=1, summary=present)',
+    });
+
+    const result = await assembleHonchoContext({
+      sdk,
+      config: resolveConfig({}, { enabled: true, mode: 'context' }),
+      agentId: 'amina',
+      sessionKey: 'amina:telegram:dm:123',
+      sessionContext: {
+        channel: 'telegram',
+        accountId: 'main',
+        peerId: '123',
+        senderId: '123',
+        chatType: 'dm',
+      },
+      messages: [],
+    });
+
+    const content = (result!.messages[0] as { content: string }).content;
+    expect(content).toContain('Earlier summary');
+    expect(content).toContain('User prefers direct answers.');
+    expect(content).toContain('Prefers Russian language');
+    expect(content).toContain('likes concise updates');
+    expect(content).not.toContain('SessionContext(messages=');
   });
 
   it('returns null outside context-capable modes', async () => {
@@ -84,11 +124,13 @@ describe('Honcho context assembly', () => {
   });
 });
 
-function createSdk(contextText: string) {
+function createSdk(contextText: unknown) {
   const sessionRecord = {
-    context: vi.fn(async () => ({
-      toString: () => contextText,
-    })),
+    context: vi.fn(async () => (
+      typeof contextText === 'string'
+        ? { toString: () => contextText }
+        : contextText
+    )),
   };
   return {
     sessionRecord,

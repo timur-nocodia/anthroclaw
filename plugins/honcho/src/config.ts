@@ -7,11 +7,11 @@ export const HonchoConfigSchema = z.object({
   mode: HonchoModeSchema.default('observe'),
   connection: z.object({
     workspace_id: z.string().min(1).default('anthroclaw-local'),
-    environment: z.enum(['demo', 'production', 'local']).default('production'),
+    environment: z.enum(['production', 'local']).default('production'),
     base_url: z.string().url().default('https://api.honcho.dev'),
     api_key_env: z.string().min(1).default('HONCHO_API_KEY'),
     timeout_ms: z.number().int().positive().default(15_000),
-    max_retries: z.number().int().min(0).max(5).default(2),
+    max_retries: z.number().int().min(0).max(3).default(2),
   }).default({
     workspace_id: 'anthroclaw-local',
     environment: 'production',

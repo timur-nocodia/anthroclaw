@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -34,8 +34,8 @@ describe('Honcho turn ingestion', () => {
       sdk.peers.get('agent')!.peer,
     ]);
     expect(sdk.sessionRecord.addMessages).toHaveBeenCalledWith([
-      { peerId: expect.stringMatching(/^user:telegram:main:[a-f0-9]{24}$/), text: 'hello token=abcdef****7890' },
-      { peerId: 'agent:amina', text: 'hi there' },
+      { peerId: expect.stringMatching(/^user_telegram_main_[a-f0-9]{24}$/), text: 'hello token=abcdef****7890' },
+      { peerId: 'agent_amina', text: 'hi there' },
     ]);
   });
 
@@ -87,9 +87,52 @@ describe('Honcho turn ingestion', () => {
       error: 'network token=abcdef****7890',
     });
   });
+
+  it('replays queued writes after a successful observe and keeps failed rows queued', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'honcho-replay-'));
+    const queuePath = join(dir, 'queue.jsonl');
+    writeFileSync(queuePath, [
+      JSON.stringify({
+        agentId: 'amina',
+        sessionKey: 'queued-ok',
+        payload: minimalPayload('queued ok'),
+        queuedAt: 1,
+      }),
+      JSON.stringify({
+        agentId: 'amina',
+        sessionKey: 'queued-fail',
+        payload: minimalPayload('queued fail'),
+        queuedAt: 2,
+      }),
+    ].join('\n') + '\n');
+    const sdk = createSdk();
+    sdk.sessionRecord.addMessages.mockImplementation(async (messages: Array<{ text?: string }>) => {
+      if (messages.some((message) => message.text === 'queued fail')) {
+        throw new Error('still offline');
+      }
+    });
+
+    await observeHonchoTurn({
+      sdk,
+      config: resolveConfig({}, { enabled: true, mode: 'observe' }),
+      agentId: 'amina',
+      sessionKey: 'current',
+      payload: minimalPayload('current ok'),
+      offlineQueuePath: queuePath,
+    });
+
+    expect(sdk.session).toHaveBeenCalledWith(expect.stringMatching(/^session_[a-f0-9]{24}$/), expect.any(Object));
+    const remaining = readFileSync(queuePath, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]).toMatchObject({ sessionKey: 'queued-fail' });
+    expect(JSON.stringify(remaining[0])).not.toContain('queued-ok');
+  });
 });
 
-function minimalPayload(): Record<string, unknown> {
+function minimalPayload(userText = 'hello'): Record<string, unknown> {
   return {
     channel: 'telegram',
     accountId: 'main',
@@ -97,7 +140,7 @@ function minimalPayload(): Record<string, unknown> {
     senderId: '123',
     chatType: 'dm',
     newMessages: [
-      { role: 'user', content: 'hello' },
+      { role: 'user', content: userText },
       { role: 'assistant', content: 'hi' },
     ],
   };
@@ -113,7 +156,7 @@ function createSdk() {
     peers,
     sessionRecord,
     peer: vi.fn(async (id: string) => {
-      const kind = id.startsWith('agent:') ? 'agent' : 'user';
+      const kind = id.startsWith('agent_') ? 'agent' : 'user';
       const peer = {
         id,
         message: vi.fn((text: string) => ({ peerId: id, text })),

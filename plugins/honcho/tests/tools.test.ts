@@ -39,11 +39,45 @@ describe('Honcho MCP tools', () => {
     expect(session.context).toHaveBeenCalledWith({
       summary: true,
       tokens: 512,
-      peerPerspective: 'agent:agent-a',
+      peerTarget: expect.any(String),
+      peerPerspective: 'agent_agent-a',
       limitToSession: true,
     });
     expect(result.content[0].text).toContain('<honcho-context');
     expect(result.content[0].text).toContain('session memory');
+  });
+
+  it('renders real SessionContext fields from context/session tools', async () => {
+    const session = {
+      context: vi.fn(async () => ({
+        messages: [{ peerId: 'user_abc', content: 'prefers short answers' }],
+        summary: { content: 'Earlier summary' },
+        peerRepresentation: 'Direct communication style.',
+        peerCard: ['Uses Russian'],
+        toString: () => 'SessionContext(messages=1, summary=present)',
+      })),
+      summaries: vi.fn(async () => ({
+        shortSummary: { content: 'Short summary' },
+        longSummary: { content: 'Long summary' },
+      })),
+    };
+    const sdk = {
+      session: vi.fn(async () => session),
+    };
+    const tools = makeTools(sdk);
+
+    const contextResult = await tools.find((candidate) => candidate.name === 'context')!
+      .handler({}, { agentId: 'agent-a', sessionKey: 's1' });
+    const sessionResult = await tools.find((candidate) => candidate.name === 'session')!
+      .handler({}, { agentId: 'agent-a', sessionKey: 's1' });
+
+    expect(contextResult.content[0].text).toContain('Earlier summary');
+    expect(contextResult.content[0].text).toContain('Direct communication style.');
+    expect(contextResult.content[0].text).toContain('Uses Russian');
+    expect(contextResult.content[0].text).toContain('prefers short answers');
+    expect(contextResult.content[0].text).not.toContain('SessionContext(messages=');
+    expect(sessionResult.content[0].text).toContain('Short summary');
+    expect(sessionResult.content[0].text).toContain('Long summary');
   });
 
   it('asks Honcho from the agent peer scoped to the current session', async () => {
@@ -59,17 +93,17 @@ describe('Honcho MCP tools', () => {
     const result = await tool.handler({
       question: 'what matters here?',
       reasoning_level: 'high',
-      target_peer_id: 'user:abc',
+      target_peer_id: 'user_abc',
     }, {
       agentId: 'agent-a',
       sessionKey: 'session-key',
     });
 
-    expect(sdk.peer).toHaveBeenCalledWith('agent:agent-a');
+    expect(sdk.peer).toHaveBeenCalledWith('agent_agent-a');
     expect(peer.chat).toHaveBeenCalledWith('what matters here?', {
       session: buildHonchoSessionId('session-key'),
       reasoningLevel: 'high',
-      target: 'user:abc',
+      target: 'user_abc',
     });
     expect(result.content[0].text).toContain('answer from honcho');
   });
@@ -90,7 +124,7 @@ describe('Honcho MCP tools', () => {
       .handler({ query: 'preference', limit: 4 }, { agentId: 'agent-a', sessionKey: 's1' });
 
     expect(session.search).toHaveBeenCalledWith('preference', { limit: 3 });
-    expect(session.representation).toHaveBeenCalledWith('agent:agent-a', {
+    expect(session.representation).toHaveBeenCalledWith('agent_agent-a', {
       searchQuery: 'preference',
       searchTopK: 4,
       includeMostFrequent: true,
