@@ -8,6 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@honcho-ai/sdk": "^2.1.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {
