@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -71,6 +71,17 @@ describe('FileArtifactStore', () => {
       'research_20260512_docs',
       'review_20260512_docs',
     ]);
+  });
+
+  it('rejects tampered artifact content when reading receipts', () => {
+    const written = store.writeArtifact(baseArtifact('research_20260512_docs', 'research_packet'));
+    const path = store.pathForArtifact(written);
+    const tampered = JSON.parse(readFileSync(path, 'utf8')) as BuildroomArtifact;
+    tampered.payload.title = 'tampered';
+    writeFileSync(path, `${JSON.stringify(tampered, null, 2)}\n`, 'utf8');
+
+    expect(() => store.readArtifact(written.id)).toThrow(/Artifact hash mismatch/);
+    expect(() => store.listArtifacts('research_packet')).toThrow(/Artifact hash mismatch/);
   });
 
   function baseArtifact(id: string, type: BuildroomArtifactType): BuildroomArtifact {

@@ -23,6 +23,13 @@ export class MissingParentArtifactError extends Error {
   }
 }
 
+export class ArtifactHashMismatchError extends Error {
+  constructor(id: string) {
+    super(`Artifact hash mismatch: ${id}`);
+    this.name = 'ArtifactHashMismatchError';
+  }
+}
+
 const ARTIFACT_DIRS: Record<BuildroomArtifactType, string> = {
   research_packet: 'buildroom/research',
   signal: 'buildroom/signals',
@@ -66,7 +73,7 @@ export class FileArtifactStore {
   readArtifact(id: string): BuildroomArtifact {
     const path = this.findArtifactPathById(id);
     if (!path) throw new Error(`Artifact not found: ${id}`);
-    return JSON.parse(readFileSync(path, 'utf8')) as BuildroomArtifact;
+    return readAndVerifyArtifact(path);
   }
 
   hasArtifact(id: string): boolean {
@@ -83,8 +90,7 @@ export class FileArtifactStore {
 
       for (const entry of readdirSync(dir).sort()) {
         if (!entry.endsWith('.json')) continue;
-        const artifact = JSON.parse(readFileSync(join(dir, entry), 'utf8')) as BuildroomArtifact;
-        artifacts.push(artifact);
+        artifacts.push(readAndVerifyArtifact(join(dir, entry)));
       }
     }
 
@@ -105,6 +111,14 @@ export class FileArtifactStore {
     const legacyPath = findJsonFile(root, `${id}.json`);
     return legacyPath;
   }
+}
+
+function readAndVerifyArtifact(path: string): BuildroomArtifact {
+  const artifact = JSON.parse(readFileSync(path, 'utf8')) as BuildroomArtifact;
+  if (computeArtifactContentHash(artifact) !== artifact.contentHash) {
+    throw new ArtifactHashMismatchError(artifact.id);
+  }
+  return artifact;
 }
 
 function findJsonFile(root: string, filename: string): string | null {
