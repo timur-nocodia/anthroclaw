@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
@@ -9,7 +10,7 @@ import {
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { FileArtifactStore } from '../artifacts/store.js';
-import type { BuildroomArtifact } from '../artifacts/model.js';
+import type { BuildroomArtifact, BuildroomArtifactRef } from '../artifacts/model.js';
 import { FileBuildroomLock } from '../locks/lock.js';
 import { evaluatePathPolicy, normalizeRepoPath } from '../policy/paths.js';
 import type { NativeAgentRuntimeAdapter, NativeBuilderRunResult } from '../runtime/native-agent-adapter.js';
@@ -66,6 +67,7 @@ export async function executeBuildPlan(opts: ExecuteBuildPlanOptions): Promise<B
     const changedFiles = diffSnapshot(workingDirectory, baseline);
     const changedSymlinks = listSymlinks(workingDirectory)
       .filter((path) => changedFiles.includes(path));
+    const outputRefs = buildOutputRefs(workingDirectory, changedFiles);
 
     const artifact = result.status === 'completed'
       ? buildCoderReceipt({
@@ -74,6 +76,7 @@ export async function executeBuildPlan(opts: ExecuteBuildPlanOptions): Promise<B
           result,
           changedFiles,
           changedSymlinks,
+          outputRefs,
           preRunPolicyResult,
           now: opts.now,
         })
@@ -110,6 +113,7 @@ function buildCoderReceipt(opts: {
   result: Extract<NativeBuilderRunResult, { status: 'completed' }>;
   changedFiles: string[];
   changedSymlinks: string[];
+  outputRefs: BuildroomArtifactRef[];
   preRunPolicyResult: PathScopePolicyResult;
   now: string;
 }): BuildroomArtifact {
@@ -142,7 +146,7 @@ function buildCoderReceipt(opts: {
       { kind: 'artifact', ref: opts.plan.id },
       { kind: 'artifact', ref: opts.approval.id },
     ],
-    outputRefs: [],
+    outputRefs: opts.outputRefs,
     runtimeRefs: opts.result.runtimeRefs,
     traceId: opts.plan.traceId,
     redaction: opts.plan.redaction,
@@ -226,6 +230,23 @@ function stringArray(value: unknown): string[] {
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)].sort();
+}
+
+function buildOutputRefs(root: string, files: string[]): BuildroomArtifactRef[] {
+  return files
+    .map((file): BuildroomArtifactRef | undefined => {
+      const path = join(root, file);
+      if (!existsSync(path)) return undefined;
+      const stats = lstatSync(path);
+      if (!stats.isFile()) return undefined;
+      const content = readFileSync(path);
+      return {
+        kind: 'file',
+        ref: file,
+        hash: `sha256:${createHash('sha256').update(content).digest('hex')}`,
+      };
+    })
+    .filter((ref): ref is BuildroomArtifactRef => Boolean(ref));
 }
 
 function snapshotDirectory(root: string): Map<string, string> {

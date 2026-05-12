@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -170,6 +171,13 @@ describe('executeBuildPlan', () => {
 
     expect(receipt).toMatchObject({
       type: 'coder_receipt',
+      outputRefs: [
+        {
+          kind: 'file',
+          ref: 'docs/guide.md',
+          hash: sha256('updated docs'),
+        },
+      ],
       payload: {
         postRunPolicyResult: {
           allowed: true,
@@ -401,5 +409,9 @@ describe('executeBuildPlan', () => {
       contentHash: '',
       payload,
     };
+  }
+
+  function sha256(content: string): string {
+    return `sha256:${createHash('sha256').update(content).digest('hex')}`;
   }
 });
