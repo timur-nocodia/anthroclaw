@@ -314,6 +314,88 @@ describe('onboarding facade — apikey branch', () => {
     expect(writer.mock.calls[0][0].entry.allowed_tools).toEqual(['t1', 't2']);
   });
 
+  it('attachApiKey rejects an expired pending row', async () => {
+    // Insert a pending row directly with expiresAt in the past.
+    const fixedNow = 1_000_000;
+    const ob = createOnboarding({
+      pending,
+      credentials: new EncryptedFilesystemCredentialStore(
+        new CredentialAuditLog(join(dir, 'audit.log')),
+      ),
+      uiBaseUrl: 'https://ui.test',
+      now: () => fixedNow,
+    });
+    pending.insert({
+      id: 'pnd_expired',
+      state: 'st_expired',
+      agentId: 'a1',
+      agentSessionKey: null,
+      mcpUrl: 'https://mcp.x/y',
+      authMode: 'apikey',
+      codeVerifier: null,
+      clientId: null,
+      clientSecret: null,
+      oauthMetadata: null,
+      toolsMetadata: null,
+      requestedBy: 'admin:u1',
+      status: 'pending',
+      failureReason: null,
+      createdAt: fixedNow - 2000,
+      expiresAt: fixedNow - 1000,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 200 })),
+    );
+    const res = await ob.attachApiKey({
+      pendingId: 'pnd_expired',
+      token: 'sk_x',
+    });
+    expect(res.status).toBe('invalid_token');
+    const row = pending.byId('pnd_expired');
+    expect(row?.status).toBe('failed');
+    expect(row?.failureReason).toBe('expired');
+  });
+
+  it('finalize throws when pending row has expired', async () => {
+    const fixedNow = 2_000_000;
+    const writer = vi.fn();
+    const ob = createOnboarding({
+      pending,
+      credentials: new EncryptedFilesystemCredentialStore(
+        new CredentialAuditLog(join(dir, 'audit.log')),
+      ),
+      uiBaseUrl: 'https://ui.test',
+      writeAgentYml: writer,
+      now: () => fixedNow,
+    });
+    pending.insert({
+      id: 'pnd_expired_done',
+      state: 'st_expired_done',
+      agentId: 'a1',
+      agentSessionKey: null,
+      mcpUrl: 'https://mcp.x/y',
+      authMode: 'apikey',
+      codeVerifier: null,
+      clientId: null,
+      clientSecret: null,
+      oauthMetadata: null,
+      toolsMetadata: JSON.stringify({
+        serverId: 'x',
+        tools: [{ name: 't1' }],
+      }),
+      requestedBy: 'admin:u1',
+      status: 'completed',
+      failureReason: null,
+      createdAt: fixedNow - 2000,
+      expiresAt: fixedNow - 1000,
+    });
+    await expect(
+      ob.finalize({ pendingId: 'pnd_expired_done', allowed_tools: ['*'] }),
+    ).rejects.toThrow(/pending_expired/);
+    expect(writer).not.toHaveBeenCalled();
+  });
+
   it('finalize throws if pending is not yet completed', async () => {
     probeStub.mockResolvedValueOnce({
       authMode: 'apikey',

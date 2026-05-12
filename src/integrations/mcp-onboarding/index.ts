@@ -149,6 +149,10 @@ export function createOnboarding(deps: OnboardingDeps) {
   }): Promise<AttachApiKeyResult> {
     const row = deps.pending.byId(opts.pendingId);
     if (!row || row.status !== 'pending') return { status: 'invalid_token' };
+    if (now() > row.expiresAt) {
+      deps.pending.markFailed(row.id, 'expired');
+      return { status: 'invalid_token' };
+    }
 
     const initRes = await fetch(row.mcpUrl, {
       method: 'POST',
@@ -215,6 +219,9 @@ export function createOnboarding(deps: OnboardingDeps) {
     const row = deps.pending.byId(opts.pendingId);
     if (!row || row.status !== 'completed') {
       throw new Error('pending_not_ready');
+    }
+    if (now() > row.expiresAt) {
+      throw new Error('pending_expired');
     }
     const parsed = JSON.parse(row.toolsMetadata ?? '{}') as {
       serverId?: string;
