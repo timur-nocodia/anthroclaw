@@ -71,6 +71,9 @@ export function authorizeTelegramBuildroomCommand(
   const parsed = parseTelegramBuildroomCommand(input.text);
   if (parsed === 'malformed') return { ok: false, reason: 'malformed_command' };
   if (!parsed) return { ok: false, reason: 'not_buildroom_command' };
+  if (!hasValidCommandArgs(parsed.command, parsed.args)) {
+    return { ok: false, reason: 'malformed_command' };
+  }
 
   const operatorId = `telegram_user:${input.telegramUserId}`;
   const operator = config.operators.find((candidate) => candidate.id === operatorId);
@@ -110,6 +113,19 @@ function parseTelegramBuildroomCommand(
 
 function isBuildroomSlashCommand(token: string): boolean {
   return token === '/buildroom' || /^\/buildroom@[A-Za-z0-9_]+$/.test(token);
+}
+
+function hasValidCommandArgs(command: TelegramBuildroomCommand, args: string[]): boolean {
+  if (command === 'approve') {
+    return args.length === 1 && args[0].startsWith('review_');
+  }
+  if (command === 'build') {
+    return args.length === 1 && (
+      args[0].startsWith('approval_') ||
+      args[0].startsWith('plan_')
+    );
+  }
+  return true;
 }
 
 function telegramRoute(input: TelegramBuildroomCommandInput): string {
