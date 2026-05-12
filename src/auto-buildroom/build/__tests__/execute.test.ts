@@ -61,6 +61,12 @@ describe('executeBuildPlan', () => {
       },
     });
     expect(store.readArtifact(receipt.id)).toMatchObject({ id: receipt.id });
+    expect(store.readArtifact('approval_20260512_docs')).toMatchObject({
+      status: 'consumed',
+      payload: {
+        consumedAt: '2026-05-12T00:10:00.000Z',
+      },
+    });
   });
 
   it('writes an error receipt when native runtime fails', async () => {
@@ -92,6 +98,12 @@ describe('executeBuildPlan', () => {
         errorType: 'runtime_error',
         message: 'permission denied',
         retryAllowed: true,
+      },
+    });
+    expect(store.readArtifact('approval_20260512_docs')).toMatchObject({
+      status: 'consumed',
+      payload: {
+        consumedAt: '2026-05-12T00:10:00.000Z',
       },
     });
   });

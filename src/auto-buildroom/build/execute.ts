@@ -33,6 +33,7 @@ export async function executeBuildPlan(opts: ExecuteBuildPlanOptions): Promise<B
   });
 
   try {
+    const consumedApproval = store.writeArtifact(consumeApproval(approval, opts.now));
     const result = await opts.adapter.runBuilder({
       prompt: buildBuilderPrompt(plan),
       workingDirectory: buildWorkingDirectory(opts.projectRoot, opts.roomId, plan.id),
@@ -42,8 +43,8 @@ export async function executeBuildPlan(opts: ExecuteBuildPlanOptions): Promise<B
     });
 
     const artifact = result.status === 'completed'
-      ? buildCoderReceipt({ plan, approval, result, now: opts.now })
-      : buildErrorReceipt({ plan, approval, result, now: opts.now });
+      ? buildCoderReceipt({ plan, approval: consumedApproval, result, now: opts.now })
+      : buildErrorReceipt({ plan, approval: consumedApproval, result, now: opts.now });
     return store.writeArtifact(artifact);
   } finally {
     lock.release(handle);
@@ -56,6 +57,18 @@ function findExistingExecutionReceipt(
 ): BuildroomArtifact | undefined {
   return [...store.listArtifacts('coder_receipt'), ...store.listArtifacts('error_receipt')]
     .find((artifact) => artifact.parentIds.includes(planId));
+}
+
+function consumeApproval(approval: BuildroomArtifact, consumedAt: string): BuildroomArtifact {
+  return {
+    ...approval,
+    status: 'consumed',
+    payload: {
+      ...approval.payload,
+      consumedAt,
+    },
+    contentHash: '',
+  };
 }
 
 function buildCoderReceipt(opts: {
