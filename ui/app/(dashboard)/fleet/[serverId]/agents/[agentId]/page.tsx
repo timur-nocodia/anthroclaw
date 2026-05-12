@@ -92,6 +92,7 @@ interface AgentConfig {
   maxBudgetUsd?: number;
   description?: string;
   timezone?: string;
+  time_prefix_format?: 'human-ru' | 'human-en' | 'iso' | 'off';
   queue_mode?: string;
   session_policy?: string;
   auto_compress?: { enabled: boolean; threshold_messages: number };
@@ -688,14 +689,20 @@ function decisionReasonPrompt(
   return null;
 }
 
-const TIMEZONES = [
-  "UTC",
-  "Europe/Moscow",
-  "America/New_York",
-  "America/Los_Angeles",
-  "Asia/Singapore",
-  "Asia/Tokyo",
-];
+const TIMEZONES: string[] = (() => {
+  try {
+    const all = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.('timeZone');
+    if (all && all.length > 0) return all;
+  } catch {}
+  return [
+    "UTC",
+    "Europe/Moscow",
+    "America/New_York",
+    "America/Los_Angeles",
+    "Asia/Singapore",
+    "Asia/Tokyo",
+  ];
+})();
 
 interface QueueModeOption {
   value: "collect" | "serial" | "steer" | "interrupt";
@@ -1063,6 +1070,7 @@ function ConfigTab({
     maxTurns: agent.maxTurns ?? 0,
     maxBudgetUsd: agent.maxBudgetUsd ?? 0,
     timezone: agent.timezone ?? "UTC",
+    time_prefix_format: (agent.time_prefix_format ?? "human-ru") as 'human-ru' | 'human-en' | 'iso' | 'off',
     queue_mode: agent.queue_mode ?? "collect",
     session_policy: agent.session_policy ?? "daily",
     auto_compress: agent.auto_compress,
@@ -1660,7 +1668,7 @@ function ConfigTab({
                   ))}
                 </select>
               </Field>
-              <Field label="Timezone" tooltip="Agent's timezone. Affects cron job schedules and timestamps in logs.">
+              <Field label="Timezone" tooltip="Agent's IANA timezone (e.g. Asia/Almaty, Europe/Moscow). Drives: (1) the date+time prefix injected on every turn, so the agent knows the correct weekday/hour; (2) cron job firing times; (3) timestamps in memory files and logs.">
                 <select
                   value={cfg.timezone}
                   onChange={(e) => update({ timezone: e.target.value })}
@@ -1676,6 +1684,23 @@ function ConfigTab({
                       {tz}
                     </option>
                   ))}
+                </select>
+              </Field>
+              <Field label="Time prefix" tooltip='Per-turn date/time prefix prepended to every user message so the agent knows the current weekday + time in its timezone. "off" disables it entirely. "human-ru" reads "Сейчас Вторник, 09:30, 12 мая 2026г.", "human-en" the same in English, "iso" gives compact "2026-05-12 09:30".'>
+                <select
+                  value={cfg.time_prefix_format}
+                  onChange={(e) => update({ time_prefix_format: e.target.value as 'human-ru' | 'human-en' | 'iso' | 'off' })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{
+                    background: "var(--oc-bg3)",
+                    borderColor: "var(--oc-border)",
+                    color: "var(--color-foreground)",
+                  }}
+                >
+                  <option value="human-ru">human-ru — Сейчас Вторник, 09:30, 12 мая 2026г.</option>
+                  <option value="human-en">human-en — Now Tuesday, 09:30, 12 May 2026</option>
+                  <option value="iso">iso — 2026-05-12 09:30</option>
+                  <option value="off">off — no prefix</option>
                 </select>
               </Field>
               <Field label="Queue mode" tooltip="What happens to new messages while the agent is still responding. Picker below this field shows the full behavior of the selected mode.">

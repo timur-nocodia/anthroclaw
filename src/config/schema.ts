@@ -454,6 +454,10 @@ export const AgentYmlSchema = z.object({
   maxTurns: z.number().int().min(1).optional().describe('Maximum conversation turns per query'),
   maxBudgetUsd: z.number().min(0.01).optional().describe('Maximum USD budget per query'),
   timezone: z.string().default('UTC').describe('IANA timezone for timestamps, e.g. "Asia/Almaty"'),
+  time_prefix_format: z
+    .enum(['human-ru', 'human-en', 'iso', 'off'])
+    .default('human-ru')
+    .describe('Per-turn date/time prefix injected before every user message. "off" disables it; "human-ru"/"human-en" produce readable weekday+date+time; "iso" produces compact ISO date+time.'),
   routes: z.array(RouteSchema).min(1),
   safety_profile: z.enum(['public', 'trusted', 'private', 'chat_like_openclaw']),
   safety_overrides: SafetyOverridesSchema.optional(),

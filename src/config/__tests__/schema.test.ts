@@ -354,4 +354,41 @@ describe('plugins config schema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('AgentYmlSchema.time_prefix_format defaults to "human-ru"', () => {
+    const result = AgentYmlSchema.safeParse({
+      safety_profile: 'trusted' as const,
+      routes: [{ channel: 'telegram' }],
+      memory_extraction: undefined,
+      subagents: undefined,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.time_prefix_format).toBe('human-ru');
+    }
+  });
+
+  it('AgentYmlSchema.time_prefix_format accepts all 4 enum values', () => {
+    for (const v of ['human-ru', 'human-en', 'iso', 'off'] as const) {
+      const result = AgentYmlSchema.safeParse({
+        safety_profile: 'trusted' as const,
+        routes: [{ channel: 'telegram' }],
+        time_prefix_format: v,
+        memory_extraction: undefined,
+        subagents: undefined,
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('AgentYmlSchema.time_prefix_format rejects unknown values', () => {
+    const result = AgentYmlSchema.safeParse({
+      safety_profile: 'trusted' as const,
+      routes: [{ channel: 'telegram' }],
+      time_prefix_format: 'fancy',
+      memory_extraction: undefined,
+      subagents: undefined,
+    });
+    expect(result.success).toBe(false);
+  });
 });

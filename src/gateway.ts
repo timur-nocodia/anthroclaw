@@ -113,7 +113,7 @@ import { IterationBudget } from './session/budget.js';
 import { SessionCompressor } from './session/compressor.js';
 import { generateSessionTitle } from './session/title-generator.js';
 import { logger } from './logger.js';
-import { nowInTimezone, formatDateTime, dailyMemoryPath } from './util/time.js';
+import { nowInTimezone, formatTimePrefix, dailyMemoryPath } from './util/time.js';
 import { redactSecrets } from './security/redact.js';
 import { ApprovalBroker } from './security/approval-broker.js';
 import { isSilentResponse, processNoReplySentinel } from './cron/scheduler.js';
@@ -2604,7 +2604,7 @@ export class Gateway {
     const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayPath = dailyMemoryPath(yesterday);
 
-    let sessionCtx = `[${formatDateTime(now)} ${tz}] `;
+    let sessionCtx = formatTimePrefix(agent.config.time_prefix_format ?? 'human-ru', new Date(), tz);
 
     if (!existingSessionId) {
       const fmtHints = 'Web UI: Markdown supported. Use **bold**, *italic*, `code`, ```code blocks```.';
@@ -4301,7 +4301,7 @@ export class Gateway {
     const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayPath = dailyMemoryPath(yesterday);
 
-    let sessionCtx = `[${formatDateTime(now)} ${tz}] `;
+    let sessionCtx = formatTimePrefix(agent.config.time_prefix_format ?? 'human-ru', new Date(), tz);
 
     if (!existingSessionId) {
       const fmtHints = msg.channel === 'telegram'
