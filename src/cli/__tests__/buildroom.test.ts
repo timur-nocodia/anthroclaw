@@ -336,6 +336,42 @@ describe('buildroom CLI', () => {
     expect(store.listArtifacts('trust_report')).toEqual([]);
   });
 
+  it('renders and saves an operator report from latest trust receipt', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('build_20260512_docs', 'coder_receipt', {
+        runtimeStatus: 'completed',
+        builderClaims: ['Updated operator guide.'],
+        postRunPolicyResult: { allowed: true, changedFiles: ['docs/guide.md'], violations: [] },
+      }),
+    );
+    await run(['qa', 'build_20260512_docs', '--root', root]);
+    await run(['trust', 'build_20260512_docs', '--root', root]);
+
+    out.length = 0;
+    await expect(run(['report', '--root', root, '--save'])).resolves.toBe(0);
+
+    expect(out.join('\n')).toContain('Trust: CLEAN');
+    expect(out.join('\n')).toContain('Receipt: trust_20260512_docs');
+    const summary = store.readArtifact('summary_20260512_docs');
+    expect(summary).toMatchObject({
+      type: 'operator_summary',
+      status: 'generated',
+      parentIds: ['trust_20260512_docs'],
+      payload: {
+        reportType: 'trust',
+        format: 'markdown',
+        renderedFromIds: ['trust_20260512_docs'],
+        trustStateAtRenderTime: 'clean',
+      },
+    });
+    expect(summary.outputRefs[0]).toMatchObject({
+      kind: 'file',
+      ref: expect.stringContaining('summary_20260512_docs.md'),
+    });
+  });
+
   function artifact(
     id: string,
     type: BuildroomArtifact['type'],

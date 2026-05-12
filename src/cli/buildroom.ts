@@ -1,5 +1,7 @@
 #!/usr/bin/env tsx
 
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import {
   ArtifactHashMismatchError,
   FileArtifactStore,
@@ -14,6 +16,7 @@ import {
   BuildroomConfigExistsError,
   initializeBuildroomStorage,
   loadBuildroomRoomConfig,
+  roomRoot,
 } from '../auto-buildroom/storage/init.js';
 import {
   createQaReportArtifact,
@@ -37,6 +40,7 @@ interface ParsedArgs {
   root: string;
   room?: string;
   operator?: string;
+  flags: Set<string>;
   positional: string[];
 }
 
@@ -76,6 +80,8 @@ export async function runBuildroomCli(argv: string[], io: CliIO = defaultIO): Pr
         return commandQa(args, io);
       case 'trust':
         return commandTrust(args, io);
+      case 'report':
+        return commandReport(args, io);
       default:
         io.stderr(`Unknown command: ${args.command}`);
         io.stderr(helpText());
@@ -393,6 +399,29 @@ function commandTrust(args: ParsedArgs, io: CliIO): number {
   return 0;
 }
 
+function commandReport(args: ParsedArgs, io: CliIO): number {
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const trust = latestArtifact(store, 'trust_report');
+  const report = renderTrustReport(trust);
+
+  if (args.flags.has('save')) {
+    const summary = store.writeArtifact(
+      createOperatorSummaryArtifact({
+        projectRoot: args.root,
+        roomId: config.roomId,
+        trust,
+        report,
+        now: new Date().toISOString(),
+      }),
+    );
+    writeRenderedReport(summary, report);
+  }
+
+  io.stdout(report);
+  return 0;
+}
+
 function assertStageAllowed(
   config: { mode: string; killSwitchActive: boolean },
   stage: 'collect' | 'propose' | 'review' | 'build' | 'qa' | 'trust',
@@ -460,6 +489,88 @@ function createAndStoreTrustArtifacts(
   return store.writeArtifact(createTrustReportArtifact({ build, qa, delta, now }));
 }
 
+function createOperatorSummaryArtifact(opts: {
+  projectRoot: string;
+  roomId: string;
+  trust: BuildroomArtifact;
+  report: string;
+  now: string;
+}): BuildroomArtifact {
+  const suffix = artifactSuffix(opts.trust.id);
+  const renderedPath = join(
+    roomRoot(opts.projectRoot, opts.roomId),
+    'buildroom',
+    'operator',
+    'reports',
+    `summary_${suffix}.md`,
+  );
+
+  return {
+    id: `summary_${suffix}`,
+    type: 'operator_summary',
+    schemaVersion: 'auto-buildroom/v1',
+    status: 'generated',
+    createdAt: opts.now,
+    producer: {
+      role: 'reporter',
+      runId: `run_${opts.now.replace(/[^0-9]/g, '').slice(0, 14)}_reporter`,
+    },
+    room: { id: opts.roomId },
+    parentIds: [opts.trust.id],
+    inputRefs: [{ kind: 'artifact', ref: opts.trust.id }],
+    outputRefs: [{ kind: 'file', ref: renderedPath }],
+    runtimeRefs: [],
+    traceId: opts.trust.traceId,
+    redaction: {
+      rawTranscriptsIncluded: false,
+      secretsRedacted: true,
+      redactedFields: [],
+    },
+    contentHash: '',
+    payload: {
+      reportType: 'trust',
+      format: 'markdown',
+      renderedPath,
+      renderedFromIds: [opts.trust.id],
+      generatedBy: 'reporter',
+      rendererVersion: 'auto-buildroom-reporter/v1',
+      templateVersion: 'operator-summary/v1',
+      trustStateAtRenderTime: opts.trust.payload.trustState,
+    },
+  };
+}
+
+function writeRenderedReport(summary: BuildroomArtifact, report: string): void {
+  const outputRef = summary.outputRefs.find((ref) => ref.kind === 'file');
+  if (!outputRef) throw new Error(`Operator summary is missing rendered output ref: ${summary.id}`);
+  mkdirSync(dirname(outputRef.ref), { recursive: true });
+  writeFileSync(outputRef.ref, `${report}\n`, 'utf8');
+}
+
+function renderTrustReport(trust: BuildroomArtifact): string {
+  const state = String(trust.payload.trustState ?? 'blocked');
+  const reasons = Array.isArray(trust.payload.reasons)
+    ? trust.payload.reasons.filter((reason): reason is string => typeof reason === 'string')
+    : [];
+
+  return [
+    `Trust: ${state.toUpperCase()}`,
+    `Receipt: ${trust.id}`,
+    `Room: ${trust.room.id}`,
+    `Trace: ${trust.traceId}`,
+    '',
+    'What to believe:',
+    reasons.length ? reasons.map((reason) => `- ${reason}`).join('\n') : '- No trust reasons recorded.',
+    '',
+    'Builder claims are not proof. Trust is derived from QA and Verification Delta receipts.',
+  ].join('\n');
+}
+
+function artifactSuffix(id: string): string {
+  const separator = id.indexOf('_');
+  return separator === -1 ? id : id.slice(separator + 1);
+}
+
 function builderClaims(build: BuildroomArtifact): string[] {
   return Array.isArray(build.payload.builderClaims)
     ? build.payload.builderClaims.filter((claim): claim is string => typeof claim === 'string')
@@ -504,6 +615,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   const out: ParsedArgs = {
     command: undefined,
     root: process.cwd(),
+    flags: new Set(),
     positional,
   };
 
@@ -518,6 +630,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--operator':
         out.operator = argv[++i];
+        break;
+      case '--save':
+        out.flags.add('save');
         break;
       default:
         if (!out.command) out.command = arg;
@@ -570,11 +685,13 @@ function helpText(): string {
     '  build     Create or show a Buildroom build plan',
     '  qa        Create deterministic QA evidence for a build receipt',
     '  trust     Create verification delta and trust report',
+    '  report    Render latest trust report; use --save for operator_summary',
     '',
     'Options:',
     '  --root <path>       Project root',
     '  --room <roomId>     Buildroom ID',
     '  --operator <id>     Operator identity for init',
+    '  --save              Persist report rendering when supported',
   ].join('\n');
 }
 
