@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FileArtifactStore } from '../../../auto-buildroom/artifacts/store.js';
 import { createSessionSummaryArtifact } from '../../../auto-buildroom/sessions/session-summary.js';
 import { initializeBuildroomStorage } from '../../../auto-buildroom/storage/init.js';
-import { createBuildroomHandoffTool } from '../buildroom-handoff.js';
+import {
+  bindBuildroomHandoffToolForDispatch,
+  bindBuildroomHandoffToolsForDispatch,
+  createBuildroomHandoffTool,
+} from '../buildroom-handoff.js';
 
 describe('buildroom handoff tool', () => {
   let root: string;
@@ -87,5 +91,96 @@ describe('buildroom handoff tool', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('source_session_id is required');
+  });
+
+  it('accepts an explicit source_session_id when the tool is not dispatch-bound', async () => {
+    const tool = createBuildroomHandoffTool({
+      projectRoot: root,
+      roomId: 'anthroclaw-core',
+      sourceAgentId: 'code-helper',
+      now: () => '2026-05-12T00:02:00.000Z',
+    }) as unknown as {
+      handler(args: Record<string, unknown>): Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
+    };
+
+    const result = await tool.handler({
+      signal_type: 'friction',
+      summary: 'Notification routing needs clearer operator view.',
+      evidence_summary_id: 'session-summary-20260512-000000-code-helper',
+      source_session_id: 'session_from_dispatch',
+      confidence: 'medium',
+      requested_action: 'research_only',
+    });
+
+    expect(result.isError).toBeFalsy();
+    const artifact = store.readArtifact('handoff_20260512_000200_code-helper_friction');
+    expect(artifact.payload.sourceSessionId).toBe('session_from_dispatch');
+  });
+
+  it('rebinds the handoff tool with dispatch session context', async () => {
+    const unbound = createBuildroomHandoffTool({
+      projectRoot: root,
+      roomId: 'anthroclaw-core',
+      sourceAgentId: 'code-helper',
+      now: () => '2026-05-12T00:03:00.000Z',
+    });
+    const rebound = bindBuildroomHandoffToolForDispatch(unbound, {
+      projectRoot: root,
+      roomId: 'anthroclaw-core',
+      sourceAgentId: 'code-helper',
+      sourceSessionId: 'agent:telegram:group:-1003931616911',
+      now: () => '2026-05-12T00:03:00.000Z',
+    }) as unknown as {
+      handler(args: Record<string, unknown>): Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
+    };
+
+    const result = await rebound.handler({
+      signal_type: 'friction',
+      summary: 'Notification routing needs clearer operator view.',
+      evidence_summary_id: 'session-summary-20260512-000000-code-helper',
+      confidence: 'medium',
+      requested_action: 'research_only',
+    });
+
+    expect(result.isError).toBeFalsy();
+    const artifact = store.readArtifact('handoff_20260512_000300_code-helper_friction');
+    expect(artifact.payload.sourceSessionId).toBe('agent:telegram:group:-1003931616911');
+  });
+
+  it('rebinds only handoff tools in a dispatch tool list', async () => {
+    const otherTool = {
+      name: 'memory_search',
+      description: 'other',
+      inputSchema: {},
+      handler: async () => ({ content: [{ type: 'text', text: 'ok' }] }),
+    };
+    const unbound = createBuildroomHandoffTool({
+      projectRoot: root,
+      roomId: 'anthroclaw-core',
+      sourceAgentId: 'code-helper',
+      now: () => '2026-05-12T00:04:00.000Z',
+    });
+
+    const rebound = bindBuildroomHandoffToolsForDispatch([otherTool, unbound], {
+      projectRoot: root,
+      roomId: 'anthroclaw-core',
+      sourceAgentId: 'code-helper',
+      sourceSessionId: 'session_bound_from_gateway',
+      now: () => '2026-05-12T00:04:00.000Z',
+    });
+
+    expect(rebound[0]).toBe(otherTool);
+    expect(rebound[1]).not.toBe(unbound);
+    const result = await (rebound[1] as unknown as {
+      handler(args: Record<string, unknown>): Promise<{ isError?: boolean }>;
+    }).handler({
+      signal_type: 'friction',
+      summary: 'Notification routing needs clearer operator view.',
+      evidence_summary_id: 'session-summary-20260512-000000-code-helper',
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(store.readArtifact('handoff_20260512_000400_code-helper_friction').payload.sourceSessionId)
+      .toBe('session_bound_from_gateway');
   });
 });

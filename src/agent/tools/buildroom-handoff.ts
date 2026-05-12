@@ -74,6 +74,21 @@ export function createBuildroomHandoffTool(opts: BuildroomHandoffToolOptions): T
   return sdkTool as unknown as ToolDefinition;
 }
 
+export function bindBuildroomHandoffToolForDispatch(
+  toolDefinition: ToolDefinition,
+  opts: BuildroomHandoffToolOptions & { sourceSessionId: string },
+): ToolDefinition {
+  if (toolDefinition.name !== 'buildroom_submit_signal') return toolDefinition;
+  return createBuildroomHandoffTool(opts);
+}
+
+export function bindBuildroomHandoffToolsForDispatch(
+  tools: ToolDefinition[],
+  opts: BuildroomHandoffToolOptions & { sourceSessionId: string },
+): ToolDefinition[] {
+  return tools.map((toolDefinition) => bindBuildroomHandoffToolForDispatch(toolDefinition, opts));
+}
+
 export const META: ToolMeta = {
   category: 'agent-config',
   safe_in_public: false,
