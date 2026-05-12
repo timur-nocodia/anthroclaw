@@ -453,10 +453,10 @@ export function PluginsPanel({ agentId }: PluginsPanelProps) {
     );
   }
 
-  const list = installed ?? [];
   const entryByName = new Map<string, AgentPluginEntry>(
     (agentEntries ?? []).map((e) => [e.name, e]),
   );
+  const list = mergePluginCatalogWithAgentState(installed ?? [], agentEntries ?? []);
 
   return (
     <div className="p-6">
@@ -735,4 +735,28 @@ function Badge({ children }: { children: React.ReactNode }) {
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function mergePluginCatalogWithAgentState(
+  installed: PluginListItem[],
+  agentEntries: AgentPluginEntry[],
+): PluginListItem[] {
+  const byName = new Map(installed.map((plugin) => [plugin.name, plugin]));
+  for (const entry of agentEntries) {
+    if (byName.has(entry.name)) continue;
+    byName.set(entry.name, {
+      name: entry.name,
+      version: "unknown",
+      hasConfigSchema: true,
+      hasMcpTools: false,
+      hasContextEngine: false,
+      toolCount: 0,
+      sourceType: "agent-config",
+      installRoot: "",
+      managed: false,
+      loaded: entry.enabled,
+      status: "agent_config_only",
+    });
+  }
+  return [...byName.values()];
 }
