@@ -1761,7 +1761,7 @@ This task is performed by the operator (Timur), not by an implementer subagent. 
 - [ ] **Step 1: Pre-deploy operator checklist**
 
 ```bash
-ssh ubuntu@46.247.41.191
+ssh root@187.124.181.23
 cd /home/ubuntu/anthroclaw
 
 # Generate master key
@@ -1812,7 +1812,7 @@ gh release create v0.8.0 --title "v0.8.0 — Capability cutoff + bug fixes" --ge
 - [ ] **Step 6: Re-deploy `main` so production runs the tagged build**
 
 ```bash
-ssh ubuntu@46.247.41.191
+ssh root@187.124.181.23
 cd /home/ubuntu/anthroclaw
 git pull
 sudo docker compose up -d --build
@@ -1825,7 +1825,7 @@ sudo docker compose up -d --build
 If anything breaks production:
 
 ```bash
-ssh ubuntu@46.247.41.191
+ssh root@187.124.181.23
 cd /home/ubuntu/anthroclaw
 git revert HEAD              # revert the v0.8.0 release commit
 sudo docker compose up -d --build

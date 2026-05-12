@@ -249,7 +249,7 @@ Read the **Behaviour change** block above before deploying. After a
 successful prod deploy, the 2026-05-04 hotfixes can be reverted:
 
 ```bash
-# on prod (ubuntu@46.247.41.191):
+# on prod (root@187.124.181.23):
 cd /home/ubuntu/anthroclaw
 
 # leads_agent.yml: restore safety_profile: public
