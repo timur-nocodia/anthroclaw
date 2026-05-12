@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
@@ -481,6 +481,22 @@ describe('buildroom CLI', () => {
     expect(err.join('\n')).toContain('Output ref hash mismatch');
     expect(err.join('\n')).toContain('build_20260512_docs');
     expect(err.join('\n')).toContain('docs/guide.md');
+  });
+
+  it('fails validation when an artifact parent receipt is missing', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    const parent = store.writeArtifact(artifact('research_20260512_docs', 'research_packet', {}));
+    store.writeArtifact({
+      ...artifact('idea_20260512_docs', 'idea_contract', {}),
+      parentIds: [parent.id],
+    });
+    unlinkSync(store.pathForArtifact(parent));
+
+    await expect(run(['validate', '--root', root])).resolves.toBe(4);
+
+    expect(err.join('\n')).toContain('Missing parent artifact');
+    expect(err.join('\n')).toContain('research_20260512_docs');
   });
 
   it('creates QA and Trust receipts for an existing coder receipt', async () => {
