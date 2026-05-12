@@ -217,6 +217,34 @@ describe('onboarding facade — apikey branch', () => {
     expect(await onboarding.getAuthUrlForPending('pnd_nope')).toBeNull();
   });
 
+  it('getAuthUrlForPending logs and returns null when oauth_metadata is corrupt', async () => {
+    pending.insert({
+      id: 'pnd_corrupt',
+      state: 'st_corrupt',
+      agentId: 'a1',
+      agentSessionKey: null,
+      mcpUrl: 'https://mcp.x/y',
+      authMode: 'oauth',
+      codeVerifier: 'verifier_xyz',
+      clientId: 'cli_x',
+      clientSecret: null,
+      oauthMetadata: 'not-json',
+      toolsMetadata: null,
+      requestedBy: 'admin:u1',
+      status: 'pending',
+      failureReason: null,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 600_000,
+    });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const url = await onboarding.getAuthUrlForPending('pnd_corrupt');
+    expect(url).toBeNull();
+    expect(warnSpy).toHaveBeenCalled();
+    const firstArg = warnSpy.mock.calls[0]?.[0];
+    expect(String(firstArg)).toMatch(/oauth_metadata|getAuthUrlForPending/i);
+    warnSpy.mockRestore();
+  });
+
   it('getAuthUrlForPending returns null for expired pending', async () => {
     const fixedNow = 5_000_000;
     const ob = createOnboarding({

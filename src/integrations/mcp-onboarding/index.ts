@@ -228,7 +228,13 @@ export function createOnboarding(deps: OnboardingDeps) {
     let meta: DiscoveredOAuth;
     try {
       meta = JSON.parse(row.oauthMetadata) as DiscoveredOAuth;
-    } catch {
+    } catch (err) {
+      // Surface this in logs — without it the route renders an opaque
+      // 410 "Expired or unknown" and operators have no signal that the
+      // SQLite row carries corrupted discovery metadata.
+      console.warn(
+        `[mcp-onboarding] getAuthUrlForPending: corrupt oauth_metadata for pendingId=${pendingId}: ${(err as Error).message}`,
+      );
       return null;
     }
     const challenge = createHash('sha256')
@@ -299,7 +305,17 @@ export function createOnboarding(deps: OnboardingDeps) {
       if (!row.clientId) throw new Error('missing_client_id');
       if (!row.codeVerifier) throw new Error('missing_code_verifier');
 
-      const meta = JSON.parse(row.oauthMetadata) as DiscoveredOAuth;
+      let meta: DiscoveredOAuth;
+      try {
+        meta = JSON.parse(row.oauthMetadata) as DiscoveredOAuth;
+      } catch (err) {
+        // Same rationale as in getAuthUrlForPending: surface corrupt
+        // metadata in logs before the row gets marked failed.
+        console.warn(
+          `[mcp-onboarding] completeOAuth: corrupt oauth_metadata for pendingId=${row.id}: ${(err as Error).message}`,
+        );
+        throw new Error('invalid_oauth_metadata');
+      }
       // Defensive URL validation — the discovered metadata came from an
       // untrusted MCP server at probe time. Reject if endpoints aren't
       // parseable.
