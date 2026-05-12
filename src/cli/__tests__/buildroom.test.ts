@@ -300,6 +300,41 @@ describe('buildroom CLI', () => {
     });
   });
 
+  it('does not consume approval when explicit build is blocked by pre-run policy', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('review_20260512_docs', 'main_review', {
+        decision: 'approved_for_operator',
+        lockedScope: { allowedPaths: ['../outside/**'], blockedPaths: ['.env'] },
+      }),
+    );
+    await run(['approve', 'review_20260512_docs', '--root', root]);
+    await run(['build', 'approval_20260512_docs', '--root', root]);
+    const adapter = {
+      runBuilder: vi.fn().mockResolvedValue({
+        status: 'completed',
+        resultText: 'Should not run.',
+        runtimeRefs: [],
+      }),
+    };
+
+    out.length = 0;
+    await expect(
+      run(['build', 'plan_20260512_docs', '--root', root, '--execute'], {
+        builderAdapter: adapter,
+        now: () => '2026-05-12T00:10:00.000Z',
+      }),
+    ).resolves.toBe(6);
+
+    expect(adapter.runBuilder).not.toHaveBeenCalled();
+    expect(out.join('\n')).toContain('Builder error: error_20260512_docs');
+    expect(store.readArtifact('approval_20260512_docs')).toMatchObject({
+      status: 'granted',
+      payload: { consumedAt: null },
+    });
+  });
+
   it('does not create duplicate build plans for the same approval', async () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
