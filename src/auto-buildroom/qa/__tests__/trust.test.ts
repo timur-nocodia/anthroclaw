@@ -110,6 +110,41 @@ describe('Auto-Buildroom QA, Delta, and Trust', () => {
     expect(trust.payload.reasons).toContain('missing output file hash');
   });
 
+  it('marks rejected Builder claims as investigate', () => {
+    const build = coderReceipt({
+      builderClaims: ['Updated operator guide.'],
+      postRunPolicyResult: { allowed: true, changedFiles: ['docs/guide.md'], violations: [] },
+      outputRefs: [
+        { kind: 'file', ref: 'docs/guide.md', hash: 'sha256:docs-hash' },
+      ],
+    });
+    const qa = createQaReportArtifact({
+      build,
+      now: '2026-05-12T00:20:00.000Z',
+      evidence: [{ claim: 'Updated operator guide.', status: 'rejected' }],
+    });
+    const delta = createVerificationDeltaArtifact({
+      build,
+      qa,
+      now: '2026-05-12T00:21:00.000Z',
+    });
+    const trust = createTrustReportArtifact({
+      build,
+      qa,
+      delta,
+      now: '2026-05-12T00:22:00.000Z',
+    });
+
+    expect(delta.payload.claimComparisons).toContainEqual({
+      claim: 'Updated operator guide.',
+      status: 'rejected',
+      criticality: 'medium',
+    });
+    expect(trust.status).toBe('investigate');
+    expect(trust.payload.trustState).toBe('investigate');
+    expect(trust.payload.reasons).toContain('rejected claim evidence');
+  });
+
   it('blocks trust when post-run policy has violations', () => {
     const build = coderReceipt({
       builderClaims: ['Updated operator guide.'],

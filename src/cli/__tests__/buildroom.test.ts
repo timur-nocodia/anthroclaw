@@ -715,6 +715,37 @@ describe('buildroom CLI', () => {
     expect(store.listArtifacts('retention_review')).toHaveLength(1);
   });
 
+  it('blocks retention without a trust receipt target', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('idea_20260512_docs', 'idea_contract', {
+        title: 'Draft idea',
+      }),
+    );
+
+    await expect(run(['retain', 'idea_20260512_docs', '--root', root])).resolves.toBe(4);
+
+    expect(err.join('\n')).toContain('Retention requires a trust_report artifact');
+    expect(store.listArtifacts('retention_review')).toEqual([]);
+  });
+
+  it('blocks retention when the room is off', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('trust_20260512_docs', 'trust_report', {
+        trustState: 'clean',
+      }),
+    );
+    updateRoomConfig((config) => ({ ...config, mode: 'off' }));
+
+    await expect(run(['retain', 'trust_20260512_docs', '--root', root])).resolves.toBe(8);
+
+    expect(err.join('\n')).toContain('Buildroom mode is off');
+    expect(store.listArtifacts('retention_review')).toEqual([]);
+  });
+
   function artifact(
     id: string,
     type: BuildroomArtifact['type'],
