@@ -1,6 +1,9 @@
 #!/usr/bin/env tsx
 
-import { FileArtifactStore } from '../auto-buildroom/artifacts/store.js';
+import {
+  ArtifactHashMismatchError,
+  FileArtifactStore,
+} from '../auto-buildroom/artifacts/store.js';
 import { BuildroomConfigValidationError } from '../auto-buildroom/config/model.js';
 import {
   AuthorityPolicyError,
@@ -50,6 +53,8 @@ export async function runBuildroomCli(argv: string[], io: CliIO = defaultIO): Pr
         return commandInit(args, io);
       case 'status':
         return commandStatus(args, io);
+      case 'validate':
+        return commandValidate(args, io);
       case 'collect':
         return commandCollect(args, io);
       case 'propose':
@@ -112,6 +117,19 @@ function commandStatus(args: ParsedArgs, io: CliIO): number {
     '',
     'Next:',
     'anthroclaw buildroom collect',
+  ].join('\n'));
+  return 0;
+}
+
+function commandValidate(args: ParsedArgs, io: CliIO): number {
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const artifacts = store.listArtifacts();
+
+  io.stdout([
+    'Buildroom validation: ok',
+    `Room: ${config.roomId}`,
+    `Artifacts checked: ${artifacts.length}`,
   ].join('\n'));
   return 0;
 }
@@ -365,6 +383,10 @@ function handleError(error: unknown, io: CliIO): number {
     io.stderr(error.message);
     return 8;
   }
+  if (error instanceof ArtifactHashMismatchError) {
+    io.stderr(error.message);
+    return 4;
+  }
   io.stderr(error instanceof Error ? error.message : String(error));
   if (error instanceof Error && error.message.startsWith('Artifact not found:')) return 5;
   return 1;
@@ -432,6 +454,7 @@ function helpText(): string {
     'Commands:',
     '  init      Create project-local Buildroom config and storage',
     '  status    Show current Buildroom status',
+    '  validate  Validate config and artifact hashes',
     '  collect   Create deterministic research packet',
     '  propose   Create deterministic idea from latest research',
     '  review    Create deterministic Main Review for an idea',

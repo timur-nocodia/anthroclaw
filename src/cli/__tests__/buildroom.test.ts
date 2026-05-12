@@ -248,6 +248,30 @@ describe('buildroom CLI', () => {
     expect(store.listArtifacts('build_plan')).toEqual([]);
   });
 
+  it('validates config and artifact hashes', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    await run(['collect', '--root', root]);
+
+    out.length = 0;
+    await expect(run(['validate', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Buildroom validation: ok');
+  });
+
+  it('fails validation when an artifact hash no longer matches content', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    await run(['collect', '--root', root]);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    const research = store.listArtifacts('research_packet')[0];
+    const path = store.pathForArtifact(research);
+    const raw = JSON.parse(readFileSync(path, 'utf8')) as BuildroomArtifact;
+    raw.payload = { tampered: true };
+    writeFileSync(path, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
+
+    await expect(run(['validate', '--root', root])).resolves.toBe(4);
+
+    expect(err.join('\n')).toContain('Artifact hash mismatch');
+  });
+
   function artifact(
     id: string,
     type: BuildroomArtifact['type'],
