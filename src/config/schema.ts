@@ -1,15 +1,16 @@
 import { z } from 'zod';
 import { DEFAULT_HEARTBEAT_EVERY, DEFAULT_HEARTBEAT_PROMPT, HEARTBEAT_ACK_TOKEN } from '../heartbeat/constants.js';
+import { resolveSecretConfigValueSync } from '../secrets/config.js';
 
 // ─── Telegram / WhatsApp account schemas ───────────────────────────
 
 const TelegramWebhookSchema = z.object({
   url: z.string().url(),
-  secret: z.string().optional(),
+  secret: z.preprocess(resolveSecretConfigValueSync, z.string()).optional(),
 });
 
 const TelegramAccountSchema = z.object({
-  token: z.string(),
+  token: z.preprocess(resolveSecretConfigValueSync, z.string()),
   webhook: TelegramWebhookSchema.optional(),
 });
 
@@ -18,7 +19,7 @@ const WhatsappAccountSchema = z.object({
 });
 
 const DirectWebhookSchema = z.object({
-  secret: z.string().min(1),
+  secret: z.preprocess(resolveSecretConfigValueSync, z.string().min(1)),
   enabled: z.boolean().default(false),
   deliver_to: z.object({
     channel: z.enum(['telegram', 'whatsapp']),
@@ -34,7 +35,7 @@ const DirectWebhookSchema = z.object({
 const SttProviderSchema = z.enum(['auto', 'assemblyai', 'openai', 'elevenlabs']);
 
 const SttProviderCredentialSchema = z.object({
-  api_key: z.string().optional(),
+  api_key: z.preprocess(resolveSecretConfigValueSync, z.string()).optional(),
   model: z.string().optional(),
 });
 
@@ -83,14 +84,14 @@ export const GlobalConfigSchema = z.object({
     lockoutMs: z.number().int().min(1000).default(300_000).describe('Lockout duration in ms after limit exceeded'),
   }).optional(),
   assemblyai: z.object({
-    api_key: z.string(),
+    api_key: z.preprocess(resolveSecretConfigValueSync, z.string()),
   }).optional(),
   stt: SttConfigSchema,
   brave: z.object({
-    api_key: z.string(),
+    api_key: z.preprocess(resolveSecretConfigValueSync, z.string()),
   }).optional(),
   exa: z.object({
-    api_key: z.string(),
+    api_key: z.preprocess(resolveSecretConfigValueSync, z.string()),
   }).optional(),
   webhooks: z.record(z.string(), DirectWebhookSchema).optional(),
   features: FeatureFlagsSchema,

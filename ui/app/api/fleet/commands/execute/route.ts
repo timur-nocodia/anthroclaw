@@ -4,6 +4,7 @@ import { getServer, loadFleet } from '@/lib/fleet';
 import type { FleetServer } from '@/lib/fleet';
 import { proxyRequest } from '@/lib/fleet-proxy';
 import { sshExec } from '@/lib/ssh';
+import { resolveFleetSecret } from '@/lib/fleet';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -48,7 +49,7 @@ async function* rollingRestart(
         for (let i = 0; i < 15; i++) {
           try {
             const res = await fetch(healthUrl, {
-              headers: server.apiKey !== 'self' ? { Authorization: `Bearer ${server.apiKey}` } : {},
+              headers: server.apiKey !== 'self' ? { Authorization: `Bearer ${resolveFleetSecret(server.apiKey)}` } : {},
               signal: AbortSignal.timeout(3000),
             });
             if (res.ok) break;

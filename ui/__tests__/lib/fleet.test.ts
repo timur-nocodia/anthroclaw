@@ -11,11 +11,15 @@ beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), 'fleet-test-'));
   fleetFilePath = resolve(tmpDir, 'fleet.json');
   process.env.FLEET_FILE_PATH = fleetFilePath;
+  process.env.OC_DATA_DIR = tmpDir;
+  process.env.ANTHROCLAW_MASTER_KEY = 'c'.repeat(64);
 });
 
 afterEach(() => {
   rmSync(tmpDir, { recursive: true, force: true });
   delete process.env.FLEET_FILE_PATH;
+  delete process.env.OC_DATA_DIR;
+  delete process.env.ANTHROCLAW_MASTER_KEY;
   vi.restoreAllMocks();
 });
 
@@ -150,6 +154,7 @@ describe('addServer', () => {
     const fleet = loadFleet();
     expect(fleet).toHaveLength(1);
     expect(fleet[0].id).toBe('test-1');
+    expect(fleet[0].apiKey).toBe('vault://fleet/test-1/control_api/api_key');
   });
 
   it('rejects duplicate ID', () => {

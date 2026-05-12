@@ -1,4 +1,5 @@
 import { getServer } from '@/lib/fleet';
+import { resolveFleetSecret } from '@/lib/fleet';
 
 /**
  * Proxies an API request to a fleet server (local or remote).
@@ -25,7 +26,7 @@ export async function proxyRequest(
   // Remote: forward with bearer token
   return fetch(`${server.url}/api/${path}`, {
     method,
-    headers: { ...headers, Authorization: `Bearer ${server.apiKey}` },
+    headers: { ...headers, Authorization: `Bearer ${resolveFleetSecret(server.apiKey)}` },
     body,
     signal: AbortSignal.timeout(30_000),
   });
