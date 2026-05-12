@@ -628,6 +628,7 @@ describe('buildroom CLI', () => {
       kind: 'file',
       ref: expect.stringContaining('summary_20260512_docs.md'),
     });
+    expect(summary.outputRefs[0]?.hash).toBe(sha256(readFileSync(summary.outputRefs[0].ref, 'utf8')));
   });
 
   function artifact(

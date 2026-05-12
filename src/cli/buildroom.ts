@@ -186,7 +186,7 @@ function validateOutputRefs(projectRoot: string, artifacts: BuildroomArtifact[])
       if (!existsSync(path) || !lstatSync(path).isFile()) {
         throw new OutputRefHashMismatchError(artifact.id, ref.ref);
       }
-      const actual = `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
+      const actual = sha256(readFileSync(path));
       if (actual !== ref.hash) throw new OutputRefHashMismatchError(artifact.id, ref.ref);
     }
   }
@@ -727,7 +727,7 @@ function createOperatorSummaryArtifact(opts: {
     room: { id: opts.roomId },
     parentIds: [opts.trust.id],
     inputRefs: [{ kind: 'artifact', ref: opts.trust.id }],
-    outputRefs: [{ kind: 'file', ref: renderedPath }],
+    outputRefs: [{ kind: 'file', ref: renderedPath, hash: sha256(`${opts.report}\n`) }],
     runtimeRefs: [],
     traceId: opts.trust.traceId,
     redaction: {
@@ -913,6 +913,10 @@ function firstOperator(config: { operators: { id: string }[] }): string {
 
 function nowIso(deps: BuildroomCliDependencies): string {
   return deps.now?.() ?? new Date().toISOString();
+}
+
+function sha256(content: string | Buffer): string {
+  return `sha256:${createHash('sha256').update(content).digest('hex')}`;
 }
 
 class CliUsageError extends Error {
