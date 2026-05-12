@@ -1062,6 +1062,9 @@ export class Gateway {
         accountId: 'default',
         peerId: parsed.peerId,
         text,
+        senderId: 'mcp-onboarding',
+        senderName: 'mcp-onboarding',
+        syntheticSource: 'mcp_onboarding',
         meta: {
           source,
           pendingId: evt.pendingId,
@@ -5184,6 +5187,9 @@ export class Gateway {
     peerId: string;
     text: string;
     meta?: Record<string, unknown>;
+    senderId?: string;
+    senderName?: string;
+    syntheticSource?: string;
   }): Promise<{ messageId: string; sessionKey: string }> {
     const agent = this.agents.get(input.targetAgentId);
     if (!agent) {
@@ -5199,18 +5205,25 @@ export class Gateway {
       input.peerId,
     );
 
+    const senderId = input.senderId ?? 'operator-console';
+    const senderName = input.senderName ?? 'operator-console';
+    const syntheticSource = input.syntheticSource ?? 'operator_console';
+
     const syntheticMsg: InboundMessage = {
       channel: input.channel,
       accountId,
       chatType: 'dm',
       peerId: input.peerId,
-      senderId: 'operator-console',
-      senderName: 'operator-console',
+      senderId,
+      senderName,
       text: input.text,
       messageId,
       mentionedBot: false,
       raw: {
-        operatorConsole: true,
+        synthetic: syntheticSource,
+        // Backward-compat: legacy readers (if any are added later) can still
+        // detect the operator-console origin without learning the new field.
+        operatorConsole: syntheticSource === 'operator_console',
         ...(input.meta ?? {}),
       },
     };
