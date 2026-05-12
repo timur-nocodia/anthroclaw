@@ -3,6 +3,7 @@ import {
   preflightAgentMcpServer,
   preflightAgentMcpServerSpec,
   preflightMcpServer,
+  preflightMcpServerSpec,
 } from '../../src/integrations/mcp-preflight.js';
 import { Gateway } from '../../src/gateway.js';
 
@@ -146,5 +147,45 @@ describe('MCP preflight', () => {
       toolNames: ['calendar_daily_brief'],
     });
     expect(JSON.stringify(result)).not.toContain('secret');
+  });
+
+  describe('credential_ref resolver', () => {
+    it('http entry with resolvable credential_ref → approved', async () => {
+      const spec = {
+        type: 'http' as const,
+        url: 'https://mcp.postmypost.io/mcp',
+        credential_ref: 'mcp:postmypost',
+      };
+      const result = await preflightMcpServerSpec(spec, {
+        agentId: 'a1',
+        credentialResolver: async (ref) => ref === 'mcp:postmypost',
+      });
+      expect(result.approvalStatus).toBe('approved');
+      expect(result.packageSource).toBe('remote-managed');
+      expect(result.transport).toBe('http');
+    });
+
+    it('http entry with unresolvable credential_ref → review_required', async () => {
+      const spec = {
+        type: 'http' as const,
+        url: 'https://mcp.postmypost.io/mcp',
+        credential_ref: 'mcp:postmypost',
+      };
+      const result = await preflightMcpServerSpec(spec, {
+        agentId: 'a1',
+        credentialResolver: async () => false,
+      });
+      expect(result.approvalStatus).not.toBe('approved');
+    });
+
+    it('http entry without credential_ref keeps current behaviour', async () => {
+      const spec = {
+        type: 'http' as const,
+        url: 'https://mcp.postmypost.io/mcp',
+        headers: { Authorization: 'Bearer x' },
+      };
+      const result = await preflightMcpServerSpec(spec, { agentId: 'a1' });
+      expect(result.approvalStatus).not.toBe('approved');
+    });
   });
 });

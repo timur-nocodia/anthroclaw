@@ -1,8 +1,22 @@
 import type { AgentMcpServerSpec } from '@anthropic-ai/claude-agent-sdk';
 
-export type McpPreflightTransport = 'in_process' | 'stdio' | 'unknown';
+export type McpPreflightTransport = 'in_process' | 'stdio' | 'http' | 'sse' | 'unknown';
 export type McpPreflightRisk = 'low' | 'medium' | 'high';
 export type McpPreflightApprovalStatus = 'approved' | 'review_required' | 'blocked';
+
+/**
+ * Options for credential-aware preflight. When `credentialResolver` returns
+ * true for a spec's `credential_ref`, the spec is approved as an
+ * AnthroClaw-managed remote MCP — no headers required, no review needed.
+ *
+ * `agentId` is the owning agent (used as the isolation boundary when looking
+ * up the credential). Both fields are optional so legacy sync callers that
+ * pre-date credential_ref don't have to construct a resolver.
+ */
+export interface PreflightOptions {
+  credentialResolver?: (ref: string, agentId: string) => Promise<boolean>;
+  agentId?: string;
+}
 
 export interface McpServerPreflightInput {
   serverName: string;
@@ -75,6 +89,65 @@ export function preflightAgentMcpServer(params: {
     transport: 'in_process',
     toolNames: params.toolNames,
   });
+}
+
+/**
+ * Preflight a single MCP server spec (http / sse / stdio) and consider a
+ * resolvable `credential_ref` as approval.
+ *
+ * Returns one preflight result for the given spec. When the spec is `http`
+ * or `sse` and carries a `credential_ref` that the resolver confirms, the
+ * decision short-circuits to `approved` with `packageSource: 'remote-managed'`
+ * — the gateway will inject the managed credential at call time, so neither
+ * a hardcoded Authorization header nor operator review is required.
+ *
+ * For specs without `credential_ref` (or with a stdio transport), this
+ * delegates to the existing sync rules via `preflightAgentMcpServerSpec`.
+ */
+export async function preflightMcpServerSpec(
+  spec: Record<string, unknown>,
+  opts: PreflightOptions = {},
+): Promise<McpServerPreflight> {
+  const type = typeof spec.type === 'string' ? spec.type : undefined;
+  const credentialRef = typeof spec.credential_ref === 'string' ? spec.credential_ref : undefined;
+  const serverName = typeof spec.serverName === 'string' ? spec.serverName : 'mcp-server';
+
+  if (
+    (type === 'http' || type === 'sse')
+    && credentialRef
+    && opts.credentialResolver
+    && opts.agentId
+    && (await opts.credentialResolver(credentialRef, opts.agentId))
+  ) {
+    return {
+      serverName,
+      ownerAgentId: opts.agentId,
+      source: 'external',
+      transport: type,
+      toolNames: Array.isArray(spec.allowed_tools)
+        ? [...(spec.allowed_tools as string[])].sort()
+        : [],
+      args: [],
+      envVarNames: [],
+      networkRisk: 'low',
+      filesystemRisk: 'low',
+      packageSource: 'remote-managed',
+      approvalStatus: 'approved',
+      reasons: [`Credential ${credentialRef} is managed by AnthroClaw.`],
+    };
+  }
+
+  // Fallback: reuse the existing sync rules. For http/sse without a managed
+  // credential the transport drops to 'unknown' → review_required, which is
+  // the same behaviour callers had before this function existed.
+  const [result] = preflightAgentMcpServerSpec(
+    { [serverName]: spec } as unknown as AgentMcpServerSpec,
+    {
+      ownerAgentId: opts.agentId,
+      source: 'external',
+    },
+  );
+  return result;
 }
 
 export function preflightAgentMcpServerSpec(
