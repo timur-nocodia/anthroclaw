@@ -55,6 +55,7 @@ anthroclaw buildroom build <approval_id|build_plan_id>
 anthroclaw buildroom qa <id>
 anthroclaw buildroom trust <id>
 anthroclaw buildroom report
+anthroclaw buildroom retain <trust_id>
 anthroclaw buildroom pause
 anthroclaw buildroom resume
 ```
@@ -73,7 +74,6 @@ Deferred:
 ```text
 anthroclaw buildroom cron
 anthroclaw buildroom dashboard
-anthroclaw buildroom retention
 anthroclaw buildroom archive
 ```
 
@@ -837,6 +837,7 @@ anthroclaw buildroom doctor
 | `qa` | yes | no | build/coder receipt |
 | `trust` | yes | no | QA report |
 | `report` | no by default; yes with `--save` | no | no |
+| `retain` | yes | no | trust report |
 | `pause` | yes | no | operator identity |
 | `resume` | yes | no | operator identity |
 | `validate` | no | no | no |
@@ -858,6 +859,7 @@ anthroclaw buildroom build <approval_id>
 anthroclaw buildroom qa <build_id>
 anthroclaw buildroom trust <build_id>
 anthroclaw buildroom report
+anthroclaw buildroom retain <trust_id>
 ```
 
 The safe demo target:
@@ -883,6 +885,7 @@ CLI spec is good enough for v0.1 when:
 - `trust.clean` cannot be produced without QA evidence;
 - `report` renders receipt chain;
 - `report` is read-only by default and writes only with `--save`;
+- `retain` creates a `retention_review` recommendation and does not delete audit receipts;
 - `pause` prevents new build execution;
 - `resume` does not auto-run pending work;
 - all failure outputs include reason and next action;

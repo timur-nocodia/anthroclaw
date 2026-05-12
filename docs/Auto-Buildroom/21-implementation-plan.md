@@ -739,6 +739,7 @@ anthroclaw buildroom build <approval_id>
 anthroclaw buildroom qa <build_id>
 anthroclaw buildroom trust <build_id>
 anthroclaw buildroom report --save
+anthroclaw buildroom retain <trust_id>
 ```
 
 And then inspect:
@@ -751,7 +752,7 @@ And then inspect:
 - Verification Delta;
 - Trust Report;
 - operator summary;
-- optional retention recommendation.
+- retention recommendation.
 
 The result should demonstrate:
 

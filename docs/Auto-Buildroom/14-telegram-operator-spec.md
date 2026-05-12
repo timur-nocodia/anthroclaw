@@ -135,6 +135,7 @@ Artifact-writing but non-executing commands:
 /buildroom reject <id>
 /buildroom qa <build_id>
 /buildroom trust <build_id>
+/buildroom retain <trust_id>
 ```
 
 Authority-bearing commands:
@@ -169,6 +170,7 @@ Required v0.1 commands:
 /buildroom qa <build_id>
 /buildroom trust <build_id>
 /buildroom report
+/buildroom retain <trust_id>
 /buildroom pause
 /buildroom resume
 ```
@@ -739,6 +741,7 @@ Telegram commands that create artifacts:
 | `/buildroom build` | `build_plan`, `coder_receipt`, or `error_receipt` |
 | `/buildroom qa` | `qa_report` |
 | `/buildroom trust` | `verification_delta`, `trust_report` |
+| `/buildroom retain` | `retention_review` |
 | `/buildroom pause` | transition/state update |
 | `/buildroom resume` | transition/state update |
 

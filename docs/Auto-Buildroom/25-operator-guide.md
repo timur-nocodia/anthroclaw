@@ -172,6 +172,7 @@ anthroclaw buildroom build <approval_id>
 anthroclaw buildroom qa <build_id>
 anthroclaw buildroom trust <build_id>
 anthroclaw buildroom report --save
+anthroclaw buildroom retain <trust_id>
 ```
 
 You do not need to run every command every time. `status` should tell you the next action.
