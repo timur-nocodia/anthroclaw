@@ -219,6 +219,99 @@ describe('exchangeCode', () => {
   });
 });
 
+describe('insecure-endpoint warning', () => {
+  it('warns when exchangeCode is called with http:// in production', async () => {
+    const originalEnv = process.env.NODE_ENV;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      process.env.NODE_ENV = 'production';
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ access_token: 'tok' }), {
+              status: 200,
+            }),
+        ),
+      );
+      await exchangeCode({
+        tokenEndpoint: 'http://evil.example.com/token',
+        clientId: 'cli',
+        redirectUri: 'https://ui/cb',
+        code: 'c',
+        codeVerifier: 'v',
+      });
+      expect(warnSpy).toHaveBeenCalled();
+      const joined = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(joined).toMatch(/insecure|HTTPS/i);
+      expect(joined).toContain('http://evil.example.com/token');
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does NOT warn for http://localhost endpoints in production', async () => {
+    const originalEnv = process.env.NODE_ENV;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      process.env.NODE_ENV = 'production';
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ access_token: 'tok' }), {
+              status: 200,
+            }),
+        ),
+      );
+      await exchangeCode({
+        tokenEndpoint: 'http://localhost:1234/token',
+        clientId: 'cli',
+        redirectUri: 'https://ui/cb',
+        code: 'c',
+        codeVerifier: 'v',
+      });
+      const insecureCalls = warnSpy.mock.calls.filter((c) =>
+        String(c[0]).includes('insecure'),
+      );
+      expect(insecureCalls).toHaveLength(0);
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does NOT warn outside production even for http:// endpoints', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // NODE_ENV is 'test' under vitest — leave it alone.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ access_token: 'tok' }), {
+              status: 200,
+            }),
+        ),
+      );
+      await exchangeCode({
+        tokenEndpoint: 'http://evil2.example.com/token',
+        clientId: 'cli',
+        redirectUri: 'https://ui/cb',
+        code: 'c',
+        codeVerifier: 'v',
+      });
+      const insecureCalls = warnSpy.mock.calls.filter((c) =>
+        String(c[0]).includes('insecure'),
+      );
+      expect(insecureCalls).toHaveLength(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
 describe('refreshToken', () => {
   it('POSTs refresh_token grant and returns new tokens', async () => {
     const fetchStub = vi.fn(

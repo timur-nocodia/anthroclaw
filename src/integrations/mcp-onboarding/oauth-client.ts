@@ -42,6 +42,34 @@ function assertWellFormedUrl(url: string, label: string): void {
   }
 }
 
+// Track which insecure URLs we've already warned about so we don't spam the
+// log on retry. Per-process; cleared only by process restart.
+const warnedInsecureUrls = new Set<string>();
+
+/**
+ * Warn (once per unique URL) when an OAuth-related endpoint is reached over
+ * plain HTTP in production. Loopback addresses are exempt — they exist so a
+ * locally-hosted MCP server can be exercised against a real authorization
+ * server during development. Outside `NODE_ENV=production` we stay quiet
+ * because test fixtures bind to http://127.0.0.1.
+ */
+export function maybeWarnInsecureUrl(url: string, context: string): void {
+  if (process.env.NODE_ENV !== 'production') return;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return;
+  }
+  if (parsed.protocol === 'https:') return;
+  if (['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) return;
+  if (warnedInsecureUrls.has(url)) return;
+  warnedInsecureUrls.add(url);
+  console.warn(
+    `[mcp-onboarding] insecure OAuth endpoint (${context}): ${url}. Use HTTPS in production.`,
+  );
+}
+
 export interface RegisterArgs {
   registrationEndpoint: string;
   redirectUri: string;
@@ -68,6 +96,7 @@ export interface RegisterResult {
  */
 export async function registerClient(args: RegisterArgs): Promise<RegisterResult> {
   assertWellFormedUrl(args.registrationEndpoint, 'dcr_failed');
+  maybeWarnInsecureUrl(args.registrationEndpoint, 'registration_endpoint');
   const res = await fetch(args.registrationEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -138,6 +167,7 @@ export interface ExchangeCodeArgs {
  */
 export async function exchangeCode(args: ExchangeCodeArgs): Promise<ExchangeResult> {
   assertWellFormedUrl(args.tokenEndpoint, 'token_exchange_failed');
+  maybeWarnInsecureUrl(args.tokenEndpoint, 'token_endpoint');
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code: args.code,
@@ -182,6 +212,7 @@ export interface RefreshTokenArgs {
  */
 export async function refreshToken(args: RefreshTokenArgs): Promise<ExchangeResult> {
   assertWellFormedUrl(args.tokenEndpoint, 'refresh_failed');
+  maybeWarnInsecureUrl(args.tokenEndpoint, 'token_endpoint');
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: args.refreshToken,

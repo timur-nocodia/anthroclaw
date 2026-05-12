@@ -16,6 +16,7 @@ import {
   buildAuthorizationUrl,
   exchangeCode,
   generatePkce,
+  maybeWarnInsecureUrl,
   registerClient,
 } from './oauth-client.js';
 import { probe } from './probe.js';
@@ -330,6 +331,11 @@ export function createOnboarding(deps: OnboardingDeps) {
         }
       } catch {
         throw new Error('invalid_oauth_metadata');
+      }
+      maybeWarnInsecureUrl(meta.tokenEndpoint, 'token_endpoint');
+      maybeWarnInsecureUrl(meta.authorizationEndpoint, 'authorization_endpoint');
+      if (meta.issuer) {
+        maybeWarnInsecureUrl(meta.issuer, 'issuer');
       }
 
       const tokens = await exchangeCode({
