@@ -288,6 +288,12 @@ function deriveStatusCounts(store: FileArtifactStore): {
       .filter((decision) => decision.payload.decision === 'reject')
       .map((decision) => String(decision.payload.targetArtifactId ?? '')),
   );
+  const rejectedApprovalIds = new Set(
+    decisions
+      .filter((decision) => decision.payload.decision === 'reject')
+      .filter((decision) => decision.payload.targetArtifactType === 'approval')
+      .map((decision) => String(decision.payload.targetArtifactId ?? '')),
+  );
   const qaBuildIds = new Set(qaReports.flatMap((qa) => qa.parentIds));
   const trustBuildIds = new Set(trustReports.flatMap((trust) => trust.parentIds));
 
@@ -301,7 +307,9 @@ function deriveStatusCounts(store: FileArtifactStore): {
     approvedNotBuilt: approvals.filter(
       (approval) =>
         approval.status === 'granted' &&
-        !approval.payload.consumedAt,
+        !approval.payload.consumedAt &&
+        !rejectedApprovalIds.has(approval.id) &&
+        !rejectedReviewIds.has(String(approval.payload.targetReviewId ?? '')),
     ).length,
     activeBuilds: builds.filter((build) => build.payload.runtimeStatus === 'running').length,
     qaPending: builds.filter((build) => !qaBuildIds.has(build.id)).length,
@@ -479,6 +487,7 @@ async function commandBuild(
   assertStageAllowed(config, 'build');
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const target = store.readArtifact(id);
+  assertBuildTargetNotRejected(store, target);
 
   if (target.type === 'build_plan') {
     if (args.flags.has('execute')) {
@@ -534,6 +543,30 @@ async function commandBuild(
     `anthroclaw buildroom show ${plan.id}`,
   ].join('\n'));
   return 0;
+}
+
+function assertBuildTargetNotRejected(
+  store: FileArtifactStore,
+  target: BuildroomArtifact,
+): void {
+  if (findRejectionForTarget(store, target.id)) {
+    throw new AuthorityPolicyError('Artifact was rejected by operator');
+  }
+
+  if (target.type === 'approval') {
+    const reviewId = String(target.payload.targetReviewId ?? '');
+    if (reviewId && findRejectionForTarget(store, reviewId)) {
+      throw new AuthorityPolicyError('Artifact was rejected by operator');
+    }
+  }
+
+  if (target.type === 'build_plan') {
+    for (const parentId of target.parentIds) {
+      if (findRejectionForTarget(store, parentId)) {
+        throw new AuthorityPolicyError('Artifact was rejected by operator');
+      }
+    }
+  }
 }
 
 async function executeAndReportBuildPlan(

@@ -412,6 +412,54 @@ describe('buildroom CLI', () => {
     expect(store.listArtifacts('build_plan')).toEqual([]);
   });
 
+  it('blocks build when an approval has been rejected by the operator', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    await run(['collect', '--root', root]);
+    await run(['propose', '--root', root]);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    const idea = store.listArtifacts('idea_contract')[0];
+    await run(['review', idea.id, '--root', root]);
+    const review = store.listArtifacts('main_review')[0];
+    await run(['approve', review.id, '--root', root]);
+    const approval = store.listArtifacts('approval')[0];
+    await run(['reject', approval.id, '--root', root]);
+
+    out.length = 0;
+    err.length = 0;
+    await expect(run(['build', approval.id, '--root', root])).resolves.toBe(4);
+
+    expect(err.join('\n')).toContain('Artifact was rejected by operator');
+    expect(store.listArtifacts('build_plan')).toEqual([]);
+
+    out.length = 0;
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Approved not built: 0');
+  });
+
+  it('blocks build when the approved review is later rejected by the operator', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    await run(['collect', '--root', root]);
+    await run(['propose', '--root', root]);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    const idea = store.listArtifacts('idea_contract')[0];
+    await run(['review', idea.id, '--root', root]);
+    const review = store.listArtifacts('main_review')[0];
+    await run(['approve', review.id, '--root', root]);
+    const approval = store.listArtifacts('approval')[0];
+    await run(['reject', review.id, '--root', root]);
+
+    out.length = 0;
+    err.length = 0;
+    await expect(run(['build', approval.id, '--root', root])).resolves.toBe(4);
+
+    expect(err.join('\n')).toContain('Artifact was rejected by operator');
+    expect(store.listArtifacts('build_plan')).toEqual([]);
+
+    out.length = 0;
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Approved not built: 0');
+  });
+
   it('blocks new stages when mode is off while status remains inspectable', async () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     updateRoomConfig((config) => ({ ...config, mode: 'off' }));
