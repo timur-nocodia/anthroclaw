@@ -87,4 +87,26 @@ describe('Telegram Buildroom operator commands', () => {
       chatId: -1003931616911,
     })).toEqual({ ok: false, reason: 'malformed_command' });
   });
+
+  it('accepts Telegram bot-suffixed slash commands in groups', () => {
+    const config = createDefaultBuildroomConfig({
+      roomId: 'anthroclaw-core',
+      operatorId: 'telegram_user:48705953',
+    });
+    config.operators[0].commandRoutes = ['telegram_thread:-1003931616911:2'];
+
+    const result = authorizeTelegramBuildroomCommand(config, {
+      text: '/buildroom@anthroclaw_bot status',
+      telegramUserId: 48705953,
+      chatId: -1003931616911,
+      messageThreadId: 2,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      command: 'status',
+      route: 'telegram_thread:-1003931616911:2',
+      sourceThread: 'telegram_thread:-1003931616911:2',
+    });
+  });
 });

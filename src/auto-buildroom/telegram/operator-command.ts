@@ -99,13 +99,17 @@ function parseTelegramBuildroomCommand(
   if (!trimmed.startsWith('/buildroom')) return null;
 
   const parts = trimmed.split(/\s+/);
-  if (parts[0] !== '/buildroom') return null;
+  if (!isBuildroomSlashCommand(parts[0])) return null;
   const command = parts[1];
   if (!COMMANDS.has(command as TelegramBuildroomCommand)) return 'malformed';
   return {
     command: command as TelegramBuildroomCommand,
     args: parts.slice(2),
   };
+}
+
+function isBuildroomSlashCommand(token: string): boolean {
+  return token === '/buildroom' || /^\/buildroom@[A-Za-z0-9_]+$/.test(token);
 }
 
 function telegramRoute(input: TelegramBuildroomCommandInput): string {
