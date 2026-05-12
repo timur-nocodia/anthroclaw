@@ -158,3 +158,25 @@ You can also bind-mount the host's credentials:
    ~8h. Refresh annually with `setup-token`.
 3. **`ANTHROPIC_API_KEY`** — separate billing from your Claude
    subscription, no Opus access on Max plan tier.
+
+## Secret Vault
+
+AnthroClaw stores UI-managed integration secrets encrypted at rest under
+`data/secrets/`. Set `ANTHROCLAW_MASTER_KEY` in `.env` before using the
+Secret Vault UI:
+
+```bash
+ANTHROCLAW_MASTER_KEY=$(openssl rand -hex 32)
+```
+
+Config fields that accept secrets can reference stored values with
+`secret_ref`, for example:
+
+```yaml
+brave:
+  api_key:
+    secret_ref: vault://global/brave/api_key
+```
+
+The gateway resolves the reference at runtime. The UI returns only metadata
+and the `vault://...` reference, never the stored secret value.

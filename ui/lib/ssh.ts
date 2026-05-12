@@ -1,5 +1,6 @@
 import { Client } from 'ssh2';
 import type { FleetServer } from '@/lib/fleet';
+import { resolveFleetSecret } from '@/lib/fleet';
 
 /* ------------------------------------------------------------------ */
 /*  SSH command execution                                              */
@@ -49,7 +50,9 @@ export function sshExec(
       host: server.ssh.host,
       port: server.ssh.port,
       username: server.ssh.user,
-      privateKey: server.ssh.keyEncrypted, // In production, decrypt this
+      privateKey: server.ssh.keyEncrypted
+        ? resolveFleetSecret(server.ssh.keyEncrypted)
+        : undefined,
     });
   });
 }

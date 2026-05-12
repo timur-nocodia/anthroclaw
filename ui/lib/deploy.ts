@@ -201,10 +201,12 @@ async function executeDeployStep(
     case 5: {
       // Step 5: Configure environment (.env + config.yml)
       const jwtSecret = randomHex(32);
+      const vaultMasterKey = randomHex(32);
       const adminPassword = randomHex(16);
       const envVars = [
         `PORT=${config.networking.httpPort}`,
         `JWT_SECRET=${jwtSecret}`,
+        `ANTHROCLAW_MASTER_KEY=${vaultMasterKey}`,
         'ADMIN_EMAIL=admin@anthroclaw.local',
         `ADMIN_PASSWORD=${adminPassword}`,
         `ENVIRONMENT=${config.identity.environment}`,

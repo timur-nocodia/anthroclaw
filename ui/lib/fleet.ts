@@ -1,5 +1,8 @@
 import { resolve } from 'node:path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { resolveSecretStringSync } from '@backend/secrets/config.js';
+import { isSecretRefString } from '@backend/secrets/ref.js';
+import { setSecretSync } from '@backend/secrets/vault.js';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -128,7 +131,7 @@ export function addServer(server: FleetServer): void {
   if (servers.some((s) => s.id === server.id)) {
     throw new Error(`Server with id '${server.id}' already exists`);
   }
-  servers.push(server);
+  servers.push(secretizeServer(server));
   saveFleet(servers);
 }
 
@@ -148,7 +151,7 @@ export function updateServer(id: string, patch: Partial<FleetServer>): void {
   if (idx === -1) {
     throw new Error(`Server '${id}' not found`);
   }
-  servers[idx] = { ...servers[idx], ...patch, id }; // prevent id override
+  servers[idx] = secretizeServer({ ...servers[idx], ...patch, id }); // prevent id override
   saveFleet(servers);
 }
 
@@ -272,7 +275,7 @@ async function fetchLocalStatus(): Promise<{
 async function fetchRemoteStatus(
   server: FleetServer,
 ): Promise<{ gateway: GatewayStatusResponse; metrics: MetricsResponse }> {
-  const headers = { Authorization: `Bearer ${server.apiKey}` };
+  const headers = { Authorization: `Bearer ${resolveFleetSecret(server.apiKey)}` };
   const signal = AbortSignal.timeout(Number.isFinite(REMOTE_STATUS_TIMEOUT_MS) ? REMOTE_STATUS_TIMEOUT_MS : 1500);
 
   const [gwRes, metricsRes] = await Promise.all([
@@ -288,6 +291,45 @@ async function fetchRemoteStatus(
     gateway: (await gwRes.json()) as GatewayStatusResponse,
     metrics: (await metricsRes.json()) as MetricsResponse,
   };
+}
+
+function secretizeServer(server: FleetServer): FleetServer {
+  const next: FleetServer = { ...server };
+  if (
+    next.apiKey &&
+    next.apiKey !== 'self' &&
+    next.apiKey !== 'pending' &&
+    !isSecretRefString(next.apiKey)
+  ) {
+    const meta = setSecretSync({
+      scope: 'fleet',
+      ownerId: next.id,
+      service: 'control_api',
+      key: 'api_key',
+      label: `${next.name} Control API key`,
+      value: next.apiKey,
+    });
+    next.apiKey = meta.ref;
+  }
+  if (
+    next.ssh?.keyEncrypted &&
+    !isSecretRefString(next.ssh.keyEncrypted)
+  ) {
+    const meta = setSecretSync({
+      scope: 'fleet',
+      ownerId: next.id,
+      service: 'ssh',
+      key: 'private_key',
+      label: `${next.name} SSH private key`,
+      value: next.ssh.keyEncrypted,
+    });
+    next.ssh = { ...next.ssh, keyEncrypted: meta.ref };
+  }
+  return next;
+}
+
+export function resolveFleetSecret(value: string): string {
+  return resolveSecretStringSync(value);
 }
 
 function buildServerStatus(

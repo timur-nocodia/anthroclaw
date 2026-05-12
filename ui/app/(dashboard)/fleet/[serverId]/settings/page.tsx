@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -175,6 +175,19 @@ interface DirectWebhookDeliveryResponse {
   deliveries: DirectWebhookDelivery[];
 }
 
+type SecretScope = "global" | "agent" | "fleet";
+
+interface VaultSecretMetadata {
+  ref: string;
+  scope: SecretScope;
+  ownerId?: string;
+  service: string;
+  key: string;
+  label?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 function formatCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 10_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -213,6 +226,7 @@ export default function SettingsPage() {
     { id: "access", label: "Access control", icon: Shield },
     { id: "storage", label: "Storage", icon: Database },
     { id: "integrations", label: "Integrations", icon: Plug },
+    { id: "secrets", label: "Secrets", icon: Key },
     { id: "advanced", label: "Advanced", icon: Terminal },
   ];
 
@@ -272,6 +286,7 @@ export default function SettingsPage() {
           {section === "access" && <AccessSection serverId={serverId} />}
           {section === "storage" && <StorageSection serverId={serverId} />}
           {section === "integrations" && <IntegrationsSection serverId={serverId} />}
+          {section === "secrets" && <SecretsSection serverId={serverId} />}
           {section === "advanced" && <AdvancedSection serverId={serverId} />}
         </div>
       </div>
@@ -901,6 +916,226 @@ function IntegrationsSection({ serverId }: { serverId: string }) {
 
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+/* ------------------------------------------------------------------ */
+/*  Secrets Section                                                    */
+/* ------------------------------------------------------------------ */
+
+function SecretsSection({ serverId }: { serverId: string }) {
+  const [secrets, setSecrets] = useState<VaultSecretMetadata[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [copiedRef, setCopiedRef] = useState("");
+  const [form, setForm] = useState({
+    scope: "global" as SecretScope,
+    ownerId: "",
+    service: "",
+    key: "",
+    label: "",
+    value: "",
+  });
+
+  const loadSecrets = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/secrets`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message ?? "Secret vault is unavailable.");
+      setSecrets(data.secrets ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Secret vault is unavailable.");
+    } finally {
+      setLoading(false);
+    }
+  }, [serverId]);
+
+  useEffect(() => {
+    void loadSecrets();
+  }, [loadSecrets]);
+
+  const saveSecret = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/secrets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form,
+          ownerId: form.scope === "global" ? undefined : form.ownerId,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message ?? "Failed to save secret.");
+      setForm((current) => ({ ...current, value: "" }));
+      await loadSecrets();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save secret.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteSecret = async (ref: string) => {
+    setError("");
+    try {
+      const res = await fetch(`/api/fleet/${serverId}/secrets`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ref }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message ?? "Failed to delete secret.");
+      await loadSecrets();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete secret.");
+    }
+  };
+
+  const copyRef = async (ref: string) => {
+    await navigator.clipboard.writeText(ref);
+    setCopiedRef(ref);
+    window.setTimeout(() => setCopiedRef(""), 1200);
+  };
+
+  const ownerRequired = form.scope !== "global";
+  const canSave =
+    form.service.trim() &&
+    form.key.trim() &&
+    form.value &&
+    (!ownerRequired || form.ownerId.trim());
+
+  return (
+    <div className="flex max-w-[920px] flex-col gap-5">
+      <SectionHead
+        title="Secret vault"
+        desc="Encrypted-at-rest secrets. Values are accepted on write and never returned by the API."
+      />
+
+      {error && (
+        <div
+          className="rounded-md border px-3 py-2 text-xs"
+          style={{ borderColor: "rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.08)", color: "var(--oc-red)" }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div className="rounded-md border p-3.5" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}>
+        <SectionHead title="Add or rotate secret" desc="Use stable names, then paste the generated vault reference into config fields that accept secrets." />
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <FieldRow label="Scope" hint="global for gateway-wide providers; agent and fleet isolate by owner id.">
+            <select
+              value={form.scope}
+              onChange={(event) => setForm({ ...form, scope: event.target.value as SecretScope })}
+              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+            >
+              <option value="global">global</option>
+              <option value="agent">agent</option>
+              <option value="fleet">fleet</option>
+            </select>
+          </FieldRow>
+          <FieldRow label="Owner id" hint="Required for agent and fleet secrets.">
+            <input
+              value={form.ownerId}
+              onChange={(event) => setForm({ ...form, ownerId: event.target.value })}
+              disabled={!ownerRequired}
+              placeholder={ownerRequired ? "timur_agent" : "not used for global"}
+              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+              style={{ background: ownerRequired ? "var(--oc-bg3)" : "var(--oc-bg2)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+            />
+          </FieldRow>
+          <FieldRow label="Service" hint="Provider or subsystem name.">
+            <input
+              value={form.service}
+              onChange={(event) => setForm({ ...form, service: event.target.value })}
+              placeholder="honcho"
+              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+            />
+          </FieldRow>
+          <FieldRow label="Key" hint="Secret name inside the service.">
+            <input
+              value={form.key}
+              onChange={(event) => setForm({ ...form, key: event.target.value })}
+              placeholder="api_key"
+              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+            />
+          </FieldRow>
+          <FieldRow label="Label" hint="Optional human-readable note.">
+            <input
+              value={form.label}
+              onChange={(event) => setForm({ ...form, label: event.target.value })}
+              placeholder="Honcho Anthropic API key"
+              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+            />
+          </FieldRow>
+          <FieldRow label="Secret value" hint="Stored encrypted. Not shown after save.">
+            <input
+              type="password"
+              value={form.value}
+              onChange={(event) => setForm({ ...form, value: event.target.value })}
+              placeholder="paste secret once"
+              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+            />
+          </FieldRow>
+        </div>
+        <div className="mt-3">
+          <Button size="sm" disabled={!canSave || saving} onClick={saveSecret}>
+            <Save className="h-3 w-3" />
+            {saving ? "Saving..." : "Save secret"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-md border" style={{ borderColor: "var(--oc-border)" }}>
+        {loading ? (
+          <EmptyPanel text="Loading secrets..." />
+        ) : secrets.length === 0 ? (
+          <EmptyPanel text="No secrets stored yet." />
+        ) : (
+          <div className="divide-y" style={{ borderColor: "var(--oc-border)" }}>
+            {secrets.map((secret) => (
+              <div key={secret.ref} className="grid gap-3 px-3.5 py-3 md:grid-cols-[minmax(180px,0.8fr)_minmax(260px,1fr)_150px]" style={{ background: "var(--oc-bg1)" }}>
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+                    {secret.label || `${secret.service}.${secret.key}`}
+                  </div>
+                  <div className="mt-0.5 text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
+                    {secret.scope}{secret.ownerId ? `:${secret.ownerId}` : ""}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void copyRef(secret.ref)}
+                  className="min-w-0 truncate rounded border px-2 py-1 text-left text-[11px]"
+                  style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)", color: "var(--oc-text-dim)", fontFamily: "var(--oc-mono)" }}
+                >
+                  {copiedRef === secret.ref ? "Copied" : secret.ref}
+                </button>
+                <div className="flex items-center justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={() => void copyRef(secret.ref)}>
+                    <Copy className="h-3 w-3" />
+                    Copy
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => void deleteSecret(secret.ref)}>
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function AuditSelect({
