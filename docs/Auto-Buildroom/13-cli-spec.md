@@ -30,6 +30,14 @@ Primary command group:
 anthroclaw buildroom <command>
 ```
 
+Current repository-local entrypoint:
+
+```text
+pnpm buildroom <command>
+```
+
+The repo-local script should behave like the command group above until a packaged `anthroclaw` binary is introduced.
+
 Alias may be added later:
 
 ```text

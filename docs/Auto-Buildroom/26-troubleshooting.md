@@ -24,6 +24,18 @@ If there is no receipt, treat the action as if it did not happen.
 
 ## First Commands To Run
 
+In this repository, the local command entrypoint is:
+
+```text
+pnpm buildroom <command>
+```
+
+Docs may also show the installed product-facing form:
+
+```text
+anthroclaw buildroom <command>
+```
+
 Start with:
 
 ```text

@@ -109,6 +109,18 @@ no external side effects by default
 
 ## First Run
 
+In this repository, use the local script form:
+
+```text
+pnpm buildroom <command>
+```
+
+The installed product-facing form is:
+
+```text
+anthroclaw buildroom <command>
+```
+
 Initialize a project-local Buildroom:
 
 ```text
