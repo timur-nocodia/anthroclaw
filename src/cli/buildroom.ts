@@ -1,6 +1,11 @@
 #!/usr/bin/env tsx
 
+import { FileArtifactStore } from '../auto-buildroom/artifacts/store.js';
 import { BuildroomConfigValidationError } from '../auto-buildroom/config/model.js';
+import {
+  AuthorityPolicyError,
+  createApprovalArtifact,
+} from '../auto-buildroom/policy/authority.js';
 import {
   BuildroomConfigExistsError,
   initializeBuildroomStorage,
@@ -38,6 +43,10 @@ export async function runBuildroomCli(argv: string[], io: CliIO = defaultIO): Pr
         return commandInit(args, io);
       case 'status':
         return commandStatus(args, io);
+      case 'show':
+        return commandShow(args, io);
+      case 'approve':
+        return commandApprove(args, io);
       default:
         io.stderr(`Unknown command: ${args.command}`);
         io.stderr(helpText());
@@ -90,6 +99,48 @@ function commandStatus(args: ParsedArgs, io: CliIO): number {
   return 0;
 }
 
+function commandShow(args: ParsedArgs, io: CliIO): number {
+  const id = requirePositional(args, 0, 'show');
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const artifact = store.readArtifact(id);
+
+  io.stdout([
+    `Receipt: ${artifact.id}`,
+    `Type: ${artifact.type}`,
+    `Status: ${artifact.status}`,
+    `Room: ${artifact.room.id}`,
+    `Trace: ${artifact.traceId}`,
+    `Parents: ${artifact.parentIds.length ? artifact.parentIds.join(', ') : 'none'}`,
+  ].join('\n'));
+  return 0;
+}
+
+function commandApprove(args: ParsedArgs, io: CliIO): number {
+  const id = requirePositional(args, 0, 'approve');
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const review = store.readArtifact(id);
+  const approval = store.writeArtifact(
+    createApprovalArtifact({
+      review,
+      operator: { id: args.operator ?? firstOperator(config), route: 'cli:local' },
+      now: new Date().toISOString(),
+    }),
+  );
+
+  io.stdout([
+    `Approval created: ${approval.id}`,
+    '',
+    'Approval grants authority. Build consumes authority.',
+    'Approving a proposal does not execute it by itself in v0.1.',
+    '',
+    'Next:',
+    `anthroclaw buildroom build ${approval.id}`,
+  ].join('\n'));
+  return 0;
+}
+
 function handleError(error: unknown, io: CliIO): number {
   if (error instanceof BuildroomConfigValidationError) {
     for (const issue of error.issues) {
@@ -101,7 +152,16 @@ function handleError(error: unknown, io: CliIO): number {
     io.stderr(error.message);
     return 3;
   }
+  if (error instanceof AuthorityPolicyError) {
+    io.stderr(error.message);
+    return 4;
+  }
+  if (error instanceof CliUsageError) {
+    io.stderr(error.message);
+    return 2;
+  }
   io.stderr(error instanceof Error ? error.message : String(error));
+  if (error instanceof Error && error.message.startsWith('Artifact not found:')) return 5;
   return 1;
 }
 
@@ -134,6 +194,25 @@ function parseArgs(argv: string[]): ParsedArgs {
   return out;
 }
 
+function requirePositional(args: ParsedArgs, index: number, command: string): string {
+  const value = args.positional[index];
+  if (!value) {
+    throw new CliUsageError(`Missing required argument for ${command}`);
+  }
+  return value;
+}
+
+function firstOperator(config: { operators: { id: string }[] }): string {
+  return config.operators[0]?.id ?? 'cli:user:local-operator';
+}
+
+class CliUsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CliUsageError';
+  }
+}
+
 function helpText(): string {
   return [
     'Usage: anthroclaw buildroom <command>',
@@ -141,6 +220,8 @@ function helpText(): string {
     'Commands:',
     '  init      Create project-local Buildroom config and storage',
     '  status    Show current Buildroom status',
+    '  show      Show a Buildroom receipt',
+    '  approve   Create approval for a locked Main Review',
     '',
     'Options:',
     '  --root <path>       Project root',
