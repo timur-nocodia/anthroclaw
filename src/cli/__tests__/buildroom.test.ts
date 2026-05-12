@@ -107,6 +107,46 @@ describe('buildroom CLI', () => {
     expect(store.hasArtifact('approval_20260512_docs')).toBe(false);
   });
 
+  it('runs deterministic collect, propose, and review without build authority', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+
+    out.length = 0;
+    await expect(run(['collect', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Research packet:');
+    const research = store.listArtifacts('research_packet')[0];
+    expect(research).toMatchObject({
+      type: 'research_packet',
+      status: 'completed',
+      payload: {
+        coverage: { partial: false },
+        sourcePolicyResult: { allowed: true },
+      },
+    });
+
+    out.length = 0;
+    await expect(run(['propose', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Idea contract:');
+    const idea = store.listArtifacts('idea_contract')[0];
+    expect(idea.parentIds).toEqual([research.id]);
+
+    out.length = 0;
+    await expect(run(['review', idea.id, '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Main review:');
+    const review = store.listArtifacts('main_review')[0];
+    expect(review).toMatchObject({
+      type: 'main_review',
+      status: 'completed',
+      parentIds: [idea.id],
+      payload: {
+        decision: 'approved_for_operator',
+        lockedScope: {
+          allowedPaths: ['docs/Auto-Buildroom/examples/**', 'tests/fixtures/auto-buildroom/**'],
+        },
+      },
+    });
+  });
+
   function artifact(
     id: string,
     type: BuildroomArtifact['type'],

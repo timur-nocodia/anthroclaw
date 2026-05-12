@@ -11,6 +11,12 @@ import {
   initializeBuildroomStorage,
   loadBuildroomRoomConfig,
 } from '../auto-buildroom/storage/init.js';
+import {
+  createDeterministicIdeaContract,
+  createDeterministicMainReview,
+  createDeterministicResearchPacket,
+} from '../auto-buildroom/workflow/deterministic.js';
+import type { BuildroomArtifact, BuildroomArtifactType } from '../auto-buildroom/artifacts/model.js';
 
 interface CliIO {
   stdout: (text: string) => void;
@@ -43,6 +49,12 @@ export async function runBuildroomCli(argv: string[], io: CliIO = defaultIO): Pr
         return commandInit(args, io);
       case 'status':
         return commandStatus(args, io);
+      case 'collect':
+        return commandCollect(args, io);
+      case 'propose':
+        return commandPropose(args, io);
+      case 'review':
+        return commandReview(args, io);
       case 'show':
         return commandShow(args, io);
       case 'approve':
@@ -138,6 +150,64 @@ function deriveStatusCounts(store: FileArtifactStore): {
   };
 }
 
+function commandCollect(args: ParsedArgs, io: CliIO): number {
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const research = store.writeArtifact(
+    createDeterministicResearchPacket(config, new Date().toISOString()),
+  );
+
+  io.stdout([
+    `Research packet: ${research.id}`,
+    '',
+    'Research observes. It does not decide.',
+    '',
+    'Next:',
+    'anthroclaw buildroom propose',
+  ].join('\n'));
+  return 0;
+}
+
+function commandPropose(args: ParsedArgs, io: CliIO): number {
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const research = latestArtifact(store, 'research_packet');
+  const idea = store.writeArtifact(
+    createDeterministicIdeaContract(research, new Date().toISOString()),
+  );
+
+  io.stdout([
+    `Idea contract: ${idea.id}`,
+    '',
+    'Idea is not approval.',
+    '',
+    'Next:',
+    `anthroclaw buildroom review ${idea.id}`,
+  ].join('\n'));
+  return 0;
+}
+
+function commandReview(args: ParsedArgs, io: CliIO): number {
+  const id = requirePositional(args, 0, 'review');
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const idea = store.readArtifact(id);
+  const review = store.writeArtifact(
+    createDeterministicMainReview(idea, config, new Date().toISOString()),
+  );
+
+  io.stdout([
+    `Main review: ${review.id}`,
+    `Decision: ${String(review.payload.decision)}`,
+    '',
+    'Review locks scope. It does not approve or build.',
+    '',
+    'Next:',
+    `anthroclaw buildroom approve ${review.id}`,
+  ].join('\n'));
+  return 0;
+}
+
 function commandShow(args: ParsedArgs, io: CliIO): number {
   const id = requirePositional(args, 0, 'show');
   const config = loadBuildroomRoomConfig(args.root, args.room);
@@ -178,6 +248,15 @@ function commandApprove(args: ParsedArgs, io: CliIO): number {
     `anthroclaw buildroom build ${approval.id}`,
   ].join('\n'));
   return 0;
+}
+
+function latestArtifact(store: FileArtifactStore, type: BuildroomArtifactType): BuildroomArtifact {
+  const artifacts = store
+    .listArtifacts(type)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  const artifact = artifacts[0];
+  if (!artifact) throw new Error(`Artifact not found: latest ${type}`);
+  return artifact;
 }
 
 function handleError(error: unknown, io: CliIO): number {
@@ -259,6 +338,9 @@ function helpText(): string {
     'Commands:',
     '  init      Create project-local Buildroom config and storage',
     '  status    Show current Buildroom status',
+    '  collect   Create deterministic research packet',
+    '  propose   Create deterministic idea from latest research',
+    '  review    Create deterministic Main Review for an idea',
     '  show      Show a Buildroom receipt',
     '  approve   Create approval for a locked Main Review',
     '',
