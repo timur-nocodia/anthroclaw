@@ -6,11 +6,16 @@
  *  3. Object children render as titled <Section/> cards (not bare fieldsets).
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { JsonSchemaForm } from "@/components/plugins/JsonSchemaForm";
 import { ANTHROPIC_MODELS } from "@/lib/anthropic-models";
+import {
+  ANTHROPIC_API_MODELS,
+  DEFAULT_HONCHO_ANTHROPIC_MODEL,
+  OPENAI_TEXT_MODELS,
+} from "@/lib/llm-models";
 
 describe("<JsonSchemaForm /> — model dropdown", () => {
   const schema = {
@@ -94,6 +99,139 @@ describe("<JsonSchemaForm /> — model dropdown", () => {
     expect(onChange).toHaveBeenCalled();
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0];
     expect(last).toEqual({ summarizer: { summary_model: undefined } });
+  });
+});
+
+describe("<JsonSchemaForm /> — provider scoped models and secrets", () => {
+  const schema = {
+    type: "object",
+    properties: {
+      llm: {
+        type: "object",
+        properties: {
+          provider: { type: "string", enum: ["openai", "anthropic"] },
+          model: { type: "string" },
+          api_key_secret_ref: { type: "string" },
+        },
+      },
+    },
+  };
+
+  it("uses OpenAI model options when llm.provider is openai", () => {
+    render(
+      <JsonSchemaForm
+        schema={schema}
+        values={{ llm: { provider: "openai", model: "gpt-5.4-mini" } }}
+        fieldErrors={{}}
+        onChange={() => {}}
+      />,
+    );
+
+    const select = document.querySelector(
+      '[data-path="llm.model"]',
+    ) as HTMLSelectElement;
+    const values = Array.from(select.options).map((option) => option.value);
+    expect(values).toContain(OPENAI_TEXT_MODELS[0]);
+    expect(values).not.toContain(ANTHROPIC_API_MODELS[0]);
+  });
+
+  it("uses Anthropic model options when llm.provider is anthropic", () => {
+    render(
+      <JsonSchemaForm
+        schema={schema}
+        values={{
+          llm: { provider: "anthropic", model: DEFAULT_HONCHO_ANTHROPIC_MODEL },
+        }}
+        fieldErrors={{}}
+        onChange={() => {}}
+      />,
+    );
+
+    const select = document.querySelector(
+      '[data-path="llm.model"]',
+    ) as HTMLSelectElement;
+    const values = Array.from(select.options).map((option) => option.value);
+    expect(values).toContain(ANTHROPIC_API_MODELS[0]);
+    expect(values).not.toContain(OPENAI_TEXT_MODELS[0]);
+  });
+
+  it("resets model and secret ref when llm.provider changes", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <JsonSchemaForm
+        schema={schema}
+        values={{
+          llm: {
+            provider: "openai",
+            model: "gpt-5.4-mini",
+            api_key_secret_ref: "vault://global/honcho/openai_api_key",
+          },
+        }}
+        fieldErrors={{}}
+        onChange={onChange}
+      />,
+    );
+
+    const provider = document.querySelector(
+      '[data-path="llm.provider"]',
+    ) as HTMLSelectElement;
+    await user.selectOptions(provider, "anthropic");
+
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0];
+    expect(last).toEqual({
+      llm: {
+        provider: "anthropic",
+        model: DEFAULT_HONCHO_ANTHROPIC_MODEL,
+        api_key_secret_ref: undefined,
+      },
+    });
+  });
+
+  it("stores API keys in Vault and writes only the vault ref into form values", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        secret: { ref: "vault://global/honcho/anthropic_api_key" },
+      }),
+    } as Response);
+
+    render(
+      <JsonSchemaForm
+        schema={schema}
+        values={{ llm: { provider: "anthropic" } }}
+        fieldErrors={{}}
+        onChange={onChange}
+      />,
+    );
+
+    await user.type(
+      screen.getByTestId("secret-value-llm.api_key_secret_ref"),
+      "sk-ant-secret",
+    );
+    await user.click(screen.getByTestId("secret-save-llm.api_key_secret_ref"));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const request = JSON.parse(
+      fetchMock.mock.calls[0]![1]!.body as string,
+    ) as Record<string, unknown>;
+    expect(request).toMatchObject({
+      scope: "global",
+      service: "honcho",
+      key: "anthropic_api_key",
+      value: "sk-ant-secret",
+    });
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0];
+    expect(last).toEqual({
+      llm: {
+        provider: "anthropic",
+        api_key_secret_ref: "vault://global/honcho/anthropic_api_key",
+      },
+    });
+
+    fetchMock.mockRestore();
   });
 });
 

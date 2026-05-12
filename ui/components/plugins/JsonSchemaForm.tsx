@@ -1,10 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { HelpCircle, Plus, X } from "lucide-react";
+import { HelpCircle, KeyRound, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ANTHROPIC_MODELS } from "@/lib/anthropic-models";
+import {
+  DEFAULT_HONCHO_ANTHROPIC_MODEL,
+  DEFAULT_HONCHO_OPENAI_MODEL,
+  modelsForProvider,
+} from "@/lib/llm-models";
 
 /* ------------------------------------------------------------------ */
 /*  JSON Schema → Form generator                                       */
@@ -49,6 +54,7 @@ export function JsonSchemaForm(props: FormProps) {
       }
       path={[]}
       fieldErrors={props.fieldErrors}
+      rootValues={props.values}
     />
   );
 }
@@ -59,6 +65,7 @@ interface NodeProps {
   onChange: (next: unknown) => void;
   path: string[];
   fieldErrors: Record<string, string>;
+  rootValues: Record<string, unknown>;
   label?: string;
   description?: string;
 }
@@ -83,8 +90,33 @@ function isModelField(label: string | undefined): boolean {
   return label === "model" || label.endsWith("_model") || label.endsWith("Model");
 }
 
+function isProviderScopedModelField(pathKey: string): boolean {
+  return pathKey === "llm.model" || pathKey.endsWith(".llm.model");
+}
+
+function isLlmObjectPath(pathKey: string): boolean {
+  return pathKey === "llm" || pathKey.endsWith(".llm");
+}
+
+function isSecretRefField(label: string | undefined): boolean {
+  return label === "api_key_secret_ref" || label === "secret_ref" || label?.endsWith("_secret_ref") === true;
+}
+
+function defaultModelForProvider(provider: unknown): string {
+  return provider === "anthropic" ? DEFAULT_HONCHO_ANTHROPIC_MODEL : DEFAULT_HONCHO_OPENAI_MODEL;
+}
+
+function readStringAtPath(root: Record<string, unknown>, path: string[]): string | undefined {
+  let cursor: unknown = root;
+  for (const segment of path) {
+    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) return undefined;
+    cursor = (cursor as Record<string, unknown>)[segment];
+  }
+  return typeof cursor === "string" ? cursor : undefined;
+}
+
 function SchemaNode(props: NodeProps) {
-  const { schema, value, onChange, path, fieldErrors, label, description } = props;
+  const { schema, value, onChange, path, fieldErrors, rootValues, label, description } = props;
   const type = schema.type as string | string[] | undefined;
   const enumValues = schema.enum as unknown[] | undefined;
   const properties = schema.properties as Record<string, Record<string, unknown>> | undefined;
@@ -143,18 +175,31 @@ function SchemaNode(props: NodeProps) {
       (isComplex(entry[1]) ? complex : primitives).push(entry);
     }
 
-    const renderChild = ([key, propSchema]: [string, Record<string, unknown>]) => (
-      <SchemaNode
-        key={key}
-        schema={propSchema}
-        value={v[key]}
-        onChange={(next) => onChange({ ...v, [key]: next })}
-        path={[...path, key]}
-        fieldErrors={fieldErrors}
-        label={key}
-        description={propSchema.description as string | undefined}
-      />
-    );
+    const renderChild = ([key, propSchema]: [string, Record<string, unknown>]) => {
+      const childPath = [...path, key];
+      return (
+        <SchemaNode
+          key={key}
+          schema={propSchema}
+          value={v[key]}
+          onChange={(next) => {
+            const patched = { ...v, [key]: next };
+            if (key === "provider" && isLlmObjectPath(pathKey) && "model" in properties) {
+              patched.model = defaultModelForProvider(next);
+              if ("api_key_secret_ref" in properties) {
+                patched.api_key_secret_ref = undefined;
+              }
+            }
+            onChange(patched);
+          }}
+          path={childPath}
+          fieldErrors={fieldErrors}
+          label={key}
+          description={propSchema.description as string | undefined}
+          rootValues={rootValues}
+        />
+      );
+    };
 
     const primitivesGrid = primitives.length > 0 ? <FormGrid>{primitives.map(renderChild)}</FormGrid> : null;
 
@@ -223,7 +268,52 @@ function SchemaNode(props: NodeProps) {
   }
 
   if (type === "string") {
-    // Anthropic-model dropdown for fields named `model` / `*_model`.
+    if (isProviderScopedModelField(pathKey)) {
+      const current = typeof value === "string" ? value : "";
+      const provider = readStringAtPath(rootValues, [...path.slice(0, -1), "provider"]);
+      const modelOptions = modelsForProvider(provider);
+      const fallbackModel = defaultModelForProvider(provider);
+      const isCustom = current !== "" && !modelOptions.includes(current);
+      return (
+        <Field label={label} tooltip={desc} pathKey={pathKey} error={error}>
+          <select
+            className={SELECT_CLASS}
+            style={FIELD_STYLE}
+            value={current || fallbackModel}
+            onChange={(e) => onChange(e.target.value)}
+            data-path={pathKey}
+            data-provider-model-select
+          >
+            {modelOptions.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+            {isCustom && (
+              <option key={`extra-${current}`} value={current}>
+                {current} (custom)
+              </option>
+            )}
+          </select>
+        </Field>
+      );
+    }
+
+    if (isSecretRefField(label)) {
+      return (
+        <SecretRefField
+          label={label}
+          tooltip={desc}
+          pathKey={pathKey}
+          error={error}
+          value={typeof value === "string" ? value : ""}
+          provider={readStringAtPath(rootValues, [...path.slice(0, -1), "provider"])}
+          onChange={onChange}
+        />
+      );
+    }
+
+    // Anthropic-model dropdown for generic fields named `model` / `*_model`.
     if (isModelField(label)) {
       const current = typeof value === "string" ? value : "";
       const isCustom =
@@ -295,6 +385,7 @@ function SchemaNode(props: NodeProps) {
                   }}
                   path={[...path, String(idx)]}
                   fieldErrors={fieldErrors}
+                  rootValues={rootValues}
                 />
                 <Button
                   type="button"
@@ -344,6 +435,98 @@ function SchemaNode(props: NodeProps) {
   return (
     <Field label={label} tooltip={desc} pathKey={pathKey} error={error}>
       <JsonFallback value={value} onChange={onChange} />
+    </Field>
+  );
+}
+
+function SecretRefField({
+  label,
+  tooltip,
+  pathKey,
+  error,
+  value,
+  provider,
+  onChange,
+}: {
+  label?: string;
+  tooltip?: string;
+  pathKey: string;
+  error?: string;
+  value: string;
+  provider?: string;
+  onChange: (next: unknown) => void;
+}) {
+  const [secretValue, setSecretValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [localError, setLocalError] = useState("");
+  const effectiveProvider = provider === "anthropic" ? "anthropic" : "openai";
+  const key = `${effectiveProvider}_api_key`;
+
+  const saveSecret = async () => {
+    setSaving(true);
+    setLocalError("");
+    try {
+      const res = await fetch("/api/secrets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: "global",
+          service: "honcho",
+          key,
+          label: `Honcho ${effectiveProvider} API key`,
+          value: secretValue,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message ?? `Secret save failed (${res.status})`);
+      }
+      const ref = typeof data.secret?.ref === "string" ? data.secret.ref : "";
+      if (!ref) throw new Error("Secret API did not return a vault ref.");
+      onChange(ref);
+      setSecretValue("");
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Failed to save secret.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Field label={label} tooltip={tooltip} pathKey={pathKey} error={error ?? localError}>
+      <div className="grid gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value || undefined)}
+          placeholder={`vault://global/honcho/${key}`}
+          className={INPUT_CLASS}
+          style={MONO_FIELD_STYLE}
+          data-path={pathKey}
+        />
+        <div className="flex items-center gap-2">
+          <input
+            type="password"
+            value={secretValue}
+            onChange={(e) => setSecretValue(e.target.value)}
+            placeholder={`Paste ${effectiveProvider} API key`}
+            className={INPUT_CLASS}
+            style={FIELD_STYLE}
+            data-testid={`secret-value-${pathKey}`}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!secretValue || saving}
+            onClick={() => void saveSecret()}
+            data-testid={`secret-save-${pathKey}`}
+          >
+            <KeyRound className="h-3.5 w-3.5" />
+            {saving ? "Saving..." : "Store"}
+          </Button>
+        </div>
+      </div>
     </Field>
   );
 }

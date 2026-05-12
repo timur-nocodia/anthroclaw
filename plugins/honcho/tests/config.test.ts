@@ -11,6 +11,10 @@ describe('Honcho config', () => {
     expect(config).toMatchObject({
       enabled: false,
       mode: 'observe',
+      llm: {
+        provider: 'openai',
+        model: 'gpt-5.4-mini',
+      },
       connection: {
         workspace_id: 'anthroclaw-local',
         environment: 'production',
@@ -46,6 +50,10 @@ describe('Honcho config', () => {
         tools: {
           ask: false,
         },
+        llm: {
+          provider: 'anthropic',
+          model: 'claude-haiku-4-5',
+        },
       },
       {
         mode: 'hybrid',
@@ -69,6 +77,23 @@ describe('Honcho config', () => {
     expect(config.context.token_budget).toBe(2400);
     expect(config.tools.ask).toBe(false);
     expect(config.tools.context).toBe(true);
+    expect(config.llm).toMatchObject({
+      provider: 'anthropic',
+      model: 'claude-haiku-4-5',
+    });
+  });
+
+  it('accepts a vault reference for the self-host provider API key', () => {
+    const config = resolveConfig({}, {
+      enabled: true,
+      llm: {
+        provider: 'anthropic',
+        model: 'claude-haiku-4-5',
+        api_key_secret_ref: 'vault://global/honcho/anthropic_api_key',
+      },
+    });
+
+    expect(config.llm.api_key_secret_ref).toBe('vault://global/honcho/anthropic_api_key');
   });
 
   it('exports a Zod schema usable by the plugin catalog UI', () => {

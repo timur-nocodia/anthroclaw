@@ -95,6 +95,24 @@ plugins:
     # hybrid = context + tools.
     mode: context
 
+    llm:
+      # Question: which provider should self-hosted Honcho use for its own
+      # extraction, summaries, dialectic chat, and dreams?
+      # openai = use LLM_OPENAI_API_KEY on the Honcho server.
+      # anthropic = use LLM_ANTHROPIC_API_KEY on the Honcho server.
+      provider: openai
+
+      # Question: which model should self-hosted Honcho use by default?
+      # The UI dropdown is ordered from cheaper/faster to stronger/more
+      # expensive. Start with gpt-5.4-mini or claude-haiku-4-5 unless quality
+      # is visibly insufficient.
+      model: gpt-5.4-mini
+
+      # Question: where is the provider API key stored?
+      # Paste the real key into the UI's password field and click Store.
+      # agent.yml keeps only this vault:// reference, never the key itself.
+      api_key_secret_ref: vault://global/honcho/openai_api_key
+
     connection:
       # Question: which Honcho memory namespace are we writing to?
       # Use one workspace per deployment/environment, for example:
@@ -273,6 +291,9 @@ LLM_OPENAI_API_KEY=...
 ```
 
 These variables belong in the Honcho server `.env`, not in `agent.yml`.
+In the AnthroClaw UI, paste the API key into the Honcho plugin `llm.api_key_secret_ref`
+field and click **Store**; the saved plugin config stores only the resulting
+`vault://global/honcho/<provider>_api_key` reference.
 
 #### Recommended Anthropic Preset
 
