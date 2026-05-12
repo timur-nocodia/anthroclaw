@@ -11,6 +11,7 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import type { CredentialStore } from '../../agent/credentials/index.js';
 import {
   buildAuthorizationUrl,
@@ -95,9 +96,27 @@ export interface FinalizeResult {
 
 const PENDING_TTL_MS = 10 * 60 * 1000;
 
+/**
+ * Payload shape emitted by the facade for `connected` / `failed` /
+ * `cancelled` / `timeout` events. The Gateway subscriber translates these
+ * into synthetic `[system] mcp_*` inbound messages addressed to the
+ * agent session that initiated the connection (chat-driven flows only —
+ * admin-initiated rows have `agentSessionKey: null` and produce no event
+ * dispatch).
+ */
+export interface OnboardingEvent {
+  pendingId: string;
+  agentId: string;
+  agentSessionKey: string | null;
+  serverId: string;
+  tools?: Array<{ name: string; description?: string }>;
+  reason?: string;
+}
+
 export function createOnboarding(deps: OnboardingDeps) {
   const now = deps.now ?? (() => Date.now());
   const tok = deps.randomToken ?? (() => randomBytes(32).toString('base64url'));
+  const events = new EventEmitter();
 
   async function startConnection(opts: {
     url: string;
@@ -267,6 +286,13 @@ export function createOnboarding(deps: OnboardingDeps) {
     const row = deps.pending.consumeByState(state);
     if (!row) return false;
     deps.pending.markCancelled(row.id, reason);
+    events.emit('cancelled', {
+      pendingId: row.id,
+      agentId: row.agentId,
+      agentSessionKey: row.agentSessionKey,
+      serverId: row.mcpUrl,
+      reason,
+    } satisfies OnboardingEvent);
     return true;
   }
 
@@ -389,10 +415,24 @@ export function createOnboarding(deps: OnboardingDeps) {
 
       deps.pending.markCompleted(row.id, JSON.stringify({ tools, serverId }));
       const updated = deps.pending.byId(row.id) ?? row;
+      events.emit('connected', {
+        pendingId: row.id,
+        agentId: row.agentId,
+        agentSessionKey: row.agentSessionKey,
+        serverId,
+        tools,
+      } satisfies OnboardingEvent);
       return { status: 'completed', pendingId: row.id, serverId, tools, row: updated };
     } catch (err) {
       const reason = (err as Error).message ?? 'unknown_error';
       deps.pending.markFailed(row.id, reason);
+      events.emit('failed', {
+        pendingId: row.id,
+        agentId: row.agentId,
+        agentSessionKey: row.agentSessionKey,
+        serverId: row.mcpUrl,
+        reason,
+      } satisfies OnboardingEvent);
       return { status: 'failed', reason };
     }
   }
@@ -463,6 +503,13 @@ export function createOnboarding(deps: OnboardingDeps) {
     );
 
     deps.pending.markCompleted(row.id, JSON.stringify({ tools, serverId }));
+    events.emit('connected', {
+      pendingId: row.id,
+      agentId: row.agentId,
+      agentSessionKey: row.agentSessionKey,
+      serverId,
+      tools,
+    } satisfies OnboardingEvent);
     return { status: 'connected', tools, serverId, pendingId: row.id };
   }
 
@@ -507,6 +554,44 @@ export function createOnboarding(deps: OnboardingDeps) {
     return { status: 'connected', server: serverId, tools };
   }
 
+  /**
+   * Read a pending row's status with derived age and remaining-TTL values.
+   * Used by the `connect_mcp` built-in tool's `check` op so the agent can
+   * surface "still waiting / expired / failed" without polling the full row.
+   * Returns null when the row is unknown.
+   */
+  function getPending(pendingId: string): {
+    status: PendingConnection['status'];
+    age_seconds: number;
+    expires_in_seconds: number;
+  } | null {
+    const row = deps.pending.byId(pendingId);
+    if (!row) return null;
+    const n = now();
+    return {
+      status: row.status,
+      age_seconds: Math.max(0, Math.floor((n - row.createdAt) / 1000)),
+      expires_in_seconds: Math.max(0, Math.floor((row.expiresAt - n) / 1000)),
+    };
+  }
+
+  /**
+   * Cancel a pending row by `pendingId`. Used by the `connect_mcp` built-in
+   * tool's `cancel` op so an agent can abort a flow it started but no
+   * longer needs (e.g. the user changed their mind mid-OAuth).
+   *
+   * No event emission here: cancelling a chat-initiated row doesn't need a
+   * synthetic `[system] mcp_connect_declined` because the agent invoking
+   * this op already knows. (Provider-side denial flows through
+   * `cancelByState` which DOES emit `cancelled`.)
+   */
+  function cancel(pendingId: string): boolean {
+    const row = deps.pending.byId(pendingId);
+    if (!row) return false;
+    deps.pending.markCancelled(pendingId, 'user_cancelled');
+    return true;
+  }
+
   // Gate the test-only debug surface so a stray production caller can't
   // contaminate the credential audit log with accessReason='test_debug'.
   // vitest sets NODE_ENV=test automatically; production runs do not.
@@ -533,6 +618,9 @@ export function createOnboarding(deps: OnboardingDeps) {
     completeOAuth,
     getAuthUrlForPending,
     cancelByState,
+    getPending,
+    cancel,
+    events,
     _debug,
   };
 }
