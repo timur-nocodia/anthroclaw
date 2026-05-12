@@ -40,6 +40,60 @@ export interface OAuthCredential {
   metadata?: Record<string, string>;
 }
 
+/**
+ * Credential for an MCP server reachable over HTTP/SSE that authenticates via
+ * OAuth — i.e. the AnthroClaw gateway performed an OAuth dance with the
+ * remote server and is now holding the resulting tokens. `mcpUrl` is part of
+ * the stored record so the preflight resolver can match a `credential_ref`
+ * back to the exact server URL the agent's YAML declared.
+ */
+export interface McpOAuthCredential {
+  kind: 'mcp_oauth';
+  service: string;
+  account: string;
+  scopes: string[];
+  metadata?: Record<string, string>;
+  mcpUrl: string;
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  tokenEndpoint?: string;
+  authorizationServer?: string;
+  clientId?: string;
+  clientSecret?: string;
+  createdAt: number;
+  lastRefreshAt?: number;
+}
+
+/**
+ * Credential for an MCP server that authenticates via a static API key /
+ * bearer token. `scheme` is the HTTP auth scheme the gateway should send
+ * (`Bearer` by default for most modern servers; some use `Token`).
+ */
+export interface McpApiKeyCredential {
+  kind: 'mcp_apikey';
+  service: string;
+  account: string;
+  scopes: string[];
+  metadata?: Record<string, string>;
+  mcpUrl: string;
+  token: string;
+  scheme?: 'Bearer' | 'Token' | string;
+  createdAt: number;
+}
+
+/**
+ * Discriminated union of every credential variant the store may hold.
+ *
+ * Legacy `OAuthCredential` records pre-date the `kind` discriminator. On read
+ * the store backfills `kind: 'oauth'` so callers can rely on the discriminator
+ * without a migration step.
+ */
+export type StoredCredential =
+  | (OAuthCredential & { kind?: 'oauth' })
+  | McpOAuthCredential
+  | McpApiKeyCredential;
+
 /** Compound key used to address a credential record. */
 export interface CredentialRef {
   agentId: string;
@@ -69,9 +123,9 @@ export interface CredentialStore {
    * triggering MCP call or session id when known
    * (e.g. `'mcp_call:google_calendar.list_events;session=abc123'`).
    */
-  get(ref: CredentialRef, accessReason: string): Promise<OAuthCredential>;
+  get(ref: CredentialRef, accessReason: string): Promise<StoredCredential>;
   /** Write or replace a credential. Audit log records `action: 'set'`. */
-  set(ref: CredentialRef, credential: OAuthCredential): Promise<void>;
+  set(ref: CredentialRef, credential: StoredCredential): Promise<void>;
   /**
    * List the agent's credentials WITHOUT exposing token material. Used by
    * the management UI and the agent's own self-introspection tools to

@@ -47,7 +47,7 @@ import { loadMasterKey } from './master-key.js';
 import type {
   CredentialStore,
   CredentialRef,
-  OAuthCredential,
+  StoredCredential,
   CredentialMetadata,
 } from './index.js';
 import { CredentialAuditLog } from './audit.js';
@@ -83,7 +83,7 @@ export class EncryptedFilesystemCredentialStore implements CredentialStore {
     this.masterKey = loadMasterKey();
   }
 
-  async set(ref: CredentialRef, credential: OAuthCredential): Promise<void> {
+  async set(ref: CredentialRef, credential: StoredCredential): Promise<void> {
     const key = deriveKey(this.masterKey, ref.agentId, ref.service);
     const iv = randomBytes(IV_LEN);
     const cipher = createCipheriv('aes-256-gcm', key, iv);
@@ -111,7 +111,7 @@ export class EncryptedFilesystemCredentialStore implements CredentialStore {
   async get(
     ref: CredentialRef,
     accessReason: string,
-  ): Promise<OAuthCredential> {
+  ): Promise<StoredCredential> {
     const credential = await this.readAndDecrypt(ref);
     await this.auditLog.record({
       ts: Date.now(),
@@ -151,8 +151,14 @@ export class EncryptedFilesystemCredentialStore implements CredentialStore {
       try {
         // Decrypt inline — same code path as `get()` minus the audit write.
         const cred = await this.readAndDecrypt({ agentId, service });
-        const { accessToken: _a, refreshToken: _r, ...meta } = cred;
-        out.push(meta);
+        // Strip every known secret field across the credential union.
+        // `accessToken`/`refreshToken` cover oauth + mcp_oauth; `token` covers
+        // mcp_apikey. Unknown future variants pass through unstripped — that
+        // is a TODO marker, not a defence, so a reviewer notices when adding
+        // a new credential kind.
+        const rest = cred as unknown as Record<string, unknown>;
+        const { accessToken: _a, refreshToken: _r, token: _t, ...meta } = rest;
+        out.push(meta as unknown as CredentialMetadata);
       } catch {
         // Unreadable / corrupt files are skipped — list() must not fail
         // wholesale because one entry is broken.
@@ -190,7 +196,7 @@ export class EncryptedFilesystemCredentialStore implements CredentialStore {
    * Does NOT touch the audit log — callers do that explicitly so `list()`
    * can decrypt without polluting the log.
    */
-  private async readAndDecrypt(ref: CredentialRef): Promise<OAuthCredential> {
+  private async readAndDecrypt(ref: CredentialRef): Promise<StoredCredential> {
     const blob = await readFile(this.pathFor(ref));
     if (blob.length < HEADER_LEN) {
       throw new Error(
@@ -207,6 +213,11 @@ export class EncryptedFilesystemCredentialStore implements CredentialStore {
     const decipher = createDecipheriv('aes-256-gcm', key, iv);
     decipher.setAuthTag(tag);
     const plaintext = Buffer.concat([decipher.update(ct), decipher.final()]);
-    return JSON.parse(plaintext.toString('utf-8')) as OAuthCredential;
+    const parsed = JSON.parse(plaintext.toString('utf-8')) as Record<string, unknown>;
+    // Pre-credential_ref records had no `kind` field — they were all OAuth.
+    // Backfill on read so callers can rely on the discriminator without a
+    // separate migration. New records always carry `kind` explicitly.
+    if (!('kind' in parsed)) parsed.kind = 'oauth';
+    return parsed as unknown as StoredCredential;
   }
 }
