@@ -117,23 +117,41 @@ export function openPendingStore(path: string): PendingStore {
       return r ? rowToRecord(r as Record<string, unknown>) : null;
     },
     markCompleted(id, toolsMetadata) {
+      // Zero out short-lived OAuth secrets on terminal transition. We keep
+      // oauth_metadata because the completed credential row references it,
+      // but the PKCE verifier and DCR-issued client_secret have no purpose
+      // post-exchange and must not persist in plaintext SQLite.
       db.prepare(
         `UPDATE mcp_pending_connections
-         SET status = 'completed', tools_metadata = ?
+         SET status = 'completed',
+             tools_metadata = ?,
+             code_verifier = NULL,
+             client_secret = NULL
          WHERE id = ?`,
       ).run(toolsMetadata, id);
     },
     markFailed(id, reason) {
+      // Failed flows never need verifier / client_secret / oauth_metadata
+      // again — null them out so a compromised SQLite file leaks less.
       db.prepare(
         `UPDATE mcp_pending_connections
-         SET status = 'failed', failure_reason = ?
+         SET status = 'failed',
+             failure_reason = ?,
+             code_verifier = NULL,
+             client_secret = NULL,
+             oauth_metadata = NULL
          WHERE id = ?`,
       ).run(reason, id);
     },
     markCancelled(id, reason) {
+      // Same rationale as markFailed.
       db.prepare(
         `UPDATE mcp_pending_connections
-         SET status = 'cancelled', failure_reason = ?
+         SET status = 'cancelled',
+             failure_reason = ?,
+             code_verifier = NULL,
+             client_secret = NULL,
+             oauth_metadata = NULL
          WHERE id = ?`,
       ).run(reason ?? null, id);
     },

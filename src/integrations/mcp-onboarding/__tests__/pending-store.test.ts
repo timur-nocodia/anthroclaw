@@ -97,4 +97,51 @@ describe('PendingStore', () => {
     store.insert(row);
     expect(store.consumeByState(row.state)).toBeNull();
   });
+
+  it('markCompleted clears code_verifier and client_secret', () => {
+    const row = make({
+      codeVerifier: 'verifier_secret',
+      clientSecret: 'client_secret_value',
+      oauthMetadata: '{"issuer":"https://auth/"}',
+    });
+    store.insert(row);
+    store.markCompleted(row.id, JSON.stringify({ tools: [], serverId: 'x' }));
+    const after = store.byId(row.id);
+    expect(after?.status).toBe('completed');
+    expect(after?.codeVerifier).toBeNull();
+    expect(after?.clientSecret).toBeNull();
+    expect(after?.toolsMetadata).toBeTruthy();
+  });
+
+  it('markFailed clears code_verifier, client_secret, oauth_metadata', () => {
+    const row = make({
+      codeVerifier: 'verifier_secret',
+      clientSecret: 'client_secret_value',
+      oauthMetadata: '{"issuer":"https://auth/"}',
+    });
+    store.insert(row);
+    store.markFailed(row.id, 'some_reason');
+    const after = store.byId(row.id);
+    expect(after?.status).toBe('failed');
+    expect(after?.failureReason).toBe('some_reason');
+    expect(after?.codeVerifier).toBeNull();
+    expect(after?.clientSecret).toBeNull();
+    expect(after?.oauthMetadata).toBeNull();
+  });
+
+  it('markCancelled clears code_verifier, client_secret, oauth_metadata', () => {
+    const row = make({
+      codeVerifier: 'verifier_secret',
+      clientSecret: 'client_secret_value',
+      oauthMetadata: '{"issuer":"https://auth/"}',
+    });
+    store.insert(row);
+    store.markCancelled(row.id, 'user_denied');
+    const after = store.byId(row.id);
+    expect(after?.status).toBe('cancelled');
+    expect(after?.failureReason).toBe('user_denied');
+    expect(after?.codeVerifier).toBeNull();
+    expect(after?.clientSecret).toBeNull();
+    expect(after?.oauthMetadata).toBeNull();
+  });
 });
