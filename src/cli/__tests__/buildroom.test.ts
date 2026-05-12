@@ -715,6 +715,39 @@ describe('buildroom CLI', () => {
     expect(store.listArtifacts('retention_review')).toHaveLength(1);
   });
 
+  it('sends lifecycle notifications for configured notification routes', async () => {
+    await run([
+      'init',
+      '--root',
+      root,
+      '--room',
+      'anthroclaw-core',
+      '--telegram-notification-route',
+      'telegram_thread:-1003931616911:2',
+    ]);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      coderReceiptWithOutputHash({
+        builderClaims: ['Updated operator guide.'],
+        changedFiles: ['docs/guide.md'],
+      }),
+    );
+    await run(['qa', 'build_20260512_docs', '--root', root]);
+    const notifications: Array<{ routes: string[]; text: string }> = [];
+
+    await expect(run(['trust', 'build_20260512_docs', '--root', root], {
+      notify: async (notification) => {
+        notifications.push(notification);
+      },
+    })).resolves.toBe(0);
+
+    expect(notifications).toEqual([{
+      routes: ['telegram_thread:-1003931616911:2'],
+      text: expect.stringContaining('Buildroom trust: CLEAN'),
+    }]);
+    expect(notifications[0].text).toContain('Notification only. Approval still requires explicit /buildroom commands.');
+  });
+
   it('blocks retention without a trust receipt target', async () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });

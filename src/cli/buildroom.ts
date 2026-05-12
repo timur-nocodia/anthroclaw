@@ -21,6 +21,7 @@ import {
   roomRoot,
   saveBuildroomRoomConfig,
 } from '../auto-buildroom/storage/init.js';
+import { formatBuildroomLifecycleNotification } from '../auto-buildroom/notifications/lifecycle.js';
 import {
   createQaReportArtifact,
   createTrustReportArtifact,
@@ -59,6 +60,7 @@ export interface BuildroomCliDependencies {
       input: Parameters<NativeAgentRuntimeAdapter['runBuilder']>[0],
     ): Promise<NativeBuilderRunResult>;
   };
+  notify?: (notification: { routes: string[]; text: string }) => Promise<void>;
   now?: () => string;
 }
 
@@ -101,13 +103,13 @@ export async function runBuildroomCli(
       case 'build':
         return await commandBuild(args, io, deps);
       case 'qa':
-        return commandQa(args, io);
+        return await commandQa(args, io, deps);
       case 'trust':
-        return commandTrust(args, io);
+        return await commandTrust(args, io, deps);
       case 'report':
         return commandReport(args, io);
       case 'retain':
-        return commandRetain(args, io);
+        return await commandRetain(args, io, deps);
       case 'pause':
         return commandPause(args, io);
       case 'resume':
@@ -532,6 +534,7 @@ async function executeAndReportBuildPlan(
       'Next:',
       `anthroclaw buildroom qa ${receipt.id}`,
     ].join('\n'));
+    await notifyLifecycle(deps, args.root, roomId, receipt);
     return 0;
   }
 
@@ -544,10 +547,15 @@ async function executeAndReportBuildPlan(
     'Next:',
     `anthroclaw buildroom show ${receipt.id}`,
   ].join('\n'));
+  await notifyLifecycle(deps, args.root, roomId, receipt);
   return 6;
 }
 
-function commandQa(args: ParsedArgs, io: CliIO): number {
+async function commandQa(
+  args: ParsedArgs,
+  io: CliIO,
+  deps: BuildroomCliDependencies,
+): Promise<number> {
   const id = requirePositional(args, 0, 'qa');
   const config = loadBuildroomRoomConfig(args.root, args.room);
   assertStageAllowed(config, 'qa');
@@ -575,10 +583,15 @@ function commandQa(args: ParsedArgs, io: CliIO): number {
     'Next:',
     `anthroclaw buildroom trust ${build.id}`,
   ].join('\n'));
+  await notifyLifecycle(deps, args.root, config.roomId, qa);
   return 0;
 }
 
-function commandTrust(args: ParsedArgs, io: CliIO): number {
+async function commandTrust(
+  args: ParsedArgs,
+  io: CliIO,
+  deps: BuildroomCliDependencies,
+): Promise<number> {
   const id = requirePositional(args, 0, 'trust');
   const config = loadBuildroomRoomConfig(args.root, args.room);
   assertStageAllowed(config, 'trust');
@@ -600,6 +613,7 @@ function commandTrust(args: ParsedArgs, io: CliIO): number {
     '',
     'Trust tells the operator what is actually proven.',
   ].join('\n'));
+  await notifyLifecycle(deps, args.root, config.roomId, trust);
   return 0;
 }
 
@@ -626,7 +640,11 @@ function commandReport(args: ParsedArgs, io: CliIO): number {
   return 0;
 }
 
-function commandRetain(args: ParsedArgs, io: CliIO): number {
+async function commandRetain(
+  args: ParsedArgs,
+  io: CliIO,
+  deps: BuildroomCliDependencies,
+): Promise<number> {
   const config = loadBuildroomRoomConfig(args.root, args.room);
   assertStageAllowed(config, 'retain');
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
@@ -653,6 +671,7 @@ function commandRetain(args: ParsedArgs, io: CliIO): number {
     '',
     'Retention recommends lifecycle treatment. It does not erase audit evidence.',
   ].join('\n'));
+  await notifyLifecycle(deps, args.root, config.roomId, retention);
   return 0;
 }
 
@@ -680,6 +699,24 @@ function commandResume(args: ParsedArgs, io: CliIO): number {
     'Resume does not start a build by itself.',
   ].join('\n'));
   return 0;
+}
+
+async function notifyLifecycle(
+  deps: BuildroomCliDependencies,
+  projectRoot: string,
+  roomId: string,
+  artifact: BuildroomArtifact,
+): Promise<void> {
+  if (!deps.notify) return;
+  const config = loadBuildroomRoomConfig(projectRoot, roomId);
+  if (config.notifications.routes.length === 0) return;
+  const text = formatBuildroomLifecycleNotification(artifact);
+  if (!text) return;
+  try {
+    await deps.notify({ routes: config.notifications.routes, text });
+  } catch {
+    // Notifications are not receipts and must not change command success.
+  }
 }
 
 function assertStageAllowed(

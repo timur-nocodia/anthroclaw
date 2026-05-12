@@ -149,6 +149,7 @@ import type { DecisionChannel, DecisionDeliveryRecord, DecisionEvent, DecisionRe
 import { runBuildroomCli } from './cli/buildroom.js';
 import { loadBuildroomRoomConfig } from './auto-buildroom/storage/init.js';
 import { handleTelegramBuildroomGatewayMessage } from './auto-buildroom/telegram/gateway-adapter.js';
+import { sendTelegramBuildroomNotification } from './auto-buildroom/telegram/notification-sender.js';
 import { getSdkActiveInputStatus, type SdkActiveInputStatus } from './sdk/active-input.js';
 import {
   asAgentMcpServerSpec,
@@ -4105,7 +4106,20 @@ export class Gateway {
           return null;
         }
       },
-      runCli: (argv, io) => runBuildroomCli(argv, io),
+      runCli: (argv, io) => runBuildroomCli(argv, io, {
+        notify: async ({ routes, text }) => {
+          await sendTelegramBuildroomNotification({
+            routes,
+            text,
+            sendText: async (target, message) => {
+              await channel.sendText(String(target.chatId), message, {
+                accountId: msg.accountId,
+                ...(target.messageThreadId == null ? {} : { threadId: String(target.messageThreadId) }),
+              });
+            },
+          });
+        },
+      }),
       sendText: async (peerId, text, opts) => {
         await channel.sendText(peerId, text, opts);
       },
