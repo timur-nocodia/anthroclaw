@@ -19,12 +19,19 @@ export interface AddMcpWizardProps {
 type Step = 'url' | 'auth' | 'tools';
 type AuthMode = 'oauth' | 'apikey';
 
+interface OAuthMeta {
+  authorizationEndpoint?: string;
+  scopesSupported?: string[];
+}
+
 export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
   const [step, setStep] = useState<Step>('url');
   const [url, setUrl] = useState('');
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
   const [apiKey, setApiKey] = useState('');
+  const [serverName, setServerName] = useState<string | null>(null);
+  const [oauthMeta, setOauthMeta] = useState<OAuthMeta | null>(null);
   const [tools, setTools] = useState<Array<{ name: string; description?: string }>>([]);
   const [allowed, setAllowed] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +64,15 @@ export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
         }
         setPendingId(start.pendingId ?? null);
         setAuthMode(probe.authMode);
+        setServerName(probe.server?.name ?? start.serverName ?? null);
+        if (probe.authMode === 'oauth' && probe.oauth) {
+          setOauthMeta({
+            authorizationEndpoint: probe.oauth.authorizationEndpoint,
+            scopesSupported: probe.oauth.scopesSupported,
+          });
+        } else {
+          setOauthMeta(null);
+        }
         setStep('auth');
         return;
       }
@@ -162,9 +178,30 @@ export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
 
         {step === 'auth' && authMode === 'oauth' && (
           <div className="space-y-2">
-            <p className="text-sm">This server uses OAuth.</p>
+            <h3 className="text-sm font-medium">
+              Authorize with {serverName ?? 'this server'}
+            </h3>
+            <p className="text-sm">
+              You&apos;ll be redirected to{' '}
+              <code>
+                {oauthMeta?.authorizationEndpoint
+                  ? (() => {
+                      try {
+                        return new URL(oauthMeta.authorizationEndpoint).hostname;
+                      } catch {
+                        return 'the provider';
+                      }
+                    })()
+                  : 'the provider'}
+              </code>{' '}
+              to authorize. Token will be stored encrypted in this AnthroClaw
+              instance.
+            </p>
             <p className="text-xs text-gray-600">
-              Click Continue to open the authorize page in a new tab.
+              Scopes:{' '}
+              {oauthMeta?.scopesSupported?.length
+                ? oauthMeta.scopesSupported.join(', ')
+                : 'none requested'}
             </p>
           </div>
         )}

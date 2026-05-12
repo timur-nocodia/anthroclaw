@@ -111,20 +111,35 @@ describe('AddMcpWizard — apikey path', () => {
     expect(screen.getByPlaceholderText(/mcp\.x\.io/)).toBeInTheDocument();
   });
 
-  it('shows OAuth branch UI when authMode is oauth', async () => {
+  it('shows OAuth branch UI with hostname + scopes from probe metadata', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo) => {
         const url = String(input);
         if (url.endsWith('/api/mcp/probe')) {
           return new Response(
-            JSON.stringify({ authMode: 'oauth', server: {} }),
+            JSON.stringify({
+              authMode: 'oauth',
+              server: { name: 'NotionMCP' },
+              oauth: {
+                issuer: 'https://auth.notion.so/',
+                authorizationEndpoint: 'https://auth.notion.so/oauth/authorize',
+                tokenEndpoint: 'https://auth.notion.so/oauth/token',
+                scopesSupported: ['read_content', 'write_content'],
+                resource: 'https://mcp.notion.so/mcp',
+              },
+            }),
             { status: 200 },
           );
         }
         if (url.endsWith('/api/mcp/connect/start')) {
           return new Response(
-            JSON.stringify({ status: 'authorize', pendingId: 'pnd_x' }),
+            JSON.stringify({
+              status: 'authorize',
+              pendingId: 'pnd_x',
+              authUrl: 'https://ui.test/api/mcp/oauth/start/pnd_x',
+              serverName: 'NotionMCP',
+            }),
             { status: 200 },
           );
         }
@@ -135,10 +150,71 @@ describe('AddMcpWizard — apikey path', () => {
       <AddMcpWizard agentId="a1" onSaved={vi.fn()} onClose={vi.fn()} />,
     );
     fireEvent.change(screen.getByPlaceholderText(/mcp\.x\.io/), {
-      target: { value: 'https://o.example/mcp' },
+      target: { value: 'https://mcp.notion.so/mcp' },
     });
     fireEvent.click(screen.getByText(/Continue/));
-    await screen.findByText(/uses OAuth/i);
+    await screen.findByText(/Authorize with NotionMCP/i);
+    expect(screen.getByText(/auth\.notion\.so/)).toBeInTheDocument();
+    expect(screen.getByText(/read_content, write_content/)).toBeInTheDocument();
+  });
+
+  it('Authorize button sets window.location to OAuth start URL', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo) => {
+        const url = String(input);
+        if (url.endsWith('/api/mcp/probe')) {
+          return new Response(
+            JSON.stringify({
+              authMode: 'oauth',
+              server: { name: 'X' },
+              oauth: {
+                issuer: 'https://auth/',
+                authorizationEndpoint: 'https://auth/authorize',
+                tokenEndpoint: 'https://auth/token',
+                resource: 'https://mcp.x/mcp',
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith('/api/mcp/connect/start')) {
+          return new Response(
+            JSON.stringify({ status: 'authorize', pendingId: 'pnd_az' }),
+            { status: 200 },
+          );
+        }
+        throw new Error('unexpected ' + url);
+      }),
+    );
+
+    const navigated: string[] = [];
+    const originalLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        set href(v: string) {
+          navigated.push(v);
+        },
+      },
+    });
+
+    render(
+      <AddMcpWizard agentId="a1" onSaved={vi.fn()} onClose={vi.fn()} />,
+    );
+    fireEvent.change(screen.getByPlaceholderText(/mcp\.x\.io/), {
+      target: { value: 'https://mcp.x/mcp' },
+    });
+    fireEvent.click(screen.getByText(/Continue/));
+    await screen.findByText(/Authorize with X/i);
+    fireEvent.click(screen.getByText(/Continue/));
+    await waitFor(() => expect(navigated).toContain('/api/mcp/oauth/start/pnd_az'));
+
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: originalLocation,
+    });
   });
 
   it('shows "not yet supported" error and stays on URL step when probe returns none', async () => {
