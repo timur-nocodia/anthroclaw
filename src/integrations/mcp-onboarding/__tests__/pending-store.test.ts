@@ -74,4 +74,27 @@ describe('PendingStore', () => {
     expect(store.byId(expiredPending.id)?.status).toBe('expired');
     expect(store.byId(expiredCompleted.id)?.status).toBe('completed');
   });
+
+  it('consumeByState is atomic — exactly one of 10 concurrent consumers wins', async () => {
+    const row = make({ status: 'pending' });
+    store.insert(row);
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        Promise.resolve().then(() => store.consumeByState(row.state)),
+      ),
+    );
+    const winners = results.filter((r) => r !== null);
+    expect(winners).toHaveLength(1);
+    expect(store.byId(row.id)?.status).toBe('exchanging');
+  });
+
+  it('consumeByState returns null for nonexistent state', () => {
+    expect(store.consumeByState('nonexistent')).toBeNull();
+  });
+
+  it('consumeByState returns null when status is not pending', () => {
+    const row = make({ status: 'completed' });
+    store.insert(row);
+    expect(store.consumeByState(row.state)).toBeNull();
+  });
 });
