@@ -10,7 +10,12 @@
  * — the caller (facade `finalize`) must either rename or report.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import {
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseDocument, YAMLMap, YAMLSeq } from 'yaml';
 
@@ -77,5 +82,20 @@ export function writeAgentYmlEntry(args: WriteAgentYmlEntryArgs): void {
   // having to manually build the node tree.
   serversMap.set(args.key, args.entry);
 
-  writeFileSync(path, String(doc));
+  // Write atomically: serialize to <path>.tmp, then rename. On POSIX same-
+  // filesystem renames are atomic, so a crash mid-write can never leave
+  // agent.yml truncated. If anything fails between writeFileSync and the
+  // rename completing, the finally block cleans up the leftover tmp file.
+  const tmp = `${path}.tmp`;
+  try {
+    writeFileSync(tmp, String(doc));
+    renameSync(tmp, path);
+  } finally {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+      // best-effort cleanup; renameSync removes the source on success so this
+      // is normally a no-op.
+    }
+  }
 }

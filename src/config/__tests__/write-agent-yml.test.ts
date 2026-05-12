@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { writeAgentYmlEntry } from '../write-agent-yml.js';
 
 describe('writeAgentYmlEntry', () => {
@@ -107,6 +114,19 @@ routes: []
     // Original keys come before the new block.
     expect(out.indexOf('model:')).toBeLessThan(out.indexOf('external_mcp_servers:'));
     expect(out.indexOf('routes:')).toBeLessThan(out.indexOf('external_mcp_servers:'));
+  });
+
+  it('leaves no .tmp file behind after a successful write', () => {
+    const path = seed('model: claude-sonnet-4-6\n');
+    writeAgentYmlEntry({
+      agentId: 'a1',
+      key: 'srv',
+      entry: { type: 'http', url: 'https://x' },
+      agentsDir: dir,
+    });
+    expect(readdirSync(dirname(path))).not.toContain('agent.yml.tmp');
+    // Sanity: the real file is still present.
+    expect(readdirSync(dirname(path))).toContain('agent.yml');
   });
 
   it('throws if agent.yml does not exist', () => {
