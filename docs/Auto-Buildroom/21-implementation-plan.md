@@ -513,7 +513,21 @@ Tasks:
 - support status/show/report first;
 - support approval/build only after CLI behavior is stable;
 - implement async acknowledgement for long-running commands;
-- send notifications to configured notification routes.
+- send lifecycle notifications to configured notification routes.
+
+Current v0.1 lifecycle notification coverage:
+
+- Builder completion and Builder error receipts;
+- QA completion;
+- Trust report generation;
+- retention review generation.
+
+Deferred notification coverage:
+
+- collection completion;
+- proposal readiness;
+- approval creation;
+- build-start acknowledgement.
 
 Tests:
 

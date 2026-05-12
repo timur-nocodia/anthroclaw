@@ -672,15 +672,22 @@ Automatic Buildroom notifications should go to configured notification routes, n
 
 Notification examples:
 
-- collection completed;
-- proposal ready;
-- approval created;
-- build started;
 - build completed;
 - QA completed;
 - trust report generated;
+- retention review created;
 - room blocked;
 - runtime failed.
+
+Implemented v0.1 lifecycle notifications:
+
+- `coder_receipt`;
+- `error_receipt`;
+- `qa_report`;
+- `trust_report`;
+- `retention_review`.
+
+Future lifecycle notifications may add collection completion, proposal readiness, approval creation, and build-start acknowledgements.
 
 Rules:
 
