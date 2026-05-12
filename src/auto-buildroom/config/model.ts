@@ -1,7 +1,10 @@
 import { z } from 'zod';
 
 const OperatorIdSchema = z.string().min(1);
-const RouteIdSchema = z.string().min(1);
+const RouteIdSchema = z.string().min(1).refine(
+  (value) => !value.startsWith('telegram_user:'),
+  'Telegram user identity is not a route',
+);
 
 const OperatorSchema = z.object({
   id: OperatorIdSchema,

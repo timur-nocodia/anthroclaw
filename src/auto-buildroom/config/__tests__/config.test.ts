@@ -52,4 +52,21 @@ describe('Auto-Buildroom config model', () => {
       'Telegram chat/thread route is not operator identity',
     );
   });
+
+  it('rejects Telegram user identities in route fields', () => {
+    const config = createDefaultBuildroomConfig({
+      roomId: 'anthroclaw-core',
+      operatorId: 'telegram_user:48705953',
+    });
+    config.operators[0].commandRoutes = ['telegram_user:48705953'];
+    config.operators[0].approvalRoutes = ['telegram_user:48705953'];
+    config.notifications.routes = ['telegram_user:48705953'];
+
+    const result = validateBuildroomConfig(config);
+
+    expect(result.success).toBe(false);
+    expect(result.issues.map((issue) => issue.message)).toContain(
+      'Telegram user identity is not a route',
+    );
+  });
 });
