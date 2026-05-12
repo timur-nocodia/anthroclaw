@@ -121,7 +121,49 @@ describe('onboarding facade — apikey branch', () => {
     expect(res.reason).toBe('non_bearer_scheme');
   });
 
-  it('returns authorize URL for oauth probe (Phase 4 fills the dance)', async () => {
+  it('returns authorize URL for oauth probe with DCR registration', async () => {
+    probeStub.mockResolvedValueOnce({
+      authMode: 'oauth',
+      server: { name: 'x' },
+      oauth: {
+        issuer: 'https://auth/',
+        authorizationEndpoint: 'https://auth/authorize',
+        tokenEndpoint: 'https://auth/token',
+        registrationEndpoint: 'https://auth/register',
+        scopesSupported: ['read'],
+        resource: 'https://mcp.x/y',
+      },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              client_id: 'cli_x',
+              client_secret: 'sec_x',
+            }),
+            { status: 201 },
+          ),
+      ),
+    );
+    const res = await onboarding.startConnection({
+      url: 'https://mcp.x/y',
+      requester: { kind: 'admin', userId: 'u1', agentId: 'a1' },
+    });
+    expect(res.status).toBe('authorize');
+    expect(res.authUrl).toMatch(
+      /^https:\/\/ui\.test\/api\/mcp\/oauth\/start\/[^/]+$/,
+    );
+    const row = pending.byId(res.pendingId!);
+    expect(row?.authMode).toBe('oauth');
+    expect(row?.clientId).toBe('cli_x');
+    expect(row?.clientSecret).toBe('sec_x');
+    expect(row?.codeVerifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(row?.oauthMetadata).toBeTruthy();
+  });
+
+  it('rejects oauth probe when no registration_endpoint AND no staticClientId', async () => {
     probeStub.mockResolvedValueOnce({
       authMode: 'oauth',
       server: { name: 'x' },
@@ -136,10 +178,283 @@ describe('onboarding facade — apikey branch', () => {
       url: 'https://mcp.x/y',
       requester: { kind: 'admin', userId: 'u1', agentId: 'a1' },
     });
-    expect(res.status).toBe('authorize');
-    expect(res.authUrl).toMatch(
-      /^https:\/\/ui\.test\/api\/mcp\/oauth\/start\/[^/]+$/,
+    expect(res.status).toBe('rejected');
+    expect(res.reason).toBe('dcr_required_but_not_supported');
+  });
+
+  it('uses staticClientId when no registration_endpoint', async () => {
+    const credentials = new EncryptedFilesystemCredentialStore(
+      new CredentialAuditLog(join(dir, 'audit.log')),
     );
+    const ob = createOnboarding({
+      pending,
+      credentials,
+      uiBaseUrl: 'https://ui.test',
+      listTakenServerIds: async () => new Set<string>(),
+      staticClientId: 'static_cli',
+    });
+    probeStub.mockResolvedValueOnce({
+      authMode: 'oauth',
+      server: { name: 'x' },
+      oauth: {
+        issuer: 'https://auth/',
+        authorizationEndpoint: 'https://auth/authorize',
+        tokenEndpoint: 'https://auth/token',
+        resource: 'https://mcp.x/y',
+      },
+    });
+    const res = await ob.startConnection({
+      url: 'https://mcp.x/y',
+      requester: { kind: 'admin', userId: 'u1', agentId: 'a1' },
+    });
+    expect(res.status).toBe('authorize');
+    const row = pending.byId(res.pendingId!);
+    expect(row?.clientId).toBe('static_cli');
+    expect(row?.clientSecret).toBeNull();
+  });
+
+  it('getAuthUrlForPending returns null for unknown id', async () => {
+    expect(await onboarding.getAuthUrlForPending('pnd_nope')).toBeNull();
+  });
+
+  it('getAuthUrlForPending returns null for expired pending', async () => {
+    const fixedNow = 5_000_000;
+    const ob = createOnboarding({
+      pending,
+      credentials: new EncryptedFilesystemCredentialStore(
+        new CredentialAuditLog(join(dir, 'audit.log')),
+      ),
+      uiBaseUrl: 'https://ui.test',
+      listTakenServerIds: async () => new Set<string>(),
+      now: () => fixedNow,
+    });
+    pending.insert({
+      id: 'pnd_expired_oauth',
+      state: 'st_expired_oauth',
+      agentId: 'a1',
+      agentSessionKey: null,
+      mcpUrl: 'https://mcp.x/y',
+      authMode: 'oauth',
+      codeVerifier: 'verifier_xyz',
+      clientId: 'cli_x',
+      clientSecret: null,
+      oauthMetadata: JSON.stringify({
+        issuer: 'https://auth/',
+        authorizationEndpoint: 'https://auth/authorize',
+        tokenEndpoint: 'https://auth/token',
+        resource: 'https://mcp.x/y',
+      }),
+      toolsMetadata: null,
+      requestedBy: 'admin:u1',
+      status: 'pending',
+      failureReason: null,
+      createdAt: fixedNow - 10_000,
+      expiresAt: fixedNow - 1,
+    });
+    expect(await ob.getAuthUrlForPending('pnd_expired_oauth')).toBeNull();
+  });
+
+  it('getAuthUrlForPending rebuilds URL with re-derived PKCE challenge', async () => {
+    const { createHash } = await import('node:crypto');
+    const verifier = 'a'.repeat(43);
+    const expectedChallenge = createHash('sha256')
+      .update(verifier)
+      .digest('base64url');
+    pending.insert({
+      id: 'pnd_rebuild',
+      state: 'st_rebuild_xyz',
+      agentId: 'a1',
+      agentSessionKey: null,
+      mcpUrl: 'https://mcp.x/y',
+      authMode: 'oauth',
+      codeVerifier: verifier,
+      clientId: 'cli_x',
+      clientSecret: null,
+      oauthMetadata: JSON.stringify({
+        issuer: 'https://auth/',
+        authorizationEndpoint: 'https://auth/authorize',
+        tokenEndpoint: 'https://auth/token',
+        scopesSupported: ['read', 'write'],
+        resource: 'https://mcp.x/y',
+      }),
+      toolsMetadata: null,
+      requestedBy: 'admin:u1',
+      status: 'pending',
+      failureReason: null,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 600_000,
+    });
+    const url = await onboarding.getAuthUrlForPending('pnd_rebuild');
+    expect(url).toBeTruthy();
+    const parsed = new URL(url!);
+    expect(parsed.origin + parsed.pathname).toBe('https://auth/authorize');
+    expect(parsed.searchParams.get('client_id')).toBe('cli_x');
+    expect(parsed.searchParams.get('state')).toBe('st_rebuild_xyz');
+    expect(parsed.searchParams.get('code_challenge')).toBe(expectedChallenge);
+    expect(parsed.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(parsed.searchParams.get('redirect_uri')).toBe(
+      'https://ui.test/api/mcp/oauth/callback',
+    );
+    expect(parsed.searchParams.get('scope')).toBe('read write');
+  });
+
+  it('completeOAuth happy path: writes credential, marks completed, returns tools', async () => {
+    pending.insert({
+      id: 'pnd_oauth',
+      state: 'st_oauth_happy',
+      agentId: 'a1',
+      agentSessionKey: null,
+      mcpUrl: 'https://mcp.x/y',
+      authMode: 'oauth',
+      codeVerifier: 'verifier_abc',
+      clientId: 'cli_x',
+      clientSecret: 'sec_x',
+      oauthMetadata: JSON.stringify({
+        issuer: 'https://auth/',
+        authorizationEndpoint: 'https://auth/authorize',
+        tokenEndpoint: 'https://auth/token',
+        resource: 'https://mcp.x/y',
+      }),
+      toolsMetadata: null,
+      requestedBy: 'admin:u1',
+      status: 'pending',
+      failureReason: null,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 600_000,
+    });
+
+    const fetchStub = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === 'https://auth/token') {
+        return new Response(
+          JSON.stringify({
+            access_token: 'tok_x',
+            refresh_token: 'rfr_x',
+            expires_in: 3600,
+            scope: 'read',
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === 'https://mcp.x/y') {
+        const body = JSON.parse((init?.body as string) ?? '{}');
+        if (body.method === 'tools/list') {
+          return new Response(
+            JSON.stringify({
+              result: { tools: [{ name: 'list_things' }] },
+            }),
+            { status: 200 },
+          );
+        }
+      }
+      throw new Error('unexpected fetch ' + url);
+    });
+    vi.stubGlobal('fetch', fetchStub);
+
+    const res = await onboarding.completeOAuth({
+      state: 'st_oauth_happy',
+      code: 'auth_code_x',
+    });
+    expect(res.status).toBe('completed');
+    if (res.status === 'completed') {
+      expect(res.tools.map((t) => t.name)).toEqual(['list_things']);
+      expect(res.serverId).toBeTruthy();
+    }
+    const cred = await onboarding._debug?.getCredential('a1', 'mcp:x');
+    expect(cred?.kind).toBe('mcp_oauth');
+    const row = pending.byId('pnd_oauth');
+    expect(row?.status).toBe('completed');
+    expect(row?.toolsMetadata).toBeTruthy();
+  });
+
+  it('completeOAuth returns gone for unknown state (replayed)', async () => {
+    const res = await onboarding.completeOAuth({
+      state: 'st_nope',
+      code: 'c',
+    });
+    expect(res.status).toBe('gone');
+  });
+
+  it('completeOAuth returns gone and marks failed when expired', async () => {
+    const fixedNow = 7_000_000;
+    const ob = createOnboarding({
+      pending,
+      credentials: new EncryptedFilesystemCredentialStore(
+        new CredentialAuditLog(join(dir, 'audit.log')),
+      ),
+      uiBaseUrl: 'https://ui.test',
+      listTakenServerIds: async () => new Set<string>(),
+      now: () => fixedNow,
+    });
+    pending.insert({
+      id: 'pnd_oauth_exp',
+      state: 'st_oauth_exp',
+      agentId: 'a1',
+      agentSessionKey: null,
+      mcpUrl: 'https://mcp.x/y',
+      authMode: 'oauth',
+      codeVerifier: 'v',
+      clientId: 'cli_x',
+      clientSecret: null,
+      oauthMetadata: JSON.stringify({
+        issuer: 'https://auth/',
+        authorizationEndpoint: 'https://auth/authorize',
+        tokenEndpoint: 'https://auth/token',
+        resource: 'https://mcp.x/y',
+      }),
+      toolsMetadata: null,
+      requestedBy: 'admin:u1',
+      status: 'pending',
+      failureReason: null,
+      createdAt: fixedNow - 1000,
+      expiresAt: fixedNow - 100,
+    });
+    const res = await ob.completeOAuth({
+      state: 'st_oauth_exp',
+      code: 'c',
+    });
+    expect(res.status).toBe('gone');
+    const row = pending.byId('pnd_oauth_exp');
+    expect(row?.status).toBe('failed');
+    expect(row?.failureReason).toBe('expired');
+  });
+
+  it('cancelByState transitions a pending row to cancelled', async () => {
+    pending.insert({
+      id: 'pnd_cancel',
+      state: 'st_cancel',
+      agentId: 'a1',
+      agentSessionKey: null,
+      mcpUrl: 'https://mcp.x/y',
+      authMode: 'oauth',
+      codeVerifier: 'v',
+      clientId: 'cli_x',
+      clientSecret: null,
+      oauthMetadata: JSON.stringify({
+        issuer: 'https://auth/',
+        authorizationEndpoint: 'https://auth/authorize',
+        tokenEndpoint: 'https://auth/token',
+        resource: 'https://mcp.x/y',
+      }),
+      toolsMetadata: null,
+      requestedBy: 'admin:u1',
+      status: 'pending',
+      failureReason: null,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 600_000,
+    });
+    const ok = await onboarding.cancelByState('st_cancel', 'access_denied');
+    expect(ok).toBe(true);
+    const row = pending.byId('pnd_cancel');
+    expect(row?.status).toBe('cancelled');
+    expect(row?.failureReason).toBe('access_denied');
+
+    // Second call is a no-op (state already consumed).
+    const second = await onboarding.cancelByState('st_cancel', 'access_denied');
+    expect(second).toBe(false);
+  });
+
+  it('cancelByState returns false for unknown state', async () => {
+    expect(await onboarding.cancelByState('st_unknown', 'x')).toBe(false);
   });
 
   it('attachApiKey writes credential + returns discovered tools', async () => {

@@ -48,7 +48,7 @@ describe('registerClient', () => {
     expect(r.clientId).toBe('cli_x');
     expect(r.clientSecret).toBe('sec_x');
     const sentBody = JSON.parse(
-      (fetchStub.mock.calls[0][1] as RequestInit).body as string,
+      ((fetchStub.mock.calls as unknown as Array<[unknown, RequestInit]>)[0]![1]).body as string,
     );
     expect(sentBody).toMatchObject({
       redirect_uris: ['https://ui/api/mcp/oauth/callback'],
@@ -165,7 +165,7 @@ describe('exchangeCode', () => {
     expect(r.refreshToken).toBe('rfr');
     expect(r.scopes).toEqual(['read', 'write']);
     expect(r.expiresAt!).toBeGreaterThanOrEqual(before + 3600 * 1000 - 50);
-    const init = fetchStub.mock.calls[0][1] as RequestInit;
+    const init = (fetchStub.mock.calls as unknown as Array<[unknown, RequestInit]>)[0]![1];
     expect((init.headers as Record<string, string>)['Content-Type']).toBe(
       'application/x-www-form-urlencoded',
     );
@@ -197,7 +197,7 @@ describe('exchangeCode', () => {
       codeVerifier: 'v',
     });
     const parsed = new URLSearchParams(
-      (fetchStub.mock.calls[0][1] as RequestInit).body as URLSearchParams,
+      ((fetchStub.mock.calls as unknown as Array<[unknown, RequestInit]>)[0]![1]).body as URLSearchParams,
     );
     expect(parsed.get('client_secret')).toBeNull();
   });
@@ -236,7 +236,7 @@ describe('refreshToken', () => {
     });
     expect(r.accessToken).toBe('new');
     const parsed = new URLSearchParams(
-      (fetchStub.mock.calls[0][1] as RequestInit).body as URLSearchParams,
+      ((fetchStub.mock.calls as unknown as Array<[unknown, RequestInit]>)[0]![1]).body as URLSearchParams,
     );
     expect(parsed.get('grant_type')).toBe('refresh_token');
     expect(parsed.get('refresh_token')).toBe('rfr');

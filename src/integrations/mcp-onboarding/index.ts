@@ -10,12 +10,18 @@
  * store / write helpers.
  */
 
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { CredentialStore } from '../../agent/credentials/index.js';
+import {
+  buildAuthorizationUrl,
+  exchangeCode,
+  generatePkce,
+  registerClient,
+} from './oauth-client.js';
 import { probe } from './probe.js';
 import { deriveServerId } from './server-id.js';
 import type { PendingConnection, PendingStore } from './pending-store.js';
-import type { Requester } from './types.js';
+import type { DiscoveredOAuth, Requester } from './types.js';
 
 export interface ExternalMcpEntryForWrite {
   type: 'http' | 'sse' | 'stdio';
@@ -52,6 +58,14 @@ export interface OnboardingDeps {
    * wins, no audit). Wired in `ui/lib/mcp-onboarding-instance.ts`.
    */
   listTakenServerIds: (agentId: string) => Promise<Set<string>>;
+  /**
+   * Optional fallback `client_id` for OAuth flows where the discovered
+   * authorization server does NOT advertise a DCR (RFC 7591) registration
+   * endpoint. If neither DCR is available nor a static client id is
+   * configured, `startConnection` will reject with
+   * `dcr_required_but_not_supported`.
+   */
+  staticClientId?: string;
   now?: () => number;
   randomToken?: () => string;
 }
@@ -118,6 +132,42 @@ export function createOnboarding(deps: OnboardingDeps) {
       = opts.requester.kind === 'admin'
         ? `admin:${opts.requester.userId ?? 'unknown'}`
         : `agent:${opts.requester.agentSessionKey ?? opts.requester.agentId}`;
+
+    // OAuth branch: register the client (DCR) and generate PKCE before we
+    // insert the pending row so all the secrets we'll need at callback time
+    // are captured atomically.
+    let clientId: string | null = null;
+    let clientSecret: string | null = null;
+    let codeVerifier: string | null = null;
+    if (probed.authMode === 'oauth') {
+      if (probed.oauth.registrationEndpoint) {
+        try {
+          const reg = await registerClient({
+            registrationEndpoint: probed.oauth.registrationEndpoint,
+            redirectUri: `${deps.uiBaseUrl}/api/mcp/oauth/callback`,
+            clientName: 'AnthroClaw',
+            scopes: probed.oauth.scopesSupported,
+          });
+          clientId = reg.clientId;
+          clientSecret = reg.clientSecret ?? null;
+        } catch (err) {
+          return {
+            status: 'rejected',
+            reason: (err as Error).message,
+          };
+        }
+      } else if (deps.staticClientId) {
+        clientId = deps.staticClientId;
+      } else {
+        return {
+          status: 'rejected',
+          reason: 'dcr_required_but_not_supported',
+        };
+      }
+      const pkce = generatePkce();
+      codeVerifier = pkce.verifier;
+    }
+
     const row: PendingConnection = {
       id: pendingId,
       state,
@@ -125,9 +175,9 @@ export function createOnboarding(deps: OnboardingDeps) {
       agentSessionKey: opts.requester.agentSessionKey ?? null,
       mcpUrl: opts.url,
       authMode: probed.authMode === 'oauth' ? 'oauth' : 'apikey',
-      codeVerifier: null,
-      clientId: null,
-      clientSecret: null,
+      codeVerifier,
+      clientId,
+      clientSecret,
       oauthMetadata:
         probed.authMode === 'oauth' ? JSON.stringify(probed.oauth) : null,
       toolsMetadata: null,
@@ -148,13 +198,181 @@ export function createOnboarding(deps: OnboardingDeps) {
       };
     }
 
-    // oauth — Phase 4 fills in the actual dance behind /api/mcp/oauth/start.
+    // OAuth: return the wizard-facing one-shot URL. The route at that path
+    // (Phase 4 Task 20) calls back into `getAuthUrlForPending` which
+    // rebuilds the provider authorization URL from the stored row.
     return {
       status: 'authorize',
       pendingId,
       authUrl: `${deps.uiBaseUrl}/api/mcp/oauth/start/${pendingId}`,
       serverName: probed.server?.name ?? serverId,
     };
+  }
+
+  /**
+   * Rebuild the provider authorization URL for a pending OAuth row. Returns
+   * null if the row doesn't exist, isn't in `pending` status, or has
+   * expired. Called by the `/api/mcp/oauth/start/[pendingId]` route to
+   * decide whether to redirect the user.
+   *
+   * The PKCE challenge is re-derived from the stored verifier (same
+   * deterministic SHA-256 base64url that `generatePkce` performs) so the
+   * row only needs to carry the verifier.
+   */
+  async function getAuthUrlForPending(pendingId: string): Promise<string | null> {
+    const row = deps.pending.byId(pendingId);
+    if (!row) return null;
+    if (row.status !== 'pending') return null;
+    if (now() > row.expiresAt) return null;
+    if (!row.oauthMetadata || !row.clientId || !row.codeVerifier) return null;
+    let meta: DiscoveredOAuth;
+    try {
+      meta = JSON.parse(row.oauthMetadata) as DiscoveredOAuth;
+    } catch {
+      return null;
+    }
+    const challenge = createHash('sha256')
+      .update(row.codeVerifier)
+      .digest('base64url');
+    return buildAuthorizationUrl({
+      authorizationEndpoint: meta.authorizationEndpoint,
+      clientId: row.clientId,
+      redirectUri: `${deps.uiBaseUrl}/api/mcp/oauth/callback`,
+      state: row.state,
+      codeChallenge: challenge,
+      scopes: meta.scopesSupported,
+    });
+  }
+
+  /**
+   * Cancel a pending row by `state`. Used by the OAuth callback when the
+   * provider returns `?error=...` (user denied consent). Atomic transition
+   * from `pending` → `exchanging` (via `consumeByState`), then immediately
+   * to `cancelled` so a replay can't race.
+   *
+   * Returns true if the row was consumed and cancelled, false if state was
+   * unknown or already consumed.
+   */
+  async function cancelByState(
+    state: string,
+    reason?: string,
+  ): Promise<boolean> {
+    const row = deps.pending.consumeByState(state);
+    if (!row) return false;
+    deps.pending.markCancelled(row.id, reason);
+    return true;
+  }
+
+  type CompleteOAuthResult =
+    | { status: 'gone' }
+    | { status: 'failed'; reason: string }
+    | {
+        status: 'completed';
+        pendingId: string;
+        serverId: string;
+        tools: Array<{ name: string; description?: string }>;
+        row: PendingConnection;
+      };
+
+  /**
+   * Complete the OAuth dance: atomically claim the row by `state`, exchange
+   * the authorization code for tokens, store the credential, fetch the
+   * `tools/list` for the wizard, and mark the row completed.
+   *
+   * Returns `gone` if state was unknown / already consumed (replay), `failed`
+   * with a reason on any error after consume, or `completed` with the
+   * tools list and the row so the callback route can decide where to
+   * redirect (admin → wizard step 3; agent → done page).
+   */
+  async function completeOAuth(args: {
+    state: string;
+    code: string;
+  }): Promise<CompleteOAuthResult> {
+    const row = deps.pending.consumeByState(args.state);
+    if (!row) return { status: 'gone' };
+    if (now() > row.expiresAt) {
+      deps.pending.markFailed(row.id, 'expired');
+      return { status: 'gone' };
+    }
+    try {
+      if (!row.oauthMetadata) throw new Error('missing_oauth_metadata');
+      if (!row.clientId) throw new Error('missing_client_id');
+      if (!row.codeVerifier) throw new Error('missing_code_verifier');
+
+      const meta = JSON.parse(row.oauthMetadata) as DiscoveredOAuth;
+      // Defensive URL validation — the discovered metadata came from an
+      // untrusted MCP server at probe time. Reject if endpoints aren't
+      // parseable.
+      try {
+        // eslint-disable-next-line no-new
+        new URL(meta.tokenEndpoint);
+        // eslint-disable-next-line no-new
+        new URL(meta.authorizationEndpoint);
+        if (meta.issuer) {
+          // eslint-disable-next-line no-new
+          new URL(meta.issuer);
+        }
+      } catch {
+        throw new Error('invalid_oauth_metadata');
+      }
+
+      const tokens = await exchangeCode({
+        tokenEndpoint: meta.tokenEndpoint,
+        clientId: row.clientId,
+        clientSecret: row.clientSecret ?? undefined,
+        redirectUri: `${deps.uiBaseUrl}/api/mcp/oauth/callback`,
+        code: args.code,
+        codeVerifier: row.codeVerifier,
+      });
+
+      const takenIds = await deps.listTakenServerIds(row.agentId);
+      const serverId = deriveServerId(row.mcpUrl, takenIds);
+
+      await deps.credentials.set(
+        { agentId: row.agentId, service: `mcp:${serverId}` },
+        {
+          kind: 'mcp_oauth',
+          service: `mcp:${serverId}`,
+          account: serverId,
+          scopes: tokens.scopes ?? [],
+          mcpUrl: row.mcpUrl,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt,
+          tokenEndpoint: meta.tokenEndpoint,
+          authorizationServer: meta.issuer,
+          clientId: row.clientId,
+          clientSecret: row.clientSecret ?? undefined,
+          createdAt: now(),
+        },
+      );
+
+      const toolsRes = await fetch(row.mcpUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tokens.accessToken}`,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/list',
+          params: {},
+        }),
+      });
+      const toolsBody = (await toolsRes.json()) as {
+        result?: { tools?: Array<{ name: string; description?: string }> };
+      };
+      const tools = toolsBody.result?.tools ?? [];
+
+      deps.pending.markCompleted(row.id, JSON.stringify({ tools, serverId }));
+      const updated = deps.pending.byId(row.id) ?? row;
+      return { status: 'completed', pendingId: row.id, serverId, tools, row: updated };
+    } catch (err) {
+      const reason = (err as Error).message ?? 'unknown_error';
+      deps.pending.markFailed(row.id, reason);
+      return { status: 'failed', reason };
+    }
   }
 
   async function attachApiKey(opts: {
@@ -290,6 +508,9 @@ export function createOnboarding(deps: OnboardingDeps) {
     startConnection,
     attachApiKey,
     finalize,
+    completeOAuth,
+    getAuthUrlForPending,
+    cancelByState,
     _debug,
   };
 }
