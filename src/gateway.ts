@@ -1458,6 +1458,18 @@ export class Gateway {
       enabled: true,
     });
 
+    // Built-in MCP onboarding cleanup: sweep expired pending rows every
+    // 5 minutes. The handler emits `timeout` events for chat-initiated
+    // rows so the Gateway dispatches a `[system] mcp_connect_timeout`
+    // synthetic message into the originating agent session.
+    this.scheduler.addJob({
+      id: '__mcp_pending_cleanup__',
+      agentId: '__system__',
+      schedule: '*/5 * * * *',
+      prompt: '',
+      enabled: true,
+    });
+
     if (this.scheduler.listJobs().length > 0) {
       logger.info({ jobs: this.scheduler.listJobs() }, 'Cron jobs registered');
     }
@@ -5282,6 +5294,10 @@ export class Gateway {
       await this.triggerDreaming();
       return;
     }
+    if (job.id === '__mcp_pending_cleanup__') {
+      this.runMcpPendingCleanup();
+      return;
+    }
 
     const agent = this.agents.get(job.agentId);
     if (!agent) {
@@ -5400,6 +5416,17 @@ export class Gateway {
       enabled: true,
     });
 
+    // Re-register the MCP onboarding cleanup job on each reload so it
+    // survives `manage_cron` reshuffles (the scheduler is rebuilt from
+    // scratch in reloadDynamicCron).
+    this.scheduler.addJob({
+      id: '__mcp_pending_cleanup__',
+      agentId: '__system__',
+      schedule: '*/5 * * * *',
+      prompt: '',
+      enabled: true,
+    });
+
     logger.info({ dynamicJobs: this.dynamicCronStore.getAll().length }, 'Dynamic cron reloaded');
   }
 
@@ -5434,6 +5461,41 @@ export class Gateway {
   }
 
   // ─── Memory dreaming ───────────────────────────────────────────────
+
+  /**
+   * Sweep expired MCP onboarding pending rows and emit `timeout` events
+   * for chat-initiated ones. Wired to a 5-minute system cron so a
+   * forgotten pending row produces a `[system] mcp_connect_timeout`
+   * synthetic message into the originating agent session within 5 min
+   * of its 10-min TTL elapsing.
+   *
+   * Safe to call when the onboarding facade has never been touched: we
+   * only build it if there's plausibly something to sweep (the pending
+   * store file exists on disk).
+   */
+  private runMcpPendingCleanup(): void {
+    // If the facade has never been built, the pending store file may not
+    // exist yet — there's nothing to sweep. Avoid eagerly constructing
+    // it on every 5-minute tick.
+    if (!this.mcpOnboarding) {
+      if (!this.dataDir) return;
+      const path = joinPath(this.dataDir, 'mcp.sqlite');
+      if (!existsSync(path)) return;
+    }
+    const facade = this.getMcpOnboarding();
+    if (!facade || !this.mcpPendingStore) return;
+    try {
+      const n = runMcpCleanup({
+        pending: this.mcpPendingStore,
+        events: facade.events,
+      });
+      if (n > 0) {
+        logger.info({ swept: n }, 'mcp pending cleanup: swept expired rows');
+      }
+    } catch (err) {
+      logger.warn({ err }, 'mcp pending cleanup failed');
+    }
+  }
 
   /**
    * Run memory dreaming (auto-consolidation) for all agents.
