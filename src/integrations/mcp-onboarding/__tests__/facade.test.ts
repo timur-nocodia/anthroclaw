@@ -94,6 +94,19 @@ describe('onboarding facade — apikey branch', () => {
     expect(probeStub).not.toHaveBeenCalled();
   });
 
+  it('startConnection rejects authMode=none with helpful reason', async () => {
+    probeStub.mockResolvedValueOnce({
+      authMode: 'none',
+      server: { name: 'open' },
+    });
+    const res = await onboarding.startConnection({
+      url: 'https://mcp.open/y',
+      requester: { kind: 'admin', userId: 'u1', agentId: 'a1' },
+    });
+    expect(res.status).toBe('rejected');
+    expect(res.reason).toBe('no_auth_servers_not_yet_supported');
+  });
+
   it('rejects with reason when probe returns manual', async () => {
     probeStub.mockResolvedValueOnce({
       authMode: 'manual',

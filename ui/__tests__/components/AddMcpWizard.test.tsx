@@ -141,6 +141,44 @@ describe('AddMcpWizard — apikey path', () => {
     await screen.findByText(/uses OAuth/i);
   });
 
+  it('shows "not yet supported" error and stays on URL step when probe returns none', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo) => {
+        const url = String(input);
+        if (url.endsWith('/api/mcp/probe')) {
+          return new Response(
+            JSON.stringify({ authMode: 'none', server: { name: 'open' } }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith('/api/mcp/connect/start')) {
+          return new Response(
+            JSON.stringify({
+              status: 'rejected',
+              reason: 'no_auth_servers_not_yet_supported',
+            }),
+            { status: 200 },
+          );
+        }
+        throw new Error('unexpected ' + url);
+      }),
+    );
+    render(
+      <AddMcpWizard agentId="a1" onSaved={vi.fn()} onClose={vi.fn()} />,
+    );
+    fireEvent.change(screen.getByPlaceholderText(/mcp\.x\.io/), {
+      target: { value: 'https://open.example/mcp' },
+    });
+    fireEvent.click(screen.getByText(/Continue/));
+    await screen.findByRole('alert');
+    expect(screen.getByRole('alert').textContent).toMatch(
+      /not_yet_supported|not yet supported/i,
+    );
+    // Still on URL step.
+    expect(screen.getByPlaceholderText(/mcp\.x\.io/)).toBeInTheDocument();
+  });
+
   it('Cancel button calls onClose without saving', () => {
     const onClose = vi.fn();
     const onSaved = vi.fn();

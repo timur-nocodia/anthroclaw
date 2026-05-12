@@ -17,7 +17,7 @@ export interface AddMcpWizardProps {
 }
 
 type Step = 'url' | 'auth' | 'tools';
-type AuthMode = 'oauth' | 'apikey' | 'none';
+type AuthMode = 'oauth' | 'apikey';
 
 export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
   const [step, setStep] = useState<Step>('url');
@@ -57,7 +57,7 @@ export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
         }
         setPendingId(start.pendingId ?? null);
         setAuthMode(probe.authMode);
-        setStep(probe.authMode === 'none' ? 'tools' : 'auth');
+        setStep('auth');
         return;
       }
 

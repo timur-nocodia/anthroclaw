@@ -92,6 +92,12 @@ export function createOnboarding(deps: OnboardingDeps) {
     if (probed.authMode === 'manual') {
       return { status: 'rejected', reason: probed.reason };
     }
+    if (probed.authMode === 'none') {
+      return {
+        status: 'rejected',
+        reason: 'no_auth_servers_not_yet_supported',
+      };
+    }
 
     // Phase 3 doesn't yet maintain a cross-agent.yml "taken" set; Task 14's
     // writeAgentYmlEntry rejects collisions at write time. A future pass
@@ -125,7 +131,7 @@ export function createOnboarding(deps: OnboardingDeps) {
     };
     deps.pending.insert(row);
 
-    if (probed.authMode === 'apikey' || probed.authMode === 'none') {
+    if (probed.authMode === 'apikey') {
       return {
         status: 'awaiting_apikey',
         pendingId,
