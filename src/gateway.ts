@@ -107,7 +107,7 @@ import type { ScheduledJob } from './cron/scheduler.js';
 import type { ChannelAdapter, InboundMessage } from './channels/types.js';
 import { resolveDisplayConfig } from './channels/display-config.js';
 import { formatChannelOperatorContext, resolveChannelContext, resolveReplyToId } from './channels/context.js';
-import type { GlobalConfig } from './config/schema.js';
+import type { AgentYml, GlobalConfig } from './config/schema.js';
 import { HookEmitter } from './hooks/emitter.js';
 import { IterationBudget } from './session/budget.js';
 import { SessionCompressor } from './session/compressor.js';
@@ -149,7 +149,11 @@ import {
   asAgentMcpServerSpec,
   buildExternalMcpToolNamesByServer,
   hasExternalMcpServers,
+  resolveExternalMcpHeaders,
 } from './sdk/external-mcp.js';
+import type { CredentialStore } from './agent/credentials/index.js';
+import { EncryptedFilesystemCredentialStore } from './agent/credentials/encrypted-fs-store.js';
+import { CredentialAuditLog } from './agent/credentials/audit.js';
 import { SdkControlRegistry } from './sdk/control-registry.js';
 import { FileSessionStore } from './sdk/session-store.js';
 import { SdkSessionService, type SdkSessionMessageView } from './sdk/sessions.js';
@@ -810,6 +814,16 @@ export class Gateway {
    */
   private agentConfigWriter: AgentConfigWriter | null = null;
   private configAuditLog: ConfigAuditLog | null = null;
+  /**
+   * Lazily-constructed credential store used to materialize `credential_ref`
+   * entries in agents' `external_mcp_servers` blocks at query time. Built on
+   * first call to {@link getCredentialStore} so test environments that don't
+   * exercise external MCP / OAuth never have to set `ANTHROCLAW_MASTER_KEY`.
+   *
+   * Public so the UI singleton (`ui/lib/credential-store-instance.ts`) can
+   * share the same instance when running in-process.
+   */
+  private credentialStore: CredentialStore | null = null;
 
   /** Returns the unified config writer (null until start() runs). */
   getAgentConfigWriter(): AgentConfigWriter | null {
@@ -819,6 +833,36 @@ export class Gateway {
   /** Returns the per-agent JSONL audit log of config writes (null until start() runs). */
   getConfigAuditLog(): ConfigAuditLog | null {
     return this.configAuditLog;
+  }
+
+  /**
+   * Lazily construct and return the credential store. Throws if
+   * `ANTHROCLAW_MASTER_KEY` is not configured — callers that need credential
+   * material (external MCP servers, OAuth flow) must run with the env var
+   * set. Callers that only check `hasExternalMcpServers` should NOT call this.
+   *
+   * The store is process-wide; the per-agent isolation boundary is the
+   * `agentId` in {@link CredentialRef}, enforced by {@link EncryptedFilesystemCredentialStore}.
+   */
+  getCredentialStore(): CredentialStore {
+    if (this.credentialStore) return this.credentialStore;
+    // Construction calls loadMasterKey() and throws if ANTHROCLAW_MASTER_KEY
+    // is missing — desired behaviour: callers that need credential material
+    // (external MCP servers with credential_ref, OAuth flow) must run with
+    // the env var set. Tests that don't exercise those features avoid this
+    // path entirely by never calling getCredentialStore().
+    this.credentialStore = new EncryptedFilesystemCredentialStore(
+      new CredentialAuditLog(),
+    );
+    return this.credentialStore;
+  }
+
+  /**
+   * Inject a credential store (test seam). Once set this overrides the
+   * lazily-constructed default for the lifetime of the Gateway instance.
+   */
+  setCredentialStore(store: CredentialStore): void {
+    this.credentialStore = store;
   }
 
   /**
@@ -1430,7 +1474,7 @@ export class Gateway {
     this.pluginRegistry.addPlugin(d.manifest.name, { manifest: d.manifest, instance });
   }
 
-  private buildUserQueryOptions(
+  private async buildUserQueryOptions(
     agent: Agent,
     resume?: string,
     onElicitation?: (request: ElicitationRequest) => void,
@@ -1438,12 +1482,35 @@ export class Gateway {
     msg?: InboundMessage,
     channel?: ChannelAdapter,
   ) {
+    // Materialize any `credential_ref` entries in the agent's
+    // external_mcp_servers block before handing the spec to the SDK. Skipped
+    // entirely when no external MCP servers are configured so tests / agents
+    // that don't use credentials never construct the credential store (which
+    // would require `ANTHROCLAW_MASTER_KEY`).
+    let externalMcpServersOverride
+      = agent.config.external_mcp_servers as AgentYml['external_mcp_servers'];
+    if (hasExternalMcpServers(agent.config.external_mcp_servers)) {
+      try {
+        externalMcpServersOverride = await resolveExternalMcpHeaders(
+          agent.config.external_mcp_servers,
+          this.getCredentialStore(),
+          { agentId: agent.id },
+        );
+      } catch {
+        // ANTHROCLAW_MASTER_KEY missing or store fails — fall back to the raw
+        // spec. Entries with credential_ref will probe-fail at SDK init; the
+        // operator surfaces that via existing MCP preflight notifications.
+        externalMcpServersOverride = agent.config.external_mcp_servers;
+      }
+    }
+
     const options = buildSdkOptions({
       agent,
       subagents: this.buildSubagents(agent),
       resume,
       modelOverride: sessionKey ? agent.getSessionModel(sessionKey) : undefined,
       hookEmitter: this.hookEmitters.get(agent.id),
+      externalMcpServersOverride,
       fileOwnership: {
         registry: this.fileOwnershipRegistry,
         resolveContext: (input) => {
@@ -1528,13 +1595,14 @@ export class Gateway {
     return options;
   }
 
-  private prewarmAgent(agent: Agent): Promise<void> {
-    if (!this.sdkReady) return Promise.resolve();
+  private async prewarmAgent(agent: Agent): Promise<void> {
+    if (!this.sdkReady) return;
     if (agent.config.mcp_tools?.includes('manage_cron')) {
       this.warmQueries.discard(agent.id);
-      return Promise.resolve();
+      return;
     }
-    return this.warmQueries.prewarm(agent.id, this.buildUserQueryOptions(agent));
+    const options = await this.buildUserQueryOptions(agent);
+    return this.warmQueries.prewarm(agent.id, options);
   }
 
   private startQuery(
@@ -2638,7 +2706,7 @@ export class Gateway {
     };
 
     try {
-      const options = this.buildUserQueryOptions(
+      const options = await this.buildUserQueryOptions(
         agent,
         existingSessionId,
         callbacks.onElicitation,
@@ -4410,7 +4478,7 @@ export class Gateway {
     const abort = new AbortController();
 
     try {
-      const options = this.buildUserQueryOptions(
+      const options = await this.buildUserQueryOptions(
         agent,
         existingSessionId,
         undefined,

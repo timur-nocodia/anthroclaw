@@ -11,6 +11,7 @@ import {
   type FileOwnershipPermissionHooks,
 } from './permissions.js';
 import { buildExternalMcpServerSpec } from './external-mcp.js';
+import type { AgentYml } from '../config/schema.js';
 import { applyCutoffOptions } from './cutoff.js';
 import { normalizeSandboxSettings } from './sandbox.js';
 import { ApprovalBroker } from '../security/approval-broker.js';
@@ -51,6 +52,15 @@ export interface BuildSdkOptionsParams {
   approvalBroker?: ApprovalBroker;
   channel?: ChannelAdapter;
   sessionContext?: { channel?: string; peerId: string; senderId?: string; accountId?: string; threadId?: string };
+  /**
+   * Pre-resolved `external_mcp_servers` block (typically the agent's spec
+   * after running it through `resolveExternalMcpHeaders`). When supplied,
+   * overrides `agent.config.external_mcp_servers` for the purpose of wiring
+   * `options.mcpServers`. Other consumers of the agent's config (preflight,
+   * etc.) continue to read the raw spec, which is what we want — only the
+   * wire-up needs materialized auth headers.
+   */
+  externalMcpServersOverride?: AgentYml['external_mcp_servers'];
 }
 
 export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
@@ -83,9 +93,13 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
   };
 
   if (includeMcpServer) {
+    const externalSpec
+      = params.externalMcpServersOverride !== undefined
+        ? params.externalMcpServersOverride
+        : agent.config.external_mcp_servers;
     options.mcpServers = {
       [agent.mcpServer.name]: agent.mcpServer,
-      ...buildExternalMcpServerSpec(agent.config.external_mcp_servers),
+      ...buildExternalMcpServerSpec(externalSpec),
     };
   }
 
