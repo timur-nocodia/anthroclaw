@@ -108,6 +108,44 @@ describe('executeBuildPlan', () => {
     });
   });
 
+  it('records post-run path policy violations from runtime changed files', async () => {
+    const { plan } = seedPlan();
+    const adapter = {
+      runBuilder: vi.fn().mockResolvedValue({
+        status: 'completed',
+        resultText: 'Changed an agent prompt.',
+        changedFiles: ['agents/example/AGENTS.md'],
+        runtimeRefs: [{ runtime: 'native-agent-sdk', sessionId: 'session_builder_1' }],
+      }),
+    };
+
+    const receipt = await executeBuildPlan({
+      projectRoot: root,
+      roomId: 'anthroclaw-core',
+      planId: plan.id,
+      adapter,
+      now: '2026-05-12T00:10:00.000Z',
+    });
+
+    expect(receipt).toMatchObject({
+      type: 'coder_receipt',
+      payload: {
+        postRunPolicyResult: {
+          allowed: false,
+          checkedPaths: ['agents/example/AGENTS.md'],
+          blockedPaths: ['agents/example/AGENTS.md'],
+          violations: [
+            {
+              path: 'agents/example/AGENTS.md',
+              reason: 'blocked_path',
+              matchedPattern: 'agents/**',
+            },
+          ],
+        },
+      },
+    });
+  });
+
   it('does not rerun adapter when coder receipt already exists for the plan', async () => {
     const { plan } = seedPlan();
     const adapter = {
@@ -143,7 +181,7 @@ describe('executeBuildPlan', () => {
         decision: 'approved_for_operator',
         lockedScope: {
           allowedPaths: ['docs/**'],
-          blockedPaths: ['.env'],
+          blockedPaths: ['.env', 'agents/**'],
         },
       }),
     );

@@ -16,6 +16,7 @@ export type NativeBuilderRunResult =
   | {
       status: 'completed';
       resultText: string;
+      changedFiles?: string[];
       runtimeRefs: BuildroomRuntimeRef[];
     }
   | {
@@ -130,4 +131,3 @@ function runtimeErrorMessage(event: Record<string, unknown>): string {
     : [];
   return errors.length ? `${subtype}: ${errors.join('; ')}` : subtype;
 }
-

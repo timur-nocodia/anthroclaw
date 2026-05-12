@@ -1,6 +1,7 @@
 import { FileArtifactStore } from '../artifacts/store.js';
 import type { BuildroomArtifact } from '../artifacts/model.js';
 import { FileBuildroomLock } from '../locks/lock.js';
+import { evaluatePathPolicy } from '../policy/paths.js';
 import type { NativeAgentRuntimeAdapter, NativeBuilderRunResult } from '../runtime/native-agent-adapter.js';
 
 export interface ExecuteBuildPlanOptions {
@@ -78,6 +79,14 @@ function buildCoderReceipt(opts: {
   now: string;
 }): BuildroomArtifact {
   const suffix = artifactSuffix(opts.plan.id, 'plan');
+  const changedFiles = stringArray(opts.result.changedFiles);
+  const scope = scopePolicy(opts.plan);
+  const postRunPolicyResult = evaluatePathPolicy({
+    paths: changedFiles,
+    allowedPaths: scope.allowedPaths,
+    blockedPaths: scope.blockedPaths,
+  });
+
   return {
     id: `build_${suffix}`,
     type: 'coder_receipt',
@@ -104,12 +113,28 @@ function buildCoderReceipt(opts: {
         violations: [],
       },
       postRunPolicyResult: {
-        allowed: true,
-        changedFiles: [],
-        violations: [],
+        ...postRunPolicyResult,
+        changedFiles,
       },
     },
   };
+}
+
+function scopePolicy(plan: BuildroomArtifact): { allowedPaths: string[]; blockedPaths: string[] } {
+  const scope = plan.payload.scope;
+  const record = scope && typeof scope === 'object' && !Array.isArray(scope)
+    ? scope as Record<string, unknown>
+    : {};
+  return {
+    allowedPaths: stringArray(record.allowedPaths),
+    blockedPaths: stringArray(record.blockedPaths),
+  };
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function buildErrorReceipt(opts: {
