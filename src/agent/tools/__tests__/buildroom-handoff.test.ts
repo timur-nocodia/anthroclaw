@@ -37,6 +37,33 @@ describe('buildroom handoff tool', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it('fails closed when Buildroom storage has not been initialized', async () => {
+    const uninitializedRoot = mkdtempSync(join(tmpdir(), 'anthroclaw-buildroom-handoff-uninit-'));
+    const tool = createBuildroomHandoffTool({
+      projectRoot: uninitializedRoot,
+      roomId: 'anthroclaw-core',
+      sourceAgentId: 'code-helper',
+      sourceSessionId: 'session_xxx',
+      now: () => '2026-05-12T00:01:00.000Z',
+    }) as unknown as {
+      handler(args: Record<string, unknown>): Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
+    };
+
+    try {
+      const result = await tool.handler({
+        signal_type: 'friction',
+        summary: 'Notification routing needs clearer operator view.',
+        evidence_summary_id: 'session-summary-20260512-000000-code-helper',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Buildroom handoff failed');
+      expect(result.content[0].text).toContain('buildroom.yml');
+    } finally {
+      rmSync(uninitializedRoot, { recursive: true, force: true });
+    }
+  });
+
   it('creates a structured Buildroom handoff signal without authority', async () => {
     const tool = createBuildroomHandoffTool({
       projectRoot: root,

@@ -23,6 +23,31 @@ describe('buildroom session summary tool', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it('fails closed when Buildroom storage has not been initialized', async () => {
+    const uninitializedRoot = mkdtempSync(join(tmpdir(), 'anthroclaw-buildroom-summary-uninit-'));
+    const tool = createBuildroomSessionSummaryTool({
+      projectRoot: uninitializedRoot,
+      roomId: 'anthroclaw-core',
+      sourceAgentId: 'code-helper',
+      sourceSessionId: 'session_xxx',
+      now: () => '2026-05-12T00:01:00.000Z',
+    }) as unknown as {
+      handler(args: Record<string, unknown>): Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
+    };
+
+    try {
+      const result = await tool.handler({
+        user_intent: 'Improve operator summary.',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Buildroom session summary failed');
+      expect(result.content[0].text).toContain('buildroom.yml');
+    } finally {
+      rmSync(uninitializedRoot, { recursive: true, force: true });
+    }
+  });
+
   it('creates a sanitized session summary with no approval authority', async () => {
     const tool = createBuildroomSessionSummaryTool({
       projectRoot: root,

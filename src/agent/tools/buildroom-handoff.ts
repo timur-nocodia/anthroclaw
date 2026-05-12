@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { FileArtifactStore } from '../../auto-buildroom/artifacts/store.js';
 import { createHandoffSignalArtifact } from '../../auto-buildroom/sessions/handoff-signal.js';
+import { loadBuildroomRoomConfig } from '../../auto-buildroom/storage/init.js';
 import type { ToolMeta } from '../../security/types.js';
 import type { ToolDefinition } from './types.js';
 
@@ -37,6 +38,7 @@ export function createBuildroomHandoffTool(opts: BuildroomHandoffToolOptions): T
             isError: true,
           };
         }
+        loadBuildroomRoomConfig(opts.projectRoot, opts.roomId);
         const artifact = createHandoffSignalArtifact({
           roomId: opts.roomId,
           sourceAgentId: opts.sourceAgentId,

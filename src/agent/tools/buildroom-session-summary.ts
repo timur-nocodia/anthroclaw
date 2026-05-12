@@ -5,6 +5,7 @@ import {
   createSessionSummaryArtifact,
   type SessionSummarySignal,
 } from '../../auto-buildroom/sessions/session-summary.js';
+import { loadBuildroomRoomConfig } from '../../auto-buildroom/storage/init.js';
 import type { ToolMeta } from '../../security/types.js';
 import type { ToolDefinition } from './types.js';
 
@@ -45,6 +46,7 @@ export function createBuildroomSessionSummaryTool(
             isError: true,
           };
         }
+        loadBuildroomRoomConfig(opts.projectRoot, opts.roomId);
 
         const now = opts.now?.() ?? new Date().toISOString();
         const candidateSignals = parseCandidateSignals(args.candidate_signals);
