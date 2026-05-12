@@ -30,6 +30,13 @@ export class ArtifactHashMismatchError extends Error {
   }
 }
 
+export class ArtifactSecretRejectedError extends Error {
+  constructor() {
+    super('Secret-like value rejected before artifact persistence');
+    this.name = 'ArtifactSecretRejectedError';
+  }
+}
+
 const ARTIFACT_DIRS: Record<BuildroomArtifactType, string> = {
   research_packet: 'buildroom/research',
   signal: 'buildroom/signals',
@@ -54,6 +61,8 @@ export class FileArtifactStore {
   }
 
   writeArtifact(artifact: BuildroomArtifact): BuildroomArtifact {
+    assertNoObviousSecrets(artifact);
+
     for (const parentId of artifact.parentIds) {
       if (!this.hasArtifact(parentId)) {
         throw new MissingParentArtifactError(parentId);
@@ -119,6 +128,31 @@ function readAndVerifyArtifact(path: string): BuildroomArtifact {
     throw new ArtifactHashMismatchError(artifact.id);
   }
   return artifact;
+}
+
+const SECRET_PATTERNS = [
+  /OPENAI_API_KEY\s*=\s*sk-[A-Za-z0-9_-]{8,}/,
+  /ANTHROPIC_API_KEY\s*=\s*sk-ant-[A-Za-z0-9_-]{8,}/,
+  /\b\d{8,12}:[A-Za-z0-9_-]{20,}\b/,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  /\brefresh_token\b\s*[:=]\s*["']?[A-Za-z0-9._-]{16,}/i,
+];
+
+function assertNoObviousSecrets(value: unknown): void {
+  for (const text of collectStrings(value)) {
+    if (SECRET_PATTERNS.some((pattern) => pattern.test(text))) {
+      throw new ArtifactSecretRejectedError();
+    }
+  }
+}
+
+function collectStrings(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => collectStrings(item));
+  if (value && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).flatMap((item) => collectStrings(item));
+  }
+  return [];
 }
 
 function findJsonFile(root: string, filename: string): string | null {

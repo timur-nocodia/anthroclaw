@@ -84,6 +84,16 @@ describe('FileArtifactStore', () => {
     expect(() => store.listArtifacts('research_packet')).toThrow(/Artifact hash mismatch/);
   });
 
+  it('rejects artifacts that would persist obvious secrets', () => {
+    const artifact = baseArtifact('research_20260512_docs', 'research_packet');
+    artifact.payload = {
+      excerpt: 'OPENAI_API_KEY=sk-test-secret-value',
+    };
+
+    expect(() => store.writeArtifact(artifact)).toThrow(/Secret-like value rejected/);
+    expect(store.hasArtifact(artifact.id)).toBe(false);
+  });
+
   function baseArtifact(id: string, type: BuildroomArtifactType): BuildroomArtifact {
     return {
       id,
