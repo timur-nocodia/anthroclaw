@@ -1069,7 +1069,6 @@ export class Gateway {
           source,
           pendingId: evt.pendingId,
           serverId: evt.serverId,
-          queueMode: 'interrupt',
         },
       });
     } catch (err) {

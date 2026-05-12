@@ -14,7 +14,6 @@
  *     uses, and verifies the four expected fields land:
  *       - `[system] mcp_connected: <serverId>` prefix
  *       - `meta.source === 'mcp_oauth_callback'`
- *       - `meta.queueMode === 'interrupt'`
  *       - dispatched to the agent's session
  */
 
@@ -66,7 +65,6 @@ function subscribe(onboarding: ReturnType<typeof createOnboarding>): void {
         source: 'mcp_oauth_callback',
         pendingId: evt.pendingId,
         serverId: evt.serverId,
-        queueMode: 'interrupt',
       },
     });
   });
@@ -183,7 +181,7 @@ describe('mcp onboarding → gateway synthetic dispatch wiring', () => {
     expect(call.text).toContain('tools: demo_tool');
     expect(call.text).toContain('awaiting: finalize');
     expect(call.meta?.source).toBe('mcp_oauth_callback');
-    expect(call.meta?.queueMode).toBe('interrupt');
+    expect(call.meta?.queueMode).toBeUndefined();
     expect(call.meta?.pendingId).toBe('pnd_chat');
   });
 
