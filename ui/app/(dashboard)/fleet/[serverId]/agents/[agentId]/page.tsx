@@ -285,21 +285,6 @@ interface ExternalMcpServerConfig {
   allowed_tools?: string[];
 }
 
-interface ExternalMcpPreflightServer {
-  serverName: string;
-  approvalStatus: "approved" | "review_required" | "blocked";
-  networkRisk: "low" | "medium" | "high";
-  filesystemRisk: "low" | "medium" | "high";
-  packageSource: string;
-  reasons: string[];
-}
-
-interface ExternalMcpPreflightState {
-  loading?: boolean;
-  error?: string;
-  server?: ExternalMcpPreflightServer;
-}
-
 const HOOK_EVENTS = [
   "on_message_received",
   "on_before_query",
@@ -1150,7 +1135,6 @@ function ConfigTab({
     },
   });
   const [rawYaml, setRawYaml] = useState(agent.raw ?? "");
-  const [externalMcpPreflight, setExternalMcpPreflight] = useState<Record<string, ExternalMcpPreflightState>>({});
   const [safetyValidationError, setSafetyValidationError] = useState<string | null>(null);
   const [safetyValidationWarnings, setSafetyValidationWarnings] = useState<string[]>([]);
   const [chatBaseline, setChatBaseline] = useState<string | null>(null);
@@ -1318,23 +1302,6 @@ function ConfigTab({
     });
   };
 
-  const addExternalMcpServer = () => {
-    const serverName = window.prompt("MCP server name");
-    const name = serverName?.trim();
-    if (!name) return;
-    update({
-      external_mcp_servers: {
-        ...cfg.external_mcp_servers,
-        [name]: {
-          type: "stdio",
-          command: "npx",
-          args: [],
-          allowed_tools: [],
-        },
-      },
-    });
-  };
-
   const enableMcpTools = (tools: string[]) => {
     const current = new Set(cfg.mcp_tools);
     for (const tool of tools) current.add(tool);
@@ -1353,57 +1320,6 @@ function ConfigTab({
     }
 
     update(patch);
-  };
-
-  const nextExternalMcpName = (base: string) => {
-    if (!cfg.external_mcp_servers[base]) return base;
-    for (let index = 2; index < 20; index += 1) {
-      const name = `${base}-${index}`;
-      if (!cfg.external_mcp_servers[name]) return name;
-    }
-    return `${base}-${Date.now()}`;
-  };
-
-  const addExternalMcpPreset = (preset: "calendar" | "gmail") => {
-    const name = nextExternalMcpName(preset);
-    const server = preset === "calendar"
-      ? {
-          type: "stdio" as const,
-          command: "npx",
-          args: ["google-calendar-mcp"],
-          env: {
-            GOOGLE_CLIENT_ID: "",
-            GOOGLE_CLIENT_SECRET: "",
-            GOOGLE_REFRESH_TOKEN: "",
-          },
-          allowed_tools: [
-            "calendar_daily_brief",
-            "calendar_availability",
-            "calendar_event_lookup",
-            "calendar_meeting_prep",
-          ],
-        }
-      : {
-          type: "stdio" as const,
-          command: "npx",
-          args: ["gmail-mcp"],
-          env: {
-            GOOGLE_CLIENT_ID: "",
-            GOOGLE_CLIENT_SECRET: "",
-            GOOGLE_REFRESH_TOKEN: "",
-          },
-          allowed_tools: [
-            "gmail_search",
-            "gmail_thread_summary",
-            "gmail_draft_reply",
-          ],
-        };
-    update({
-      external_mcp_servers: {
-        ...cfg.external_mcp_servers,
-        [name]: server,
-      },
-    });
   };
 
   const removeExternalMcpServer = (serverName: string) => {
@@ -1433,70 +1349,6 @@ function ConfigTab({
       return [[name, clean]] as Array<[string, ExternalMcpServerConfig]>;
     });
     return entries.length > 0 ? Object.fromEntries(entries) : undefined;
-  };
-
-  const buildExternalMcpSpecEntry = (server: ExternalMcpServerConfig): Record<string, unknown> | null => {
-    const type = server.type ?? "stdio";
-    if (type === "stdio") {
-      const command = server.command?.trim();
-      if (!command) return null;
-      return {
-        type: "stdio",
-        command,
-        ...(server.args?.length ? { args: server.args } : {}),
-        ...(server.env && Object.keys(server.env).length > 0 ? { env: server.env } : {}),
-      };
-    }
-    const url = server.url?.trim();
-    if (!url) return null;
-    return {
-      type,
-      url,
-      ...(server.headers && Object.keys(server.headers).length > 0 ? { headers: server.headers } : {}),
-    };
-  };
-
-  const preflightExternalMcpServer = async (serverName: string) => {
-    const server = cfg.external_mcp_servers[serverName];
-    const specEntry = buildExternalMcpSpecEntry(server);
-    if (!specEntry) {
-      setExternalMcpPreflight((state) => ({
-        ...state,
-        [serverName]: { error: "Set a command or URL before running preflight." },
-      }));
-      return;
-    }
-
-    setExternalMcpPreflight((state) => ({
-      ...state,
-      [serverName]: { loading: true },
-    }));
-    try {
-      const res = await fetch(`/api/fleet/${serverId}/integrations/mcp-preflight`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ownerAgentId: agentId,
-          source: "external",
-          spec: { [serverName]: specEntry },
-          toolNamesByServer: {
-            [serverName]: server.allowed_tools ?? [],
-          },
-        }),
-      });
-      if (!res.ok) throw new Error(`preflight ${res.status}`);
-      const data = await res.json();
-      const preflightServer = Array.isArray(data.servers) ? data.servers[0] as ExternalMcpPreflightServer | undefined : undefined;
-      setExternalMcpPreflight((state) => ({
-        ...state,
-        [serverName]: preflightServer ? { server: preflightServer } : { error: "No preflight result returned." },
-      }));
-    } catch (err) {
-      setExternalMcpPreflight((state) => ({
-        ...state,
-        [serverName]: { error: err instanceof Error ? err.message : "Preflight failed." },
-      }));
-    }
   };
 
   const buildSdkPayload = () => {
@@ -3283,54 +3135,6 @@ function ToggleField({
         style={{ accentColor: "var(--oc-accent)" }}
       />
     </label>
-  );
-}
-
-function ExternalMcpPreflightResult({ state }: { state: ExternalMcpPreflightState }) {
-  if (state.loading) {
-    return (
-      <div className="mt-3 rounded-[5px] border px-3 py-2 text-[11.5px]" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)", color: "var(--oc-text-muted)" }}>
-        Checking MCP command, env, tools, and transport risk...
-      </div>
-    );
-  }
-
-  if (state.error) {
-    return (
-      <div className="mt-3 rounded-[5px] border px-3 py-2 text-[11.5px]" style={{ borderColor: "rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.08)", color: "var(--oc-red)" }}>
-        {state.error}
-      </div>
-    );
-  }
-
-  const server = state.server;
-  if (!server) return null;
-  const approvalColor = server.approvalStatus === "approved"
-    ? "var(--oc-green)"
-    : server.approvalStatus === "blocked"
-      ? "var(--oc-red)"
-      : "var(--oc-yellow)";
-
-  return (
-    <div className="mt-3 rounded-[5px] border px-3 py-2.5" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)" }}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.4px]" style={{ color: approvalColor, background: "var(--oc-bg2)" }}>
-          {server.approvalStatus.replace("_", " ")}
-        </span>
-        <span className="text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
-          network:{server.networkRisk} / fs:{server.filesystemRisk} / {server.packageSource}
-        </span>
-      </div>
-      {server.reasons.length > 0 && (
-        <div className="mt-2 space-y-1">
-          {server.reasons.slice(0, 3).map((reason) => (
-            <div key={reason} className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
-              {reason}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
