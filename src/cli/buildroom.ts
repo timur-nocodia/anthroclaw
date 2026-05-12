@@ -181,6 +181,7 @@ function deriveStatusCounts(store: FileArtifactStore): {
   activeBuilds: number;
   qaPending: number;
   trustPending: number;
+  unresolvedErrors: number;
   complete: number;
 } {
   const reviews = store.listArtifacts('main_review');
@@ -190,6 +191,7 @@ function deriveStatusCounts(store: FileArtifactStore): {
   const builds = store.listArtifacts('coder_receipt');
   const qaReports = store.listArtifacts('qa_report');
   const trustReports = store.listArtifacts('trust_report');
+  const errors = store.listArtifacts('error_receipt');
 
   const approvedReviewIds = new Set(
     approvals.map((approval) => String(approval.payload.targetReviewId ?? '')),
@@ -223,6 +225,7 @@ function deriveStatusCounts(store: FileArtifactStore): {
     trustPending: builds.filter(
       (build) => qaBuildIds.has(build.id) && !trustBuildIds.has(build.id),
     ).length,
+    unresolvedErrors: errors.filter((error) => error.status !== 'resolved').length,
     complete: trustReports.length,
   };
 }
@@ -232,6 +235,7 @@ function deriveRoomState(
   counts: ReturnType<typeof deriveStatusCounts>,
 ): string {
   if (config.killSwitchActive) return 'blocked';
+  if (counts.unresolvedErrors > 0) return 'blocked';
   if (config.paused) return 'paused';
   if (counts.activeBuilds > 0) return 'building';
   if (counts.qaPending > 0) return 'qa_pending';

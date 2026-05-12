@@ -503,6 +503,25 @@ describe('buildroom CLI', () => {
     expect(out.join('\n')).toContain('Latest trust: clean');
   });
 
+  it('derives blocked status when an unresolved error receipt exists', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('error_20260512_docs', 'error_receipt', {
+        stage: 'builder',
+        errorType: 'runtime_error',
+        message: 'native approval required',
+        recoverable: true,
+        retryAllowed: true,
+      }),
+    );
+
+    out.length = 0;
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+
+    expect(out.join('\n')).toContain('State: blocked');
+  });
+
   it('renders and saves an operator report from latest trust receipt', async () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
