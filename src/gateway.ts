@@ -154,6 +154,16 @@ import {
 import type { CredentialStore } from './agent/credentials/index.js';
 import { EncryptedFilesystemCredentialStore } from './agent/credentials/encrypted-fs-store.js';
 import { CredentialAuditLog } from './agent/credentials/audit.js';
+import {
+  createOnboarding as createMcpOnboarding,
+  type OnboardingEvent,
+} from './integrations/mcp-onboarding/index.js';
+import { openPendingStore as openMcpPendingStore } from './integrations/mcp-onboarding/pending-store.js';
+import { runCleanup as runMcpCleanup } from './integrations/mcp-onboarding/cleanup.js';
+import { writeAgentYmlEntry as writeMcpAgentYmlEntry } from './config/write-agent-yml.js';
+import { parseDocument as parseYamlDocument, YAMLMap } from 'yaml';
+import { readFileSync as readFileSyncForMcp } from 'node:fs';
+import { createConnectMcpTool } from './agent/tools/connect-mcp.js';
 import { SdkControlRegistry } from './sdk/control-registry.js';
 import { FileSessionStore } from './sdk/session-store.js';
 import { SdkSessionService, type SdkSessionMessageView } from './sdk/sessions.js';
@@ -306,6 +316,71 @@ export interface ActiveAgentRunView extends ActiveQueryView {
 function compactError(value: unknown): string {
   const text = value instanceof Error ? value.message : String(value);
   return redactSecrets(text).slice(0, 2000);
+}
+
+/**
+ * Decompose an agent session key back into its channel + peerId components
+ * so an MCP `[system] mcp_*` synthetic event can be re-injected through
+ * the existing inbound-message machinery.
+ *
+ * Session keys look like `{agentId}:{channel}:{chatType}:{peerId}[:{thread}]`.
+ * We only need channel + peerId for the synthetic dispatch — the route
+ * table will re-resolve the agent from the channel/peer pair and rebuild
+ * the same session key on arrival.
+ *
+ * Returns null when the key doesn't match the expected shape (e.g. cron
+ * keys like `{agentId}:cron:{jobId}` or operator-console synthetic keys).
+ */
+function parseAgentSessionKey(
+  key: string,
+): { agentId: string; channel: string; chatType: string; peerId: string } | null {
+  // Be lenient about the suffix (group sessions append :group:{userId} etc.)
+  // but require the first four colon-separated parts.
+  const parts = key.split(':');
+  if (parts.length < 4) return null;
+  const [agentId, channel, chatType, peerId] = parts;
+  if (!agentId || !channel || !chatType || !peerId) return null;
+  if (chatType !== 'dm' && chatType !== 'group') return null;
+  return { agentId, channel, chatType, peerId };
+}
+
+/**
+ * Read the `external_mcp_servers` keys currently configured for an agent.
+ * Used by the onboarding facade so concurrent flows for the same hostname
+ * pick distinct ids and don't silently overwrite each other's credential.
+ *
+ * Returns an empty set when the yml is missing or unparsable — the writer
+ * will reject true duplicates at finalize time anyway.
+ */
+function readTakenMcpServerIds(
+  agentsDir: string,
+  agentId: string,
+): Promise<Set<string>> {
+  return Promise.resolve().then(() => {
+    const path = joinPath(agentsDir, agentId, 'agent.yml');
+    let raw: string;
+    try {
+      raw = readFileSyncForMcp(path, 'utf-8');
+    } catch {
+      return new Set<string>();
+    }
+    try {
+      const doc = parseYamlDocument(raw);
+      const root = doc.contents instanceof YAMLMap ? doc.contents : null;
+      if (!root) return new Set<string>();
+      const servers = root.get('external_mcp_servers', true) as unknown;
+      if (!(servers instanceof YAMLMap)) return new Set<string>();
+      const out = new Set<string>();
+      for (const item of servers.items) {
+        const k = item.key as { value?: unknown } | string | null;
+        const key = typeof k === 'string' ? k : (k as { value?: unknown })?.value;
+        if (typeof key === 'string') out.add(key);
+      }
+      return out;
+    } catch {
+      return new Set<string>();
+    }
+  });
 }
 
 function isLearningRelevantToolName(toolName: string): boolean {
@@ -824,6 +899,18 @@ export class Gateway {
    * share the same instance when running in-process.
    */
   private credentialStore: CredentialStore | null = null;
+  /**
+   * MCP onboarding facade — lazily constructed on first call to
+   * {@link getMcpOnboarding}. Reuses the Gateway-owned credential store and
+   * config-writer so the chat path and the UI admin path share a single
+   * audit trail.
+   */
+  private mcpOnboarding: ReturnType<typeof createMcpOnboarding> | null = null;
+  /**
+   * SQLite handle backing the onboarding pending-store. Held for `stop()`
+   * cleanup so tests and process restarts don't leak file descriptors.
+   */
+  private mcpPendingStore: ReturnType<typeof openMcpPendingStore> | null = null;
 
   /** Returns the unified config writer (null until start() runs). */
   getAgentConfigWriter(): AgentConfigWriter | null {
@@ -863,6 +950,131 @@ export class Gateway {
    */
   setCredentialStore(store: CredentialStore): void {
     this.credentialStore = store;
+  }
+
+  /**
+   * Returns the (lazily-constructed) MCP onboarding facade. Shares the
+   * Gateway's credential store and config writer so chat-driven flows and
+   * UI admin flows produce one audit trail.
+   *
+   * The pending-store SQLite file lives at `<dataDir>/mcp.sqlite` to match
+   * the UI singleton path; both processes can safely point at the same
+   * file because WAL journal mode allows concurrent readers/writers.
+   *
+   * Returns null only when `start()` has not yet been called and `dataDir`
+   * is unknown — production callers always reach this after start.
+   */
+  getMcpOnboarding(): ReturnType<typeof createMcpOnboarding> | null {
+    if (this.mcpOnboarding) return this.mcpOnboarding;
+    if (!this.dataDir || !this.agentsDir) return null;
+    this.mcpPendingStore = openMcpPendingStore(
+      joinPath(this.dataDir, 'mcp.sqlite'),
+    );
+    const agentsDir = this.agentsDir;
+    const uiBaseUrl
+      = process.env.OC_UI_BASE_URL ?? 'http://localhost:3000';
+    this.mcpOnboarding = createMcpOnboarding({
+      pending: this.mcpPendingStore,
+      credentials: this.getCredentialStore(),
+      uiBaseUrl,
+      writeAgentYml: (args) => writeMcpAgentYmlEntry(args),
+      listTakenServerIds: async (agentId) =>
+        readTakenMcpServerIds(agentsDir, agentId),
+    });
+    this.subscribeMcpOnboardingEvents(this.mcpOnboarding);
+    return this.mcpOnboarding;
+  }
+
+  /**
+   * Wire the four onboarding lifecycle events to synthetic `[system]
+   * mcp_*` dispatches addressed at the originating agent session. Admin-
+   * initiated rows have `agentSessionKey === null` and are skipped — no
+   * chat dispatch needed because the wizard UI surfaces the result.
+   *
+   * Errors during dispatch are logged, not thrown: a failed synthetic
+   * message must not roll back a successful credential write.
+   */
+  private subscribeMcpOnboardingEvents(
+    onboarding: ReturnType<typeof createMcpOnboarding>,
+  ): void {
+    onboarding.events.on('connected', (evt: OnboardingEvent) => {
+      const toolNames = (evt.tools ?? []).map((t) => t.name).join(', ');
+      const text = `[system] mcp_connected: ${evt.serverId}\n`
+        + `server_id: ${evt.serverId}\n`
+        + `pending_id: ${evt.pendingId}\n`
+        + `tools: ${toolNames}\n`
+        + 'awaiting: finalize';
+      void this.dispatchMcpSystemMessage(evt, text, 'mcp_oauth_callback');
+    });
+    onboarding.events.on('failed', (evt: OnboardingEvent) => {
+      const text = `[system] mcp_connect_failed: ${evt.serverId}\n`
+        + `pending_id: ${evt.pendingId}\n`
+        + `reason: ${evt.reason ?? 'unknown'}`;
+      void this.dispatchMcpSystemMessage(evt, text, 'mcp_oauth_failed');
+    });
+    onboarding.events.on('cancelled', (evt: OnboardingEvent) => {
+      const text = `[system] mcp_connect_declined: ${evt.serverId}\n`
+        + `pending_id: ${evt.pendingId}`;
+      void this.dispatchMcpSystemMessage(evt, text, 'mcp_oauth_declined');
+    });
+    onboarding.events.on('timeout', (evt: OnboardingEvent) => {
+      const text = `[system] mcp_connect_timeout: ${evt.serverId}\n`
+        + `pending_id: ${evt.pendingId}`;
+      void this.dispatchMcpSystemMessage(evt, text, 'mcp_pending_expired');
+    });
+  }
+
+  /**
+   * Dispatch one of the four `[system] mcp_*` synthetic messages into an
+   * agent session. Chat-initiated rows carry an `agentSessionKey` of the
+   * form `{agentId}:{channel}:{chatType}:{peerId}[...]` — we decompose it
+   * to drive the existing synthetic-inbound machinery (which expects a
+   * concrete channel + peer rather than an opaque session key).
+   *
+   * Admin-initiated rows (`agentSessionKey === null`) are skipped silently
+   * — the wizard UI is the user-facing surface there.
+   */
+  private async dispatchMcpSystemMessage(
+    evt: OnboardingEvent,
+    text: string,
+    source: string,
+  ): Promise<void> {
+    if (!evt.agentSessionKey) return;
+    const parsed = parseAgentSessionKey(evt.agentSessionKey);
+    if (!parsed) {
+      logger.warn(
+        { agentSessionKey: evt.agentSessionKey, agentId: evt.agentId },
+        'mcp synthetic dispatch: could not parse agentSessionKey',
+      );
+      return;
+    }
+    if (parsed.channel !== 'telegram' && parsed.channel !== 'whatsapp') {
+      logger.warn(
+        { agentSessionKey: evt.agentSessionKey, channel: parsed.channel },
+        'mcp synthetic dispatch: unsupported channel',
+      );
+      return;
+    }
+    try {
+      await this.dispatchSyntheticInbound({
+        targetAgentId: evt.agentId,
+        channel: parsed.channel,
+        accountId: 'default',
+        peerId: parsed.peerId,
+        text,
+        meta: {
+          source,
+          pendingId: evt.pendingId,
+          serverId: evt.serverId,
+          queueMode: 'interrupt',
+        },
+      });
+    } catch (err) {
+      logger.error(
+        { err, agentId: evt.agentId, source, pendingId: evt.pendingId },
+        'mcp synthetic dispatch failed',
+      );
+    }
   }
 
   /**
@@ -1023,6 +1235,7 @@ export class Gateway {
           getOperatorConsoleConfigForAgent: (callerId) =>
             this.getOperatorConsoleConfigForAgent(callerId),
         },
+        () => this.getMcpOnboarding(),
       );
       this.agents.set(agent.id, agent);
       this.registerProfileRateLimiter(agent.id, agent, dataDir);
@@ -1324,6 +1537,21 @@ export class Gateway {
     this.heartbeatRunner = null;
     this.heartbeatHistoryStore = null;
 
+    // MCP onboarding cleanup: drop event subscribers and close the pending
+    // SQLite handle so a subsequent start() rebuilds cleanly.
+    if (this.mcpOnboarding) {
+      this.mcpOnboarding.events.removeAllListeners();
+    }
+    this.mcpOnboarding = null;
+    if (this.mcpPendingStore) {
+      try {
+        this.mcpPendingStore.close();
+      } catch {
+        // best-effort
+      }
+      this.mcpPendingStore = null;
+    }
+
     // Close plugin hot-reload watcher first so no new add events fire during shutdown
     await this.pluginsWatcher?.close();
     this.pluginsWatcher = null;
@@ -1579,6 +1807,30 @@ export class Gateway {
             this.dynamicCronStore,
             () => this.reloadDynamicCron(),
             dispatchContext,
+          );
+        }
+        if (tool.name === 'connect_mcp') {
+          // Rebuild with per-dispatch context so the facade knows which
+          // chat the agent is acting in (DM-only guard) and which session
+          // should receive the eventual `[system] mcp_connected` event.
+          const sessionKey = buildSessionKey(
+            agent.id,
+            msg.channel,
+            msg.chatType,
+            msg.peerId,
+            msg.threadId,
+          );
+          return createConnectMcpTool(
+            agent.id,
+            () => {
+              const facade = this.getMcpOnboarding();
+              if (!facade) throw new Error('mcp_onboarding_facade_unavailable');
+              return facade;
+            },
+            () => ({
+              agentSessionKey: sessionKey,
+              chatType: msg.chatType === 'dm' ? 'private' : 'group',
+            }),
           );
         }
         return tool;
@@ -2989,6 +3241,7 @@ export class Gateway {
             getOperatorConsoleConfigForAgent: (callerId) =>
               this.getOperatorConsoleConfigForAgent(callerId),
           },
+          () => this.getMcpOnboarding(),
         );
         const existed = this.agents.has(agent.id);
 
