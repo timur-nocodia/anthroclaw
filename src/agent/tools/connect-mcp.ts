@@ -173,8 +173,7 @@ export function createConnectMcpTool(
           if (!pendingId) {
             return errorResult('op=cancel requires `pendingId`');
           }
-          const ok = facade.cancel(pendingId);
-          return jsonResult({ status: ok ? 'cancelled' : 'not_found' });
+          return jsonResult(facade.cancel(pendingId));
         }
 
         return errorResult(`connect_mcp: unknown op "${String(op)}"`);

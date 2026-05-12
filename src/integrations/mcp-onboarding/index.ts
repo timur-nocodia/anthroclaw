@@ -585,11 +585,16 @@ export function createOnboarding(deps: OnboardingDeps) {
    * this op already knows. (Provider-side denial flows through
    * `cancelByState` which DOES emit `cancelled`.)
    */
-  function cancel(pendingId: string): boolean {
+  function cancel(
+    pendingId: string,
+  ): { status: 'cancelled' | 'not_cancellable' | 'not_found' } {
     const row = deps.pending.byId(pendingId);
-    if (!row) return false;
+    if (!row) return { status: 'not_found' };
+    if (row.status !== 'pending' && row.status !== 'exchanging') {
+      return { status: 'not_cancellable' };
+    }
     deps.pending.markCancelled(pendingId, 'user_cancelled');
-    return true;
+    return { status: 'cancelled' };
   }
 
   // Gate the test-only debug surface so a stray production caller can't

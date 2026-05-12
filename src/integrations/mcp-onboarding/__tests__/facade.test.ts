@@ -521,6 +521,84 @@ describe('onboarding facade — apikey branch', () => {
     expect(await onboarding.cancelByState('st_unknown', 'x')).toBe(false);
   });
 
+  it('cancel returns not_found for unknown pendingId', () => {
+    expect(onboarding.cancel('pnd_unknown')).toEqual({ status: 'not_found' });
+  });
+
+  it('cancel returns cancelled for pending row and marks it cancelled', () => {
+    pending.insert({
+      id: 'pnd_can_pending',
+      state: 'st_can_pending',
+      agentId: 'a1',
+      agentSessionKey: null,
+      mcpUrl: 'https://mcp.x/y',
+      authMode: 'oauth',
+      codeVerifier: 'v',
+      clientId: 'cli',
+      clientSecret: null,
+      oauthMetadata: null,
+      toolsMetadata: null,
+      requestedBy: 'admin:u1',
+      status: 'pending',
+      failureReason: null,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 60_000,
+    });
+    expect(onboarding.cancel('pnd_can_pending')).toEqual({ status: 'cancelled' });
+    const row = pending.byId('pnd_can_pending');
+    expect(row?.status).toBe('cancelled');
+    expect(row?.failureReason).toBe('user_cancelled');
+  });
+
+  it('cancel returns not_cancellable for already-completed row', () => {
+    pending.insert({
+      id: 'pnd_can_done',
+      state: 'st_can_done',
+      agentId: 'a1',
+      agentSessionKey: null,
+      mcpUrl: 'https://mcp.x/y',
+      authMode: 'oauth',
+      codeVerifier: 'v',
+      clientId: 'cli',
+      clientSecret: null,
+      oauthMetadata: null,
+      toolsMetadata: null,
+      requestedBy: 'admin:u1',
+      status: 'completed',
+      failureReason: null,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 60_000,
+    });
+    expect(onboarding.cancel('pnd_can_done')).toEqual({ status: 'not_cancellable' });
+    const row = pending.byId('pnd_can_done');
+    expect(row?.status).toBe('completed');
+  });
+
+  it('cancel returns not_cancellable for already-failed row', () => {
+    pending.insert({
+      id: 'pnd_can_failed',
+      state: 'st_can_failed',
+      agentId: 'a1',
+      agentSessionKey: null,
+      mcpUrl: 'https://mcp.x/y',
+      authMode: 'oauth',
+      codeVerifier: 'v',
+      clientId: 'cli',
+      clientSecret: null,
+      oauthMetadata: null,
+      toolsMetadata: null,
+      requestedBy: 'admin:u1',
+      status: 'failed',
+      failureReason: 'boom',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 60_000,
+    });
+    expect(onboarding.cancel('pnd_can_failed')).toEqual({ status: 'not_cancellable' });
+    const row = pending.byId('pnd_can_failed');
+    expect(row?.status).toBe('failed');
+    expect(row?.failureReason).toBe('boom');
+  });
+
   it('attachApiKey writes credential + returns discovered tools', async () => {
     probeStub.mockResolvedValueOnce({
       authMode: 'apikey',

@@ -209,7 +209,7 @@ describe('connect_mcp built-in tool', () => {
   });
 
   it('op=cancel returns success when the row is cancelled', async () => {
-    facade.cancel.mockReturnValueOnce(true);
+    facade.cancel.mockReturnValueOnce({ status: 'cancelled' });
     const def = createConnectMcpTool('amina', getFacade);
     const r = await getHandler(def)({ op: 'cancel', pendingId: 'pnd_5' });
     const payload = parseResultJson(r);
@@ -218,11 +218,19 @@ describe('connect_mcp built-in tool', () => {
   });
 
   it('op=cancel returns not_found when the row is unknown', async () => {
-    facade.cancel.mockReturnValueOnce(false);
+    facade.cancel.mockReturnValueOnce({ status: 'not_found' });
     const def = createConnectMcpTool('amina', getFacade);
     const r = await getHandler(def)({ op: 'cancel', pendingId: 'pnd_missing' });
     const payload = parseResultJson(r);
     expect(payload.status).toBe('not_found');
+  });
+
+  it('op=cancel returns not_cancellable when the row is in a terminal state', async () => {
+    facade.cancel.mockReturnValueOnce({ status: 'not_cancellable' });
+    const def = createConnectMcpTool('amina', getFacade);
+    const r = await getHandler(def)({ op: 'cancel', pendingId: 'pnd_done' });
+    const payload = parseResultJson(r);
+    expect(payload.status).toBe('not_cancellable');
   });
 
   it('returns isError=true when the underlying facade throws', async () => {
