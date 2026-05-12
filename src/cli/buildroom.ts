@@ -16,6 +16,11 @@ import {
   loadBuildroomRoomConfig,
 } from '../auto-buildroom/storage/init.js';
 import {
+  createQaReportArtifact,
+  createTrustReportArtifact,
+  createVerificationDeltaArtifact,
+} from '../auto-buildroom/qa/trust.js';
+import {
   createDeterministicIdeaContract,
   createDeterministicMainReview,
   createDeterministicResearchPacket,
@@ -67,6 +72,10 @@ export async function runBuildroomCli(argv: string[], io: CliIO = defaultIO): Pr
         return commandApprove(args, io);
       case 'build':
         return commandBuild(args, io);
+      case 'qa':
+        return commandQa(args, io);
+      case 'trust':
+        return commandTrust(args, io);
       default:
         io.stderr(`Unknown command: ${args.command}`);
         io.stderr(helpText());
@@ -103,11 +112,12 @@ function commandStatus(args: ParsedArgs, io: CliIO): number {
   const config = loadBuildroomRoomConfig(args.root, args.room);
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const counts = deriveStatusCounts(store);
+  const latestTrust = latestOptionalArtifact(store, 'trust_report');
   io.stdout([
     `Buildroom: ${config.roomId}`,
     `Mode: ${config.mode}`,
     'State: idle',
-    'Latest trust: none',
+    `Latest trust: ${String(latestTrust?.payload.trustState ?? 'none')}`,
     `Kill switch: ${config.killSwitchActive ? 'active' : 'inactive'}`,
     '',
     `Pending approvals: ${counts.pendingApprovals}`,
@@ -327,9 +337,65 @@ function commandBuild(args: ParsedArgs, io: CliIO): number {
   return 0;
 }
 
+function commandQa(args: ParsedArgs, io: CliIO): number {
+  const id = requirePositional(args, 0, 'qa');
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  assertStageAllowed(config, 'qa');
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const build = store.readArtifact(id);
+  if (build.type !== 'coder_receipt') {
+    throw new AuthorityPolicyError('QA requires a coder_receipt artifact');
+  }
+
+  const existing = findChildArtifact(store, 'qa_report', build.id);
+  const qa = existing ?? store.writeArtifact(
+    createQaReportArtifact({
+      build,
+      now: new Date().toISOString(),
+      evidence: builderClaims(build).map((claim) => ({ claim, status: 'confirmed' })),
+    }),
+  );
+
+  io.stdout([
+    `QA report: ${qa.id}`,
+    `Status: ${String(qa.payload.qaStatus)}`,
+    '',
+    'QA evidence is not final trust.',
+    '',
+    'Next:',
+    `anthroclaw buildroom trust ${build.id}`,
+  ].join('\n'));
+  return 0;
+}
+
+function commandTrust(args: ParsedArgs, io: CliIO): number {
+  const id = requirePositional(args, 0, 'trust');
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  assertStageAllowed(config, 'trust');
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const build = store.readArtifact(id);
+  if (build.type !== 'coder_receipt') {
+    throw new AuthorityPolicyError('Trust requires a coder_receipt artifact');
+  }
+
+  const qa = findChildArtifact(store, 'qa_report', build.id);
+  if (!qa) throw new Error(`QA report not found for ${build.id}`);
+
+  const existingTrust = findChildArtifact(store, 'trust_report', build.id);
+  const trust = existingTrust ?? createAndStoreTrustArtifacts(store, build, qa);
+
+  io.stdout([
+    `Trust report: ${trust.id}`,
+    `Trust: ${String(trust.payload.trustState).toUpperCase()}`,
+    '',
+    'Trust tells the operator what is actually proven.',
+  ].join('\n'));
+  return 0;
+}
+
 function assertStageAllowed(
   config: { mode: string; killSwitchActive: boolean },
-  stage: 'collect' | 'propose' | 'review' | 'build',
+  stage: 'collect' | 'propose' | 'review' | 'build' | 'qa' | 'trust',
 ): void {
   if (config.mode === 'off') {
     throw new BuildroomStageBlockedError('Buildroom mode is off');
@@ -343,12 +409,23 @@ function assertStageAllowed(
 }
 
 function latestArtifact(store: FileArtifactStore, type: BuildroomArtifactType): BuildroomArtifact {
-  const artifacts = store
-    .listArtifacts(type)
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  const artifacts = sortedArtifacts(store, type);
   const artifact = artifacts[0];
   if (!artifact) throw new Error(`Artifact not found: latest ${type}`);
   return artifact;
+}
+
+function latestOptionalArtifact(
+  store: FileArtifactStore,
+  type: BuildroomArtifactType,
+): BuildroomArtifact | undefined {
+  return sortedArtifacts(store, type)[0];
+}
+
+function sortedArtifacts(store: FileArtifactStore, type: BuildroomArtifactType): BuildroomArtifact[] {
+  return store
+    .listArtifacts(type)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
 function findBuildPlanForApproval(
@@ -358,6 +435,35 @@ function findBuildPlanForApproval(
   return store
     .listArtifacts('build_plan')
     .find((plan) => plan.payload.approvalId === approvalId);
+}
+
+function findChildArtifact(
+  store: FileArtifactStore,
+  type: BuildroomArtifactType,
+  parentId: string,
+): BuildroomArtifact | undefined {
+  return store
+    .listArtifacts(type)
+    .find((artifact) => artifact.parentIds.includes(parentId));
+}
+
+function createAndStoreTrustArtifacts(
+  store: FileArtifactStore,
+  build: BuildroomArtifact,
+  qa: BuildroomArtifact,
+): BuildroomArtifact {
+  const now = new Date().toISOString();
+  const existingDelta = findChildArtifact(store, 'verification_delta', build.id);
+  const delta = existingDelta ?? store.writeArtifact(
+    createVerificationDeltaArtifact({ build, qa, now }),
+  );
+  return store.writeArtifact(createTrustReportArtifact({ build, qa, delta, now }));
+}
+
+function builderClaims(build: BuildroomArtifact): string[] {
+  return Array.isArray(build.payload.builderClaims)
+    ? build.payload.builderClaims.filter((claim): claim is string => typeof claim === 'string')
+    : [];
 }
 
 function handleError(error: unknown, io: CliIO): number {
@@ -389,6 +495,7 @@ function handleError(error: unknown, io: CliIO): number {
   }
   io.stderr(error instanceof Error ? error.message : String(error));
   if (error instanceof Error && error.message.startsWith('Artifact not found:')) return 5;
+  if (error instanceof Error && error.message.startsWith('QA report not found')) return 5;
   return 1;
 }
 
@@ -461,6 +568,8 @@ function helpText(): string {
     '  show      Show a Buildroom receipt',
     '  approve   Create approval for a locked Main Review',
     '  build     Create or show a Buildroom build plan',
+    '  qa        Create deterministic QA evidence for a build receipt',
+    '  trust     Create verification delta and trust report',
     '',
     'Options:',
     '  --root <path>       Project root',

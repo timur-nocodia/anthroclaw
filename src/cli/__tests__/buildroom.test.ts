@@ -272,6 +272,70 @@ describe('buildroom CLI', () => {
     expect(err.join('\n')).toContain('Artifact hash mismatch');
   });
 
+  it('creates QA and Trust receipts for an existing coder receipt', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('build_20260512_docs', 'coder_receipt', {
+        runtimeStatus: 'completed',
+        builderClaims: ['Updated operator guide.'],
+        postRunPolicyResult: {
+          allowed: true,
+          changedFiles: ['docs/guide.md'],
+          violations: [],
+        },
+      }),
+    );
+
+    out.length = 0;
+    await expect(run(['qa', 'build_20260512_docs', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('QA report: qa_20260512_docs');
+    expect(store.readArtifact('qa_20260512_docs')).toMatchObject({
+      type: 'qa_report',
+      parentIds: ['build_20260512_docs'],
+      payload: {
+        qaStatus: 'pass',
+        evidence: [{ claim: 'Updated operator guide.', status: 'confirmed' }],
+      },
+    });
+
+    out.length = 0;
+    await expect(run(['trust', 'build_20260512_docs', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Trust report: trust_20260512_docs');
+    expect(out.join('\n')).toContain('Trust: CLEAN');
+    expect(store.readArtifact('delta_20260512_docs')).toMatchObject({
+      type: 'verification_delta',
+      parentIds: ['qa_20260512_docs', 'build_20260512_docs'],
+    });
+    expect(store.readArtifact('trust_20260512_docs')).toMatchObject({
+      type: 'trust_report',
+      status: 'clean',
+      payload: { trustState: 'clean' },
+    });
+
+    out.length = 0;
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Latest trust: clean');
+    expect(out.join('\n')).toContain('QA pending: 0');
+  });
+
+  it('rejects trust when QA receipt is missing', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('build_20260512_docs', 'coder_receipt', {
+        runtimeStatus: 'completed',
+        builderClaims: ['Updated operator guide.'],
+        postRunPolicyResult: { allowed: true, changedFiles: [], violations: [] },
+      }),
+    );
+
+    await expect(run(['trust', 'build_20260512_docs', '--root', root])).resolves.toBe(5);
+
+    expect(err.join('\n')).toContain('QA report not found for build_20260512_docs');
+    expect(store.listArtifacts('trust_report')).toEqual([]);
+  });
+
   function artifact(
     id: string,
     type: BuildroomArtifact['type'],
