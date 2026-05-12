@@ -1,5 +1,12 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 import { FileArtifactStore } from '../artifacts/store.js';
 import type { BuildroomArtifact } from '../artifacts/model.js';
 import { FileBuildroomLock } from '../locks/lock.js';
@@ -46,6 +53,7 @@ export async function executeBuildPlan(opts: ExecuteBuildPlanOptions): Promise<B
     const consumedApproval = store.writeArtifact(consumeApproval(approval, opts.now));
     const workingDirectory = buildWorkingDirectory(opts.projectRoot, opts.roomId, plan.id);
     mkdirSync(workingDirectory, { recursive: true });
+    prepareWorkingDirectory(opts.projectRoot, workingDirectory, plan);
     const baseline = snapshotDirectory(workingDirectory);
     const result = await opts.adapter.runBuilder({
       prompt: buildBuilderPrompt(plan),
@@ -168,6 +176,26 @@ function evaluatePreRunPolicy(plan: BuildroomArtifact): PathScopePolicyResult {
   };
 }
 
+function prepareWorkingDirectory(
+  projectRoot: string,
+  workingDirectory: string,
+  plan: BuildroomArtifact,
+): void {
+  const scope = scopePolicy(plan);
+  for (const file of listProjectFiles(projectRoot)) {
+    const policy = evaluatePathPolicy({
+      paths: [file],
+      allowedPaths: scope.allowedPaths,
+      blockedPaths: scope.blockedPaths,
+    });
+    if (!policy.allowed) continue;
+
+    const target = join(workingDirectory, file);
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(join(projectRoot, file), target);
+  }
+}
+
 function scopePolicy(plan: BuildroomArtifact): { allowedPaths: string[]; blockedPaths: string[] } {
   const scope = plan.payload.scope;
   const record = scope && typeof scope === 'object' && !Array.isArray(scope)
@@ -228,6 +256,37 @@ function listFiles(root: string): string[] {
 
   return files;
 }
+
+function listProjectFiles(root: string): string[] {
+  return listFilesSkipping(root, root);
+}
+
+function listFilesSkipping(root: string, current: string): string[] {
+  const files: string[] = [];
+  if (!existsSync(current)) return files;
+
+  for (const entry of readdirSync(current)) {
+    if (SKIPPED_PROJECT_DIRS.has(entry)) continue;
+    const path = join(current, entry);
+    const stats = statSync(path);
+    if (stats.isDirectory()) {
+      files.push(...listFilesSkipping(root, path));
+    } else if (stats.isFile()) {
+      files.push(relative(root, path));
+    }
+  }
+
+  return files;
+}
+
+const SKIPPED_PROJECT_DIRS = new Set([
+  '.anthroclaw',
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  'coverage',
+]);
 
 function buildErrorReceipt(opts: {
   plan: BuildroomArtifact;

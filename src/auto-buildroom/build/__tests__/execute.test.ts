@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -179,6 +179,34 @@ describe('executeBuildPlan', () => {
         },
       },
     });
+  });
+
+  it('prepares the runtime working directory with approved input files', async () => {
+    mkdirSync(join(root, 'docs'), { recursive: true });
+    writeFileSync(join(root, 'docs', 'guide.md'), 'existing docs', 'utf8');
+    const { plan } = seedPlan();
+    const adapter = {
+      runBuilder: vi.fn().mockImplementation(async (input: { workingDirectory: string }) => {
+        expect(readFileSync(join(input.workingDirectory, 'docs', 'guide.md'), 'utf8')).toBe(
+          'existing docs',
+        );
+        return {
+          status: 'completed',
+          resultText: 'Read approved docs.',
+          runtimeRefs: [{ runtime: 'native-agent-sdk', sessionId: 'session_builder_1' }],
+        };
+      }),
+    };
+
+    await executeBuildPlan({
+      projectRoot: root,
+      roomId: 'anthroclaw-core',
+      planId: plan.id,
+      adapter,
+      now: '2026-05-12T00:10:00.000Z',
+    });
+
+    expect(adapter.runBuilder).toHaveBeenCalledTimes(1);
   });
 
   it('blocks before runtime when build plan scope contains path escapes', async () => {
