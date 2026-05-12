@@ -21,6 +21,7 @@ describe('Auto-Buildroom config model', () => {
     expect(config.execution.requireApprovalForBuild).toBe(true);
     expect(config.execution.consumeApprovalOnBuildStart).toBe(true);
     expect(config.budgets.maxBuildsPerDay).toBe(1);
+    expect(config.notifications.routes).toEqual([]);
   });
 
   it('rejects manual-approval config without an operator identity', () => {

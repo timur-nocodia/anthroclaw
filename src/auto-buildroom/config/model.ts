@@ -39,6 +39,9 @@ export const BuildroomConfigSchema = z.object({
     readOnlyResearch: z.object({ enabled: z.boolean() }),
     sideEffects: z.object({ default: z.literal('deny') }),
   }),
+  notifications: z.object({
+    routes: z.array(RouteIdSchema),
+  }),
   budgets: z.object({
     maxIdeasPerDay: z.number().int().positive(),
     maxBuildsPerDay: z.number().int().positive(),
@@ -137,6 +140,9 @@ export function createDefaultBuildroomConfig(opts: DefaultBuildroomConfigOptions
     external: {
       readOnlyResearch: { enabled: false },
       sideEffects: { default: 'deny' },
+    },
+    notifications: {
+      routes: [],
     },
     budgets: {
       maxIdeasPerDay: 5,
