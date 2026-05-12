@@ -288,9 +288,6 @@ function deriveStatusCounts(store: FileArtifactStore): {
       .filter((decision) => decision.payload.decision === 'reject')
       .map((decision) => String(decision.payload.targetArtifactId ?? '')),
   );
-  const plannedApprovalIds = new Set(
-    plans.map((plan) => String(plan.payload.approvalId ?? '')),
-  );
   const qaBuildIds = new Set(qaReports.flatMap((qa) => qa.parentIds));
   const trustBuildIds = new Set(trustReports.flatMap((trust) => trust.parentIds));
 
@@ -304,8 +301,7 @@ function deriveStatusCounts(store: FileArtifactStore): {
     approvedNotBuilt: approvals.filter(
       (approval) =>
         approval.status === 'granted' &&
-        !approval.payload.consumedAt &&
-        !plannedApprovalIds.has(approval.id),
+        !approval.payload.consumedAt,
     ).length,
     activeBuilds: builds.filter((build) => build.payload.runtimeStatus === 'running').length,
     qaPending: builds.filter((build) => !qaBuildIds.has(build.id)).length,

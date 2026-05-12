@@ -251,7 +251,8 @@ describe('buildroom CLI', () => {
 
     out.length = 0;
     await expect(run(['status', '--root', root])).resolves.toBe(0);
-    expect(out.join('\n')).toContain('Approved not built: 0');
+    expect(out.join('\n')).toContain('State: approved');
+    expect(out.join('\n')).toContain('Approved not built: 1');
   });
 
   it('executes Builder only when build receives explicit execute flag', async () => {
