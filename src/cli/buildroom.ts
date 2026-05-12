@@ -79,48 +79,49 @@ export async function runBuildroomCli(
   deps: BuildroomCliDependencies = {},
 ): Promise<number> {
   const args = parseArgs(argv);
+  const commandIO = commandOutputIO(args, io);
   if (!args.command || args.command === 'help' || args.command === '--help') {
-    io.stdout(helpText());
+    commandIO.stdout(helpText());
     return 0;
   }
 
   try {
     switch (args.command) {
       case 'init':
-        return commandInit(args, io);
+        return commandInit(args, commandIO);
       case 'status':
-        return commandStatus(args, io);
+        return commandStatus(args, commandIO);
       case 'validate':
-        return commandValidate(args, io);
+        return commandValidate(args, commandIO);
       case 'collect':
-        return commandCollect(args, io);
+        return commandCollect(args, commandIO);
       case 'propose':
-        return commandPropose(args, io);
+        return commandPropose(args, commandIO);
       case 'review':
-        return commandReview(args, io);
+        return commandReview(args, commandIO);
       case 'show':
-        return commandShow(args, io);
+        return commandShow(args, commandIO);
       case 'reject':
-        return commandReject(args, io);
+        return commandReject(args, commandIO);
       case 'approve':
-        return commandApprove(args, io);
+        return commandApprove(args, commandIO);
       case 'build':
-        return await commandBuild(args, io, deps);
+        return await commandBuild(args, commandIO, deps);
       case 'qa':
-        return await commandQa(args, io, deps);
+        return await commandQa(args, commandIO, deps);
       case 'trust':
-        return await commandTrust(args, io, deps);
+        return await commandTrust(args, commandIO, deps);
       case 'report':
-        return commandReport(args, io);
+        return commandReport(args, commandIO);
       case 'retain':
-        return await commandRetain(args, io, deps);
+        return await commandRetain(args, commandIO, deps);
       case 'pause':
-        return commandPause(args, io);
+        return commandPause(args, commandIO);
       case 'resume':
-        return commandResume(args, io);
+        return commandResume(args, commandIO);
       default:
-        io.stderr(`Unknown command: ${args.command}`);
-        io.stderr(helpText());
+        commandIO.stderr(`Unknown command: ${args.command}`);
+        commandIO.stderr(helpText());
         return 2;
     }
   } catch (error) {
@@ -1079,6 +1080,14 @@ function nowIso(deps: BuildroomCliDependencies): string {
 
 function wantsJson(args: ParsedArgs): boolean {
   return args.flags.has('json');
+}
+
+function commandOutputIO(args: ParsedArgs, io: CliIO): CliIO {
+  if (!args.flags.has('quiet') || wantsJson(args)) return io;
+  return {
+    stdout: () => undefined,
+    stderr: io.stderr,
+  };
 }
 
 function writeJson(write: (text: string) => void, value: unknown): void {
