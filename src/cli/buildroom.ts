@@ -8,7 +8,10 @@ import {
   FileArtifactStore,
 } from '../auto-buildroom/artifacts/store.js';
 import { executeBuildPlan } from '../auto-buildroom/build/execute.js';
-import { BuildroomConfigValidationError } from '../auto-buildroom/config/model.js';
+import {
+  type BuildroomConfig,
+  BuildroomConfigValidationError,
+} from '../auto-buildroom/config/model.js';
 import {
   AuthorityPolicyError,
   createApprovalArtifact,
@@ -34,6 +37,7 @@ import {
   createDeterministicResearchPacket,
 } from '../auto-buildroom/workflow/deterministic.js';
 import { NativeAgentRuntimeAdapter } from '../auto-buildroom/runtime/native-agent-adapter.js';
+import { redactSecrets } from '../security/redact.js';
 import type { BuildroomArtifact, BuildroomArtifactType } from '../auto-buildroom/artifacts/model.js';
 import type { NativeBuilderRunResult } from '../auto-buildroom/runtime/native-agent-adapter.js';
 
@@ -120,7 +124,7 @@ export async function runBuildroomCli(
         return 2;
     }
   } catch (error) {
-    return handleError(error, io);
+    return handleError(error, args, io);
   }
 }
 
@@ -172,6 +176,19 @@ function commandStatus(args: ParsedArgs, io: CliIO): number {
   const counts = deriveStatusCounts(store);
   const state = deriveRoomState(config, counts);
   const latestTrust = latestOptionalArtifact(store, 'trust_report');
+
+  if (wantsJson(args)) {
+    writeJson(io.stdout, {
+      ok: true,
+      command: 'status',
+      roomId: config.roomId,
+      state: statusJsonState(config, counts, state, latestTrust),
+      artifacts: latestTrust ? [artifactSummary(latestTrust)] : [],
+      nextActions: ['anthroclaw buildroom collect'],
+    });
+    return 0;
+  }
+
   io.stdout([
     `Buildroom: ${config.roomId}`,
     `Mode: ${config.mode}`,
@@ -378,6 +395,16 @@ function commandShow(args: ParsedArgs, io: CliIO): number {
   const config = loadBuildroomRoomConfig(args.root, args.room);
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const artifact = store.readArtifact(id);
+
+  if (wantsJson(args)) {
+    writeJson(io.stdout, {
+      ok: true,
+      command: 'show',
+      roomId: config.roomId,
+      artifact,
+    });
+    return 0;
+  }
 
   io.stdout([
     `Receipt: ${artifact.id}`,
@@ -624,9 +651,10 @@ function commandReport(args: ParsedArgs, io: CliIO): number {
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const trust = latestArtifact(store, 'trust_report');
   const report = renderTrustReport(trust);
+  let summary: BuildroomArtifact | undefined;
 
   if (args.flags.has('save')) {
-    const summary = store.writeArtifact(
+    summary = store.writeArtifact(
       createOperatorSummaryArtifact({
         projectRoot: args.root,
         roomId: config.roomId,
@@ -636,6 +664,23 @@ function commandReport(args: ParsedArgs, io: CliIO): number {
       }),
     );
     writeRenderedReport(summary, report);
+  }
+
+  if (wantsJson(args)) {
+    writeJson(io.stdout, {
+      ok: true,
+      command: 'report',
+      roomId: config.roomId,
+      state: {
+        trustState: String(trust.payload.trustState ?? 'blocked'),
+      },
+      artifacts: [
+        artifactSummary(trust),
+        ...(summary ? [artifactSummary(summary)] : []),
+      ],
+      report,
+    });
+    return 0;
   }
 
   io.stdout(report);
@@ -932,45 +977,30 @@ function builderClaims(build: BuildroomArtifact): string[] {
     : [];
 }
 
-function handleError(error: unknown, io: CliIO): number {
+function handleError(error: unknown, args: ParsedArgs, io: CliIO): number {
+  const classified = classifyCliError(error);
+  if (wantsJson(args)) {
+    writeJson(io.stderr, {
+      ok: false,
+      command: args.command ?? 'unknown',
+      roomId: roomIdForError(args),
+      error: {
+        code: classified.code,
+        message: classified.message,
+        nextActions: nextActionsForError(classified.code),
+      },
+    });
+    return classified.exitCode;
+  }
+
   if (error instanceof BuildroomConfigValidationError) {
     for (const issue of error.issues) {
-      io.stderr(`${issue.path.join('.')}: ${issue.message}`);
+      io.stderr(redactSecrets(`${issue.path.join('.')}: ${issue.message}`));
     }
-    return 3;
+    return classified.exitCode;
   }
-  if (error instanceof BuildroomConfigExistsError) {
-    io.stderr(error.message);
-    return 3;
-  }
-  if (error instanceof AuthorityPolicyError) {
-    io.stderr(error.message);
-    return 4;
-  }
-  if (error instanceof CliUsageError) {
-    io.stderr(error.message);
-    return 2;
-  }
-  if (error instanceof BuildroomStageBlockedError) {
-    io.stderr(error.message);
-    return 8;
-  }
-  if (error instanceof ArtifactHashMismatchError) {
-    io.stderr(error.message);
-    return 4;
-  }
-  if (error instanceof OutputRefHashMismatchError) {
-    io.stderr(error.message);
-    return 4;
-  }
-  if (error instanceof MissingArtifactParentError) {
-    io.stderr(error.message);
-    return 4;
-  }
-  io.stderr(error instanceof Error ? error.message : String(error));
-  if (error instanceof Error && error.message.startsWith('Artifact not found:')) return 5;
-  if (error instanceof Error && error.message.startsWith('QA report not found')) return 5;
-  return 1;
+  io.stderr(classified.message);
+  return classified.exitCode;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -1012,6 +1042,12 @@ function parseArgs(argv: string[]): ParsedArgs {
       case '--execute':
         out.flags.add('execute');
         break;
+      case '--json':
+        out.flags.add('json');
+        break;
+      case '--quiet':
+        out.flags.add('quiet');
+        break;
       default:
         if (!out.command) out.command = arg;
         else positional.push(arg);
@@ -1039,6 +1075,105 @@ function uniqueRoutes(routes: string[]): string[] {
 
 function nowIso(deps: BuildroomCliDependencies): string {
   return deps.now?.() ?? new Date().toISOString();
+}
+
+function wantsJson(args: ParsedArgs): boolean {
+  return args.flags.has('json');
+}
+
+function writeJson(write: (text: string) => void, value: unknown): void {
+  write(redactSecrets(JSON.stringify(value, null, 2)));
+}
+
+function statusJsonState(
+  config: BuildroomConfig,
+  counts: ReturnType<typeof deriveStatusCounts>,
+  roomState: string,
+  latestTrust: BuildroomArtifact | undefined,
+): Record<string, unknown> {
+  return {
+    roomState,
+    mode: config.mode,
+    paused: config.paused,
+    killSwitchActive: config.killSwitchActive,
+    latestTrust: String(latestTrust?.payload.trustState ?? 'none'),
+    counts,
+  };
+}
+
+function artifactSummary(artifact: BuildroomArtifact): Record<string, unknown> {
+  return {
+    id: artifact.id,
+    type: artifact.type,
+    status: artifact.status,
+    parentIds: artifact.parentIds,
+  };
+}
+
+function classifyCliError(error: unknown): {
+  code: string;
+  exitCode: number;
+  message: string;
+} {
+  const message = redactSecrets(error instanceof Error ? error.message : String(error));
+
+  if (error instanceof BuildroomConfigValidationError) {
+    return { code: 'invalid_config', exitCode: 3, message };
+  }
+  if (error instanceof BuildroomConfigExistsError) {
+    return { code: 'invalid_config', exitCode: 3, message };
+  }
+  if (error instanceof AuthorityPolicyError) {
+    return { code: 'policy_blocked', exitCode: 4, message };
+  }
+  if (error instanceof CliUsageError) {
+    return { code: 'invalid_usage', exitCode: 2, message };
+  }
+  if (error instanceof BuildroomStageBlockedError) {
+    return { code: 'stage_blocked', exitCode: 8, message };
+  }
+  if (error instanceof ArtifactHashMismatchError) {
+    return { code: 'artifact_integrity_failed', exitCode: 4, message };
+  }
+  if (error instanceof OutputRefHashMismatchError) {
+    return { code: 'artifact_integrity_failed', exitCode: 4, message };
+  }
+  if (error instanceof MissingArtifactParentError) {
+    return { code: 'artifact_integrity_failed', exitCode: 4, message };
+  }
+  if (error instanceof Error && error.message.startsWith('Artifact not found:')) {
+    return { code: 'missing_artifact', exitCode: 5, message };
+  }
+  if (error instanceof Error && error.message.startsWith('QA report not found')) {
+    return { code: 'missing_artifact', exitCode: 5, message };
+  }
+
+  return { code: 'general_failure', exitCode: 1, message };
+}
+
+function nextActionsForError(code: string): string[] {
+  switch (code) {
+    case 'invalid_config':
+      return ['anthroclaw buildroom validate'];
+    case 'missing_artifact':
+      return ['anthroclaw buildroom status'];
+    case 'policy_blocked':
+    case 'artifact_integrity_failed':
+    case 'stage_blocked':
+      return ['anthroclaw buildroom status', 'anthroclaw buildroom show <id>'];
+    case 'invalid_usage':
+      return ['anthroclaw buildroom help'];
+    default:
+      return ['anthroclaw buildroom status'];
+  }
+}
+
+function roomIdForError(args: ParsedArgs): string {
+  try {
+    return loadBuildroomRoomConfig(args.root, args.room).roomId;
+  } catch {
+    return args.room ?? 'anthroclaw-core';
+  }
 }
 
 function sha256(content: string | Buffer): string {
@@ -1104,6 +1239,8 @@ function helpText(): string {
     '  --telegram-notification-route <route>  Add Telegram notification route during init',
     '  --save              Persist report rendering when supported',
     '  --execute           Explicitly run Builder for build plan/approval',
+    '  --json              Emit machine-readable JSON for supported commands and errors',
+    '  --quiet             Suppress non-error text where supported',
   ].join('\n');
 }
 
