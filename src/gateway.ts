@@ -144,6 +144,9 @@ import { parseDecisionCallbackData } from './decisions/events.js';
 import { renderDecisionPrompt } from './decisions/renderer.js';
 import { DecisionStore } from './decisions/store.js';
 import type { DecisionChannel, DecisionDeliveryRecord, DecisionEvent, DecisionRecord } from './decisions/types.js';
+import { runBuildroomCli } from './cli/buildroom.js';
+import { loadBuildroomRoomConfig } from './auto-buildroom/storage/init.js';
+import { handleTelegramBuildroomGatewayMessage } from './auto-buildroom/telegram/gateway-adapter.js';
 import { getSdkActiveInputStatus, type SdkActiveInputStatus } from './sdk/active-input.js';
 import {
   asAgentMcpServerSpec,
@@ -4059,9 +4062,34 @@ export class Gateway {
     }
   }
 
+  private async handleBuildroomTelegramCommand(msg: InboundMessage): Promise<boolean> {
+    if (msg.channel !== 'telegram') return false;
+    if (!this.dataDir) return false;
+    const channel = this.channels.get('telegram');
+    if (!channel) return false;
+
+    const projectRoot = resolve(this.dataDir, '..');
+    return handleTelegramBuildroomGatewayMessage(msg, {
+      projectRoot,
+      loadConfig: async () => {
+        try {
+          return loadBuildroomRoomConfig(projectRoot);
+        } catch (err) {
+          logger.debug({ err }, 'Auto-Buildroom config not available for Telegram command');
+          return null;
+        }
+      },
+      runCli: (argv, io) => runBuildroomCli(argv, io),
+      sendText: async (peerId, text, opts) => {
+        await channel.sendText(peerId, text, opts);
+      },
+    });
+  }
+
   async dispatch(msg: InboundMessage): Promise<void> {
     metrics.increment('messages_received');
     metrics.recordMessage();
+    if (await this.handleBuildroomTelegramCommand(msg)) return;
     if (!this.routeTable || !this.accessControl) return;
     if (await this.handleDecisionTextReply(msg)) return;
 
