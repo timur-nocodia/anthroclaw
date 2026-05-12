@@ -17,8 +17,8 @@ describe('Honcho config', () => {
       },
       connection: {
         workspace_id: 'anthroclaw-local',
-        environment: 'production',
-        base_url: 'https://api.honcho.dev',
+        environment: 'local',
+        base_url: 'http://honcho-api-1:8000',
         api_key_env: 'HONCHO_API_KEY',
         timeout_ms: 15_000,
         max_retries: 2,
@@ -72,7 +72,7 @@ describe('Honcho config', () => {
       workspace_id: 'anthroclaw-prod',
       timeout_ms: 10_000,
       api_key_env: 'HONCHO_PROD_KEY',
-      base_url: 'https://api.honcho.dev',
+      base_url: 'http://honcho-api-1:8000',
     });
     expect(config.context.token_budget).toBe(2400);
     expect(config.tools.ask).toBe(false);

@@ -86,7 +86,7 @@ describe('Honcho client adapter', () => {
 
   it('fails fast when production mode has no configured API key', async () => {
     const config = resolveConfig({}, {
-      connection: { api_key_env: 'HONCHO_MISSING_KEY' },
+      connection: { environment: 'production', api_key_env: 'HONCHO_MISSING_KEY' },
     });
 
     await expect(createHonchoClient(config, {
@@ -101,7 +101,7 @@ describe('Honcho client adapter', () => {
 
   it('redacts secrets when SDK construction fails', async () => {
     const config = resolveConfig({}, {
-      connection: { api_key_env: 'HONCHO_API_KEY' },
+      connection: { environment: 'production', api_key_env: 'HONCHO_API_KEY' },
     });
 
     await expect(createHonchoClient(config, {

@@ -84,8 +84,8 @@ Config:
 
 ```yaml
 workspace_id: anthroclaw-local
-environment: production # production | local
-base_url: https://api.honcho.dev
+environment: local # local for self-hosted Docker, production for managed Honcho
+base_url: http://honcho-api-1:8000
 ```
 
 For self-hosted Honcho, `base_url` points to the local deployment and `api_key` may be omitted if the deployment is unauthenticated.
@@ -170,15 +170,15 @@ export const HonchoConfigSchema = z.object({
 
   connection: z.object({
     workspace_id: z.string().min(1).default('anthroclaw-local'),
-    environment: z.enum(['production', 'local']).default('production'),
-    base_url: z.string().url().default('https://api.honcho.dev'),
+    environment: z.enum(['production', 'local']).default('local'),
+    base_url: z.string().url().default('http://honcho-api-1:8000'),
     api_key_env: z.string().min(1).default('HONCHO_API_KEY'),
     timeout_ms: z.number().int().positive().default(15_000),
     max_retries: z.number().int().min(0).max(3).default(2),
   }).default({
     workspace_id: 'anthroclaw-local',
-    environment: 'production',
-    base_url: 'https://api.honcho.dev',
+    environment: 'local',
+    base_url: 'http://honcho-api-1:8000',
     api_key_env: 'HONCHO_API_KEY',
     timeout_ms: 15_000,
     max_retries: 2,
@@ -705,7 +705,8 @@ plugins:
     mode: context
     connection:
       workspace_id: anthroclaw-personal
-      environment: production
+      environment: local
+      base_url: http://honcho-api-1:8000
       api_key_env: HONCHO_API_KEY
     peers:
       hash_ids: true

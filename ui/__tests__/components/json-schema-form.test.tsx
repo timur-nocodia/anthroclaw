@@ -236,7 +236,7 @@ describe("<JsonSchemaForm /> — provider scoped models and secrets", () => {
 });
 
 describe("<JsonSchemaForm /> — tooltips from description", () => {
-  it("attaches a `?` tooltip when a field has a description", () => {
+  it("attaches a `?` tooltip and visible inline help when a field has a description", () => {
     const schema = {
       type: "object",
       properties: {
@@ -254,6 +254,7 @@ describe("<JsonSchemaForm /> — tooltips from description", () => {
     const tips = screen.getAllByTestId("field-tip");
     expect(tips.length).toBeGreaterThan(0);
     expect(screen.getByRole("tooltip")).toHaveTextContent("Token threshold");
+    expect(screen.getByTestId("field-help-threshold")).toHaveTextContent("Token threshold");
   });
 
   it("omits the tooltip when no description is provided", () => {
@@ -296,10 +297,11 @@ describe("<JsonSchemaForm /> — nested object sections", () => {
       />,
     );
 
-    // Section header renders the property key as the title.
-    expect(screen.getByText("triggers")).toBeInTheDocument();
-    // And the section description surfaces via tooltip.
+    // Section header renders a human-readable title.
+    expect(screen.getByText("Triggers")).toBeInTheDocument();
+    // And the section description surfaces via tooltip and inline help.
     expect(screen.getByRole("tooltip")).toHaveTextContent("Trigger settings");
+    expect(screen.getByTestId("section-help-triggers")).toHaveTextContent("Trigger settings");
   });
 });
 

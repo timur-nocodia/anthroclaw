@@ -19,7 +19,7 @@ import {
 /*                                                                     */
 /*  Supports the subset Zod 4 produces:                                */
 /*    - object / properties (nested → titled section)                  */
-/*    - string  (with `?` tooltip from .describe())                    */
+/*    - string  (with inline help + `?` tooltip from .describe())       */
 /*    - number / integer                                               */
 /*    - boolean                                                        */
 /*    - enum (string)                                                  */
@@ -113,6 +113,18 @@ function readStringAtPath(root: Record<string, unknown>, path: string[]): string
     cursor = (cursor as Record<string, unknown>)[segment];
   }
   return typeof cursor === "string" ? cursor : undefined;
+}
+
+function humanizeLabel(label: string | undefined): string {
+  if (!label) return "";
+  return label
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .replace(/\bId\b/g, "ID")
+    .replace(/\bApi\b/g, "API")
+    .replace(/\bUrl\b/g, "URL")
+    .replace(/\bLlm\b/g, "LLM")
+    .replace(/\bMs\b/g, "ms");
 }
 
 function SchemaNode(props: NodeProps) {
@@ -562,11 +574,20 @@ function Section({
           className="text-[13px] font-semibold"
           style={{ color: "var(--color-foreground)" }}
         >
-          {title}
+          {humanizeLabel(title)}
           {required ? " *" : ""}
         </span>
         {tooltip && <Tip text={tooltip} />}
       </div>
+      {tooltip && (
+        <div
+          className="px-3.5 pt-3 text-[11.5px] leading-relaxed whitespace-pre-line"
+          style={{ color: "var(--oc-text-dim)" }}
+          data-testid={`section-help-${pathKey || "root"}`}
+        >
+          {tooltip}
+        </div>
+      )}
       <div className="p-3.5">{children}</div>
     </div>
   );
@@ -618,18 +639,40 @@ interface FieldWrapperProps {
 }
 
 function Field({ label, tooltip, pathKey, error, inline, children }: FieldWrapperProps) {
+  const displayLabel = humanizeLabel(label);
   return (
     <div className="flex min-w-0 flex-col gap-1.5" data-field-path={pathKey || "root"}>
       {label && (
         <label
-          className="flex items-center text-[11px] font-medium uppercase tracking-[0.4px]"
+          className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.4px]"
           style={{ color: "var(--oc-text-muted)" }}
         >
-          {label}
+          <span>{displayLabel}</span>
+          {displayLabel !== label && (
+            <span
+              className="normal-case tracking-normal"
+              style={{
+                color: "var(--oc-text-muted)",
+                fontFamily: "var(--oc-mono)",
+                opacity: 0.72,
+              }}
+            >
+              {label}
+            </span>
+          )}
           {tooltip && <Tip text={tooltip} />}
         </label>
       )}
       {inline ? <div>{children}</div> : children}
+      {tooltip && (
+        <p
+          className="text-[11.5px] leading-relaxed whitespace-pre-line"
+          style={{ color: "var(--oc-text-dim)" }}
+          data-testid={`field-help-${pathKey || "root"}`}
+        >
+          {tooltip}
+        </p>
+      )}
       {error && (
         <p
           className="text-[11px]"

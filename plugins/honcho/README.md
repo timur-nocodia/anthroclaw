@@ -15,12 +15,12 @@ plugins:
       mode: observe
       connection:
         workspace_id: anthroclaw-prod
-        environment: production
-        base_url: https://api.honcho.dev
+        environment: local
+        base_url: http://honcho-api-1:8000
         api_key_env: HONCHO_API_KEY
 ```
 
-Managed Honcho requires the named API key environment variable:
+These defaults target the self-hosted Docker setup. Managed Honcho requires `environment: production`, `base_url: https://api.honcho.dev`, and the named API key environment variable:
 
 ```bash
 export HONCHO_API_KEY=hch-v3-...
@@ -37,7 +37,7 @@ plugins:
       connection:
         workspace_id: anthroclaw-local
         environment: local
-        base_url: http://localhost:8000
+        base_url: http://honcho-api-1:8000
 ```
 
 `environment: local` does not require an API key. `environment: production` requires `api_key_env` to resolve.
