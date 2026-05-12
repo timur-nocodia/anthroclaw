@@ -3166,3 +3166,14 @@ The OAuth callback flow needs a stable public URL for the AnthroClaw UI. Set one
   Persist this in your secrets manager / systemd EnvironmentFile / docker secrets. Rotating the master key invalidates all stored credentials.
 
 In production, the URL must use HTTPS. The system logs a warning if any OAuth endpoint (provider's token / authorization / registration URLs) is reached over HTTP in production.
+
+### Deployment notes
+
+The MCP onboarding pipeline uses an event-driven flow: the OAuth callback (UI side) writes to `data/mcp.sqlite` and emits an in-process event that the Gateway subscribes to. The Gateway then dispatches the `[system] mcp_connected` message to the agent's chat session.
+
+This event delivery is **in-process only**. If you run the UI and Gateway in separate processes (e.g. UI on a serverless/edge platform, Gateway on a VPS), the chat-initiated onboarding flow will not deliver completion messages to the agent — the wizard will work but agents will not see the `[system] mcp_connected` event.
+
+Recommended topology for v0.x: run UI and Gateway in the same Node process (or at least on the same host with shared `data/` filesystem). Split deployments require either:
+
+- A shared message broker for cross-process events (Redis pub/sub or similar; not yet implemented), or
+- A UI → Gateway internal HTTP shim for synthetic dispatch (not yet implemented).
