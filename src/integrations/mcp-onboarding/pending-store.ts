@@ -164,11 +164,15 @@ export function openPendingStore(path: string): PendingStore {
       return rows.map((r) => rowToRecord(r as Record<string, unknown>));
     },
     sweepExpired(now) {
+      // Also catch rows stuck in 'exchanging' — if the process crashes
+      // between consumeByState (which sets status='exchanging') and the
+      // markCompleted/markFailed/markCancelled call, the row would
+      // otherwise stay in that intermediate state forever.
       const rows = db
         .prepare(
           `UPDATE mcp_pending_connections
            SET status = 'expired'
-           WHERE expires_at < ? AND status = 'pending'
+           WHERE expires_at < ? AND status IN ('pending', 'exchanging')
            RETURNING *`,
         )
         .all(now);

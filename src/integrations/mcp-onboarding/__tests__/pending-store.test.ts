@@ -75,6 +75,18 @@ describe('PendingStore', () => {
     expect(store.byId(expiredCompleted.id)?.status).toBe('completed');
   });
 
+  it('sweepExpired also recovers stuck exchanging rows', () => {
+    // If the process crashes between `consumeByState` (which sets status to
+    // 'exchanging') and `markCompleted`/`markCancelled`, the row would stay
+    // stuck forever without this guard.
+    const now = Date.now();
+    const stuck = make({ expiresAt: now - 1000, status: 'exchanging' });
+    store.insert(stuck);
+    const swept = store.sweepExpired(now);
+    expect(swept.map((r) => r.id)).toContain(stuck.id);
+    expect(store.byId(stuck.id)?.status).toBe('expired');
+  });
+
   it('consumeByState is atomic — exactly one of 10 concurrent consumers wins', async () => {
     const row = make({ status: 'pending' });
     store.insert(row);
