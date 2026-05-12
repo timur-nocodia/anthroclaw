@@ -73,6 +73,48 @@ function deriveKey(
   return Buffer.from(hkdfSync('sha256', masterKey, salt, info, 32));
 }
 
+/**
+ * Project a stored credential down to its public-safe (non-secret) fields for
+ * the management UI / introspection tools. The switch is exhaustive over the
+ * `StoredCredential` discriminated union — the `never` assertion in the
+ * `default` arm forces a TypeScript error when a new variant is added without
+ * deciding which fields are safe to expose, and the runtime `throw` surfaces
+ * the same gap in tests if the type check is somehow bypassed.
+ *
+ * Whitelist (positive) rather than blacklist (negative) so a future field
+ * defaulting to "leak" is impossible: adding e.g. `privateKey` to a variant
+ * only ships if a maintainer explicitly adds it here.
+ */
+function metadataView(cred: StoredCredential): CredentialMetadata {
+  const base: CredentialMetadata = {
+    service: cred.service,
+    account: cred.account,
+    scopes: cred.scopes,
+    metadata: cred.metadata,
+  };
+  switch (cred.kind) {
+    case undefined:
+    case 'oauth':
+      return { ...base, expiresAt: cred.expiresAt };
+    case 'mcp_oauth':
+      // Note: `clientId`/`tokenEndpoint`/`authorizationServer` are also
+      // arguably non-secret, but `CredentialMetadata` does not expose them
+      // today — keep the surface narrow and add fields only when a caller
+      // needs them.
+      return { ...base, expiresAt: cred.expiresAt };
+    case 'mcp_apikey':
+      return base;
+    default: {
+      const _exhaustive: never = cred;
+      void _exhaustive;
+      throw new Error(
+        'unknown credential kind: '
+          + JSON.stringify((cred as { kind?: string }).kind),
+      );
+    }
+  }
+}
+
 export class EncryptedFilesystemCredentialStore implements CredentialStore {
   private readonly masterKey: Buffer;
 
@@ -151,14 +193,7 @@ export class EncryptedFilesystemCredentialStore implements CredentialStore {
       try {
         // Decrypt inline — same code path as `get()` minus the audit write.
         const cred = await this.readAndDecrypt({ agentId, service });
-        // Strip every known secret field across the credential union.
-        // `accessToken`/`refreshToken` cover oauth + mcp_oauth; `token` covers
-        // mcp_apikey. Unknown future variants pass through unstripped — that
-        // is a TODO marker, not a defence, so a reviewer notices when adding
-        // a new credential kind.
-        const rest = cred as unknown as Record<string, unknown>;
-        const { accessToken: _a, refreshToken: _r, token: _t, ...meta } = rest;
-        out.push(meta as unknown as CredentialMetadata);
+        out.push(metadataView(cred));
       } catch {
         // Unreadable / corrupt files are skipped — list() must not fail
         // wholesale because one entry is broken.

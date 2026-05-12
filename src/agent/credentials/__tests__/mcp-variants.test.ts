@@ -87,4 +87,62 @@ describe('credential store — MCP variants', () => {
     const got = await store.get({ agentId: 'a1', service: 'google_calendar' }, 'test');
     expect((got as { kind: string }).kind).toBe('oauth');
   });
+
+  it('list() strips every secret-bearing field across all credential variants', async () => {
+    // oauth (legacy shape, no kind)
+    const oauth = {
+      kind: 'oauth' as const,
+      service: 'google_calendar',
+      account: 'me@example.com',
+      accessToken: 'tok_access_oauth',
+      refreshToken: 'tok_refresh_oauth',
+      scopes: ['cal'],
+      expiresAt: 1_800_000_000_000,
+    };
+    const mcpOauth: McpOAuthCredential = {
+      kind: 'mcp_oauth',
+      service: 'mcp:postmypost',
+      account: 'postmypost',
+      scopes: ['read:posts'],
+      mcpUrl: 'https://mcp.postmypost.io/mcp',
+      accessToken: 'tok_access_mcp',
+      refreshToken: 'tok_refresh_mcp',
+      expiresAt: 1_900_000_000_000,
+      tokenEndpoint: 'https://auth.postmypost.io/token',
+      authorizationServer: 'https://auth.postmypost.io',
+      clientId: 'cli_xyz',
+      clientSecret: 'sec_xyz',
+      createdAt: 1_800_000_000_000,
+    };
+    const mcpApiKey: McpApiKeyCredential = {
+      kind: 'mcp_apikey',
+      service: 'mcp:other',
+      account: 'other',
+      scopes: [],
+      mcpUrl: 'https://other.example.com/mcp',
+      token: 'sk_live_abc',
+      scheme: 'Bearer',
+      createdAt: 1_800_000_000_000,
+    };
+
+    await store.set({ agentId: 'a1', service: oauth.service }, oauth as never);
+    await store.set({ agentId: 'a1', service: mcpOauth.service }, mcpOauth);
+    await store.set({ agentId: 'a1', service: mcpApiKey.service }, mcpApiKey);
+
+    const list = await store.list('a1');
+    expect(list).toHaveLength(3);
+
+    // Every returned object must lack the secret-bearing fields,
+    // and must keep the public-safe ones.
+    for (const meta of list) {
+      const asRecord = meta as unknown as Record<string, unknown>;
+      expect(asRecord).not.toHaveProperty('token');
+      expect(asRecord).not.toHaveProperty('accessToken');
+      expect(asRecord).not.toHaveProperty('refreshToken');
+      expect(asRecord).not.toHaveProperty('clientSecret');
+      expect(meta).toHaveProperty('service');
+      expect(meta).toHaveProperty('account');
+      expect(meta).toHaveProperty('scopes');
+    }
+  });
 });
