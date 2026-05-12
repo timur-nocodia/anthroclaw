@@ -9,7 +9,7 @@ export interface BuildroomHandoffToolOptions {
   projectRoot: string;
   roomId: string;
   sourceAgentId: string;
-  sourceSessionId: string;
+  sourceSessionId?: string;
   now?: () => string;
 }
 
@@ -21,6 +21,7 @@ export function createBuildroomHandoffTool(opts: BuildroomHandoffToolOptions): T
       signal_type: z.string().min(1).describe('Signal type, for example friction, docs_gap, test_gap, or operator_confusion.'),
       summary: z.string().min(1).describe('Short sanitized description of what the agent noticed.'),
       evidence_summary_id: z.string().min(1).describe('Existing session_summary artifact ID used as evidence.'),
+      source_session_id: z.string().optional().describe('Source ordinary-agent session ID. Required if not bound by dispatch context.'),
       confidence: z.enum(['low', 'medium', 'high']).default('medium'),
       requested_action: z.enum(['research_only', 'create_idea_candidate']).default('research_only'),
       target_buildroom: z.string().optional().describe('Optional target Buildroom ID. Defaults to current room.'),
@@ -28,10 +29,18 @@ export function createBuildroomHandoffTool(opts: BuildroomHandoffToolOptions): T
     async (args: Record<string, unknown>) => {
       try {
         const now = opts.now?.() ?? new Date().toISOString();
+        const sourceSessionId = opts.sourceSessionId
+          ?? (typeof args.source_session_id === 'string' ? args.source_session_id : undefined);
+        if (!sourceSessionId) {
+          return {
+            content: [{ type: 'text', text: 'Buildroom handoff failed: source_session_id is required.' }],
+            isError: true,
+          };
+        }
         const artifact = createHandoffSignalArtifact({
           roomId: opts.roomId,
           sourceAgentId: opts.sourceAgentId,
-          sourceSessionId: opts.sourceSessionId,
+          sourceSessionId,
           targetBuildroom: typeof args.target_buildroom === 'string' ? args.target_buildroom : opts.roomId,
           signalType: String(args.signal_type),
           summary: String(args.summary),

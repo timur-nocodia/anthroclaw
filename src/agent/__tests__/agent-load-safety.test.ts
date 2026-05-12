@@ -46,6 +46,14 @@ describe('Agent.load() safety_profile validation', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('loads the controlled Buildroom handoff tool for private agents', async () => {
+    const yml = `safety_profile: private\nroutes:\n  - channel: telegram\n    scope: dm\nallowlist:\n  telegram:\n    - "12345"\nmcp_tools:\n  - buildroom_submit_signal\n`;
+    const dir = setupAgentDir('a', yml);
+    const agent = await Agent.load(dir, dataDir, () => undefined);
+    expect(agent.tools.map((tool) => tool.name)).toContain('buildroom_submit_signal');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('refuses private agent with 2 peers in 1 channel', async () => {
     const yml = `safety_profile: private\nroutes:\n  - channel: telegram\n    scope: dm\nallowlist:\n  telegram:\n    - "1"\n    - "2"\n`;
     const dir = setupAgentDir('a', yml);

@@ -67,4 +67,25 @@ describe('buildroom handoff tool', () => {
       },
     });
   });
+
+  it('requires a source session id when not bound by dispatch context', async () => {
+    const tool = createBuildroomHandoffTool({
+      projectRoot: root,
+      roomId: 'anthroclaw-core',
+      sourceAgentId: 'code-helper',
+    }) as unknown as {
+      handler(args: Record<string, unknown>): Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
+    };
+
+    const result = await tool.handler({
+      signal_type: 'friction',
+      summary: 'Notification routing needs clearer operator view.',
+      evidence_summary_id: 'session-summary-20260512-000000-code-helper',
+      confidence: 'medium',
+      requested_action: 'research_only',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('source_session_id is required');
+  });
 });
