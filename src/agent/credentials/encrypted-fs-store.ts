@@ -47,7 +47,7 @@ import { loadMasterKey } from './master-key.js';
 import type {
   CredentialStore,
   CredentialRef,
-  OAuthCredential,
+  StoredCredential,
   CredentialMetadata,
 } from './index.js';
 import { CredentialAuditLog } from './audit.js';
@@ -73,6 +73,48 @@ function deriveKey(
   return Buffer.from(hkdfSync('sha256', masterKey, salt, info, 32));
 }
 
+/**
+ * Project a stored credential down to its public-safe (non-secret) fields for
+ * the management UI / introspection tools. The switch is exhaustive over the
+ * `StoredCredential` discriminated union — the `never` assertion in the
+ * `default` arm forces a TypeScript error when a new variant is added without
+ * deciding which fields are safe to expose, and the runtime `throw` surfaces
+ * the same gap in tests if the type check is somehow bypassed.
+ *
+ * Whitelist (positive) rather than blacklist (negative) so a future field
+ * defaulting to "leak" is impossible: adding e.g. `privateKey` to a variant
+ * only ships if a maintainer explicitly adds it here.
+ */
+function metadataView(cred: StoredCredential): CredentialMetadata {
+  const base: CredentialMetadata = {
+    service: cred.service,
+    account: cred.account,
+    scopes: cred.scopes,
+    metadata: cred.metadata,
+  };
+  switch (cred.kind) {
+    case undefined:
+    case 'oauth':
+      return { ...base, expiresAt: cred.expiresAt };
+    case 'mcp_oauth':
+      // Note: `clientId`/`tokenEndpoint`/`authorizationServer` are also
+      // arguably non-secret, but `CredentialMetadata` does not expose them
+      // today — keep the surface narrow and add fields only when a caller
+      // needs them.
+      return { ...base, expiresAt: cred.expiresAt };
+    case 'mcp_apikey':
+      return base;
+    default: {
+      const _exhaustive: never = cred;
+      void _exhaustive;
+      throw new Error(
+        'unknown credential kind: '
+          + JSON.stringify((cred as { kind?: string }).kind),
+      );
+    }
+  }
+}
+
 export class EncryptedFilesystemCredentialStore implements CredentialStore {
   private readonly masterKey: Buffer;
 
@@ -83,7 +125,7 @@ export class EncryptedFilesystemCredentialStore implements CredentialStore {
     this.masterKey = loadMasterKey();
   }
 
-  async set(ref: CredentialRef, credential: OAuthCredential): Promise<void> {
+  async set(ref: CredentialRef, credential: StoredCredential): Promise<void> {
     const key = deriveKey(this.masterKey, ref.agentId, ref.service);
     const iv = randomBytes(IV_LEN);
     const cipher = createCipheriv('aes-256-gcm', key, iv);
@@ -111,7 +153,7 @@ export class EncryptedFilesystemCredentialStore implements CredentialStore {
   async get(
     ref: CredentialRef,
     accessReason: string,
-  ): Promise<OAuthCredential> {
+  ): Promise<StoredCredential> {
     const credential = await this.readAndDecrypt(ref);
     await this.auditLog.record({
       ts: Date.now(),
@@ -151,8 +193,7 @@ export class EncryptedFilesystemCredentialStore implements CredentialStore {
       try {
         // Decrypt inline — same code path as `get()` minus the audit write.
         const cred = await this.readAndDecrypt({ agentId, service });
-        const { accessToken: _a, refreshToken: _r, ...meta } = cred;
-        out.push(meta);
+        out.push(metadataView(cred));
       } catch {
         // Unreadable / corrupt files are skipped — list() must not fail
         // wholesale because one entry is broken.
@@ -190,7 +231,7 @@ export class EncryptedFilesystemCredentialStore implements CredentialStore {
    * Does NOT touch the audit log — callers do that explicitly so `list()`
    * can decrypt without polluting the log.
    */
-  private async readAndDecrypt(ref: CredentialRef): Promise<OAuthCredential> {
+  private async readAndDecrypt(ref: CredentialRef): Promise<StoredCredential> {
     const blob = await readFile(this.pathFor(ref));
     if (blob.length < HEADER_LEN) {
       throw new Error(
@@ -207,6 +248,11 @@ export class EncryptedFilesystemCredentialStore implements CredentialStore {
     const decipher = createDecipheriv('aes-256-gcm', key, iv);
     decipher.setAuthTag(tag);
     const plaintext = Buffer.concat([decipher.update(ct), decipher.final()]);
-    return JSON.parse(plaintext.toString('utf-8')) as OAuthCredential;
+    const parsed = JSON.parse(plaintext.toString('utf-8')) as Record<string, unknown>;
+    // Pre-credential_ref records had no `kind` field — they were all OAuth.
+    // Backfill on read so callers can rely on the discriminator without a
+    // separate migration. New records always carry `kind` explicitly.
+    if (!('kind' in parsed)) parsed.kind = 'oauth';
+    return parsed as unknown as StoredCredential;
   }
 }

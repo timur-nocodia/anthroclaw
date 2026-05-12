@@ -392,3 +392,74 @@ describe('plugins config schema', () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe('ExternalMcpServerSchema — credential_ref', () => {
+  const baseAgent = {
+    safety_profile: 'trusted' as const,
+    routes: [{ channel: 'telegram' as const }],
+    memory_extraction: undefined,
+    subagents: undefined,
+  };
+
+  it('accepts http entry with credential_ref and no headers', () => {
+    const yml = {
+      ...baseAgent,
+      external_mcp_servers: {
+        postmypost: {
+          type: 'http',
+          url: 'https://mcp.postmypost.io/mcp',
+          credential_ref: 'mcp:postmypost',
+          allowed_tools: ['post_create'],
+        },
+      },
+    };
+    expect(() => AgentYmlSchema.parse(yml)).not.toThrow();
+  });
+
+  it('accepts http entry with both credential_ref and non-Authorization header', () => {
+    const yml = {
+      ...baseAgent,
+      external_mcp_servers: {
+        postmypost: {
+          type: 'http',
+          url: 'https://mcp.postmypost.io/mcp',
+          credential_ref: 'mcp:postmypost',
+          headers: { 'X-Workspace': 'acme' },
+        },
+      },
+    };
+    expect(() => AgentYmlSchema.parse(yml)).not.toThrow();
+  });
+
+  it('rejects http entry with both credential_ref and Authorization header', () => {
+    const yml = {
+      ...baseAgent,
+      external_mcp_servers: {
+        postmypost: {
+          type: 'http',
+          url: 'https://mcp.postmypost.io/mcp',
+          credential_ref: 'mcp:postmypost',
+          headers: { Authorization: 'Bearer hardcoded' },
+        },
+      },
+    };
+    expect(() => AgentYmlSchema.parse(yml)).toThrow(
+      /Cannot set both credential_ref and Authorization header/,
+    );
+  });
+
+  it('legacy entries without new fields still parse', () => {
+    const yml = {
+      ...baseAgent,
+      external_mcp_servers: {
+        legacy: {
+          type: 'http',
+          url: 'https://example.com/mcp',
+          headers: { Authorization: 'Bearer abc' },
+          allowed_tools: ['t1'],
+        },
+      },
+    };
+    expect(() => AgentYmlSchema.parse(yml)).not.toThrow();
+  });
+});

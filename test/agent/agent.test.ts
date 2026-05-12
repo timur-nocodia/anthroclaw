@@ -101,11 +101,15 @@ describe('Agent', () => {
     expect(toolNames).not.toContain('send_media');
   });
 
-  it('creates MCP server with no tools when mcp_tools is omitted', async () => {
+  it('creates MCP server with only always-on built-ins when mcp_tools is omitted', async () => {
     writeMinimalAgentYml(agentDir);
     const agent = await Agent.load(agentDir, dataDir);
 
-    expect(agent.tools).toHaveLength(0);
+    // `connect_mcp` is registered unconditionally for every agent so the
+    // MCP onboarding flow is reachable without per-agent opt-in. Other
+    // built-ins still require an `mcp_tools` entry.
+    const names = agent.tools.map((t) => t.name);
+    expect(names).toEqual(['connect_mcp']);
   });
 
   // ─── 5. session management: getSessionId returns undefined ──────

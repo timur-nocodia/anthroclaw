@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { EncryptedFilesystemCredentialStore } from '../encrypted-fs-store.js';
 import { CredentialAuditLog } from '../audit.js';
+import type { OAuthCredential } from '../index.js';
 
 let dir: string;
 const KEY = 'a'.repeat(64); // 32 bytes hex
@@ -68,7 +69,10 @@ describe('EncryptedFilesystemCredentialStore', () => {
       { agentId: 'agenta', service: 'google_calendar' },
       'test',
     );
-    expect(out).toEqual(cred);
+    // `kind: 'oauth'` is backfilled by the store on read so callers can rely
+    // on the discriminator without a migration. Legacy records written before
+    // the credential variants landed had no `kind` byte on disk.
+    expect(out).toEqual({ ...cred, kind: 'oauth' });
   });
 
   it('writes encrypted bytes — plaintext token strings absent on disk', async () => {
@@ -170,10 +174,10 @@ describe('EncryptedFilesystemCredentialStore', () => {
     await store.set({ agentId: 'agenta', service: 'google_calendar' }, cred);
     const replacement = { ...cred, accessToken: 'ya29.NEW', scopes: ['calendar.write'] };
     await store.set({ agentId: 'agenta', service: 'google_calendar' }, replacement);
-    const out = await store.get(
+    const out = (await store.get(
       { agentId: 'agenta', service: 'google_calendar' },
       'test',
-    );
+    )) as OAuthCredential;
     expect(out.accessToken).toBe('ya29.NEW');
     expect(out.scopes).toEqual(['calendar.write']);
 
@@ -210,11 +214,14 @@ describe('EncryptedFilesystemCredentialStore', () => {
     await store.set({ agentId: 'agenta', service: 'google_calendar' }, credA);
     await store.set({ agentId: 'agenta', service: 'notion' }, credB);
 
-    const outA = await store.get(
+    const outA = (await store.get(
       { agentId: 'agenta', service: 'google_calendar' },
       'test',
-    );
-    const outB = await store.get({ agentId: 'agenta', service: 'notion' }, 'test');
+    )) as OAuthCredential;
+    const outB = (await store.get(
+      { agentId: 'agenta', service: 'notion' },
+      'test',
+    )) as OAuthCredential;
     expect(outA.accessToken).toBe('TOKEN_A');
     expect(outB.accessToken).toBe('TOKEN_B');
 

@@ -75,6 +75,7 @@ import {
   type LearningDecisionFilterValue,
 } from "@/components/learning/LearningDecisionFilters";
 import { LearningDecisionRow, type LearningDecisionRecord } from "@/components/learning/LearningDecisionRow";
+import { McpServersSection } from "@/components/mcp/McpServersSection";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -282,21 +283,6 @@ interface ExternalMcpServerConfig {
   url?: string;
   headers?: Record<string, string>;
   allowed_tools?: string[];
-}
-
-interface ExternalMcpPreflightServer {
-  serverName: string;
-  approvalStatus: "approved" | "review_required" | "blocked";
-  networkRisk: "low" | "medium" | "high";
-  filesystemRisk: "low" | "medium" | "high";
-  packageSource: string;
-  reasons: string[];
-}
-
-interface ExternalMcpPreflightState {
-  loading?: boolean;
-  error?: string;
-  server?: ExternalMcpPreflightServer;
 }
 
 const HOOK_EVENTS = [
@@ -1010,7 +996,7 @@ export default function AgentEditorPage() {
         </TabsList>
 
         <TabsContent value="config" className="mt-0 flex-1 overflow-auto">
-          {agent && <ConfigTab serverId={serverId} agentId={agentId} agent={agent} />}
+          {agent && <ConfigTab serverId={serverId} agentId={agentId} agent={agent} onReload={fetchAgent} />}
         </TabsContent>
         <TabsContent value="files" className="mt-0 flex-1 overflow-hidden">
           <FilesTab serverId={serverId} agentId={agentId} />
@@ -1052,10 +1038,12 @@ function ConfigTab({
   serverId,
   agentId,
   agent,
+  onReload,
 }: {
   serverId: string;
   agentId: string;
   agent: AgentConfig;
+  onReload: () => Promise<void> | void;
 }) {
   const [mode, setMode] = useState<"form" | "raw">("form");
   const [dirty, setDirty] = useState(false);
@@ -1147,7 +1135,6 @@ function ConfigTab({
     },
   });
   const [rawYaml, setRawYaml] = useState(agent.raw ?? "");
-  const [externalMcpPreflight, setExternalMcpPreflight] = useState<Record<string, ExternalMcpPreflightState>>({});
   const [safetyValidationError, setSafetyValidationError] = useState<string | null>(null);
   const [safetyValidationWarnings, setSafetyValidationWarnings] = useState<string[]>([]);
   const [chatBaseline, setChatBaseline] = useState<string | null>(null);
@@ -1315,23 +1302,6 @@ function ConfigTab({
     });
   };
 
-  const addExternalMcpServer = () => {
-    const serverName = window.prompt("MCP server name");
-    const name = serverName?.trim();
-    if (!name) return;
-    update({
-      external_mcp_servers: {
-        ...cfg.external_mcp_servers,
-        [name]: {
-          type: "stdio",
-          command: "npx",
-          args: [],
-          allowed_tools: [],
-        },
-      },
-    });
-  };
-
   const enableMcpTools = (tools: string[]) => {
     const current = new Set(cfg.mcp_tools);
     for (const tool of tools) current.add(tool);
@@ -1350,57 +1320,6 @@ function ConfigTab({
     }
 
     update(patch);
-  };
-
-  const nextExternalMcpName = (base: string) => {
-    if (!cfg.external_mcp_servers[base]) return base;
-    for (let index = 2; index < 20; index += 1) {
-      const name = `${base}-${index}`;
-      if (!cfg.external_mcp_servers[name]) return name;
-    }
-    return `${base}-${Date.now()}`;
-  };
-
-  const addExternalMcpPreset = (preset: "calendar" | "gmail") => {
-    const name = nextExternalMcpName(preset);
-    const server = preset === "calendar"
-      ? {
-          type: "stdio" as const,
-          command: "npx",
-          args: ["google-calendar-mcp"],
-          env: {
-            GOOGLE_CLIENT_ID: "",
-            GOOGLE_CLIENT_SECRET: "",
-            GOOGLE_REFRESH_TOKEN: "",
-          },
-          allowed_tools: [
-            "calendar_daily_brief",
-            "calendar_availability",
-            "calendar_event_lookup",
-            "calendar_meeting_prep",
-          ],
-        }
-      : {
-          type: "stdio" as const,
-          command: "npx",
-          args: ["gmail-mcp"],
-          env: {
-            GOOGLE_CLIENT_ID: "",
-            GOOGLE_CLIENT_SECRET: "",
-            GOOGLE_REFRESH_TOKEN: "",
-          },
-          allowed_tools: [
-            "gmail_search",
-            "gmail_thread_summary",
-            "gmail_draft_reply",
-          ],
-        };
-    update({
-      external_mcp_servers: {
-        ...cfg.external_mcp_servers,
-        [name]: server,
-      },
-    });
   };
 
   const removeExternalMcpServer = (serverName: string) => {
@@ -1430,70 +1349,6 @@ function ConfigTab({
       return [[name, clean]] as Array<[string, ExternalMcpServerConfig]>;
     });
     return entries.length > 0 ? Object.fromEntries(entries) : undefined;
-  };
-
-  const buildExternalMcpSpecEntry = (server: ExternalMcpServerConfig): Record<string, unknown> | null => {
-    const type = server.type ?? "stdio";
-    if (type === "stdio") {
-      const command = server.command?.trim();
-      if (!command) return null;
-      return {
-        type: "stdio",
-        command,
-        ...(server.args?.length ? { args: server.args } : {}),
-        ...(server.env && Object.keys(server.env).length > 0 ? { env: server.env } : {}),
-      };
-    }
-    const url = server.url?.trim();
-    if (!url) return null;
-    return {
-      type,
-      url,
-      ...(server.headers && Object.keys(server.headers).length > 0 ? { headers: server.headers } : {}),
-    };
-  };
-
-  const preflightExternalMcpServer = async (serverName: string) => {
-    const server = cfg.external_mcp_servers[serverName];
-    const specEntry = buildExternalMcpSpecEntry(server);
-    if (!specEntry) {
-      setExternalMcpPreflight((state) => ({
-        ...state,
-        [serverName]: { error: "Set a command or URL before running preflight." },
-      }));
-      return;
-    }
-
-    setExternalMcpPreflight((state) => ({
-      ...state,
-      [serverName]: { loading: true },
-    }));
-    try {
-      const res = await fetch(`/api/fleet/${serverId}/integrations/mcp-preflight`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ownerAgentId: agentId,
-          source: "external",
-          spec: { [serverName]: specEntry },
-          toolNamesByServer: {
-            [serverName]: server.allowed_tools ?? [],
-          },
-        }),
-      });
-      if (!res.ok) throw new Error(`preflight ${res.status}`);
-      const data = await res.json();
-      const preflightServer = Array.isArray(data.servers) ? data.servers[0] as ExternalMcpPreflightServer | undefined : undefined;
-      setExternalMcpPreflight((state) => ({
-        ...state,
-        [serverName]: preflightServer ? { server: preflightServer } : { error: "No preflight result returned." },
-      }));
-    } catch (err) {
-      setExternalMcpPreflight((state) => ({
-        ...state,
-        [serverName]: { error: err instanceof Error ? err.message : "Preflight failed." },
-      }));
-    }
   };
 
   const buildSdkPayload = () => {
@@ -2598,160 +2453,16 @@ function ConfigTab({
             </div>
           </Section>
 
-          <Section
-            title="External MCP servers"
-            subtitle={`${Object.keys(cfg.external_mcp_servers).length} configured`}
-            tooltip="SDK-native external MCP servers for pilot integrations. These are passed into Claude Agent SDK mcpServers, not executed through a custom harness runtime."
-            icon={<Plug className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
-            action={
-              <div className="flex items-center gap-1.5">
-                <Button variant="outline" size="sm" onClick={() => addExternalMcpPreset("calendar")}>
-                  Calendar
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => addExternalMcpPreset("gmail")}>
-                  Gmail
-                </Button>
-                <Button variant="outline" size="sm" onClick={addExternalMcpServer}>
-                  <Plus className="h-3 w-3" />
-                  Add server
-                </Button>
-              </div>
-            }
-          >
-            {Object.keys(cfg.external_mcp_servers).length === 0 ? (
-              <div className="p-5 text-center text-xs" style={{ color: "var(--oc-text-muted)" }}>
-                No external MCP servers. Add one for a Google Calendar, Gmail, or other stdio/http MCP pilot.
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2.5">
-                {Object.entries(cfg.external_mcp_servers).map(([serverName, server]) => {
-                  const type = server.type ?? "stdio";
-                  const preflight = externalMcpPreflight[serverName];
-                  return (
-                    <div
-                      key={serverName}
-                      className="rounded-[5px] border p-3"
-                      style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}
-                    >
-                      <div className="mb-3 flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
-                            {serverName}
-                          </div>
-                          <div className="mt-0.5 text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
-                            {type} / {(server.allowed_tools ?? []).length} allowed tools
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => void preflightExternalMcpServer(serverName)}
-                            disabled={preflight?.loading}
-                            className="h-7 px-2"
-                          >
-                            <Shield className="h-3.5 w-3.5" />
-                            {preflight?.loading ? "Checking" : "Preflight"}
-                          </Button>
-                          <button
-                            onClick={() => removeExternalMcpServer(serverName)}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-[var(--oc-bg3)]"
-                            style={{ color: "var(--oc-text-dim)" }}
-                            title="Remove external MCP server"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 gap-2 md:grid-cols-[120px_minmax(0,1fr)]">
-                        <Field label="Transport" tooltip="SDK MCP transport for this external server. stdio is the common local MCP shape; sse/http are remote transports.">
-                          <select
-                            value={type}
-                            onChange={(e) => updateExternalMcpServer(serverName, { type: e.target.value as ExternalMcpServerConfig["type"] })}
-                            className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
-                            style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
-                          >
-                            <option value="stdio">stdio</option>
-                            <option value="sse">sse</option>
-                            <option value="http">http</option>
-                          </select>
-                        </Field>
-                        {type === "stdio" ? (
-                          <Field label="Command" tooltip="Executable command passed to the SDK MCP server config.">
-                            <input
-                              value={server.command ?? ""}
-                              onChange={(e) => updateExternalMcpServer(serverName, { command: e.target.value })}
-                              placeholder="npx"
-                              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
-                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                            />
-                          </Field>
-                        ) : (
-                          <Field label="URL" tooltip="Remote MCP endpoint URL.">
-                            <input
-                              value={server.url ?? ""}
-                              onChange={(e) => updateExternalMcpServer(serverName, { url: e.target.value })}
-                              placeholder="https://mcp.example.com"
-                              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
-                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                            />
-                          </Field>
-                        )}
-                      </div>
-                      <FormGrid>
-                        {type === "stdio" ? (
-                          <>
-                            <Field label="Args" tooltip="Arguments passed to the MCP process. Comma-separated.">
-                              <input
-                                value={arrayToCsv(server.args)}
-                                onChange={(e) => updateExternalMcpServer(serverName, { args: csvToArray(e.target.value) })}
-                                placeholder="google-calendar-mcp"
-                                className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
-                                style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                              />
-                            </Field>
-                            <Field label="Env" tooltip="Environment passed to the MCP process. One KEY=value per line. Values are redacted in preflight responses.">
-                              <textarea
-                                value={mapToEnvText(server.env)}
-                                onChange={(e) => updateExternalMcpServer(serverName, { env: envTextToMap(e.target.value) })}
-                                rows={3}
-                                placeholder="GOOGLE_CLIENT_ID=..."
-                                className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
-                                style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                              />
-                            </Field>
-                          </>
-                        ) : (
-                          <Field label="Headers" tooltip="Optional request headers for remote MCP. One KEY=value per line.">
-                            <textarea
-                              value={mapToEnvText(server.headers)}
-                              onChange={(e) => updateExternalMcpServer(serverName, { headers: envTextToMap(e.target.value) })}
-                              rows={3}
-                              placeholder="Authorization=Bearer ..."
-                              className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
-                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                            />
-                          </Field>
-                        )}
-                        <Field label="Allowed tools" tooltip="Explicit tool names allowed from this server. These become mcp__server__tool entries in SDK allowedTools.">
-                          <input
-                            value={arrayToCsv(server.allowed_tools)}
-                            onChange={(e) => updateExternalMcpServer(serverName, { allowed_tools: csvToArray(e.target.value) })}
-                            placeholder="calendar_daily_brief, calendar_lookup"
-                            className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
-                            style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                          />
-                        </Field>
-                      </FormGrid>
-                      {preflight && (
-                        <ExternalMcpPreflightResult state={preflight} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Section>
+          <McpServersSection
+            agentId={agentId}
+            servers={cfg.external_mcp_servers}
+            onReload={onReload}
+            onChangeEntry={(serverName, next) => updateExternalMcpServer(serverName, next)}
+            onRemoveEntry={(serverName) => removeExternalMcpServer(serverName)}
+            onRemoveServer={(serverName) => {
+              removeExternalMcpServer(serverName);
+            }}
+          />
 
           {/* Display & sessions */}
           <Section title="Display & sessions"
@@ -3424,54 +3135,6 @@ function ToggleField({
         style={{ accentColor: "var(--oc-accent)" }}
       />
     </label>
-  );
-}
-
-function ExternalMcpPreflightResult({ state }: { state: ExternalMcpPreflightState }) {
-  if (state.loading) {
-    return (
-      <div className="mt-3 rounded-[5px] border px-3 py-2 text-[11.5px]" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)", color: "var(--oc-text-muted)" }}>
-        Checking MCP command, env, tools, and transport risk...
-      </div>
-    );
-  }
-
-  if (state.error) {
-    return (
-      <div className="mt-3 rounded-[5px] border px-3 py-2 text-[11.5px]" style={{ borderColor: "rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.08)", color: "var(--oc-red)" }}>
-        {state.error}
-      </div>
-    );
-  }
-
-  const server = state.server;
-  if (!server) return null;
-  const approvalColor = server.approvalStatus === "approved"
-    ? "var(--oc-green)"
-    : server.approvalStatus === "blocked"
-      ? "var(--oc-red)"
-      : "var(--oc-yellow)";
-
-  return (
-    <div className="mt-3 rounded-[5px] border px-3 py-2.5" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)" }}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.4px]" style={{ color: approvalColor, background: "var(--oc-bg2)" }}>
-          {server.approvalStatus.replace("_", " ")}
-        </span>
-        <span className="text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
-          network:{server.networkRisk} / fs:{server.filesystemRisk} / {server.packageSource}
-        </span>
-      </div>
-      {server.reasons.length > 0 && (
-        <div className="mt-2 space-y-1">
-          {server.reasons.slice(0, 3).map((reason) => (
-            <div key={reason} className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
-              {reason}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 

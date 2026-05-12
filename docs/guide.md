@@ -3129,3 +3129,51 @@ Per-agent SQLite at `data/lcm-db/{agentId}.sqlite`. Schema is versioned via `boo
 ### Lossless invariant
 
 The defining property: from any D2 / D3 / D{n} node, the recursive `source_ids` chain leads back to the original byte-exact messages in the immutable store. Verified by the `@lossless` test suite under `plugins/lcm/tests/integration/lossless.test.ts` — four scenarios: drill-down recovery, source-lineage filter, carry-over preservation across session reset, and SQLite restart survival. This is the gating invariant for the plugin.
+
+---
+
+## Connecting an MCP server
+
+### From the admin panel
+
+1. Open your agent's page → **External MCP servers** → **+ Add server**.
+2. Paste the server URL (e.g. `https://mcp.postmypost.io/mcp`) and click **Continue**.
+3. If the server supports OAuth, click **Authorize** — you'll be redirected to the provider, sign in, and brought back. If the server uses an API key, paste the key into the form.
+4. Choose which tools your agent is allowed to call.
+5. Click **Save & Connect**. Done.
+
+### From chat
+
+Send the URL to your agent in a **direct message** (group chats are not supported for security reasons). The agent will reply with an authorization link. Open it, finish the OAuth flow or paste the API key, and the agent will confirm in chat with the list of available tools.
+
+### Re-authorizing
+
+When a token expires and refresh fails, the server card shows a yellow banner. Click **Re-authorize** to reopen the wizard at the auth step.
+
+### Environment variables
+
+The OAuth callback flow needs a stable public URL for the AnthroClaw UI. Set one of:
+
+- `UI_BASE_URL=https://your-anthroclaw.example.com`
+- `NEXT_PUBLIC_BASE_URL=https://your-anthroclaw.example.com`
+
+- `ANTHROCLAW_MASTER_KEY`: 32-byte hex string (64 hex characters) used to encrypt stored OAuth tokens and API keys at rest. Generate one with `openssl rand -hex 32`. **Required** — without it the credential store fails to initialize and every onboarding callback returns 500.
+
+  Example:
+
+      export ANTHROCLAW_MASTER_KEY=$(openssl rand -hex 32)
+
+  Persist this in your secrets manager / systemd EnvironmentFile / docker secrets. Rotating the master key invalidates all stored credentials.
+
+In production, the URL must use HTTPS. The system logs a warning if any OAuth endpoint (provider's token / authorization / registration URLs) is reached over HTTP in production.
+
+### Deployment notes
+
+The MCP onboarding pipeline uses an event-driven flow: the OAuth callback (UI side) writes to `data/mcp.sqlite` and emits an in-process event that the Gateway subscribes to. The Gateway then dispatches the `[system] mcp_connected` message to the agent's chat session.
+
+This event delivery is **in-process only**. If you run the UI and Gateway in separate processes (e.g. UI on a serverless/edge platform, Gateway on a VPS), the chat-initiated onboarding flow will not deliver completion messages to the agent — the wizard will work but agents will not see the `[system] mcp_connected` event.
+
+Recommended topology for v0.x: run UI and Gateway in the same Node process (or at least on the same host with shared `data/` filesystem). Split deployments require either:
+
+- A shared message broker for cross-process events (Redis pub/sub or similar; not yet implemented), or
+- A UI → Gateway internal HTTP shim for synthetic dispatch (not yet implemented).

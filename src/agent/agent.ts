@@ -24,6 +24,8 @@ import { createManageHumanTakeoverTool } from './tools/manage-human-takeover.js'
 import { createManageOperatorConsoleTool } from './tools/manage-operator-console.js';
 import { createShowConfigTool } from './tools/show-config.js';
 import { createEscalateTool } from './tools/escalate.js';
+import { createConnectMcpTool } from './tools/connect-mcp.js';
+import type { createOnboarding as createMcpOnboarding } from '../integrations/mcp-onboarding/index.js';
 import { canManageAgent, type OperatorConsoleConfigShape } from '../security/cross-agent-perm.js';
 import type { AgentConfigWriter } from '../config/writer.js';
 import type { ConfigAuditLog } from '../config/audit.js';
@@ -332,6 +334,15 @@ export class Agent {
        */
       getOperatorConsoleConfigForAgent?: (callerId: string) => OperatorConsoleConfigShape | undefined;
     },
+    /**
+     * Lazy accessor for the MCP onboarding facade — used by the always-on
+     * `connect_mcp` built-in tool. Returns null in test/headless harnesses
+     * that don't wire the facade; the tool then falls back to producing an
+     * error result on use, which is acceptable because no agent can complete
+     * a flow without the gateway-owned dependencies (pending store, OAuth
+     * callback URL) anyway.
+     */
+    getMcpOnboarding?: () => ReturnType<typeof createMcpOnboarding> | null,
   ): Promise<Agent> {
     const id = basename(agentDir);
     const config = loadAgentYml(agentDir);
@@ -512,6 +523,24 @@ export class Agent {
           break;
       }
     }
+
+    // Always-on built-in: `connect_mcp` (no opt-in via `mcp_tools`). The tool
+    // is harmless without an active pending row and the chat-side guards
+    // (DM-only, agent context) live in the onboarding facade. The handler
+    // resolves the facade lazily so test/headless harnesses that don't wire
+    // `getMcpOnboarding` get a clean "facade unavailable" error rather than
+    // a load-time crash. Per-dispatch context (agentSessionKey, chatType)
+    // is injected by the Gateway via the same substitution mechanism that
+    // wires `manage_cron`/`send_message`.
+    tools.push(
+      createConnectMcpTool(id, () => {
+        const facade = getMcpOnboarding?.() ?? null;
+        if (!facade) {
+          throw new Error('mcp_onboarding_facade_unavailable');
+        }
+        return facade;
+      }),
+    );
 
     // The tools are already created via SDK's tool() and have the right shape
     // for createSdkMcpServer (name, description, inputSchema as Zod, handler)
