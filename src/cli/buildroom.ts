@@ -120,9 +120,12 @@ export async function runBuildroomCli(
       case 'resume':
         return commandResume(args, commandIO);
       default:
-        commandIO.stderr(`Unknown command: ${args.command}`);
-        commandIO.stderr(helpText());
-        return 2;
+        if (!wantsJson(args)) {
+          commandIO.stderr(`Unknown command: ${args.command}`);
+          commandIO.stderr(helpText());
+          return 2;
+        }
+        throw new CliUsageError(`Unknown command: ${args.command}`);
     }
   } catch (error) {
     return handleError(error, args, io);

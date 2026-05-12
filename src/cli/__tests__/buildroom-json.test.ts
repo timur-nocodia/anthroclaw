@@ -124,6 +124,23 @@ describe('buildroom CLI JSON output', () => {
     });
   });
 
+  it('renders unknown command errors as JSON on stderr', async () => {
+    await expect(run(['unknown-command', '--root', root, '--json'])).resolves.toBe(2);
+
+    expect(out).toEqual([]);
+    expect(err).toHaveLength(1);
+    expect(JSON.parse(err[0])).toMatchObject({
+      ok: false,
+      command: 'unknown-command',
+      roomId: 'anthroclaw-core',
+      error: {
+        code: 'invalid_usage',
+        message: 'Unknown command: unknown-command',
+        nextActions: ['anthroclaw buildroom help'],
+      },
+    });
+  });
+
   function artifact(
     id: string,
     type: BuildroomArtifact['type'],
