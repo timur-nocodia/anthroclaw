@@ -140,11 +140,21 @@ export async function preflightMcpServerSpec(
   // Fallback: reuse the existing sync rules. For http/sse without a managed
   // credential the transport drops to 'unknown' → review_required, which is
   // the same behaviour callers had before this function existed.
+  //
+  // Pass `allowed_tools` through `toolNamesByServer` so the fallback path
+  // mirrors the approved branch (which sources `toolNames` from
+  // `spec.allowed_tools`). Without this hop the legacy delegate would return
+  // an empty `toolNames` even when the spec declares tools — asymmetric with
+  // the managed-credential branch and confusing for the review UI.
+  const allowedTools = Array.isArray(spec.allowed_tools)
+    ? (spec.allowed_tools as unknown[]).filter((tool): tool is string => typeof tool === 'string')
+    : [];
   const [result] = preflightAgentMcpServerSpec(
     { [serverName]: spec } as unknown as AgentMcpServerSpec,
     {
       ownerAgentId: opts.agentId,
       source: 'external',
+      toolNamesByServer: { [serverName]: allowedTools },
     },
   );
   return result;

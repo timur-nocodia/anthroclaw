@@ -187,5 +187,29 @@ describe('MCP preflight', () => {
       const result = await preflightMcpServerSpec(spec, { agentId: 'a1' });
       expect(result.approvalStatus).not.toBe('approved');
     });
+
+    it('fallback path preserves allowed_tools when no resolver is present', async () => {
+      const spec = {
+        type: 'http' as const,
+        url: 'https://mcp.postmypost.io/mcp',
+        allowed_tools: ['tool_a', 'tool_b'],
+      };
+      const result = await preflightMcpServerSpec(spec, { agentId: 'a1' });
+      expect(result.toolNames).toEqual(['tool_a', 'tool_b']);
+    });
+
+    it('fallback path preserves allowed_tools when resolver returns false', async () => {
+      const spec = {
+        type: 'http' as const,
+        url: 'https://mcp.postmypost.io/mcp',
+        credential_ref: 'mcp:postmypost',
+        allowed_tools: ['tool_a', 'tool_b'],
+      };
+      const result = await preflightMcpServerSpec(spec, {
+        agentId: 'a1',
+        credentialResolver: async () => false,
+      });
+      expect(result.toolNames).toEqual(['tool_a', 'tool_b']);
+    });
   });
 });
