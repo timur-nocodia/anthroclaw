@@ -576,6 +576,57 @@ export function createOnboarding(deps: OnboardingDeps) {
   }
 
   /**
+   * Mark an mcp_oauth credential as requiring re-authorization (sets
+   * `metadata.needs_reauth = '1'`) and emit a `reauth_required` event so
+   * the Gateway can dispatch a synthetic `[system] mcp_reauth_required`
+   * into the originating agent session.
+   *
+   * Called when a runtime tool-call returns 401 / Unauthorized from an MCP
+   * server, signalling that the stored token is no longer valid (revoked
+   * at the AS, scope changed, etc.) and a fresh OAuth dance is needed.
+   *
+   * `agentSessionKey` is forwarded into the event so admin-initiated rows
+   * (no session) can be distinguished from chat-initiated ones at the
+   * subscriber. A null session key produces no synthetic dispatch.
+   */
+  async function markReauthRequired(args: {
+    agentId: string;
+    serverId: string;
+    agentSessionKey?: string | null;
+  }): Promise<void> {
+    const service = `mcp:${args.serverId}`;
+    try {
+      const cred = await deps.credentials.get(
+        { agentId: args.agentId, service },
+        `mcp_runtime_401:${args.serverId}`,
+      );
+      if (cred.kind === 'mcp_oauth') {
+        await deps.credentials.set(
+          { agentId: args.agentId, service },
+          {
+            ...cred,
+            metadata: { ...(cred.metadata ?? {}), needs_reauth: '1' },
+          },
+        );
+      }
+    } catch (err) {
+      // Credential missing or unreadable — still emit the event so the
+      // agent can surface the failure. The Gateway subscriber tolerates
+      // a missing credential because the synthetic message itself is
+      // informational.
+      console.warn(
+        `[mcp-onboarding] markReauthRequired: cannot persist needs_reauth for ${service}: ${(err as Error).message}`,
+      );
+    }
+    events.emit('reauth_required', {
+      pendingId: '',
+      agentId: args.agentId,
+      agentSessionKey: args.agentSessionKey ?? null,
+      serverId: args.serverId,
+    } satisfies OnboardingEvent);
+  }
+
+  /**
    * Cancel a pending row by `pendingId`. Used by the `connect_mcp` built-in
    * tool's `cancel` op so an agent can abort a flow it started but no
    * longer needs (e.g. the user changed their mind mid-OAuth).
@@ -625,6 +676,7 @@ export function createOnboarding(deps: OnboardingDeps) {
     cancelByState,
     getPending,
     cancel,
+    markReauthRequired,
     events,
     _debug,
   };

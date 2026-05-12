@@ -828,6 +828,52 @@ export interface DecisionResendResult {
   deliveries: DecisionDeliveryRecord[];
 }
 
+/**
+ * Best-effort string extraction from a tool_result event payload. The SDK
+ * doesn't pin the shape of `output`/`content`/`error`, so this helper checks
+ * the common fields and falls back to JSON-stringifying the event.
+ */
+function extractMcpErrorText(evt: Record<string, unknown>): string {
+  const candidates: unknown[] = [
+    evt.error,
+    evt.output,
+    evt.content,
+    evt.message,
+    evt.result,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.length > 0) return c;
+    if (c && typeof c === 'object') {
+      try {
+        return JSON.stringify(c);
+      } catch {
+        // fall through
+      }
+    }
+  }
+  try {
+    return JSON.stringify(evt);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Heuristic match for MCP server auth errors. Triggers on 401 / Unauthorized
+ * status codes and on the canonical SDK "mcp authentication error" phrase.
+ * Case-insensitive; substring search (not regex) so subtle phrasing changes
+ * don't break the trap.
+ */
+function isMcpAuthError(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  if (lower.includes('mcp authentication error')) return true;
+  if (lower.includes('unauthorized')) return true;
+  // `"status":401`, `status: 401`, `HTTP 401`, etc.
+  if (/\b401\b/.test(lower)) return true;
+  return false;
+}
+
 export class Gateway {
   private agents = new Map<string, Agent>();
   private channels = new Map<string, ChannelAdapter>();
@@ -1022,6 +1068,12 @@ export class Gateway {
         + `pending_id: ${evt.pendingId}`;
       void this.dispatchMcpSystemMessage(evt, text, 'mcp_pending_expired');
     });
+    onboarding.events.on('reauth_required', (evt: OnboardingEvent) => {
+      const text = `[system] mcp_reauth_required: ${evt.serverId}\n`
+        + `server_id: ${evt.serverId}\n`
+        + 'reason: token_invalid_or_revoked';
+      void this.dispatchMcpSystemMessage(evt, text, 'mcp_reauth_required');
+    });
   }
 
   /**
@@ -1077,6 +1129,46 @@ export class Gateway {
         'mcp synthetic dispatch failed',
       );
     }
+  }
+
+  /**
+   * Inspect a tool_result error for an external MCP tool. If the error looks
+   * like a 401 / Unauthorized / "mcp authentication error", forward to the
+   * onboarding facade so it can flip `metadata.needs_reauth = '1'` on the
+   * server's credential and emit a `reauth_required` event (which this
+   * Gateway already subscribes to for synthetic dispatch).
+   *
+   * Best-effort: any failure to inspect (e.g. no onboarding facade in a
+   * partially-initialized Gateway) is swallowed so the main query loop
+   * proceeds unaffected.
+   */
+  private maybeTrapMcpReauth(
+    agentId: string,
+    toolName: string,
+    evt: Record<string, unknown>,
+    sessionKey: string,
+  ): void {
+    if (!toolName.startsWith('mcp__')) return;
+    const parts = toolName.split('__');
+    if (parts.length < 3) return;
+    const serverName = parts[1];
+    if (!serverName) return;
+    const errText = extractMcpErrorText(evt);
+    if (!isMcpAuthError(errText)) return;
+    const onboarding = this.mcpOnboarding;
+    if (!onboarding) return;
+    void onboarding
+      .markReauthRequired({
+        agentId,
+        serverId: serverName,
+        agentSessionKey: sessionKey,
+      })
+      .catch((err) => {
+        logger.warn(
+          { err, agentId, serverName },
+          'mcp runtime 401 trap: markReauthRequired failed',
+        );
+      });
   }
 
   /**
@@ -5024,6 +5116,11 @@ export class Gateway {
             }
             if (evt.is_error === true || evt.status === 'error') {
               recoveredToolErrorsForLearning += 1;
+              // Runtime 401 trap: when an external MCP tool returns an
+              // auth-style error, mark the credential needs_reauth and
+              // emit a synthetic [system] message into this session.
+              // Tool names are prefixed `mcp__<serverName>__<toolName>`.
+              this.maybeTrapMcpReauth(agent.id, toolName, evt, sessionKey);
             }
           }
 
