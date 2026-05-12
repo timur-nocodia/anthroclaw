@@ -37,6 +37,7 @@ describe('onboarding facade — apikey branch', () => {
       pending,
       credentials,
       uiBaseUrl: 'https://ui.test',
+      listTakenServerIds: async () => new Set<string>(),
     });
     probeStub.mockReset();
   });
@@ -261,6 +262,7 @@ describe('onboarding facade — apikey branch', () => {
       credentials,
       uiBaseUrl: 'https://ui.test',
       writeAgentYml: writer,
+      listTakenServerIds: async () => new Set<string>(),
     });
 
     const res = await ob.finalize({
@@ -318,6 +320,7 @@ describe('onboarding facade — apikey branch', () => {
       credentials,
       uiBaseUrl: 'https://ui.test',
       writeAgentYml: writer,
+      listTakenServerIds: async () => new Set<string>(),
     });
 
     await ob.finalize({
@@ -325,6 +328,57 @@ describe('onboarding facade — apikey branch', () => {
       allowed_tools: ['*'],
     });
     expect(writer.mock.calls[0][0].entry.allowed_tools).toEqual(['t1', 't2']);
+  });
+
+  it('uses listTakenServerIds to avoid colliding credential overwrites', async () => {
+    // Inject a "taken set" that already contains the hostname-derived id, so
+    // attachApiKey must store the credential under `mcp:postmypost-2`.
+    const credentials = new EncryptedFilesystemCredentialStore(
+      new CredentialAuditLog(join(dir, 'audit.log')),
+    );
+    const ob = createOnboarding({
+      pending,
+      credentials,
+      uiBaseUrl: 'https://ui.test',
+      listTakenServerIds: async () => new Set(['postmypost']),
+    });
+    probeStub.mockResolvedValueOnce({
+      authMode: 'apikey',
+      server: { name: 'pmp' },
+    });
+    const started = await ob.startConnection({
+      url: 'https://mcp.postmypost.io/mcp',
+      requester: { kind: 'admin', userId: 'u1', agentId: 'a1' },
+    });
+    // mcpUrl preserved in the pending row.
+    const row = pending.byId(started.pendingId!);
+    expect(row?.mcpUrl).toBe('https://mcp.postmypost.io/mcp');
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_u, init) => {
+        const body = JSON.parse((init?.body as string) ?? '{}');
+        if (body.method === 'initialize') {
+          return new Response('{}', { status: 200 });
+        }
+        return new Response(
+          JSON.stringify({ result: { tools: [{ name: 't1' }] } }),
+          { status: 200 },
+        );
+      }),
+    );
+    const att = await ob.attachApiKey({
+      pendingId: started.pendingId!,
+      token: 'sk_x',
+    });
+    expect(att.status).toBe('connected');
+    expect(att.serverId).toBe('postmypost-2');
+
+    // Credential persisted under mcp:postmypost-2, NOT mcp:postmypost.
+    const cred = await ob._debug?.getCredential('a1', 'mcp:postmypost-2');
+    expect(cred?.kind).toBe('mcp_apikey');
+    const wrong = await ob._debug?.getCredential('a1', 'mcp:postmypost');
+    expect(wrong).toBeNull();
   });
 
   it('attachApiKey rejects an expired pending row', async () => {
@@ -336,6 +390,7 @@ describe('onboarding facade — apikey branch', () => {
         new CredentialAuditLog(join(dir, 'audit.log')),
       ),
       uiBaseUrl: 'https://ui.test',
+      listTakenServerIds: async () => new Set<string>(),
       now: () => fixedNow,
     });
     pending.insert({
@@ -380,6 +435,7 @@ describe('onboarding facade — apikey branch', () => {
       ),
       uiBaseUrl: 'https://ui.test',
       writeAgentYml: writer,
+      listTakenServerIds: async () => new Set<string>(),
       now: () => fixedNow,
     });
     pending.insert({
@@ -427,6 +483,7 @@ describe('onboarding facade — apikey branch', () => {
       credentials,
       uiBaseUrl: 'https://ui.test',
       writeAgentYml: writer,
+      listTakenServerIds: async () => new Set<string>(),
     });
     await expect(
       ob.finalize({ pendingId: started.pendingId!, allowed_tools: [] }),

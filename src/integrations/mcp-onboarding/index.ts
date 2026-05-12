@@ -44,6 +44,14 @@ export interface OnboardingDeps {
    * `attachApiKey` so tests that only exercise those can omit it.
    */
   writeAgentYml?: (args: WriteAgentYmlArgs) => void | Promise<void>;
+  /**
+   * Resolve the set of `external_mcp_servers` keys already in use for the
+   * agent so `deriveServerId` can pick a non-colliding name. Without this,
+   * two concurrent flows for the same hostname would derive the same id and
+   * silently overwrite each other's credential under `mcp:<id>` (last-write-
+   * wins, no audit). Wired in `ui/lib/mcp-onboarding-instance.ts`.
+   */
+  listTakenServerIds: (agentId: string) => Promise<Set<string>>;
   now?: () => number;
   randomToken?: () => string;
 }
@@ -99,10 +107,10 @@ export function createOnboarding(deps: OnboardingDeps) {
       };
     }
 
-    // Phase 3 doesn't yet maintain a cross-agent.yml "taken" set; Task 14's
-    // writeAgentYmlEntry rejects collisions at write time. A future pass
-    // should resolve here so the UI can preview the final id.
-    const takenIds = new Set<string>();
+    // Resolve the existing taken set from the agent's yml so concurrent
+    // flows for the same hostname don't both pick the same id and silently
+    // overwrite each other's credential.
+    const takenIds = await deps.listTakenServerIds(opts.requester.agentId);
     const serverId = deriveServerId(opts.url, takenIds);
     const pendingId = `pnd_${tok()}`;
     const state = `st_${tok()}`;
@@ -197,7 +205,7 @@ export function createOnboarding(deps: OnboardingDeps) {
     };
     const tools = toolsBody.result?.tools ?? [];
 
-    const takenIds = new Set<string>();
+    const takenIds = await deps.listTakenServerIds(row.agentId);
     const serverId = deriveServerId(row.mcpUrl, takenIds);
 
     await deps.credentials.set(
