@@ -155,6 +155,7 @@ function deriveStatusCounts(store: FileArtifactStore): {
 
 function commandCollect(args: ParsedArgs, io: CliIO): number {
   const config = loadBuildroomRoomConfig(args.root, args.room);
+  assertStageAllowed(config, 'collect');
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const research = store.writeArtifact(
     createDeterministicResearchPacket(config, new Date().toISOString()),
@@ -173,6 +174,7 @@ function commandCollect(args: ParsedArgs, io: CliIO): number {
 
 function commandPropose(args: ParsedArgs, io: CliIO): number {
   const config = loadBuildroomRoomConfig(args.root, args.room);
+  assertStageAllowed(config, 'propose');
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const research = latestArtifact(store, 'research_packet');
   const idea = store.writeArtifact(
@@ -193,6 +195,7 @@ function commandPropose(args: ParsedArgs, io: CliIO): number {
 function commandReview(args: ParsedArgs, io: CliIO): number {
   const id = requirePositional(args, 0, 'review');
   const config = loadBuildroomRoomConfig(args.root, args.room);
+  assertStageAllowed(config, 'review');
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const idea = store.readArtifact(id);
   const review = store.writeArtifact(
@@ -256,6 +259,7 @@ function commandApprove(args: ParsedArgs, io: CliIO): number {
 function commandBuild(args: ParsedArgs, io: CliIO): number {
   const id = requirePositional(args, 0, 'build');
   const config = loadBuildroomRoomConfig(args.root, args.room);
+  assertStageAllowed(config, 'build');
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const target = store.readArtifact(id);
 
@@ -305,6 +309,21 @@ function commandBuild(args: ParsedArgs, io: CliIO): number {
   return 0;
 }
 
+function assertStageAllowed(
+  config: { mode: string; killSwitchActive: boolean },
+  stage: 'collect' | 'propose' | 'review' | 'build',
+): void {
+  if (config.mode === 'off') {
+    throw new BuildroomStageBlockedError('Buildroom mode is off');
+  }
+  if (stage === 'build' && config.mode !== 'manual_approval') {
+    throw new BuildroomStageBlockedError(`Buildroom mode does not allow build: ${config.mode}`);
+  }
+  if (config.killSwitchActive) {
+    throw new BuildroomStageBlockedError('Kill switch is active');
+  }
+}
+
 function latestArtifact(store: FileArtifactStore, type: BuildroomArtifactType): BuildroomArtifact {
   const artifacts = store
     .listArtifacts(type)
@@ -341,6 +360,10 @@ function handleError(error: unknown, io: CliIO): number {
   if (error instanceof CliUsageError) {
     io.stderr(error.message);
     return 2;
+  }
+  if (error instanceof BuildroomStageBlockedError) {
+    io.stderr(error.message);
+    return 8;
   }
   io.stderr(error instanceof Error ? error.message : String(error));
   if (error instanceof Error && error.message.startsWith('Artifact not found:')) return 5;
@@ -392,6 +415,13 @@ class CliUsageError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'CliUsageError';
+  }
+}
+
+class BuildroomStageBlockedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BuildroomStageBlockedError';
   }
 }
 

@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FileArtifactStore } from '../../auto-buildroom/artifacts/store.js';
 import type { BuildroomArtifact } from '../../auto-buildroom/artifacts/model.js';
@@ -217,6 +218,36 @@ describe('buildroom CLI', () => {
     expect(store.listArtifacts('build_plan')).toEqual([]);
   });
 
+  it('blocks new stages when mode is off while status remains inspectable', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    updateRoomConfig((config) => ({ ...config, mode: 'off' }));
+
+    await expect(run(['collect', '--root', root])).resolves.toBe(8);
+    expect(err.join('\n')).toContain('Buildroom mode is off');
+
+    out.length = 0;
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Mode: off');
+  });
+
+  it('blocks build when kill switch is active', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('review_20260512_docs', 'main_review', {
+        decision: 'approved_for_operator',
+        lockedScope: { allowedPaths: ['docs/**'], blockedPaths: ['.env'] },
+      }),
+    );
+    await run(['approve', 'review_20260512_docs', '--root', root]);
+    updateRoomConfig((config) => ({ ...config, killSwitchActive: true }));
+
+    await expect(run(['build', 'approval_20260512_docs', '--root', root])).resolves.toBe(8);
+
+    expect(err.join('\n')).toContain('Kill switch is active');
+    expect(store.listArtifacts('build_plan')).toEqual([]);
+  });
+
   function artifact(
     id: string,
     type: BuildroomArtifact['type'],
@@ -250,5 +281,20 @@ describe('buildroom CLI', () => {
       stdout: (text) => out.push(text),
       stderr: (text) => err.push(text),
     });
+  }
+
+  function updateRoomConfig(
+    update: (config: Record<string, unknown>) => Record<string, unknown>,
+  ): void {
+    const path = join(
+      root,
+      '.anthroclaw',
+      'auto-buildroom',
+      'rooms',
+      'anthroclaw-core',
+      'buildroom.yml',
+    );
+    const config = parseYaml(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    writeFileSync(path, stringifyYaml(update(config)), 'utf8');
   }
 });
