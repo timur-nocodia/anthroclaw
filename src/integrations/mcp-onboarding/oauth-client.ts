@@ -32,3 +32,58 @@ export function generatePkce(seed?: Buffer): PkcePair {
   const challenge = createHash('sha256').update(verifier).digest('base64url');
   return { verifier, challenge, method: 'S256' };
 }
+
+function assertWellFormedUrl(url: string, label: string): void {
+  try {
+    // eslint-disable-next-line no-new
+    new URL(url);
+  } catch {
+    throw new Error(`${label}: malformed URL`);
+  }
+}
+
+export interface RegisterArgs {
+  registrationEndpoint: string;
+  redirectUri: string;
+  clientName: string;
+  scopes?: string[];
+}
+
+export interface RegisterResult {
+  clientId: string;
+  clientSecret?: string;
+}
+
+/**
+ * RFC 7591 dynamic client registration. Returns the issued client_id (and
+ * optional client_secret for confidential clients).
+ *
+ * Throws `dcr_failed: <status>` on non-2xx. The caller (facade) maps that
+ * to a `{status: 'rejected'}` response so the wizard can surface it.
+ *
+ * The endpoint is required to be a well-formed URL but we don't enforce
+ * HTTPS here so test fixtures bound to http://127.0.0.1:<port> work.
+ * Production callers should validate at the boundary where the URL is
+ * read off the wire (the probe's resource_metadata response).
+ */
+export async function registerClient(args: RegisterArgs): Promise<RegisterResult> {
+  assertWellFormedUrl(args.registrationEndpoint, 'dcr_failed');
+  const res = await fetch(args.registrationEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_name: args.clientName,
+      redirect_uris: [args.redirectUri],
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'none',
+      scope: args.scopes?.join(' '),
+    }),
+  });
+  if (!res.ok) throw new Error(`dcr_failed: ${res.status}`);
+  const body = (await res.json()) as {
+    client_id: string;
+    client_secret?: string;
+  };
+  return { clientId: body.client_id, clientSecret: body.client_secret };
+}
