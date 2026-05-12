@@ -74,6 +74,24 @@ describe('FileArtifactStore', () => {
     ]);
   });
 
+  it('stores sanitized session summaries and handoff signals in their v0.1 locations', () => {
+    const summary = store.writeArtifact(baseArtifact(
+      'session-summary-20260512-001',
+      'session_summary' as BuildroomArtifactType,
+    ));
+    const handoff = store.writeArtifact(baseArtifact(
+      'handoff_20260512_docs',
+      'handoff_signal' as BuildroomArtifactType,
+    ));
+
+    expect(store.pathForArtifact(summary)).toContain(
+      join('buildroom', 'session-summaries', 'session-summary-20260512-001.json'),
+    );
+    expect(store.pathForArtifact(handoff)).toContain(
+      join('buildroom', 'signals', 'handoff_20260512_docs.json'),
+    );
+  });
+
   it('rejects tampered artifact content when reading receipts', () => {
     const written = store.writeArtifact(baseArtifact('research_20260512_docs', 'research_packet'));
     const path = store.pathForArtifact(written);

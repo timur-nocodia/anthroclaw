@@ -45,6 +45,8 @@ export class UnsupportedArtifactSchemaVersionError extends Error {
 }
 
 const ARTIFACT_DIRS: Record<BuildroomArtifactType, string> = {
+  session_summary: 'buildroom/session-summaries',
+  handoff_signal: 'buildroom/signals',
   research_packet: 'buildroom/research',
   signal: 'buildroom/signals',
   idea_contract: 'buildroom/ideas',

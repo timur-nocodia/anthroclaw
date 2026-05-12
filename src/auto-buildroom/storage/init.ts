@@ -42,6 +42,7 @@ const REQUIRED_ROOM_DIRS = [
   'research-vault/dossiers',
   'subconscious-room/signals',
   'subconscious-room/ghosts',
+  'buildroom/session-summaries',
   'buildroom/research',
   'buildroom/signals',
   'buildroom/ideas',

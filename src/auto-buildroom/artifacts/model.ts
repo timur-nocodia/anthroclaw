@@ -1,4 +1,6 @@
 export type BuildroomArtifactType =
+  | 'session_summary'
+  | 'handoff_signal'
   | 'research_packet'
   | 'signal'
   | 'idea_contract'
