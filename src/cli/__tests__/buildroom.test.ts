@@ -147,6 +147,76 @@ describe('buildroom CLI', () => {
     });
   });
 
+  it('creates a build plan from approval without starting Builder runtime', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    await run(['collect', '--root', root]);
+    await run(['propose', '--root', root]);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    const idea = store.listArtifacts('idea_contract')[0];
+    await run(['review', idea.id, '--root', root]);
+    const review = store.listArtifacts('main_review')[0];
+    await run(['approve', review.id, '--root', root, '--operator', 'cli:user:local-operator']);
+    const approval = store.listArtifacts('approval')[0];
+
+    out.length = 0;
+    await expect(run(['build', approval.id, '--root', root])).resolves.toBe(0);
+
+    expect(out.join('\n')).toContain('Build plan:');
+    expect(out.join('\n')).toContain('Builder runtime not started.');
+    const plan = store.listArtifacts('build_plan')[0];
+    expect(plan).toMatchObject({
+      type: 'build_plan',
+      status: 'ready',
+      parentIds: [approval.id, review.id],
+      payload: {
+        approvalId: approval.id,
+        reviewId: review.id,
+        executionBoundary: 'not_started',
+      },
+    });
+    expect(store.readArtifact(approval.id).payload.consumedAt).toBeNull();
+
+    out.length = 0;
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Approved not built: 0');
+  });
+
+  it('does not create duplicate build plans for the same approval', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('review_20260512_docs', 'main_review', {
+        decision: 'approved_for_operator',
+        lockedScope: { allowedPaths: ['docs/**'], blockedPaths: ['.env'] },
+      }),
+    );
+    await run(['approve', 'review_20260512_docs', '--root', root]);
+
+    await expect(run(['build', 'approval_20260512_docs', '--root', root])).resolves.toBe(0);
+    await expect(run(['build', 'approval_20260512_docs', '--root', root])).resolves.toBe(0);
+
+    expect(store.listArtifacts('build_plan').map((plan) => plan.id)).toEqual([
+      'plan_20260512_docs',
+    ]);
+    expect(out.join('\n')).toContain('Existing build plan: plan_20260512_docs');
+  });
+
+  it('rejects build from a review without approval', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('review_20260512_docs', 'main_review', {
+        decision: 'approved_for_operator',
+        lockedScope: { allowedPaths: ['docs/**'], blockedPaths: ['.env'] },
+      }),
+    );
+
+    await expect(run(['build', 'review_20260512_docs', '--root', root])).resolves.toBe(4);
+
+    expect(err.join('\n')).toContain('Build requires an approval or build_plan artifact');
+    expect(store.listArtifacts('build_plan')).toEqual([]);
+  });
+
   function artifact(
     id: string,
     type: BuildroomArtifact['type'],

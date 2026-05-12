@@ -5,6 +5,7 @@ import { BuildroomConfigValidationError } from '../auto-buildroom/config/model.j
 import {
   AuthorityPolicyError,
   createApprovalArtifact,
+  createBuildPlanArtifact,
 } from '../auto-buildroom/policy/authority.js';
 import {
   BuildroomConfigExistsError,
@@ -59,6 +60,8 @@ export async function runBuildroomCli(argv: string[], io: CliIO = defaultIO): Pr
         return commandShow(args, io);
       case 'approve':
         return commandApprove(args, io);
+      case 'build':
+        return commandBuild(args, io);
       default:
         io.stderr(`Unknown command: ${args.command}`);
         io.stderr(helpText());
@@ -250,6 +253,58 @@ function commandApprove(args: ParsedArgs, io: CliIO): number {
   return 0;
 }
 
+function commandBuild(args: ParsedArgs, io: CliIO): number {
+  const id = requirePositional(args, 0, 'build');
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const target = store.readArtifact(id);
+
+  if (target.type === 'build_plan') {
+    io.stdout([
+      `Existing build plan: ${target.id}`,
+      '',
+      'Builder runtime not started.',
+    ].join('\n'));
+    return 0;
+  }
+
+  if (target.type !== 'approval') {
+    throw new AuthorityPolicyError('Build requires an approval or build_plan artifact');
+  }
+
+  const existing = findBuildPlanForApproval(store, target.id);
+  if (existing) {
+    io.stdout([
+      `Existing build plan: ${existing.id}`,
+      '',
+      'Builder runtime not started.',
+    ].join('\n'));
+    return 0;
+  }
+
+  const reviewId = String(target.payload.targetReviewId ?? '');
+  if (!reviewId) throw new AuthorityPolicyError('Approval is missing target review');
+  const review = store.readArtifact(reviewId);
+  const plan = store.writeArtifact(
+    createBuildPlanArtifact({
+      approval: target,
+      review,
+      now: new Date().toISOString(),
+    }),
+  );
+
+  io.stdout([
+    `Build plan: ${plan.id}`,
+    '',
+    'Builder runtime not started.',
+    'Approval is not consumed until the execution boundary.',
+    '',
+    'Next:',
+    `anthroclaw buildroom show ${plan.id}`,
+  ].join('\n'));
+  return 0;
+}
+
 function latestArtifact(store: FileArtifactStore, type: BuildroomArtifactType): BuildroomArtifact {
   const artifacts = store
     .listArtifacts(type)
@@ -257,6 +312,15 @@ function latestArtifact(store: FileArtifactStore, type: BuildroomArtifactType): 
   const artifact = artifacts[0];
   if (!artifact) throw new Error(`Artifact not found: latest ${type}`);
   return artifact;
+}
+
+function findBuildPlanForApproval(
+  store: FileArtifactStore,
+  approvalId: string,
+): BuildroomArtifact | undefined {
+  return store
+    .listArtifacts('build_plan')
+    .find((plan) => plan.payload.approvalId === approvalId);
 }
 
 function handleError(error: unknown, io: CliIO): number {
@@ -343,6 +407,7 @@ function helpText(): string {
     '  review    Create deterministic Main Review for an idea',
     '  show      Show a Buildroom receipt',
     '  approve   Create approval for a locked Main Review',
+    '  build     Create or show a Buildroom build plan',
     '',
     'Options:',
     '  --root <path>       Project root',
