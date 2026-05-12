@@ -181,6 +181,53 @@ describe('executeBuildPlan', () => {
     });
   });
 
+  it('blocks before runtime when build plan scope contains path escapes', async () => {
+    const { approval, plan } = seedPlan();
+    const tamperedPlan = store.readArtifact(plan.id);
+    tamperedPlan.payload = {
+      ...tamperedPlan.payload,
+      scope: {
+        allowedPaths: ['../secrets/**'],
+        blockedPaths: ['.env'],
+      },
+    };
+    store.writeArtifact({ ...tamperedPlan, contentHash: '' });
+    const adapter = {
+      runBuilder: vi.fn().mockResolvedValue({
+        status: 'completed',
+        resultText: 'Should not run.',
+        runtimeRefs: [],
+      }),
+    };
+
+    const receipt = await executeBuildPlan({
+      projectRoot: root,
+      roomId: 'anthroclaw-core',
+      planId: plan.id,
+      adapter,
+      now: '2026-05-12T00:10:00.000Z',
+    });
+
+    expect(adapter.runBuilder).not.toHaveBeenCalled();
+    expect(receipt).toMatchObject({
+      id: 'error_20260512_docs',
+      type: 'error_receipt',
+      status: 'failed',
+      parentIds: [plan.id, approval.id],
+      payload: {
+        stage: 'builder',
+        targetArtifactId: plan.id,
+        errorType: 'policy_violation',
+        recoverable: false,
+        retryAllowed: false,
+      },
+    });
+    expect(store.readArtifact(approval.id)).toMatchObject({
+      status: 'granted',
+      payload: { consumedAt: null },
+    });
+  });
+
   it('does not rerun adapter when coder receipt already exists for the plan', async () => {
     const { plan } = seedPlan();
     const adapter = {

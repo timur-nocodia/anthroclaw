@@ -3,7 +3,7 @@ import { join, relative } from 'node:path';
 import { FileArtifactStore } from '../artifacts/store.js';
 import type { BuildroomArtifact } from '../artifacts/model.js';
 import { FileBuildroomLock } from '../locks/lock.js';
-import { evaluatePathPolicy } from '../policy/paths.js';
+import { evaluatePathPolicy, normalizeRepoPath } from '../policy/paths.js';
 import type { NativeAgentRuntimeAdapter, NativeBuilderRunResult } from '../runtime/native-agent-adapter.js';
 
 export interface ExecuteBuildPlanOptions {
@@ -36,6 +36,13 @@ export async function executeBuildPlan(opts: ExecuteBuildPlanOptions): Promise<B
   });
 
   try {
+    const preRunPolicyResult = evaluatePreRunPolicy(plan);
+    if (!preRunPolicyResult.allowed) {
+      return store.writeArtifact(
+        buildPolicyErrorReceipt({ plan, approval, policyResult: preRunPolicyResult, now: opts.now }),
+      );
+    }
+
     const consumedApproval = store.writeArtifact(consumeApproval(approval, opts.now));
     const workingDirectory = buildWorkingDirectory(opts.projectRoot, opts.roomId, plan.id);
     mkdirSync(workingDirectory, { recursive: true });
@@ -50,7 +57,14 @@ export async function executeBuildPlan(opts: ExecuteBuildPlanOptions): Promise<B
     const changedFiles = diffSnapshot(workingDirectory, baseline);
 
     const artifact = result.status === 'completed'
-      ? buildCoderReceipt({ plan, approval: consumedApproval, result, changedFiles, now: opts.now })
+      ? buildCoderReceipt({
+          plan,
+          approval: consumedApproval,
+          result,
+          changedFiles,
+          preRunPolicyResult,
+          now: opts.now,
+        })
       : buildErrorReceipt({ plan, approval: consumedApproval, result, now: opts.now });
     return store.writeArtifact(artifact);
   } finally {
@@ -83,6 +97,7 @@ function buildCoderReceipt(opts: {
   approval: BuildroomArtifact;
   result: Extract<NativeBuilderRunResult, { status: 'completed' }>;
   changedFiles: string[];
+  preRunPolicyResult: PathScopePolicyResult;
   now: string;
 }): BuildroomArtifact {
   const suffix = artifactSuffix(opts.plan.id, 'plan');
@@ -118,15 +133,38 @@ function buildCoderReceipt(opts: {
     payload: {
       runtimeStatus: 'completed',
       builderClaims: [opts.result.resultText],
-      preRunPolicyResult: {
-        allowed: true,
-        violations: [],
-      },
+      preRunPolicyResult: opts.preRunPolicyResult,
       postRunPolicyResult: {
         ...postRunPolicyResult,
         changedFiles,
       },
     },
+  };
+}
+
+interface PathScopePolicyResult {
+  allowed: boolean;
+  checkedPaths: string[];
+  violations: Array<{ path: string; reason: 'path_escape' }>;
+}
+
+function evaluatePreRunPolicy(plan: BuildroomArtifact): PathScopePolicyResult {
+  const scope = scopePolicy(plan);
+  const checkedPaths: string[] = [];
+  const violations: Array<{ path: string; reason: 'path_escape' }> = [];
+
+  for (const path of [...scope.allowedPaths, ...scope.blockedPaths]) {
+    try {
+      checkedPaths.push(normalizeRepoPath(path));
+    } catch {
+      violations.push({ path, reason: 'path_escape' });
+    }
+  }
+
+  return {
+    allowed: violations.length === 0,
+    checkedPaths,
+    violations,
   };
 }
 
@@ -223,6 +261,43 @@ function buildErrorReceipt(opts: {
       message: opts.result.message,
       recoverable: true,
       retryAllowed: true,
+    },
+  };
+}
+
+function buildPolicyErrorReceipt(opts: {
+  plan: BuildroomArtifact;
+  approval: BuildroomArtifact;
+  policyResult: PathScopePolicyResult;
+  now: string;
+}): BuildroomArtifact {
+  const suffix = artifactSuffix(opts.plan.id, 'plan');
+  return {
+    id: `error_${suffix}`,
+    type: 'error_receipt',
+    schemaVersion: 'auto-buildroom/v1',
+    status: 'failed',
+    createdAt: opts.now,
+    producer: { role: 'orchestrator', runId: `builder:${opts.plan.id}` },
+    room: opts.plan.room,
+    parentIds: [opts.plan.id, opts.approval.id],
+    inputRefs: [
+      { kind: 'artifact', ref: opts.plan.id },
+      { kind: 'artifact', ref: opts.approval.id },
+    ],
+    outputRefs: [],
+    runtimeRefs: [],
+    traceId: opts.plan.traceId,
+    redaction: opts.plan.redaction,
+    contentHash: '',
+    payload: {
+      stage: 'builder',
+      targetArtifactId: opts.plan.id,
+      errorType: 'policy_violation',
+      message: 'Build plan failed pre-run path policy validation',
+      preRunPolicyResult: opts.policyResult,
+      recoverable: false,
+      retryAllowed: false,
     },
   };
 }
