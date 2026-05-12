@@ -59,6 +59,9 @@ describe('executeBuildPlan', () => {
       payload: {
         runtimeStatus: 'completed',
         builderClaims: ['Changed docs.'],
+        workingDirectory: expect.stringContaining(
+          '.anthroclaw/auto-buildroom/rooms/anthroclaw-core/worktrees/plan_20260512_docs',
+        ),
       },
     });
     expect(store.readArtifact(receipt.id)).toMatchObject({ id: receipt.id });
@@ -98,6 +101,9 @@ describe('executeBuildPlan', () => {
         stage: 'builder',
         errorType: 'runtime_error',
         message: 'permission denied',
+        workingDirectory: expect.stringContaining(
+          '.anthroclaw/auto-buildroom/rooms/anthroclaw-core/worktrees/plan_20260512_docs',
+        ),
         retryAllowed: true,
       },
     });

@@ -78,9 +78,10 @@ export async function executeBuildPlan(opts: ExecuteBuildPlanOptions): Promise<B
           changedSymlinks,
           outputRefs,
           preRunPolicyResult,
+          workingDirectory,
           now: opts.now,
         })
-      : buildErrorReceipt({ plan, approval: consumedApproval, result, now: opts.now });
+      : buildErrorReceipt({ plan, approval: consumedApproval, result, workingDirectory, now: opts.now });
     return store.writeArtifact(artifact);
   } finally {
     lock.release(handle);
@@ -115,6 +116,7 @@ function buildCoderReceipt(opts: {
   changedSymlinks: string[];
   outputRefs: BuildroomArtifactRef[];
   preRunPolicyResult: PathScopePolicyResult;
+  workingDirectory: string;
   now: string;
 }): BuildroomArtifact {
   const suffix = artifactSuffix(opts.plan.id, 'plan');
@@ -154,6 +156,7 @@ function buildCoderReceipt(opts: {
     payload: {
       runtimeStatus: 'completed',
       builderClaims: [opts.result.resultText],
+      workingDirectory: opts.workingDirectory,
       preRunPolicyResult: opts.preRunPolicyResult,
       postRunPolicyResult: {
         ...postRunPolicyResult,
@@ -353,6 +356,7 @@ function buildErrorReceipt(opts: {
   plan: BuildroomArtifact;
   approval: BuildroomArtifact;
   result: Extract<NativeBuilderRunResult, { status: 'failed' }>;
+  workingDirectory: string;
   now: string;
 }): BuildroomArtifact {
   const suffix = artifactSuffix(opts.plan.id, 'plan');
@@ -379,6 +383,7 @@ function buildErrorReceipt(opts: {
       targetArtifactId: opts.plan.id,
       errorType: opts.result.errorType,
       message: opts.result.message,
+      workingDirectory: opts.workingDirectory,
       recoverable: true,
       retryAllowed: true,
     },
