@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveExternalMcpHeaders } from '../external-mcp.js';
 import { EncryptedFilesystemCredentialStore } from '../../agent/credentials/encrypted-fs-store.js';
 import { CredentialAuditLog } from '../../agent/credentials/audit.js';
+import type { McpOAuthCredential } from '../../agent/credentials/index.js';
 
 const KEY = 'd'.repeat(64);
 const ORIGINAL_AGENTS_DIR = process.env.OC_AGENTS_DIR;
@@ -165,6 +166,221 @@ describe('resolveExternalMcpHeaders', () => {
       agentId: 'a1',
     });
     expect(out).toEqual({});
+  });
+
+  describe('mcp_oauth pre-flight refresh', () => {
+    const ORIGINAL_FETCH = globalThis.fetch;
+
+    afterEach(() => {
+      globalThis.fetch = ORIGINAL_FETCH;
+    });
+
+    it('refreshes mcp_oauth credential when expiresAt within 5min window', async () => {
+      await store.set(
+        { agentId: 'a1', service: 'mcp:pmp' },
+        {
+          kind: 'mcp_oauth',
+          service: 'mcp:pmp',
+          account: 'pmp',
+          scopes: [],
+          mcpUrl: 'https://x/y',
+          accessToken: 'old',
+          refreshToken: 'rfr',
+          // 1 min from now → within the 5-min refresh window
+          expiresAt: Date.now() + 60_000,
+          tokenEndpoint: 'https://auth/token',
+          clientId: 'cli',
+          createdAt: 0,
+        },
+      );
+      const fetchSpy = vi.fn(async () =>
+        new Response(
+          JSON.stringify({ access_token: 'new', expires_in: 3600 }),
+          { status: 200 },
+        ),
+      );
+      globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+      const out = await resolveExternalMcpHeaders(
+        {
+          x: { type: 'http', url: 'https://x/y', credential_ref: 'mcp:pmp' },
+        },
+        store,
+        { agentId: 'a1' },
+      );
+
+      const entry = out.x;
+      if (entry && (entry.type === 'http' || entry.type === 'sse')) {
+        expect(entry.headers?.Authorization).toBe('Bearer new');
+      } else {
+        throw new Error('expected http entry');
+      }
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      const reread = (await store.get(
+        { agentId: 'a1', service: 'mcp:pmp' },
+        'test',
+      )) as McpOAuthCredential;
+      expect(reread.accessToken).toBe('new');
+      expect(reread.lastRefreshAt).toBeGreaterThan(0);
+    });
+
+    it('does NOT refresh when expiresAt is outside the 5min window', async () => {
+      await store.set(
+        { agentId: 'a1', service: 'mcp:pmp' },
+        {
+          kind: 'mcp_oauth',
+          service: 'mcp:pmp',
+          account: 'pmp',
+          scopes: [],
+          mcpUrl: 'https://x/y',
+          accessToken: 'still_good',
+          refreshToken: 'rfr',
+          // 1 hour from now → outside the 5-min refresh window
+          expiresAt: Date.now() + 60 * 60_000,
+          tokenEndpoint: 'https://auth/token',
+          clientId: 'cli',
+          createdAt: 0,
+        },
+      );
+      const fetchSpy = vi.fn(async () =>
+        new Response(JSON.stringify({}), { status: 500 }),
+      );
+      globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+      const out = await resolveExternalMcpHeaders(
+        {
+          x: { type: 'http', url: 'https://x/y', credential_ref: 'mcp:pmp' },
+        },
+        store,
+        { agentId: 'a1' },
+      );
+
+      const entry = out.x;
+      if (entry && (entry.type === 'http' || entry.type === 'sse')) {
+        expect(entry.headers?.Authorization).toBe('Bearer still_good');
+      } else {
+        throw new Error('expected http entry');
+      }
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('on refresh_revoked: marks credential needs_reauth and omits entry', async () => {
+      await store.set(
+        { agentId: 'a1', service: 'mcp:pmp' },
+        {
+          kind: 'mcp_oauth',
+          service: 'mcp:pmp',
+          account: 'pmp',
+          scopes: [],
+          mcpUrl: 'https://x/y',
+          accessToken: 'old',
+          refreshToken: 'rfr',
+          expiresAt: Date.now() + 60_000,
+          tokenEndpoint: 'https://auth/token',
+          clientId: 'cli',
+          createdAt: 0,
+        },
+      );
+      const fetchSpy = vi.fn(async () =>
+        new Response(JSON.stringify({ error: 'invalid_grant' }), {
+          status: 400,
+        }),
+      );
+      globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+      const out = await resolveExternalMcpHeaders(
+        {
+          x: { type: 'http', url: 'https://x/y', credential_ref: 'mcp:pmp' },
+        },
+        store,
+        { agentId: 'a1' },
+      );
+
+      expect(out.x).toBeUndefined();
+      const reread = (await store.get(
+        { agentId: 'a1', service: 'mcp:pmp' },
+        'test',
+      )) as McpOAuthCredential;
+      expect(reread.metadata?.needs_reauth).toBe('1');
+      // Access token is untouched on revoke; only needs_reauth flips.
+      expect(reread.accessToken).toBe('old');
+    });
+
+    it('on generic refresh failure (non-invalid_grant 4xx): omits entry without metadata change', async () => {
+      await store.set(
+        { agentId: 'a1', service: 'mcp:pmp' },
+        {
+          kind: 'mcp_oauth',
+          service: 'mcp:pmp',
+          account: 'pmp',
+          scopes: [],
+          mcpUrl: 'https://x/y',
+          accessToken: 'old',
+          refreshToken: 'rfr',
+          expiresAt: Date.now() + 60_000,
+          tokenEndpoint: 'https://auth/token',
+          clientId: 'cli',
+          createdAt: 0,
+        },
+      );
+      const fetchSpy = vi.fn(async () =>
+        new Response(JSON.stringify({ error: 'server_error' }), {
+          status: 500,
+        }),
+      );
+      globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+      const out = await resolveExternalMcpHeaders(
+        {
+          x: { type: 'http', url: 'https://x/y', credential_ref: 'mcp:pmp' },
+        },
+        store,
+        { agentId: 'a1' },
+      );
+
+      expect(out.x).toBeUndefined();
+      const reread = (await store.get(
+        { agentId: 'a1', service: 'mcp:pmp' },
+        'test',
+      )) as McpOAuthCredential;
+      expect(reread.metadata?.needs_reauth).toBeUndefined();
+      expect(reread.accessToken).toBe('old');
+    });
+
+    it('mcp_apikey: never refreshes regardless of timestamps', async () => {
+      await store.set(
+        { agentId: 'a1', service: 'mcp:k' },
+        {
+          kind: 'mcp_apikey',
+          service: 'mcp:k',
+          account: 'k',
+          scopes: [],
+          mcpUrl: 'https://x',
+          token: 'static',
+          scheme: 'Bearer',
+          createdAt: 0,
+        },
+      );
+      const fetchSpy = vi.fn(async () =>
+        new Response(JSON.stringify({}), { status: 500 }),
+      );
+      globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+      const out = await resolveExternalMcpHeaders(
+        { x: { type: 'http', url: 'https://x', credential_ref: 'mcp:k' } },
+        store,
+        { agentId: 'a1' },
+      );
+
+      const entry = out.x;
+      if (entry && (entry.type === 'http' || entry.type === 'sse')) {
+        expect(entry.headers?.Authorization).toBe('Bearer static');
+      } else {
+        throw new Error('expected http entry');
+      }
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
   });
 
   it('preserves user-supplied non-Authorization headers and overrides Authorization', async () => {
