@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDefaultBuildroomConfig } from '../../config/model.js';
-import { handleTelegramBuildroomCommand } from '../command-handler.js';
+import {
+  formatTelegramBuildroomMessages,
+  handleTelegramBuildroomCommand,
+} from '../command-handler.js';
 
 describe('Telegram Buildroom command handler', () => {
   it('runs authorized Telegram commands through the canonical CLI argument path', async () => {
@@ -29,6 +32,7 @@ describe('Telegram Buildroom command handler', () => {
       ok: true,
       exitCode: 0,
       text: 'Buildroom: anthroclaw-core',
+      messages: ['Buildroom: anthroclaw-core'],
     });
     expect(runCli).toHaveBeenCalledWith([
       'status',
@@ -114,6 +118,15 @@ describe('Telegram Buildroom command handler', () => {
       ok: true,
       exitCode: 5,
       text: 'Artifact not found: trust_20260512_docs',
+      messages: ['Artifact not found: trust_20260512_docs'],
     });
+  });
+
+  it('splits long Telegram Buildroom responses into bounded message chunks', () => {
+    const chunks = formatTelegramBuildroomMessages('a'.repeat(6500), 3000);
+
+    expect(chunks).toHaveLength(3);
+    expect(chunks.every((chunk) => chunk.length <= 3000)).toBe(true);
+    expect(chunks.join('')).toBe('a'.repeat(6500));
   });
 });

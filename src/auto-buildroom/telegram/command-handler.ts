@@ -16,7 +16,7 @@ export interface TelegramBuildroomCommandHandlerOptions {
 
 export type TelegramBuildroomCommandHandlerResult =
   | { handled: false }
-  | { handled: true; ok: true; exitCode: number; text: string }
+  | { handled: true; ok: true; exitCode: number; text: string; messages: string[] }
   | { handled: true; ok: false; reason: string; text: string };
 
 export async function handleTelegramBuildroomCommand(
@@ -53,7 +53,17 @@ export async function handleTelegramBuildroomCommand(
     ok: true,
     exitCode,
     text: [...stdout, ...stderr].join('\n').trim(),
+    messages: formatTelegramBuildroomMessages([...stdout, ...stderr].join('\n').trim()),
   };
+}
+
+export function formatTelegramBuildroomMessages(text: string, maxLength = 3000): string[] {
+  if (text.length <= maxLength) return [text];
+  const chunks: string[] = [];
+  for (let offset = 0; offset < text.length; offset += maxLength) {
+    chunks.push(text.slice(offset, offset + maxLength));
+  }
+  return chunks;
 }
 
 function rejectionMessage(reason: string): string {
