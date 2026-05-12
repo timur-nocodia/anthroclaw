@@ -60,6 +60,19 @@ describe('FileArtifactStore', () => {
     expect(store.readArtifact(written.id).parentIds).toEqual([parent.id]);
   });
 
+  it('lists artifacts by type', () => {
+    store.writeArtifact(baseArtifact('research_20260512_docs', 'research_packet'));
+    store.writeArtifact(baseArtifact('review_20260512_docs', 'main_review'));
+
+    expect(store.listArtifacts('main_review').map((artifact) => artifact.id)).toEqual([
+      'review_20260512_docs',
+    ]);
+    expect(store.listArtifacts().map((artifact) => artifact.id).sort()).toEqual([
+      'research_20260512_docs',
+      'review_20260512_docs',
+    ]);
+  });
+
   function baseArtifact(id: string, type: BuildroomArtifactType): BuildroomArtifact {
     return {
       id,

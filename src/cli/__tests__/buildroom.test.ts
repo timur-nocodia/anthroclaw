@@ -88,6 +88,10 @@ describe('buildroom CLI', () => {
         approvalRoute: 'cli:local',
       },
     });
+
+    out.length = 0;
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Approved not built: 1');
   });
 
   it('rejects CLI approval for raw ideas', async () => {

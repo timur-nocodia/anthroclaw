@@ -81,6 +81,8 @@ function commandInit(args: ParsedArgs, io: CliIO): number {
 
 function commandStatus(args: ParsedArgs, io: CliIO): number {
   const config = loadBuildroomRoomConfig(args.root, args.room);
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const counts = deriveStatusCounts(store);
   io.stdout([
     `Buildroom: ${config.roomId}`,
     `Mode: ${config.mode}`,
@@ -88,15 +90,52 @@ function commandStatus(args: ParsedArgs, io: CliIO): number {
     'Latest trust: none',
     `Kill switch: ${config.killSwitchActive ? 'active' : 'inactive'}`,
     '',
-    'Pending approvals: 0',
-    'Approved not built: 0',
-    'Active builds: 0',
-    'QA pending: 0',
+    `Pending approvals: ${counts.pendingApprovals}`,
+    `Approved not built: ${counts.approvedNotBuilt}`,
+    `Active builds: ${counts.activeBuilds}`,
+    `QA pending: ${counts.qaPending}`,
     '',
     'Next:',
     'anthroclaw buildroom collect',
   ].join('\n'));
   return 0;
+}
+
+function deriveStatusCounts(store: FileArtifactStore): {
+  pendingApprovals: number;
+  approvedNotBuilt: number;
+  activeBuilds: number;
+  qaPending: number;
+} {
+  const reviews = store.listArtifacts('main_review');
+  const approvals = store.listArtifacts('approval');
+  const plans = store.listArtifacts('build_plan');
+  const builds = store.listArtifacts('coder_receipt');
+  const qaReports = store.listArtifacts('qa_report');
+
+  const approvedReviewIds = new Set(
+    approvals.map((approval) => String(approval.payload.targetReviewId ?? '')),
+  );
+  const plannedApprovalIds = new Set(
+    plans.map((plan) => String(plan.payload.approvalId ?? '')),
+  );
+  const qaBuildIds = new Set(qaReports.flatMap((qa) => qa.parentIds));
+
+  return {
+    pendingApprovals: reviews.filter(
+      (review) =>
+        review.payload.decision === 'approved_for_operator' &&
+        !approvedReviewIds.has(review.id),
+    ).length,
+    approvedNotBuilt: approvals.filter(
+      (approval) =>
+        approval.status === 'granted' &&
+        !approval.payload.consumedAt &&
+        !plannedApprovalIds.has(approval.id),
+    ).length,
+    activeBuilds: builds.filter((build) => build.payload.runtimeStatus === 'running').length,
+    qaPending: builds.filter((build) => !qaBuildIds.has(build.id)).length,
+  };
 }
 
 function commandShow(args: ParsedArgs, io: CliIO): number {

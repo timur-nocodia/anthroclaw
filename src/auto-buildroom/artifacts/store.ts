@@ -73,6 +73,24 @@ export class FileArtifactStore {
     return this.findArtifactPathById(id) !== null;
   }
 
+  listArtifacts(type?: BuildroomArtifactType): BuildroomArtifact[] {
+    const types = type ? [type] : Object.keys(ARTIFACT_DIRS) as BuildroomArtifactType[];
+    const artifacts: BuildroomArtifact[] = [];
+
+    for (const artifactType of types) {
+      const dir = join(this.roomRoot, ARTIFACT_DIRS[artifactType]);
+      if (!existsSync(dir)) continue;
+
+      for (const entry of readdirSync(dir).sort()) {
+        if (!entry.endsWith('.json')) continue;
+        const artifact = JSON.parse(readFileSync(join(dir, entry), 'utf8')) as BuildroomArtifact;
+        artifacts.push(artifact);
+      }
+    }
+
+    return artifacts;
+  }
+
   pathForArtifact(artifact: Pick<BuildroomArtifact, 'id' | 'type'>): string {
     return join(this.roomRoot, ARTIFACT_DIRS[artifact.type], `${artifact.id}.json`);
   }
@@ -106,4 +124,3 @@ function findJsonFile(root: string, filename: string): string | null {
 
   return null;
 }
-
