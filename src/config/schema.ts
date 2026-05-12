@@ -230,37 +230,50 @@ const SdkAgentConfigSchema = z.object({
   fallbackModel: z.string().optional(),
 }).optional();
 
-const HttpLikeMcpVariant = (type: 'http' | 'sse') =>
-  z
-    .object({
-      type: z.literal(type),
+// Cross-field rule: a managed credential_ref makes an Authorization header
+// redundant (and confusing for operators). Rather than silently picking one,
+// the schema rejects the combination. Applied at the union level via
+// superRefine so each arm's ZodObject type stays narrowable in TS consumers.
+const ExternalMcpServerSchema = z
+  .union([
+    z.object({
+      type: z.literal('stdio').default('stdio').optional(),
+      command: z.string().min(1),
+      args: z.array(z.string()).optional(),
+      env: z.record(z.string(), z.string()).optional(),
+      allowed_tools: z.array(z.string()).optional(),
+    }),
+    z.object({
+      type: z.literal('sse'),
       url: z.string().url(),
       display_name: z.string().optional(),
       credential_ref: z.string().optional(),
       headers: z.record(z.string(), z.string()).optional(),
       allowed_tools: z.array(z.string()).optional(),
-    })
-    .refine(
-      (v) =>
-        !(
-          v.credential_ref
-          && v.headers
-          && Object.keys(v.headers).some((k) => k.toLowerCase() === 'authorization')
-        ),
-      { message: 'Cannot set both credential_ref and Authorization header' },
-    );
-
-const ExternalMcpServerSchema = z.union([
-  z.object({
-    type: z.literal('stdio').default('stdio').optional(),
-    command: z.string().min(1),
-    args: z.array(z.string()).optional(),
-    env: z.record(z.string(), z.string()).optional(),
-    allowed_tools: z.array(z.string()).optional(),
-  }),
-  HttpLikeMcpVariant('sse'),
-  HttpLikeMcpVariant('http'),
-]);
+    }),
+    z.object({
+      type: z.literal('http'),
+      url: z.string().url(),
+      display_name: z.string().optional(),
+      credential_ref: z.string().optional(),
+      headers: z.record(z.string(), z.string()).optional(),
+      allowed_tools: z.array(z.string()).optional(),
+    }),
+  ])
+  .superRefine((v, ctx) => {
+    if (v.type !== 'http' && v.type !== 'sse') return;
+    if (
+      v.credential_ref
+      && v.headers
+      && Object.keys(v.headers).some((k) => k.toLowerCase() === 'authorization')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Cannot set both credential_ref and Authorization header',
+        path: ['headers', 'Authorization'],
+      });
+    }
+  });
 
 const ReplyToModeSchema = z.enum(['always', 'incoming_reply_only', 'never']);
 
