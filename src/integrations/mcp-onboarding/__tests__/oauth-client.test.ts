@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { generatePkce, registerClient } from '../oauth-client.js';
+import {
+  buildAuthorizationUrl,
+  exchangeCode,
+  generatePkce,
+  refreshToken,
+  registerClient,
+} from '../oauth-client.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -95,5 +101,178 @@ describe('registerClient', () => {
         clientName: 'AnthroClaw',
       }),
     ).rejects.toThrow(/dcr_failed/);
+  });
+});
+
+describe('buildAuthorizationUrl', () => {
+  it('encodes all OAuth 2.1 params', () => {
+    const url = buildAuthorizationUrl({
+      authorizationEndpoint: 'https://auth/authorize',
+      clientId: 'cli',
+      redirectUri: 'https://ui/cb',
+      state: 'st_x',
+      codeChallenge: 'ch_x',
+      scopes: ['read', 'write'],
+    });
+    const parsed = new URL(url);
+    expect(parsed.origin + parsed.pathname).toBe('https://auth/authorize');
+    expect(parsed.searchParams.get('client_id')).toBe('cli');
+    expect(parsed.searchParams.get('redirect_uri')).toBe('https://ui/cb');
+    expect(parsed.searchParams.get('state')).toBe('st_x');
+    expect(parsed.searchParams.get('code_challenge')).toBe('ch_x');
+    expect(parsed.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(parsed.searchParams.get('response_type')).toBe('code');
+    expect(parsed.searchParams.get('scope')).toBe('read write');
+  });
+
+  it('omits scope when no scopes given', () => {
+    const url = buildAuthorizationUrl({
+      authorizationEndpoint: 'https://auth/authorize',
+      clientId: 'cli',
+      redirectUri: 'https://ui/cb',
+      state: 'st',
+      codeChallenge: 'ch',
+    });
+    expect(new URL(url).searchParams.has('scope')).toBe(false);
+  });
+});
+
+describe('exchangeCode', () => {
+  it('POSTs urlencoded auth-code grant + PKCE verifier and returns tokens', async () => {
+    const fetchStub = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            access_token: 'tok',
+            refresh_token: 'rfr',
+            expires_in: 3600,
+            scope: 'read write',
+          }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal('fetch', fetchStub);
+    const before = Date.now();
+    const r = await exchangeCode({
+      tokenEndpoint: 'https://auth/token',
+      clientId: 'cli',
+      clientSecret: 'sec',
+      redirectUri: 'https://ui/cb',
+      code: 'auth_code',
+      codeVerifier: 'verifier',
+    });
+    expect(r.accessToken).toBe('tok');
+    expect(r.refreshToken).toBe('rfr');
+    expect(r.scopes).toEqual(['read', 'write']);
+    expect(r.expiresAt!).toBeGreaterThanOrEqual(before + 3600 * 1000 - 50);
+    const init = fetchStub.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe(
+      'application/x-www-form-urlencoded',
+    );
+    const parsed = new URLSearchParams(
+      (init.body as URLSearchParams).toString(),
+    );
+    expect(parsed.get('grant_type')).toBe('authorization_code');
+    expect(parsed.get('code')).toBe('auth_code');
+    expect(parsed.get('redirect_uri')).toBe('https://ui/cb');
+    expect(parsed.get('client_id')).toBe('cli');
+    expect(parsed.get('code_verifier')).toBe('verifier');
+    expect(parsed.get('client_secret')).toBe('sec');
+  });
+
+  it('omits client_secret when not given', async () => {
+    const fetchStub = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ access_token: 'tok' }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal('fetch', fetchStub);
+    await exchangeCode({
+      tokenEndpoint: 'https://auth/token',
+      clientId: 'cli',
+      redirectUri: 'https://ui/cb',
+      code: 'c',
+      codeVerifier: 'v',
+    });
+    const parsed = new URLSearchParams(
+      (fetchStub.mock.calls[0][1] as RequestInit).body as URLSearchParams,
+    );
+    expect(parsed.get('client_secret')).toBeNull();
+  });
+
+  it('throws token_exchange_failed on non-2xx', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 401 })),
+    );
+    await expect(
+      exchangeCode({
+        tokenEndpoint: 'https://auth/token',
+        clientId: 'cli',
+        redirectUri: 'https://ui/cb',
+        code: 'c',
+        codeVerifier: 'v',
+      }),
+    ).rejects.toThrow(/token_exchange_failed/);
+  });
+});
+
+describe('refreshToken', () => {
+  it('POSTs refresh_token grant and returns new tokens', async () => {
+    const fetchStub = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ access_token: 'new', expires_in: 3600 }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal('fetch', fetchStub);
+    const r = await refreshToken({
+      tokenEndpoint: 'https://auth/token',
+      clientId: 'cli',
+      refreshToken: 'rfr',
+    });
+    expect(r.accessToken).toBe('new');
+    const parsed = new URLSearchParams(
+      (fetchStub.mock.calls[0][1] as RequestInit).body as URLSearchParams,
+    );
+    expect(parsed.get('grant_type')).toBe('refresh_token');
+    expect(parsed.get('refresh_token')).toBe('rfr');
+    expect(parsed.get('client_id')).toBe('cli');
+  });
+
+  it('throws refresh_revoked on 400 + invalid_grant', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'invalid_grant' }), {
+            status: 400,
+          }),
+      ),
+    );
+    await expect(
+      refreshToken({
+        tokenEndpoint: 'https://auth/token',
+        clientId: 'cli',
+        refreshToken: 'rfr',
+      }),
+    ).rejects.toThrow(/refresh_revoked/);
+  });
+
+  it('throws refresh_failed on other 4xx', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 500 })),
+    );
+    await expect(
+      refreshToken({
+        tokenEndpoint: 'https://auth/token',
+        clientId: 'cli',
+        refreshToken: 'rfr',
+      }),
+    ).rejects.toThrow(/refresh_failed/);
   });
 });

@@ -87,3 +87,130 @@ export async function registerClient(args: RegisterArgs): Promise<RegisterResult
   };
   return { clientId: body.client_id, clientSecret: body.client_secret };
 }
+
+export interface BuildAuthorizationUrlArgs {
+  authorizationEndpoint: string;
+  clientId: string;
+  redirectUri: string;
+  state: string;
+  codeChallenge: string;
+  scopes?: string[];
+}
+
+/**
+ * Build a URL the user agent can visit to start the OAuth dance. PKCE is
+ * always advertised as S256.
+ */
+export function buildAuthorizationUrl(args: BuildAuthorizationUrlArgs): string {
+  assertWellFormedUrl(args.authorizationEndpoint, 'authorization_url_invalid');
+  const u = new URL(args.authorizationEndpoint);
+  u.searchParams.set('client_id', args.clientId);
+  u.searchParams.set('redirect_uri', args.redirectUri);
+  u.searchParams.set('state', args.state);
+  u.searchParams.set('code_challenge', args.codeChallenge);
+  u.searchParams.set('code_challenge_method', 'S256');
+  u.searchParams.set('response_type', 'code');
+  if (args.scopes?.length) u.searchParams.set('scope', args.scopes.join(' '));
+  return u.toString();
+}
+
+export interface ExchangeResult {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  scopes?: string[];
+}
+
+export interface ExchangeCodeArgs {
+  tokenEndpoint: string;
+  clientId: string;
+  clientSecret?: string;
+  redirectUri: string;
+  code: string;
+  codeVerifier: string;
+}
+
+/**
+ * RFC 6749 §4.1.3 authorization-code grant + PKCE verifier (RFC 7636).
+ *
+ * Returns access token (+ optional refresh token and expiry). Throws
+ * `token_exchange_failed: <status>` on non-2xx.
+ */
+export async function exchangeCode(args: ExchangeCodeArgs): Promise<ExchangeResult> {
+  assertWellFormedUrl(args.tokenEndpoint, 'token_exchange_failed');
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code: args.code,
+    redirect_uri: args.redirectUri,
+    client_id: args.clientId,
+    code_verifier: args.codeVerifier,
+  });
+  if (args.clientSecret) body.set('client_secret', args.clientSecret);
+  const res = await fetch(args.tokenEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  if (!res.ok) throw new Error(`token_exchange_failed: ${res.status}`);
+  const json = (await res.json()) as {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+    scope?: string;
+  };
+  return {
+    accessToken: json.access_token,
+    refreshToken: json.refresh_token,
+    expiresAt: json.expires_in ? Date.now() + json.expires_in * 1000 : undefined,
+    scopes: json.scope?.split(/\s+/),
+  };
+}
+
+export interface RefreshTokenArgs {
+  tokenEndpoint: string;
+  clientId: string;
+  clientSecret?: string;
+  refreshToken: string;
+}
+
+/**
+ * RFC 6749 §6 refresh-token grant.
+ *
+ * Throws `refresh_revoked` if the AS replies 400 + `error: invalid_grant`
+ * (user revoked consent or the refresh token expired). Throws
+ * `refresh_failed: <status>` for other non-2xx.
+ */
+export async function refreshToken(args: RefreshTokenArgs): Promise<ExchangeResult> {
+  assertWellFormedUrl(args.tokenEndpoint, 'refresh_failed');
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: args.refreshToken,
+    client_id: args.clientId,
+  });
+  if (args.clientSecret) body.set('client_secret', args.clientSecret);
+  const res = await fetch(args.tokenEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  if (res.status === 400) {
+    const err = (await res
+      .clone()
+      .json()
+      .catch(() => ({}))) as { error?: string };
+    if (err.error === 'invalid_grant') throw new Error('refresh_revoked');
+  }
+  if (!res.ok) throw new Error(`refresh_failed: ${res.status}`);
+  const json = (await res.json()) as {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+    scope?: string;
+  };
+  return {
+    accessToken: json.access_token,
+    refreshToken: json.refresh_token,
+    expiresAt: json.expires_in ? Date.now() + json.expires_in * 1000 : undefined,
+    scopes: json.scope?.split(/\s+/),
+  };
+}
