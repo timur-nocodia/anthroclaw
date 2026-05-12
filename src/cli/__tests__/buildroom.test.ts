@@ -49,6 +49,45 @@ describe('buildroom CLI', () => {
     expect(err.join('\n')).toContain('Telegram chat/thread route is not operator identity');
   });
 
+  it('initializes Telegram command, approval, and notification routes', async () => {
+    await expect(
+      run([
+        'init',
+        '--root',
+        root,
+        '--room',
+        'anthroclaw-core',
+        '--operator',
+        'telegram_user:48705953',
+        '--telegram-command-route',
+        'telegram_chat:-1003931616911',
+        '--telegram-approval-route',
+        'telegram_chat:-1003931616911',
+        '--telegram-notification-route',
+        'telegram_thread:-1003931616911:2',
+      ]),
+    ).resolves.toBe(0);
+
+    const config = parseYaml(readFileSync(
+      join(root, '.anthroclaw', 'auto-buildroom', 'rooms', 'anthroclaw-core', 'buildroom.yml'),
+      'utf8',
+    )) as {
+      operators: Array<{
+        id: string;
+        commandRoutes: string[];
+        approvalRoutes: string[];
+      }>;
+      notifications: { routes: string[] };
+    };
+
+    expect(config.operators[0]).toMatchObject({
+      id: 'telegram_user:48705953',
+      commandRoutes: ['cli:local', 'telegram_chat:-1003931616911'],
+      approvalRoutes: ['cli:local', 'telegram_chat:-1003931616911'],
+    });
+    expect(config.notifications.routes).toEqual(['telegram_thread:-1003931616911:2']);
+  });
+
   it('shows receipts and approves only locked Main Review artifacts', async () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });

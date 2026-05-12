@@ -45,6 +45,9 @@ interface ParsedArgs {
   root: string;
   room?: string;
   operator?: string;
+  telegramCommandRoutes: string[];
+  telegramApprovalRoutes: string[];
+  telegramNotificationRoutes: string[];
   flags: Set<string>;
   positional: string[];
 }
@@ -122,6 +125,26 @@ function commandInit(args: ParsedArgs, io: CliIO): number {
     roomId: args.room ?? 'anthroclaw-core',
     operatorId: args.operator ?? 'cli:user:local-operator',
   });
+  if (
+    args.telegramCommandRoutes.length > 0 ||
+    args.telegramApprovalRoutes.length > 0 ||
+    args.telegramNotificationRoutes.length > 0
+  ) {
+    const operator = result.config.operators[0];
+    operator.commandRoutes = uniqueRoutes([
+      ...operator.commandRoutes,
+      ...args.telegramCommandRoutes,
+    ]);
+    operator.approvalRoutes = uniqueRoutes([
+      ...operator.approvalRoutes,
+      ...args.telegramApprovalRoutes,
+    ]);
+    result.config.notifications.routes = uniqueRoutes([
+      ...result.config.notifications.routes,
+      ...args.telegramNotificationRoutes,
+    ]);
+    saveBuildroomRoomConfig(args.root, result.config);
+  }
 
   io.stdout([
     'Buildroom initialized',
@@ -882,6 +905,9 @@ function parseArgs(argv: string[]): ParsedArgs {
   const out: ParsedArgs = {
     command: undefined,
     root: process.cwd(),
+    telegramCommandRoutes: [],
+    telegramApprovalRoutes: [],
+    telegramNotificationRoutes: [],
     flags: new Set(),
     positional,
   };
@@ -897,6 +923,15 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case '--operator':
         out.operator = argv[++i];
+        break;
+      case '--telegram-command-route':
+        out.telegramCommandRoutes.push(argv[++i]);
+        break;
+      case '--telegram-approval-route':
+        out.telegramApprovalRoutes.push(argv[++i]);
+        break;
+      case '--telegram-notification-route':
+        out.telegramNotificationRoutes.push(argv[++i]);
         break;
       case '--save':
         out.flags.add('save');
@@ -923,6 +958,10 @@ function requirePositional(args: ParsedArgs, index: number, command: string): st
 
 function firstOperator(config: { operators: { id: string }[] }): string {
   return config.operators[0]?.id ?? 'cli:user:local-operator';
+}
+
+function uniqueRoutes(routes: string[]): string[] {
+  return [...new Set(routes.filter(Boolean))];
 }
 
 function nowIso(deps: BuildroomCliDependencies): string {
@@ -986,6 +1025,9 @@ function helpText(): string {
     '  --root <path>       Project root',
     '  --room <roomId>     Buildroom ID',
     '  --operator <id>     Operator identity for init',
+    '  --telegram-command-route <route>       Add Telegram command route during init',
+    '  --telegram-approval-route <route>      Add Telegram approval route during init',
+    '  --telegram-notification-route <route>  Add Telegram notification route during init',
     '  --save              Persist report rendering when supported',
     '  --execute           Explicitly run Builder for build plan/approval',
   ].join('\n');
