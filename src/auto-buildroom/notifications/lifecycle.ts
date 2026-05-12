@@ -1,4 +1,5 @@
 import type { BuildroomArtifact } from '../artifacts/model.js';
+import { redactSecrets } from '../../security/redact.js';
 
 export function formatBuildroomLifecycleNotification(
   artifact: BuildroomArtifact,
@@ -15,7 +16,7 @@ export function formatBuildroomLifecycleNotification(
     return withNotificationBoundary([
       'Buildroom: BLOCKED',
       `Receipt: ${artifact.id}`,
-      `Reason: ${String(artifact.payload.errorType ?? 'error')}`,
+      `Reason: ${field(artifact.payload.errorType ?? 'error')}`,
       `Next: /buildroom show ${artifact.id}`,
     ]);
   }
@@ -24,13 +25,13 @@ export function formatBuildroomLifecycleNotification(
     return withNotificationBoundary([
       'Buildroom: QA completed',
       `Receipt: ${artifact.id}`,
-      `Status: ${String(artifact.payload.qaStatus ?? artifact.status)}`,
+      `Status: ${field(artifact.payload.qaStatus ?? artifact.status)}`,
       `Next: /buildroom trust ${artifact.parentIds[0] ?? artifact.id}`,
     ]);
   }
 
   if (artifact.type === 'trust_report') {
-    const trustState = String(artifact.payload.trustState ?? artifact.status).toUpperCase();
+    const trustState = field(artifact.payload.trustState ?? artifact.status).toUpperCase();
     return withNotificationBoundary([
       `Buildroom trust: ${trustState}`,
       `Receipt: ${artifact.id}`,
@@ -43,7 +44,7 @@ export function formatBuildroomLifecycleNotification(
     return withNotificationBoundary([
       'Buildroom: retention review created',
       `Receipt: ${artifact.id}`,
-      `Recommendation: ${String(artifact.payload.recommendation ?? 'review')}`,
+      `Recommendation: ${field(artifact.payload.recommendation ?? 'review')}`,
       `Next: /buildroom show ${artifact.id}`,
     ]);
   }
@@ -63,7 +64,11 @@ function firstReason(artifact: BuildroomArtifact): string {
   const reasons = artifact.payload.reasons;
   if (Array.isArray(reasons)) {
     const first = reasons.find((reason): reason is string => typeof reason === 'string' && reason.trim().length > 0);
-    if (first) return first;
+    if (first) return field(first);
   }
   return 'none';
+}
+
+function field(value: unknown): string {
+  return redactSecrets(String(value));
 }

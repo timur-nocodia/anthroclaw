@@ -29,6 +29,16 @@ describe('Buildroom lifecycle notifications', () => {
     ].join('\n'));
   });
 
+  it('redacts secret-like values from rendered notification fields', () => {
+    const text = formatBuildroomLifecycleNotification(artifact('trust_20260512_docs', 'trust_report', {
+      trustState: 'blocked',
+      reasons: ['runtime leaked token sk-ant-123456789012345678901234567890'],
+    }));
+
+    expect(text).toContain('sk-ant****7890');
+    expect(text).not.toContain('sk-ant-123456789012345678901234567890');
+  });
+
   it('does not render unsupported artifacts', () => {
     expect(formatBuildroomLifecycleNotification(artifact('idea_20260512_docs', 'idea_contract', {})))
       .toBeNull();
