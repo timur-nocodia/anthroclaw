@@ -566,6 +566,7 @@ async function commandQa(
   }
 
   const existing = findChildArtifact(store, 'qa_report', build.id);
+  const created = existing == null;
   const qa = existing ?? store.writeArtifact(
     createQaReportArtifact({
       build,
@@ -583,7 +584,7 @@ async function commandQa(
     'Next:',
     `anthroclaw buildroom trust ${build.id}`,
   ].join('\n'));
-  await notifyLifecycle(deps, args.root, config.roomId, qa);
+  if (created) await notifyLifecycle(deps, args.root, config.roomId, qa);
   return 0;
 }
 
@@ -605,6 +606,7 @@ async function commandTrust(
   if (!qa) throw new Error(`QA report not found for ${build.id}`);
 
   const existingTrust = findChildArtifact(store, 'trust_report', build.id);
+  const created = existingTrust == null;
   const trust = existingTrust ?? createAndStoreTrustArtifacts(store, build, qa);
 
   io.stdout([
@@ -613,7 +615,7 @@ async function commandTrust(
     '',
     'Trust tells the operator what is actually proven.',
   ].join('\n'));
-  await notifyLifecycle(deps, args.root, config.roomId, trust);
+  if (created) await notifyLifecycle(deps, args.root, config.roomId, trust);
   return 0;
 }
 
@@ -656,6 +658,7 @@ async function commandRetain(
   }
 
   const existing = findChildArtifact(store, 'retention_review', trust.id);
+  const created = existing == null;
   const retention = existing ?? store.writeArtifact(
     createRetentionReviewArtifact({
       trust,
@@ -671,7 +674,7 @@ async function commandRetain(
     '',
     'Retention recommends lifecycle treatment. It does not erase audit evidence.',
   ].join('\n'));
-  await notifyLifecycle(deps, args.root, config.roomId, retention);
+  if (created) await notifyLifecycle(deps, args.root, config.roomId, retention);
   return 0;
 }
 

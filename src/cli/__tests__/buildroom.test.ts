@@ -748,6 +748,47 @@ describe('buildroom CLI', () => {
     expect(notifications[0].text).toContain('Notification only. Approval still requires explicit /buildroom commands.');
   });
 
+  it('does not send lifecycle notifications for reused receipts', async () => {
+    await run([
+      'init',
+      '--root',
+      root,
+      '--room',
+      'anthroclaw-core',
+      '--telegram-notification-route',
+      'telegram_thread:-1003931616911:2',
+    ]);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      coderReceiptWithOutputHash({
+        builderClaims: ['Updated operator guide.'],
+        changedFiles: ['docs/guide.md'],
+      }),
+    );
+    const notifications: Array<{ routes: string[]; text: string }> = [];
+    const deps = {
+      notify: async (notification: { routes: string[]; text: string }) => {
+        notifications.push(notification);
+      },
+    };
+
+    await run(['qa', 'build_20260512_docs', '--root', root], deps);
+    await run(['qa', 'build_20260512_docs', '--root', root], deps);
+    await run(['trust', 'build_20260512_docs', '--root', root], deps);
+    await run(['trust', 'build_20260512_docs', '--root', root], deps);
+    await run(['retain', 'trust_20260512_docs', '--root', root], deps);
+    await run(['retain', 'trust_20260512_docs', '--root', root], deps);
+
+    expect(notifications.map((notification) => notification.text.split('\n')[0])).toEqual([
+      'Buildroom: QA completed',
+      'Buildroom trust: CLEAN',
+      'Buildroom: retention review created',
+    ]);
+    expect(store.listArtifacts('qa_report')).toHaveLength(1);
+    expect(store.listArtifacts('trust_report')).toHaveLength(1);
+    expect(store.listArtifacts('retention_review')).toHaveLength(1);
+  });
+
   it('blocks retention without a trust receipt target', async () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
