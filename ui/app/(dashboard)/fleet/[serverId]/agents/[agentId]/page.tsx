@@ -75,6 +75,7 @@ import {
   type LearningDecisionFilterValue,
 } from "@/components/learning/LearningDecisionFilters";
 import { LearningDecisionRow, type LearningDecisionRecord } from "@/components/learning/LearningDecisionRow";
+import { McpServersSection } from "@/components/mcp/McpServersSection";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -1010,7 +1011,7 @@ export default function AgentEditorPage() {
         </TabsList>
 
         <TabsContent value="config" className="mt-0 flex-1 overflow-auto">
-          {agent && <ConfigTab serverId={serverId} agentId={agentId} agent={agent} />}
+          {agent && <ConfigTab serverId={serverId} agentId={agentId} agent={agent} onReload={fetchAgent} />}
         </TabsContent>
         <TabsContent value="files" className="mt-0 flex-1 overflow-hidden">
           <FilesTab serverId={serverId} agentId={agentId} />
@@ -1052,10 +1053,12 @@ function ConfigTab({
   serverId,
   agentId,
   agent,
+  onReload,
 }: {
   serverId: string;
   agentId: string;
   agent: AgentConfig;
+  onReload: () => Promise<void> | void;
 }) {
   const [mode, setMode] = useState<"form" | "raw">("form");
   const [dirty, setDirty] = useState(false);
@@ -2598,160 +2601,16 @@ function ConfigTab({
             </div>
           </Section>
 
-          <Section
-            title="External MCP servers"
-            subtitle={`${Object.keys(cfg.external_mcp_servers).length} configured`}
-            tooltip="SDK-native external MCP servers for pilot integrations. These are passed into Claude Agent SDK mcpServers, not executed through a custom harness runtime."
-            icon={<Plug className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
-            action={
-              <div className="flex items-center gap-1.5">
-                <Button variant="outline" size="sm" onClick={() => addExternalMcpPreset("calendar")}>
-                  Calendar
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => addExternalMcpPreset("gmail")}>
-                  Gmail
-                </Button>
-                <Button variant="outline" size="sm" onClick={addExternalMcpServer}>
-                  <Plus className="h-3 w-3" />
-                  Add server
-                </Button>
-              </div>
-            }
-          >
-            {Object.keys(cfg.external_mcp_servers).length === 0 ? (
-              <div className="p-5 text-center text-xs" style={{ color: "var(--oc-text-muted)" }}>
-                No external MCP servers. Add one for a Google Calendar, Gmail, or other stdio/http MCP pilot.
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2.5">
-                {Object.entries(cfg.external_mcp_servers).map(([serverName, server]) => {
-                  const type = server.type ?? "stdio";
-                  const preflight = externalMcpPreflight[serverName];
-                  return (
-                    <div
-                      key={serverName}
-                      className="rounded-[5px] border p-3"
-                      style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}
-                    >
-                      <div className="mb-3 flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
-                            {serverName}
-                          </div>
-                          <div className="mt-0.5 text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
-                            {type} / {(server.allowed_tools ?? []).length} allowed tools
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => void preflightExternalMcpServer(serverName)}
-                            disabled={preflight?.loading}
-                            className="h-7 px-2"
-                          >
-                            <Shield className="h-3.5 w-3.5" />
-                            {preflight?.loading ? "Checking" : "Preflight"}
-                          </Button>
-                          <button
-                            onClick={() => removeExternalMcpServer(serverName)}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-[var(--oc-bg3)]"
-                            style={{ color: "var(--oc-text-dim)" }}
-                            title="Remove external MCP server"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 gap-2 md:grid-cols-[120px_minmax(0,1fr)]">
-                        <Field label="Transport" tooltip="SDK MCP transport for this external server. stdio is the common local MCP shape; sse/http are remote transports.">
-                          <select
-                            value={type}
-                            onChange={(e) => updateExternalMcpServer(serverName, { type: e.target.value as ExternalMcpServerConfig["type"] })}
-                            className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
-                            style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
-                          >
-                            <option value="stdio">stdio</option>
-                            <option value="sse">sse</option>
-                            <option value="http">http</option>
-                          </select>
-                        </Field>
-                        {type === "stdio" ? (
-                          <Field label="Command" tooltip="Executable command passed to the SDK MCP server config.">
-                            <input
-                              value={server.command ?? ""}
-                              onChange={(e) => updateExternalMcpServer(serverName, { command: e.target.value })}
-                              placeholder="npx"
-                              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
-                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                            />
-                          </Field>
-                        ) : (
-                          <Field label="URL" tooltip="Remote MCP endpoint URL.">
-                            <input
-                              value={server.url ?? ""}
-                              onChange={(e) => updateExternalMcpServer(serverName, { url: e.target.value })}
-                              placeholder="https://mcp.example.com"
-                              className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
-                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                            />
-                          </Field>
-                        )}
-                      </div>
-                      <FormGrid>
-                        {type === "stdio" ? (
-                          <>
-                            <Field label="Args" tooltip="Arguments passed to the MCP process. Comma-separated.">
-                              <input
-                                value={arrayToCsv(server.args)}
-                                onChange={(e) => updateExternalMcpServer(serverName, { args: csvToArray(e.target.value) })}
-                                placeholder="google-calendar-mcp"
-                                className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
-                                style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                              />
-                            </Field>
-                            <Field label="Env" tooltip="Environment passed to the MCP process. One KEY=value per line. Values are redacted in preflight responses.">
-                              <textarea
-                                value={mapToEnvText(server.env)}
-                                onChange={(e) => updateExternalMcpServer(serverName, { env: envTextToMap(e.target.value) })}
-                                rows={3}
-                                placeholder="GOOGLE_CLIENT_ID=..."
-                                className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
-                                style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                              />
-                            </Field>
-                          </>
-                        ) : (
-                          <Field label="Headers" tooltip="Optional request headers for remote MCP. One KEY=value per line.">
-                            <textarea
-                              value={mapToEnvText(server.headers)}
-                              onChange={(e) => updateExternalMcpServer(serverName, { headers: envTextToMap(e.target.value) })}
-                              rows={3}
-                              placeholder="Authorization=Bearer ..."
-                              className="min-h-[76px] w-full resize-y rounded-[5px] border px-2 py-1.5 text-xs outline-none"
-                              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                            />
-                          </Field>
-                        )}
-                        <Field label="Allowed tools" tooltip="Explicit tool names allowed from this server. These become mcp__server__tool entries in SDK allowedTools.">
-                          <input
-                            value={arrayToCsv(server.allowed_tools)}
-                            onChange={(e) => updateExternalMcpServer(serverName, { allowed_tools: csvToArray(e.target.value) })}
-                            placeholder="calendar_daily_brief, calendar_lookup"
-                            className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
-                            style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
-                          />
-                        </Field>
-                      </FormGrid>
-                      {preflight && (
-                        <ExternalMcpPreflightResult state={preflight} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Section>
+          <McpServersSection
+            agentId={agentId}
+            servers={cfg.external_mcp_servers}
+            onReload={onReload}
+            onChangeEntry={(serverName, next) => updateExternalMcpServer(serverName, next)}
+            onRemoveEntry={(serverName) => removeExternalMcpServer(serverName)}
+            onRemoveServer={(serverName) => {
+              removeExternalMcpServer(serverName);
+            }}
+          />
 
           {/* Display & sessions */}
           <Section title="Display & sessions"
