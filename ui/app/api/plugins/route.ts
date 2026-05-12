@@ -54,7 +54,11 @@ export async function GET() {
     });
 
     const response: PluginListResponse = { plugins };
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: {
+        'Cache-Control': 'no-store, max-age=0',
+      },
+    });
   });
 }
 

@@ -94,17 +94,20 @@ export function PluginsPanel({ agentId }: PluginsPanelProps) {
   const refresh = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
+    const cacheBust = `ts=${Date.now()}`;
 
     // Use allSettled so a single failing fetch doesn't block both halves of the UI.
     // Each branch independently exits the loading skeleton.
     const [pluginsResult, agentResult] = await Promise.allSettled([
       (async () => {
-        const r = await fetch("/api/plugins");
+        const r = await fetch(`/api/plugins?${cacheBust}`, { cache: "no-store" });
         if (!r.ok) throw new Error(`Failed to load plugins (${r.status})`);
         return (await r.json()) as PluginsListResponse;
       })(),
       (async () => {
-        const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/plugins`);
+        const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/plugins?${cacheBust}`, {
+          cache: "no-store",
+        });
         if (!r.ok) throw new Error(`Failed to load agent plugin state (${r.status})`);
         return (await r.json()) as AgentPluginsResponse;
       })(),
