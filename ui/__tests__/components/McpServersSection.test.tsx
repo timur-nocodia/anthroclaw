@@ -1,9 +1,40 @@
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import {
   McpServersSection,
   type ExternalMcpEntry,
 } from '@/components/mcp/McpServersSection';
+
+/**
+ * Default fetch stub for `/api/agents/.../mcp/.../status` calls fired by the
+ * section's mount effect. Tests that want a non-default status override this
+ * via `vi.stubGlobal('fetch', ...)`.
+ */
+function stubStatusFetch(
+  resolver: (name: string) => unknown = () => ({ status: 'connected' }),
+) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      const m = url.match(/\/api\/agents\/[^/]+\/mcp\/([^/]+)\/status/);
+      if (m) {
+        return new Response(JSON.stringify(resolver(decodeURIComponent(m[1]))), {
+          status: 200,
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }),
+  );
+}
+
+beforeEach(() => {
+  stubStatusFetch();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('<McpServersSection />', () => {
   it('renders empty-state copy when no servers configured', () => {
@@ -64,5 +95,59 @@ describe('<McpServersSection />', () => {
     expect(
       screen.getByText(/Advanced — manually edit raw fields/i),
     ).toBeInTheDocument();
+  });
+
+  it('fetches credential status per server on mount and shows reauth banner when API reports needs_reauth', async () => {
+    stubStatusFetch((name) =>
+      name === 'notion' ? { status: 'reauth_required' } : { status: 'connected' },
+    );
+    const servers: Record<string, ExternalMcpEntry> = {
+      notion: {
+        type: 'http',
+        url: 'https://mcp.notion.com',
+        credential_ref: 'mcp:notion',
+      },
+      linear: {
+        type: 'http',
+        url: 'https://mcp.linear.app/mcp',
+        credential_ref: 'mcp:linear',
+      },
+    };
+    render(
+      <McpServersSection agentId="alice" servers={servers} onReload={vi.fn()} />,
+    );
+    // ReauthBanner renders "Token for <name> ..." copy
+    await waitFor(() => {
+      expect(screen.getByText(/Token for/)).toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole('button', { name: /re-authorize/i }),
+    ).toBeInTheDocument();
+    // The status endpoint should have been hit for both servers.
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    const urls = calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes('/mcp/notion/status'))).toBe(true);
+    expect(urls.some((u) => u.includes('/mcp/linear/status'))).toBe(true);
+  });
+
+  it('falls back to disabled when status fetch fails (defensive)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('network');
+      }),
+    );
+    const servers: Record<string, ExternalMcpEntry> = {
+      foo: { type: 'http', url: 'https://mcp.foo/mcp' },
+    };
+    render(
+      <McpServersSection agentId="alice" servers={servers} onReload={vi.fn()} />,
+    );
+    // No throw; card still renders with the fallback (no credential_ref → disabled).
+    await waitFor(() => {
+      expect(screen.getByText(/http · 0 tools/)).toBeInTheDocument();
+    });
+    // No ReauthBanner.
+    expect(screen.queryByText(/Token for/)).not.toBeInTheDocument();
   });
 });

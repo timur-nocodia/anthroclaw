@@ -17,7 +17,7 @@
  * caller persists when the user clicks Save on the page.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plug, Plus } from "lucide-react";
 import { Section } from "@/components/ui/section";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,13 @@ import {
 } from "./McpServerAdvancedEditor";
 
 export type { ExternalMcpEntry } from "./McpServerAdvancedEditor";
+
+type LiveStatus = "connected" | "reauth_required" | "disabled";
+
+interface LiveEntry {
+  status: LiveStatus;
+  tokenExpiresAt?: number;
+}
 
 export interface McpServersSectionProps {
   agentId: string;
@@ -67,7 +74,51 @@ export function McpServersSection({
   onRemoveServer,
 }: McpServersSectionProps) {
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [liveStatuses, setLiveStatuses] = useState<Record<string, LiveEntry>>({});
   const entries = Object.entries(servers);
+
+  // Fetch live credential status for each configured server. The static
+  // agent.yml view (`entry.credential_ref`) only tells us a credential was
+  // attached at some point — it can't tell us if the OAuth token has since
+  // been revoked. `/api/agents/[agentId]/mcp/[name]/status` inspects
+  // `credential.metadata.needs_reauth` so we can drive the orange dot /
+  // ReauthBanner without a refresh.
+  useEffect(() => {
+    let cancelled = false;
+    if (entries.length === 0) {
+      setLiveStatuses({});
+      return () => {
+        cancelled = true;
+      };
+    }
+    const keys = entries.map(([name]) => name);
+    void Promise.all(
+      keys.map(async (name) => {
+        try {
+          const res = await fetch(
+            `/api/agents/${encodeURIComponent(agentId)}/mcp/${encodeURIComponent(name)}/status`,
+          );
+          if (!res.ok) return [name, null] as const;
+          const body = (await res.json()) as LiveEntry;
+          return [name, body] as const;
+        } catch {
+          return [name, null] as const;
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      const next: Record<string, LiveEntry> = {};
+      for (const [name, body] of results) {
+        if (body) next[name] = body;
+      }
+      setLiveStatuses(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, entries.map(([k]) => k).join(",")]);
+
   return (
     <Section
       title="External MCP servers"
@@ -90,14 +141,23 @@ export function McpServersSection({
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {entries.map(([name, entry]) => (
+          {entries.map(([name, entry]) => {
+            const live = liveStatuses[name];
+            // Prefer the live credential-store-derived status when we have
+            // it. Otherwise fall back to the cheap YAML inference so the
+            // initial render (before the fetch resolves) still shows a dot.
+            const status: "connected" | "reauth_required" | "disabled"
+              = live?.status
+                ?? (entry.credential_ref ? "connected" : "disabled");
+            return (
             <McpServerCard
               key={name}
               name={entry.display_name ?? name}
               url={entry.url ?? entry.command ?? ""}
               transport={entry.type ?? "stdio"}
               toolCount={entry.allowed_tools?.length ?? 0}
-              status={entry.credential_ref ? "connected" : "disabled"}
+              status={status}
+              tokenExpiresAt={live?.tokenExpiresAt}
               onEditAllowed={() => {
                 /* future: dedicated allowed-tools subdialog */
               }}
@@ -121,7 +181,8 @@ export function McpServersSection({
                 await onReload();
               }}
             />
-          ))}
+            );
+          })}
         </div>
       )}
 
