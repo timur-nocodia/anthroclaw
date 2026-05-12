@@ -77,7 +77,7 @@ describe('onboarding facade — apikey branch', () => {
     expect(row?.agentId).toBe('a1');
   });
 
-  it('rejects oauth requests with chatType != private from agents', async () => {
+  it('rejects oauth requests with chatType=group from agents', async () => {
     probeStub.mockResolvedValueOnce({
       authMode: 'apikey',
       server: { name: 'pmp' },
@@ -88,6 +88,42 @@ describe('onboarding facade — apikey branch', () => {
         kind: 'agent',
         agentId: 'a1',
         chatType: 'group',
+      },
+    });
+    expect(res.status).toBe('rejected');
+    expect(res.reason).toBe('mcp_onboarding_requires_dm');
+    expect(probeStub).not.toHaveBeenCalled();
+  });
+
+  it('rejects oauth requests with chatType=supergroup from agents', async () => {
+    probeStub.mockResolvedValueOnce({
+      authMode: 'apikey',
+      server: { name: 'pmp' },
+    });
+    const res = await onboarding.startConnection({
+      url: 'https://mcp.postmypost.io/mcp',
+      requester: {
+        kind: 'agent',
+        agentId: 'a1',
+        chatType: 'supergroup',
+      },
+    });
+    expect(res.status).toBe('rejected');
+    expect(res.reason).toBe('mcp_onboarding_requires_dm');
+    expect(probeStub).not.toHaveBeenCalled();
+  });
+
+  it('rejects oauth requests with chatType=channel from agents', async () => {
+    probeStub.mockResolvedValueOnce({
+      authMode: 'apikey',
+      server: { name: 'pmp' },
+    });
+    const res = await onboarding.startConnection({
+      url: 'https://mcp.postmypost.io/mcp',
+      requester: {
+        kind: 'agent',
+        agentId: 'a1',
+        chatType: 'channel',
       },
     });
     expect(res.status).toBe('rejected');
