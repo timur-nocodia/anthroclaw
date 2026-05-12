@@ -48,20 +48,25 @@ export function writeAgentYmlEntry(args: WriteAgentYmlEntryArgs): void {
   const doc = parseDocument(raw, { keepSourceTokens: true });
 
   // doc.contents is null for an empty file; treat that as a fresh root.
-  if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
-    doc.contents = new YAMLMap();
-  }
-  const root = doc.contents as YAMLMap;
+  // We cast through `unknown` so we can interoperate with both the
+  // `Parsed`-narrowed types yaml emits from `parseDocument` and the plain
+  // `YAMLMap` we construct ourselves.
+  const root = (doc.contents instanceof YAMLMap
+    ? doc.contents
+    : (doc.contents = new YAMLMap() as unknown as typeof doc.contents,
+      doc.contents)) as unknown as YAMLMap;
 
-  let servers = root.get('external_mcp_servers', true) as
-    | YAMLMap
-    | YAMLSeq
-    | undefined;
-  if (!servers || !(servers instanceof YAMLMap)) {
-    servers = new YAMLMap();
-    root.set('external_mcp_servers', servers);
+  let serversNode = root.get('external_mcp_servers', true) as unknown;
+  let serversMap: YAMLMap;
+  if (serversNode instanceof YAMLMap) {
+    serversMap = serversNode;
+  } else {
+    serversMap = new YAMLMap();
+    root.set('external_mcp_servers', serversMap as unknown as never);
   }
-  const serversMap = servers as YAMLMap;
+  // Reference `YAMLSeq` so the type-only import isn't pruned; future variants
+  // may want to detect a misconfigured sequence-shaped block.
+  void YAMLSeq;
 
   if (serversMap.has(args.key)) {
     throw new Error(`already_connected: ${args.key}`);
