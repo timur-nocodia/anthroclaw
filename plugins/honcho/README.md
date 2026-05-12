@@ -255,6 +255,115 @@ networks:
 After this is in Compose, recreating `app` will keep the Honcho network
 attachment automatically.
 
+### Self-host LLM Provider Selection
+
+AnthroClaw and Honcho use different model runtimes:
+
+- AnthroClaw agent replies still go through the Claude Agent SDK.
+- Self-hosted Honcho uses its own server-side LLM settings for memory
+  extraction, summaries, peer representations, and `honcho_ask` reasoning.
+
+Do not point Honcho at Claude Code, Claude Desktop, or subscription-based
+auth files. Use explicit API keys only:
+
+```env
+LLM_ANTHROPIC_API_KEY=...
+# or
+LLM_OPENAI_API_KEY=...
+```
+
+These variables belong in the Honcho server `.env`, not in `agent.yml`.
+
+#### Recommended Anthropic Preset
+
+Use this when you want Honcho's LLM work billed through Anthropic API keys.
+This keeps normal Honcho memory work cheap and reserves stronger models for
+explicit high-reasoning calls.
+
+```env
+LLM_ANTHROPIC_API_KEY=...
+
+DERIVER_MODEL_CONFIG__TRANSPORT=anthropic
+DERIVER_MODEL_CONFIG__MODEL=claude-haiku-4-5
+
+SUMMARY_MODEL_CONFIG__TRANSPORT=anthropic
+SUMMARY_MODEL_CONFIG__MODEL=claude-haiku-4-5
+
+DIALECTIC_LEVELS__minimal__MODEL_CONFIG__TRANSPORT=anthropic
+DIALECTIC_LEVELS__minimal__MODEL_CONFIG__MODEL=claude-haiku-4-5
+DIALECTIC_LEVELS__low__MODEL_CONFIG__TRANSPORT=anthropic
+DIALECTIC_LEVELS__low__MODEL_CONFIG__MODEL=claude-haiku-4-5
+DIALECTIC_LEVELS__medium__MODEL_CONFIG__TRANSPORT=anthropic
+DIALECTIC_LEVELS__medium__MODEL_CONFIG__MODEL=claude-sonnet-4-6
+DIALECTIC_LEVELS__high__MODEL_CONFIG__TRANSPORT=anthropic
+DIALECTIC_LEVELS__high__MODEL_CONFIG__MODEL=claude-sonnet-4-6
+DIALECTIC_LEVELS__max__MODEL_CONFIG__TRANSPORT=anthropic
+DIALECTIC_LEVELS__max__MODEL_CONFIG__MODEL=claude-opus-4-7
+
+DREAM_DEDUCTION_MODEL_CONFIG__TRANSPORT=anthropic
+DREAM_DEDUCTION_MODEL_CONFIG__MODEL=claude-haiku-4-5
+DREAM_INDUCTION_MODEL_CONFIG__TRANSPORT=anthropic
+DREAM_INDUCTION_MODEL_CONFIG__MODEL=claude-haiku-4-5
+```
+
+Anthropic model order, cheapest/fastest to strongest:
+
+| Tier | Model alias | Use for |
+| --- | --- | --- |
+| Cheap / fast | `claude-haiku-4-5` | Default Honcho extraction, summaries, low-cost dialectic |
+| Balanced | `claude-sonnet-4-6` | Higher-quality summaries and medium/high dialectic |
+| Expensive / strongest | `claude-opus-4-7` | Rare max-quality reasoning only |
+
+#### Recommended OpenAI Preset
+
+Use this when OpenAI is acceptable for Honcho's auxiliary memory work.
+
+```env
+LLM_OPENAI_API_KEY=...
+
+DERIVER_MODEL_CONFIG__TRANSPORT=openai
+DERIVER_MODEL_CONFIG__MODEL=gpt-5.4-mini
+
+SUMMARY_MODEL_CONFIG__TRANSPORT=openai
+SUMMARY_MODEL_CONFIG__MODEL=gpt-5.4-mini
+
+DIALECTIC_LEVELS__minimal__MODEL_CONFIG__TRANSPORT=openai
+DIALECTIC_LEVELS__minimal__MODEL_CONFIG__MODEL=gpt-5.4-nano
+DIALECTIC_LEVELS__low__MODEL_CONFIG__TRANSPORT=openai
+DIALECTIC_LEVELS__low__MODEL_CONFIG__MODEL=gpt-5.4-mini
+DIALECTIC_LEVELS__medium__MODEL_CONFIG__TRANSPORT=openai
+DIALECTIC_LEVELS__medium__MODEL_CONFIG__MODEL=gpt-5.4-mini
+DIALECTIC_LEVELS__high__MODEL_CONFIG__TRANSPORT=openai
+DIALECTIC_LEVELS__high__MODEL_CONFIG__MODEL=gpt-5.4
+DIALECTIC_LEVELS__max__MODEL_CONFIG__TRANSPORT=openai
+DIALECTIC_LEVELS__max__MODEL_CONFIG__MODEL=gpt-5.5
+```
+
+OpenAI model order, cheapest/fastest to strongest:
+
+| Tier | Model | Use for |
+| --- | --- | --- |
+| Cheapest / fastest | `gpt-5.4-nano` | Minimal dialectic or very cheap background tasks |
+| Cheap default | `gpt-5.4-mini` | Default Honcho extraction, summaries, dialectic |
+| Balanced / stronger | `gpt-5.4` | Higher-quality summaries and high dialectic |
+| Expensive / strongest | `gpt-5.5` | Rare max-quality reasoning only |
+
+#### Embeddings Are Separate
+
+Honcho also needs embeddings for semantic retrieval. Anthropic does not provide
+an embeddings API, so an Anthropic LLM preset does not automatically remove all
+non-Anthropic usage. If you leave Honcho defaults in place, embeddings use
+OpenAI's cheap embedding model:
+
+```env
+EMBEDDING_MODEL_CONFIG__TRANSPORT=openai
+EMBEDDING_MODEL_CONFIG__MODEL=text-embedding-3-small
+```
+
+To avoid OpenAI entirely, configure Honcho embeddings against a compatible
+self-hosted or third-party embedding endpoint supported by Honcho before
+enabling semantic retrieval in production.
+
 ## Modes
 
 - `off`: no Honcho work.
