@@ -183,7 +183,7 @@ describe('onboarding facade — apikey branch', () => {
     expect(res.status).toBe('connected');
     expect(res.tools?.map((t) => t.name)).toEqual(['post_create']);
 
-    const cred = await onboarding._debug.getCredential('a1', 'mcp:postmypost');
+    const cred = await onboarding._debug?.getCredential('a1', 'mcp:postmypost');
     expect(cred?.kind).toBe('mcp_apikey');
 
     // Pending row should now be marked completed with toolsMetadata.
@@ -328,6 +328,32 @@ describe('onboarding facade — apikey branch', () => {
       allowed_tools: ['*'],
     });
     expect(writer.mock.calls[0][0].entry.allowed_tools).toEqual(['t1', 't2']);
+  });
+
+  it('_debug helper is exposed under NODE_ENV=test and gated to null otherwise', async () => {
+    // Sanity: vitest sets NODE_ENV=test, so the existing facade exposes _debug.
+    expect(process.env.NODE_ENV).toBe('test');
+    expect(onboarding._debug).not.toBeNull();
+    expect(typeof onboarding._debug?.getCredential).toBe('function');
+
+    // Now temporarily flip NODE_ENV and build a fresh facade: _debug must be
+    // null so production callers can't contaminate the audit log with
+    // accessReason='test_debug'.
+    const originalEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      const prodOb = createOnboarding({
+        pending,
+        credentials: new EncryptedFilesystemCredentialStore(
+          new CredentialAuditLog(join(dir, 'audit.log')),
+        ),
+        uiBaseUrl: 'https://ui.test',
+        listTakenServerIds: async () => new Set<string>(),
+      });
+      expect(prodOb._debug).toBeNull();
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
   });
 
   it('uses listTakenServerIds to avoid colliding credential overwrites', async () => {

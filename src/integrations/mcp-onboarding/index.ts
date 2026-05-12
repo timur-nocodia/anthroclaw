@@ -267,21 +267,29 @@ export function createOnboarding(deps: OnboardingDeps) {
     return { status: 'connected', server: serverId, tools };
   }
 
+  // Gate the test-only debug surface so a stray production caller can't
+  // contaminate the credential audit log with accessReason='test_debug'.
+  // vitest sets NODE_ENV=test automatically; production runs do not.
+  const _debug
+    = process.env.NODE_ENV === 'test'
+      ? {
+          getCredential: async (agentId: string, service: string) => {
+            try {
+              return await deps.credentials.get(
+                { agentId, service },
+                'test_debug',
+              );
+            } catch {
+              return null;
+            }
+          },
+        }
+      : null;
+
   return {
     startConnection,
     attachApiKey,
     finalize,
-    _debug: {
-      getCredential: async (agentId: string, service: string) => {
-        try {
-          return await deps.credentials.get(
-            { agentId, service },
-            'test_debug',
-          );
-        } catch {
-          return null;
-        }
-      },
-    },
+    _debug,
   };
 }
