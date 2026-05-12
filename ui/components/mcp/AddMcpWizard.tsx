@@ -24,6 +24,25 @@ interface OAuthMeta {
   scopesSupported?: string[];
 }
 
+/**
+ * Map of known reject reasons from `/api/mcp/connect/start` to operator-
+ * friendly copy. Unknown reasons fall back to a generic "Couldn't connect"
+ * message that still surfaces the internal code for support diagnosis.
+ */
+const FRIENDLY_REASONS: Record<string, string> = {
+  no_auth_servers_not_yet_supported:
+    "This server doesn't require authentication. Open MCP servers aren't supported yet — paste a server URL that requires OAuth or an API key.",
+  dcr_required_but_not_supported:
+    'This server requires dynamic client registration, but no static client_id was configured for this instance. Configure OAUTH_STATIC_CLIENT_ID in your environment to use such servers.',
+  mcp_onboarding_requires_dm:
+    'MCP onboarding through chat requires a private (direct) conversation. (This UI was reached from a chat link — try the admin panel.)',
+};
+
+function friendlyRejectMessage(reason: string | undefined): string {
+  const r = reason ?? 'unknown';
+  return FRIENDLY_REASONS[r] ?? `Couldn't connect — ${r}`;
+}
+
 export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
   const [step, setStep] = useState<Step>('url');
   const [url, setUrl] = useState('');
@@ -59,7 +78,7 @@ export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
         });
         const start = await startRes.json();
         if (start.status === 'rejected') {
-          setError(`Cannot connect (${start.reason ?? 'unknown'})`);
+          setError(friendlyRejectMessage(start.reason));
           return;
         }
         setPendingId(start.pendingId ?? null);

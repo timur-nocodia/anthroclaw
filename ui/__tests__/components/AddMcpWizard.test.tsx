@@ -217,7 +217,7 @@ describe('AddMcpWizard — apikey path', () => {
     });
   });
 
-  it('shows "not yet supported" error and stays on URL step when probe returns none', async () => {
+  it('shows friendly "open MCP servers" error and stays on URL step when reject reason is no_auth_servers_not_yet_supported', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo) => {
@@ -248,11 +248,98 @@ describe('AddMcpWizard — apikey path', () => {
     });
     fireEvent.click(screen.getByText(/Continue/));
     await screen.findByRole('alert');
+    // Friendly copy now, no raw internal reason code.
     expect(screen.getByRole('alert').textContent).toMatch(
-      /not_yet_supported|not yet supported/i,
+      /open MCP servers aren't supported yet/i,
+    );
+    expect(screen.getByRole('alert').textContent).not.toMatch(
+      /no_auth_servers_not_yet_supported/,
     );
     // Still on URL step.
     expect(screen.getByPlaceholderText(/mcp\.x\.io/)).toBeInTheDocument();
+  });
+
+  it('shows friendly DCR-required error when reject reason is dcr_required_but_not_supported', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo) => {
+        const url = String(input);
+        if (url.endsWith('/api/mcp/probe')) {
+          return new Response(
+            JSON.stringify({
+              authMode: 'oauth',
+              server: { name: 'x' },
+              oauth: {
+                issuer: 'https://auth/',
+                authorizationEndpoint: 'https://auth/authorize',
+                tokenEndpoint: 'https://auth/token',
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith('/api/mcp/connect/start')) {
+          return new Response(
+            JSON.stringify({
+              status: 'rejected',
+              reason: 'dcr_required_but_not_supported',
+            }),
+            { status: 200 },
+          );
+        }
+        throw new Error('unexpected ' + url);
+      }),
+    );
+    render(
+      <AddMcpWizard agentId="a1" onSaved={vi.fn()} onClose={vi.fn()} />,
+    );
+    fireEvent.change(screen.getByPlaceholderText(/mcp\.x\.io/), {
+      target: { value: 'https://needs-dcr.example/mcp' },
+    });
+    fireEvent.click(screen.getByText(/Continue/));
+    await screen.findByRole('alert');
+    expect(screen.getByRole('alert').textContent).toMatch(
+      /dynamic client registration/i,
+    );
+    expect(screen.getByRole('alert').textContent).toMatch(
+      /OAUTH_STATIC_CLIENT_ID/,
+    );
+  });
+
+  it('falls back to generic message exposing the raw reason when unknown', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo) => {
+        const url = String(input);
+        if (url.endsWith('/api/mcp/probe')) {
+          return new Response(
+            JSON.stringify({ authMode: 'apikey', server: { name: 'x' } }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith('/api/mcp/connect/start')) {
+          return new Response(
+            JSON.stringify({
+              status: 'rejected',
+              reason: 'some_brand_new_internal_code',
+            }),
+            { status: 200 },
+          );
+        }
+        throw new Error('unexpected ' + url);
+      }),
+    );
+    render(
+      <AddMcpWizard agentId="a1" onSaved={vi.fn()} onClose={vi.fn()} />,
+    );
+    fireEvent.change(screen.getByPlaceholderText(/mcp\.x\.io/), {
+      target: { value: 'https://x/mcp' },
+    });
+    fireEvent.click(screen.getByText(/Continue/));
+    await screen.findByRole('alert');
+    expect(screen.getByRole('alert').textContent).toMatch(
+      /Couldn't connect.*some_brand_new_internal_code/,
+    );
   });
 
   it('Cancel button calls onClose without saving', () => {
