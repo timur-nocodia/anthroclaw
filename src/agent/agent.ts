@@ -27,6 +27,7 @@ import { createEscalateTool } from './tools/escalate.js';
 import { createConnectMcpTool } from './tools/connect-mcp.js';
 import type { createOnboarding as createMcpOnboarding } from '../integrations/mcp-onboarding/index.js';
 import { createBuildroomHandoffTool } from './tools/buildroom-handoff.js';
+import { createBuildroomSessionSummaryTool } from './tools/buildroom-session-summary.js';
 import { canManageAgent, type OperatorConsoleConfigShape } from '../security/cross-agent-perm.js';
 import type { AgentConfigWriter } from '../config/writer.js';
 import type { ConfigAuditLog } from '../config/audit.js';
@@ -530,6 +531,13 @@ export class Agent {
           break;
         case 'buildroom_submit_signal':
           tools.push(createBuildroomHandoffTool({
+            projectRoot: resolve(dataDir, '..'),
+            roomId: 'anthroclaw-core',
+            sourceAgentId: id,
+          }));
+          break;
+        case 'buildroom_submit_session_summary':
+          tools.push(createBuildroomSessionSummaryTool({
             projectRoot: resolve(dataDir, '..'),
             roomId: 'anthroclaw-core',
             sourceAgentId: id,

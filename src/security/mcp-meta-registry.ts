@@ -13,6 +13,7 @@ import { META as localNoteSearchMeta } from '../agent/tools/local-note-search.js
 import { META as localNoteProposeMeta } from '../agent/tools/local-note-propose.js';
 import { META as sessionSearchMeta } from '../agent/tools/session-search.js';
 import { META as buildroomHandoffMeta } from '../agent/tools/buildroom-handoff.js';
+import { META as buildroomSessionSummaryMeta } from '../agent/tools/buildroom-session-summary.js';
 
 export const MCP_META: Record<string, ToolMeta> = {
   manage_cron: manageCronMeta,
@@ -30,4 +31,5 @@ export const MCP_META: Record<string, ToolMeta> = {
   local_note_propose: localNoteProposeMeta,
   session_search: sessionSearchMeta,
   buildroom_submit_signal: buildroomHandoffMeta,
+  buildroom_submit_session_summary: buildroomSessionSummaryMeta,
 };

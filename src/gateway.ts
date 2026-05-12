@@ -33,6 +33,7 @@ import { createManageCronTool } from './agent/tools/manage-cron.js';
 import { createSendMessageTool } from './agent/tools/send-message.js';
 import { createSendMediaTool } from './agent/tools/send-media.js';
 import { bindBuildroomHandoffToolsForDispatch } from './agent/tools/buildroom-handoff.js';
+import { bindBuildroomSessionSummaryToolsForDispatch } from './agent/tools/buildroom-session-summary.js';
 import { RouteTable, type RouteEntry } from './routing/table.js';
 import { AccessControl } from './routing/access.js';
 import { buildSessionKey } from './routing/session-key.js';
@@ -1918,13 +1919,19 @@ export class Gateway {
           )
         : undefined);
       const baseDispatchTools = agent.buildToolsForDispatch(sessionKey);
-      const dispatchTools = (buildroomSourceSessionId
-        ? bindBuildroomHandoffToolsForDispatch(baseDispatchTools, {
+      const buildroomToolBinding = buildroomSourceSessionId
+        ? {
             projectRoot: this.dataDir ? resolve(this.dataDir, '..') : process.cwd(),
             roomId: 'anthroclaw-core',
             sourceAgentId: agent.id,
             sourceSessionId: buildroomSourceSessionId,
-          })
+          }
+        : null;
+      const dispatchTools = (buildroomToolBinding
+        ? bindBuildroomSessionSummaryToolsForDispatch(
+            bindBuildroomHandoffToolsForDispatch(baseDispatchTools, buildroomToolBinding),
+            buildroomToolBinding,
+          )
         : baseDispatchTools
       ).map((tool) => {
         if (tool.name === 'send_message') {
