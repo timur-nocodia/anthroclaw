@@ -6,7 +6,8 @@ import {
 } from './command-handler.js';
 import { telegramBuildroomInputFromInboundMessage } from './inbound.js';
 
-export interface TelegramBuildroomGatewayMessageOptions extends TelegramBuildroomCommandHandlerOptions {
+export interface TelegramBuildroomGatewayMessageOptions extends Omit<TelegramBuildroomCommandHandlerOptions, 'roomId'> {
+  roomId?: string;
   loadConfig: () => Promise<BuildroomConfig | null>;
   sendText: (peerId: string, text: string, opts?: SendOptions) => Promise<void>;
 }
@@ -29,7 +30,10 @@ export async function handleTelegramBuildroomGatewayMessage(
     return true;
   }
 
-  const result = await handleTelegramBuildroomCommand(config, input, opts);
+  const result = await handleTelegramBuildroomCommand(config, input, {
+    ...opts,
+    roomId: opts.roomId ?? config.roomId,
+  });
   if (!result.handled) return false;
   if (result.ok) {
     for (const message of result.messages) {

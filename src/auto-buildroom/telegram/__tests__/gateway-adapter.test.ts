@@ -38,6 +38,27 @@ describe('Telegram Buildroom gateway adapter', () => {
     }]);
   });
 
+  it('uses the loaded config room id when no explicit room override is provided', async () => {
+    const config = createDefaultBuildroomConfig({
+      roomId: 'anthroclaw-core',
+      operatorId: 'telegram_user:48705953',
+    });
+    config.operators[0].commandRoutes = ['telegram_chat:-1003931616911'];
+    const cliCalls: string[][] = [];
+
+    await handleTelegramBuildroomGatewayMessage(message(), {
+      projectRoot: '/repo',
+      loadConfig: async () => config,
+      runCli: async (argv) => {
+        cliCalls.push(argv);
+        return 0;
+      },
+      sendText: async () => {},
+    });
+
+    expect(cliCalls[0]).toContain('anthroclaw-core');
+  });
+
   it('does not route ordinary Telegram text through Buildroom', async () => {
     let loaded = false;
     const handled = await handleTelegramBuildroomGatewayMessage(message({ text: 'hello' }), {
