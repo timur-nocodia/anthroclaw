@@ -134,6 +134,18 @@ export function loadBuildroomRoomConfig(projectRoot: string, roomId?: string): B
   return assertValidBuildroomConfig(parseYaml(raw));
 }
 
+export function saveBuildroomRoomConfig(projectRoot: string, config: BuildroomConfig): void {
+  const rootConfig = loadBuildroomRootConfig(projectRoot);
+  const roomEntry = rootConfig.rooms[config.roomId];
+  if (!roomEntry) throw new Error(`Buildroom room not found: ${config.roomId}`);
+  const validConfig = assertValidBuildroomConfig(config);
+  writeFileSync(
+    join(autoBuildroomRoot(projectRoot), roomEntry.path),
+    stringifyYaml(validConfig),
+    'utf8',
+  );
+}
+
 function ensureDir(path: string, created: string[]): void {
   if (!existsSync(path)) {
     mkdirSync(path, { recursive: true });

@@ -230,6 +230,28 @@ describe('buildroom CLI', () => {
     expect(out.join('\n')).toContain('Mode: off');
   });
 
+  it('pauses and resumes stage execution while status remains inspectable', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+
+    out.length = 0;
+    await expect(run(['pause', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Buildroom paused');
+
+    out.length = 0;
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Paused: yes');
+
+    err.length = 0;
+    await expect(run(['collect', '--root', root])).resolves.toBe(8);
+    expect(err.join('\n')).toContain('Buildroom is paused');
+
+    out.length = 0;
+    await expect(run(['resume', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Buildroom resumed');
+
+    await expect(run(['collect', '--root', root])).resolves.toBe(0);
+  });
+
   it('blocks build when kill switch is active', async () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });

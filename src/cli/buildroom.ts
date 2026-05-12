@@ -17,6 +17,7 @@ import {
   initializeBuildroomStorage,
   loadBuildroomRoomConfig,
   roomRoot,
+  saveBuildroomRoomConfig,
 } from '../auto-buildroom/storage/init.js';
 import {
   createQaReportArtifact,
@@ -82,6 +83,10 @@ export async function runBuildroomCli(argv: string[], io: CliIO = defaultIO): Pr
         return commandTrust(args, io);
       case 'report':
         return commandReport(args, io);
+      case 'pause':
+        return commandPause(args, io);
+      case 'resume':
+        return commandResume(args, io);
       default:
         io.stderr(`Unknown command: ${args.command}`);
         io.stderr(helpText());
@@ -122,6 +127,7 @@ function commandStatus(args: ParsedArgs, io: CliIO): number {
   io.stdout([
     `Buildroom: ${config.roomId}`,
     `Mode: ${config.mode}`,
+    `Paused: ${config.paused ? 'yes' : 'no'}`,
     'State: idle',
     `Latest trust: ${String(latestTrust?.payload.trustState ?? 'none')}`,
     `Kill switch: ${config.killSwitchActive ? 'active' : 'inactive'}`,
@@ -422,12 +428,41 @@ function commandReport(args: ParsedArgs, io: CliIO): number {
   return 0;
 }
 
+function commandPause(args: ParsedArgs, io: CliIO): number {
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  saveBuildroomRoomConfig(args.root, { ...config, paused: true });
+
+  io.stdout([
+    'Buildroom paused',
+    `Room: ${config.roomId}`,
+    '',
+    'Paused blocks new stages. Status and receipt inspection remain available.',
+  ].join('\n'));
+  return 0;
+}
+
+function commandResume(args: ParsedArgs, io: CliIO): number {
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  saveBuildroomRoomConfig(args.root, { ...config, paused: false });
+
+  io.stdout([
+    'Buildroom resumed',
+    `Room: ${config.roomId}`,
+    '',
+    'Resume does not start a build by itself.',
+  ].join('\n'));
+  return 0;
+}
+
 function assertStageAllowed(
-  config: { mode: string; killSwitchActive: boolean },
+  config: { mode: string; paused?: boolean; killSwitchActive: boolean },
   stage: 'collect' | 'propose' | 'review' | 'build' | 'qa' | 'trust',
 ): void {
   if (config.mode === 'off') {
     throw new BuildroomStageBlockedError('Buildroom mode is off');
+  }
+  if (config.paused) {
+    throw new BuildroomStageBlockedError('Buildroom is paused');
   }
   if (stage === 'build' && config.mode !== 'manual_approval') {
     throw new BuildroomStageBlockedError(`Buildroom mode does not allow build: ${config.mode}`);
@@ -686,6 +721,8 @@ function helpText(): string {
     '  qa        Create deterministic QA evidence for a build receipt',
     '  trust     Create verification delta and trust report',
     '  report    Render latest trust report; use --save for operator_summary',
+    '  pause     Soft-pause new Buildroom stages',
+    '  resume    Resume stage execution after pause',
     '',
     'Options:',
     '  --root <path>       Project root',

@@ -13,6 +13,7 @@ export const BuildroomConfigSchema = z.object({
   schemaVersion: z.literal('auto-buildroom/v1'),
   roomId: z.string().min(1),
   mode: z.enum(['off', 'observe_only', 'manual_approval']),
+  paused: z.boolean().default(false),
   killSwitchActive: z.boolean(),
   operators: z.array(OperatorSchema),
   watch: z.object({
@@ -94,6 +95,7 @@ export function createDefaultBuildroomConfig(opts: DefaultBuildroomConfigOptions
     schemaVersion: 'auto-buildroom/v1',
     roomId: opts.roomId,
     mode: 'manual_approval',
+    paused: false,
     killSwitchActive: false,
     operators: [
       {
