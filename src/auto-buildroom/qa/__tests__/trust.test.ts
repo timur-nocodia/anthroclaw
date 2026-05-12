@@ -11,6 +11,9 @@ describe('Auto-Buildroom QA, Delta, and Trust', () => {
     const build = coderReceipt({
       builderClaims: ['Updated operator guide.'],
       postRunPolicyResult: { allowed: true, changedFiles: ['docs/guide.md'], violations: [] },
+      outputRefs: [
+        { kind: 'file', ref: 'docs/guide.md', hash: 'sha256:docs-hash' },
+      ],
     });
     const qa = createQaReportArtifact({
       build,
@@ -50,6 +53,9 @@ describe('Auto-Buildroom QA, Delta, and Trust', () => {
     const build = coderReceipt({
       builderClaims: ['Updated operator guide.', 'Added regression test.'],
       postRunPolicyResult: { allowed: true, changedFiles: ['docs/guide.md'], violations: [] },
+      outputRefs: [
+        { kind: 'file', ref: 'docs/guide.md', hash: 'sha256:docs-hash' },
+      ],
     });
     const qa = createQaReportArtifact({
       build,
@@ -75,6 +81,33 @@ describe('Auto-Buildroom QA, Delta, and Trust', () => {
     });
     expect(trust.status).toBe('investigate');
     expect(trust.payload.trustState).toBe('investigate');
+  });
+
+  it('prevents clean trust when changed files lack hashed output refs', () => {
+    const build = coderReceipt({
+      builderClaims: ['Updated operator guide.'],
+      postRunPolicyResult: { allowed: true, changedFiles: ['docs/guide.md'], violations: [] },
+    });
+    const qa = createQaReportArtifact({
+      build,
+      now: '2026-05-12T00:20:00.000Z',
+      evidence: [{ claim: 'Updated operator guide.', status: 'confirmed' }],
+    });
+    const delta = createVerificationDeltaArtifact({
+      build,
+      qa,
+      now: '2026-05-12T00:21:00.000Z',
+    });
+    const trust = createTrustReportArtifact({
+      build,
+      qa,
+      delta,
+      now: '2026-05-12T00:22:00.000Z',
+    });
+
+    expect(trust.status).toBe('investigate');
+    expect(trust.payload.trustState).toBe('investigate');
+    expect(trust.payload.reasons).toContain('missing output file hash');
   });
 
   it('blocks trust when post-run policy has violations', () => {
@@ -109,6 +142,8 @@ describe('Auto-Buildroom QA, Delta, and Trust', () => {
   });
 
   function coderReceipt(payload: Record<string, unknown>): BuildroomArtifact {
+    const outputRefs = Array.isArray(payload.outputRefs) ? payload.outputRefs : [];
+    const { outputRefs: _ignored, ...payloadWithoutOutputRefs } = payload;
     return {
       id: 'build_20260512_docs',
       type: 'coder_receipt',
@@ -119,7 +154,7 @@ describe('Auto-Buildroom QA, Delta, and Trust', () => {
       room: { id: 'anthroclaw-core' },
       parentIds: ['plan_20260512_docs', 'approval_20260512_docs'],
       inputRefs: [],
-      outputRefs: [],
+      outputRefs,
       runtimeRefs: [{ runtime: 'native-agent-sdk', sessionId: 'session_builder_1' }],
       traceId: 'trace_20260512_docs',
       redaction: {
@@ -130,9 +165,8 @@ describe('Auto-Buildroom QA, Delta, and Trust', () => {
       contentHash: '',
       payload: {
         runtimeStatus: 'completed',
-        ...payload,
+        ...payloadWithoutOutputRefs,
       },
     };
   }
 });
-

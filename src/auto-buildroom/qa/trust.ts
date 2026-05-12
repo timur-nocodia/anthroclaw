@@ -109,6 +109,9 @@ export function createTrustReportArtifact(opts: CreateTrustReportArtifactOptions
   if (postRunPolicyResult?.allowed === false) {
     reasons.push('post-run policy violation');
   }
+  if (missingOutputFileHashes(opts.build).length > 0) {
+    reasons.push('missing output file hash');
+  }
   if (claimComparisons(opts.delta).some((comparison) => comparison.status === 'missing_evidence')) {
     reasons.push('missing claim evidence');
   }
@@ -156,6 +159,25 @@ function builderClaims(build: BuildroomArtifact): string[] {
     : [];
 }
 
+function missingOutputFileHashes(build: BuildroomArtifact): string[] {
+  const changedFiles = changedFilesFromPostRunPolicy(build);
+  const hashedOutputRefs = new Set(
+    build.outputRefs
+      .filter((ref) => ref.kind === 'file' && typeof ref.hash === 'string' && ref.hash.length > 0)
+      .map((ref) => ref.ref),
+  );
+  return changedFiles.filter((file) => !hashedOutputRefs.has(file));
+}
+
+function changedFilesFromPostRunPolicy(build: BuildroomArtifact): string[] {
+  const postRunPolicyResult = build.payload.postRunPolicyResult;
+  if (!postRunPolicyResult || typeof postRunPolicyResult !== 'object') return [];
+  const changedFiles = (postRunPolicyResult as { changedFiles?: unknown }).changedFiles;
+  return Array.isArray(changedFiles)
+    ? changedFiles.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
 function qaEvidence(qa: BuildroomArtifact): QaEvidenceItem[] {
   return Array.isArray(qa.payload.evidence)
     ? qa.payload.evidence.filter(isQaEvidenceItem)
@@ -198,4 +220,3 @@ function artifactSuffix(id: string, prefix: string): string {
   const expectedPrefix = `${prefix}_`;
   return id.startsWith(expectedPrefix) ? id.slice(expectedPrefix.length) : id;
 }
-

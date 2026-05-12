@@ -487,14 +487,9 @@ describe('buildroom CLI', () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
     store.writeArtifact(
-      artifact('build_20260512_docs', 'coder_receipt', {
-        runtimeStatus: 'completed',
+      coderReceiptWithOutputHash({
         builderClaims: ['Updated operator guide.'],
-        postRunPolicyResult: {
-          allowed: true,
-          changedFiles: ['docs/guide.md'],
-          violations: [],
-        },
+        changedFiles: ['docs/guide.md'],
       }),
     );
 
@@ -551,10 +546,9 @@ describe('buildroom CLI', () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
     store.writeArtifact(
-      artifact('build_20260512_docs', 'coder_receipt', {
-        runtimeStatus: 'completed',
+      coderReceiptWithOutputHash({
         builderClaims: ['Updated operator guide.'],
-        postRunPolicyResult: { allowed: true, changedFiles: ['docs/guide.md'], violations: [] },
+        changedFiles: ['docs/guide.md'],
       }),
     );
 
@@ -598,10 +592,9 @@ describe('buildroom CLI', () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
     store.writeArtifact(
-      artifact('build_20260512_docs', 'coder_receipt', {
-        runtimeStatus: 'completed',
+      coderReceiptWithOutputHash({
         builderClaims: ['Updated operator guide.'],
-        postRunPolicyResult: { allowed: true, changedFiles: ['docs/guide.md'], violations: [] },
+        changedFiles: ['docs/guide.md'],
       }),
     );
     await run(['qa', 'build_20260512_docs', '--root', root]);
@@ -657,6 +650,27 @@ describe('buildroom CLI', () => {
       contentHash: '',
       payload,
     };
+  }
+
+  function coderReceiptWithOutputHash(opts: {
+    builderClaims: string[];
+    changedFiles: string[];
+  }): BuildroomArtifact {
+    const build = artifact('build_20260512_docs', 'coder_receipt', {
+      runtimeStatus: 'completed',
+      builderClaims: opts.builderClaims,
+      postRunPolicyResult: {
+        allowed: true,
+        changedFiles: opts.changedFiles,
+        violations: [],
+      },
+    });
+    build.outputRefs = opts.changedFiles.map((file) => ({
+      kind: 'file',
+      ref: file,
+      hash: sha256(`${file}:content`),
+    }));
+    return build;
   }
 
   function run(
