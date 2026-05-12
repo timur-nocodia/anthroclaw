@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
@@ -447,6 +448,41 @@ describe('buildroom CLI', () => {
     expect(err.join('\n')).toContain('Artifact hash mismatch');
   });
 
+  it('fails validation when a changed output file hash no longer matches worktree content', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    const workingDirectory = join(
+      root,
+      '.anthroclaw',
+      'auto-buildroom',
+      'rooms',
+      'anthroclaw-core',
+      'worktrees',
+      'plan_20260512_docs',
+    );
+    mkdirSync(join(workingDirectory, 'docs'), { recursive: true });
+    writeFileSync(join(workingDirectory, 'docs', 'guide.md'), 'actual docs', 'utf8');
+    const build = artifact('build_20260512_docs', 'coder_receipt', {
+      runtimeStatus: 'completed',
+      workingDirectory,
+      postRunPolicyResult: {
+        allowed: true,
+        changedFiles: ['docs/guide.md'],
+        violations: [],
+      },
+    });
+    build.outputRefs = [
+      { kind: 'file', ref: 'docs/guide.md', hash: sha256('different docs') },
+    ];
+    store.writeArtifact(build);
+
+    await expect(run(['validate', '--root', root])).resolves.toBe(4);
+
+    expect(err.join('\n')).toContain('Output ref hash mismatch');
+    expect(err.join('\n')).toContain('build_20260512_docs');
+    expect(err.join('\n')).toContain('docs/guide.md');
+  });
+
   it('creates QA and Trust receipts for an existing coder receipt', async () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
@@ -645,5 +681,9 @@ describe('buildroom CLI', () => {
     );
     const config = parseYaml(readFileSync(path, 'utf8')) as Record<string, unknown>;
     writeFileSync(path, stringifyYaml(update(config)), 'utf8');
+  }
+
+  function sha256(content: string): string {
+    return `sha256:${createHash('sha256').update(content).digest('hex')}`;
   }
 });

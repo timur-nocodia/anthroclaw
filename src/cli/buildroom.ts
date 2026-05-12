@@ -1,7 +1,8 @@
 #!/usr/bin/env tsx
 
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join } from 'node:path';
 import {
   ArtifactHashMismatchError,
   FileArtifactStore,
@@ -167,6 +168,7 @@ function commandValidate(args: ParsedArgs, io: CliIO): number {
   const config = loadBuildroomRoomConfig(args.root, args.room);
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const artifacts = store.listArtifacts();
+  validateOutputRefs(args.root, artifacts);
 
   io.stdout([
     'Buildroom validation: ok',
@@ -174,6 +176,31 @@ function commandValidate(args: ParsedArgs, io: CliIO): number {
     `Artifacts checked: ${artifacts.length}`,
   ].join('\n'));
   return 0;
+}
+
+function validateOutputRefs(projectRoot: string, artifacts: BuildroomArtifact[]): void {
+  for (const artifact of artifacts) {
+    for (const ref of artifact.outputRefs) {
+      if (ref.kind !== 'file' || !ref.hash) continue;
+      const path = resolveOutputRefPath(projectRoot, artifact, ref.ref);
+      if (!existsSync(path) || !lstatSync(path).isFile()) {
+        throw new OutputRefHashMismatchError(artifact.id, ref.ref);
+      }
+      const actual = `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
+      if (actual !== ref.hash) throw new OutputRefHashMismatchError(artifact.id, ref.ref);
+    }
+  }
+}
+
+function resolveOutputRefPath(
+  projectRoot: string,
+  artifact: BuildroomArtifact,
+  ref: string,
+): string {
+  if (isAbsolute(ref)) return ref;
+  const workingDirectory = artifact.payload.workingDirectory;
+  if (typeof workingDirectory === 'string') return join(workingDirectory, ref);
+  return join(projectRoot, ref);
 }
 
 function deriveStatusCounts(store: FileArtifactStore): {
@@ -826,6 +853,10 @@ function handleError(error: unknown, io: CliIO): number {
     io.stderr(error.message);
     return 4;
   }
+  if (error instanceof OutputRefHashMismatchError) {
+    io.stderr(error.message);
+    return 4;
+  }
   io.stderr(error instanceof Error ? error.message : String(error));
   if (error instanceof Error && error.message.startsWith('Artifact not found:')) return 5;
   if (error instanceof Error && error.message.startsWith('QA report not found')) return 5;
@@ -895,6 +926,13 @@ class BuildroomStageBlockedError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'BuildroomStageBlockedError';
+  }
+}
+
+class OutputRefHashMismatchError extends Error {
+  constructor(artifactId: string, ref: string) {
+    super(`Output ref hash mismatch: ${artifactId} ${ref}`);
+    this.name = 'OutputRefHashMismatchError';
   }
 }
 
