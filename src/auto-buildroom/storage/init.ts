@@ -53,6 +53,7 @@ const REQUIRED_ROOM_DIRS = [
   'buildroom/deltas',
   'buildroom/trust',
   'buildroom/operator/reports',
+  'buildroom/operator/decisions',
   'buildroom/transitions',
   'runtime/events',
   'runtime/results',

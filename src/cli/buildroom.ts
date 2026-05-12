@@ -73,6 +73,8 @@ export async function runBuildroomCli(argv: string[], io: CliIO = defaultIO): Pr
         return commandReview(args, io);
       case 'show':
         return commandShow(args, io);
+      case 'reject':
+        return commandReject(args, io);
       case 'approve':
         return commandApprove(args, io);
       case 'build':
@@ -164,12 +166,18 @@ function deriveStatusCounts(store: FileArtifactStore): {
 } {
   const reviews = store.listArtifacts('main_review');
   const approvals = store.listArtifacts('approval');
+  const decisions = store.listArtifacts('operator_decision');
   const plans = store.listArtifacts('build_plan');
   const builds = store.listArtifacts('coder_receipt');
   const qaReports = store.listArtifacts('qa_report');
 
   const approvedReviewIds = new Set(
     approvals.map((approval) => String(approval.payload.targetReviewId ?? '')),
+  );
+  const rejectedReviewIds = new Set(
+    decisions
+      .filter((decision) => decision.payload.decision === 'reject')
+      .map((decision) => String(decision.payload.targetArtifactId ?? '')),
   );
   const plannedApprovalIds = new Set(
     plans.map((plan) => String(plan.payload.approvalId ?? '')),
@@ -180,7 +188,8 @@ function deriveStatusCounts(store: FileArtifactStore): {
     pendingApprovals: reviews.filter(
       (review) =>
         review.payload.decision === 'approved_for_operator' &&
-        !approvedReviewIds.has(review.id),
+        !approvedReviewIds.has(review.id) &&
+        !rejectedReviewIds.has(review.id),
     ).length,
     approvedNotBuilt: approvals.filter(
       (approval) =>
@@ -276,6 +285,9 @@ function commandApprove(args: ParsedArgs, io: CliIO): number {
   const config = loadBuildroomRoomConfig(args.root, args.room);
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const review = store.readArtifact(id);
+  if (findRejectionForTarget(store, review.id)) {
+    throw new AuthorityPolicyError('Artifact was rejected by operator');
+  }
   const approval = store.writeArtifact(
     createApprovalArtifact({
       review,
@@ -292,6 +304,30 @@ function commandApprove(args: ParsedArgs, io: CliIO): number {
     '',
     'Next:',
     `anthroclaw buildroom build ${approval.id}`,
+  ].join('\n'));
+  return 0;
+}
+
+function commandReject(args: ParsedArgs, io: CliIO): number {
+  const id = requirePositional(args, 0, 'reject');
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const target = store.readArtifact(id);
+  const existing = findRejectionForTarget(store, target.id);
+  const decision = existing ?? store.writeArtifact(
+    createOperatorDecisionArtifact({
+      target,
+      operatorId: args.operator ?? firstOperator(config),
+      route: 'cli:local',
+      now: new Date().toISOString(),
+    }),
+  );
+
+  io.stdout([
+    `Rejected: ${target.id}`,
+    `Receipt: ${decision.id}`,
+    '',
+    'Reject records an operator decision. It does not delete receipts.',
   ].join('\n'));
   return 0;
 }
@@ -511,6 +547,18 @@ function findChildArtifact(
     .find((artifact) => artifact.parentIds.includes(parentId));
 }
 
+function findRejectionForTarget(
+  store: FileArtifactStore,
+  targetId: string,
+): BuildroomArtifact | undefined {
+  return store
+    .listArtifacts('operator_decision')
+    .find((decision) =>
+      decision.status === 'rejected' &&
+      decision.payload.decision === 'reject' &&
+      decision.payload.targetArtifactId === targetId);
+}
+
 function createAndStoreTrustArtifacts(
   store: FileArtifactStore,
   build: BuildroomArtifact,
@@ -571,6 +619,46 @@ function createOperatorSummaryArtifact(opts: {
       rendererVersion: 'auto-buildroom-reporter/v1',
       templateVersion: 'operator-summary/v1',
       trustStateAtRenderTime: opts.trust.payload.trustState,
+    },
+  };
+}
+
+function createOperatorDecisionArtifact(opts: {
+  target: BuildroomArtifact;
+  operatorId: string;
+  route: string;
+  now: string;
+}): BuildroomArtifact {
+  const suffix = artifactSuffix(opts.target.id);
+
+  return {
+    id: `decision_${suffix}`,
+    type: 'operator_decision',
+    schemaVersion: 'auto-buildroom/v1',
+    status: 'rejected',
+    createdAt: opts.now,
+    producer: {
+      role: 'operator',
+      runId: `run_${opts.now.replace(/[^0-9]/g, '').slice(0, 14)}_operator`,
+    },
+    room: { id: opts.target.room.id },
+    parentIds: [opts.target.id],
+    inputRefs: [{ kind: 'artifact', ref: opts.target.id }],
+    outputRefs: [],
+    runtimeRefs: [],
+    traceId: opts.target.traceId,
+    redaction: {
+      rawTranscriptsIncluded: false,
+      secretsRedacted: true,
+      redactedFields: [],
+    },
+    contentHash: '',
+    payload: {
+      decision: 'reject',
+      targetArtifactId: opts.target.id,
+      targetArtifactType: opts.target.type,
+      decidedBy: opts.operatorId,
+      decisionRoute: opts.route,
     },
   };
 }
@@ -716,6 +804,7 @@ function helpText(): string {
     '  propose   Create deterministic idea from latest research',
     '  review    Create deterministic Main Review for an idea',
     '  show      Show a Buildroom receipt',
+    '  reject    Create an operator rejection receipt',
     '  approve   Create approval for a locked Main Review',
     '  build     Create or show a Buildroom build plan',
     '  qa        Create deterministic QA evidence for a build receipt',

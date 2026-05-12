@@ -49,6 +49,7 @@ const ARTIFACT_DIRS: Record<BuildroomArtifactType, string> = {
   verification_delta: 'buildroom/deltas',
   trust_report: 'buildroom/trust',
   operator_summary: 'buildroom/operator',
+  operator_decision: 'buildroom/operator/decisions',
   error_receipt: 'buildroom/errors',
   retention_review: 'buildroom/retention',
 };

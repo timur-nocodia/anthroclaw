@@ -248,6 +248,7 @@ IDs should not contain secrets, user messages, raw URLs, or private data.
 | `idea_contract` | Proposed work with why, non-goals, and risk | Dreamer | Main Review |
 | `main_review` | Decision and bounded scope | Main Review | Approval / Build Plan |
 | `approval` | Operator authority grant | Operator | Builder |
+| `operator_decision` | Operator rejection or non-approval decision | Operator | Status / Approval policy |
 | `build_plan` | Executable plan under approved scope | Planner / Main Review | Builder |
 | `coder_receipt` | Builder claims, changed files, commands, limitations | Builder | QA |
 | `qa_report` | Independent verification result | QA | Verification Delta |
@@ -935,6 +936,7 @@ Minimum parent requirements:
 | `idea_contract` | research packet or signal |
 | `main_review` | idea contract |
 | `approval` | main review with `decision: approved_for_operator` |
+| `operator_decision` | target artifact |
 | `build_plan` | approval and main review |
 | `coder_receipt` | build plan and approval |
 | `qa_report` | coder receipt |
@@ -1039,6 +1041,7 @@ Recommended mapping:
 | `idea_contract` | `ideas/` |
 | `main_review` | `reviews/` |
 | `approval` | `approvals/` |
+| `operator_decision` | `operator/decisions/` |
 | `build_plan` | `plans/` |
 | `coder_receipt` | `builds/` |
 | `qa_report` | `qa/` |

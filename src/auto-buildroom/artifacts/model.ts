@@ -10,6 +10,7 @@ export type BuildroomArtifactType =
   | 'verification_delta'
   | 'trust_report'
   | 'operator_summary'
+  | 'operator_decision'
   | 'error_receipt'
   | 'retention_review';
 
@@ -53,4 +54,3 @@ export interface BuildroomArtifact {
   supersedesId?: string | null;
   payload: Record<string, unknown>;
 }
-

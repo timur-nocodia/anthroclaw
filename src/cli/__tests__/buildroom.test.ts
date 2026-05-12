@@ -108,6 +108,38 @@ describe('buildroom CLI', () => {
     expect(store.hasArtifact('approval_20260512_docs')).toBe(false);
   });
 
+  it('creates a rejection receipt and blocks later approval for that review', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('review_20260512_docs', 'main_review', {
+        decision: 'approved_for_operator',
+        lockedScope: { allowedPaths: ['docs/**'], blockedPaths: ['.env'] },
+      }),
+    );
+
+    await expect(run(['reject', 'review_20260512_docs', '--root', root])).resolves.toBe(0);
+
+    expect(out.join('\n')).toContain('Rejected: review_20260512_docs');
+    const decision = store.readArtifact('decision_20260512_docs');
+    expect(decision).toMatchObject({
+      type: 'operator_decision',
+      status: 'rejected',
+      parentIds: ['review_20260512_docs'],
+      payload: {
+        decision: 'reject',
+        targetArtifactId: 'review_20260512_docs',
+        decidedBy: 'cli:user:local-operator',
+        decisionRoute: 'cli:local',
+      },
+    });
+
+    err.length = 0;
+    await expect(run(['approve', 'review_20260512_docs', '--root', root])).resolves.toBe(4);
+    expect(err.join('\n')).toContain('Artifact was rejected by operator');
+    expect(store.listArtifacts('approval')).toEqual([]);
+  });
+
   it('runs deterministic collect, propose, and review without build authority', async () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });

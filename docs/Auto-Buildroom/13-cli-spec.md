@@ -501,7 +501,17 @@ Next:
 anthroclaw buildroom status
 ```
 
-Rejecting should create a transition or rejection artifact. It must not delete the proposal.
+Rejecting should create an `operator_decision` artifact with:
+
+- decision: `reject`;
+- target artifact ID and type;
+- operator identity;
+- decision route;
+- timestamp.
+
+It must not delete the proposal.
+
+A rejected `main_review` must not be approved later unless a new review supersedes it through the normal artifact chain.
 
 ## `build <approval_id|build_plan_id>`
 
