@@ -679,6 +679,42 @@ describe('buildroom CLI', () => {
     expect(summary.outputRefs[0]?.hash).toBe(sha256(readFileSync(summary.outputRefs[0].ref, 'utf8')));
   });
 
+  it('creates a retention recommendation without deleting audit receipts', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      coderReceiptWithOutputHash({
+        builderClaims: ['Updated operator guide.'],
+        changedFiles: ['docs/guide.md'],
+      }),
+    );
+    await run(['qa', 'build_20260512_docs', '--root', root]);
+    await run(['trust', 'build_20260512_docs', '--root', root]);
+
+    out.length = 0;
+    await expect(run(['retain', 'trust_20260512_docs', '--root', root])).resolves.toBe(0);
+
+    expect(out.join('\n')).toContain('Retention review: retention_20260512_docs');
+    expect(out.join('\n')).toContain('Recommendation: keep');
+    expect(out.join('\n')).toContain('Destructive cleanup: not allowed');
+    expect(store.readArtifact('trust_20260512_docs').type).toBe('trust_report');
+    expect(store.readArtifact('retention_20260512_docs')).toMatchObject({
+      type: 'retention_review',
+      status: 'completed',
+      parentIds: ['trust_20260512_docs'],
+      payload: {
+        recommendation: 'keep',
+        destructiveCleanupAllowed: false,
+      },
+    });
+
+    out.length = 0;
+    await expect(run(['retain', 'trust_20260512_docs', '--root', root])).resolves.toBe(0);
+
+    expect(out.join('\n')).toContain('Retention review: retention_20260512_docs');
+    expect(store.listArtifacts('retention_review')).toHaveLength(1);
+  });
+
   function artifact(
     id: string,
     type: BuildroomArtifact['type'],

@@ -26,6 +26,7 @@ import {
   createTrustReportArtifact,
   createVerificationDeltaArtifact,
 } from '../auto-buildroom/qa/trust.js';
+import { createRetentionReviewArtifact } from '../auto-buildroom/retention/retention.js';
 import {
   createDeterministicIdeaContract,
   createDeterministicMainReview,
@@ -105,6 +106,8 @@ export async function runBuildroomCli(
         return commandTrust(args, io);
       case 'report':
         return commandReport(args, io);
+      case 'retain':
+        return commandRetain(args, io);
       case 'pause':
         return commandPause(args, io);
       case 'resume':
@@ -623,6 +626,36 @@ function commandReport(args: ParsedArgs, io: CliIO): number {
   return 0;
 }
 
+function commandRetain(args: ParsedArgs, io: CliIO): number {
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  assertStageAllowed(config, 'retain');
+  const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
+  const trust = args.positional[0]
+    ? store.readArtifact(args.positional[0])
+    : latestArtifact(store, 'trust_report');
+  if (trust.type !== 'trust_report') {
+    throw new AuthorityPolicyError('Retention requires a trust_report artifact');
+  }
+
+  const existing = findChildArtifact(store, 'retention_review', trust.id);
+  const retention = existing ?? store.writeArtifact(
+    createRetentionReviewArtifact({
+      trust,
+      now: new Date().toISOString(),
+    }),
+  );
+
+  io.stdout([
+    `Retention review: ${retention.id}`,
+    `Recommendation: ${String(retention.payload.recommendation)}`,
+    `Follow-up needed: ${retention.payload.followUpNeeded === true ? 'yes' : 'no'}`,
+    'Destructive cleanup: not allowed',
+    '',
+    'Retention recommends lifecycle treatment. It does not erase audit evidence.',
+  ].join('\n'));
+  return 0;
+}
+
 function commandPause(args: ParsedArgs, io: CliIO): number {
   const config = loadBuildroomRoomConfig(args.root, args.room);
   saveBuildroomRoomConfig(args.root, { ...config, paused: true });
@@ -651,7 +684,7 @@ function commandResume(args: ParsedArgs, io: CliIO): number {
 
 function assertStageAllowed(
   config: { mode: string; paused?: boolean; killSwitchActive: boolean },
-  stage: 'collect' | 'propose' | 'review' | 'build' | 'qa' | 'trust',
+  stage: 'collect' | 'propose' | 'review' | 'build' | 'qa' | 'trust' | 'retain',
 ): void {
   if (config.mode === 'off') {
     throw new BuildroomStageBlockedError('Buildroom mode is off');
@@ -1018,6 +1051,7 @@ function helpText(): string {
     '  qa        Create deterministic QA evidence for a build receipt',
     '  trust     Create verification delta and trust report',
     '  report    Render latest trust report; use --save for operator_summary',
+    '  retain    Create retention recommendation for a trust report',
     '  pause     Soft-pause new Buildroom stages',
     '  resume    Resume stage execution after pause',
     '',

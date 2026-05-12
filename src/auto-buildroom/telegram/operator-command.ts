@@ -12,6 +12,7 @@ export type TelegramBuildroomCommand =
   | 'build'
   | 'qa'
   | 'trust'
+  | 'retain'
   | 'pause'
   | 'resume';
 
@@ -53,6 +54,7 @@ const COMMANDS = new Set<TelegramBuildroomCommand>([
   'build',
   'qa',
   'trust',
+  'retain',
   'pause',
   'resume',
 ]);
@@ -124,6 +126,9 @@ function hasValidCommandArgs(command: TelegramBuildroomCommand, args: string[]):
       args[0].startsWith('approval_') ||
       args[0].startsWith('plan_')
     );
+  }
+  if (command === 'retain') {
+    return args.length <= 1 && (args.length === 0 || args[0].startsWith('trust_'));
   }
   return true;
 }

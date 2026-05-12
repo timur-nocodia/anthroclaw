@@ -147,4 +147,29 @@ describe('Telegram Buildroom operator commands', () => {
       sourceThread: 'telegram_thread:-1003931616911:2',
     });
   });
+
+  it('authorizes retention through command routes, not approval routes', () => {
+    const config = createDefaultBuildroomConfig({
+      roomId: 'anthroclaw-core',
+      operatorId: 'telegram_user:48705953',
+    });
+    config.operators[0].commandRoutes = ['telegram_chat:-1003931616911'];
+    config.operators[0].approvalRoutes = ['telegram_thread:-1003931616911:2'];
+
+    expect(authorizeTelegramBuildroomCommand(config, {
+      text: '/buildroom retain trust_20260512_docs',
+      telegramUserId: 48705953,
+      chatId: -1003931616911,
+    })).toMatchObject({
+      ok: true,
+      command: 'retain',
+      args: ['trust_20260512_docs'],
+    });
+
+    expect(authorizeTelegramBuildroomCommand(config, {
+      text: '/buildroom retain idea_20260512_docs',
+      telegramUserId: 48705953,
+      chatId: -1003931616911,
+    })).toEqual({ ok: false, reason: 'malformed_command' });
+  });
 });
