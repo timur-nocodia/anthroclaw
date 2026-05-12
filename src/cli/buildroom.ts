@@ -6,6 +6,7 @@ import {
   ArtifactHashMismatchError,
   FileArtifactStore,
 } from '../auto-buildroom/artifacts/store.js';
+import { executeBuildPlan } from '../auto-buildroom/build/execute.js';
 import { BuildroomConfigValidationError } from '../auto-buildroom/config/model.js';
 import {
   AuthorityPolicyError,
@@ -29,7 +30,9 @@ import {
   createDeterministicMainReview,
   createDeterministicResearchPacket,
 } from '../auto-buildroom/workflow/deterministic.js';
+import { NativeAgentRuntimeAdapter } from '../auto-buildroom/runtime/native-agent-adapter.js';
 import type { BuildroomArtifact, BuildroomArtifactType } from '../auto-buildroom/artifacts/model.js';
+import type { NativeBuilderRunResult } from '../auto-buildroom/runtime/native-agent-adapter.js';
 
 interface CliIO {
   stdout: (text: string) => void;
@@ -45,12 +48,25 @@ interface ParsedArgs {
   positional: string[];
 }
 
+export interface BuildroomCliDependencies {
+  builderAdapter?: {
+    runBuilder(
+      input: Parameters<NativeAgentRuntimeAdapter['runBuilder']>[0],
+    ): Promise<NativeBuilderRunResult>;
+  };
+  now?: () => string;
+}
+
 const defaultIO: CliIO = {
   stdout: (text) => console.log(text),
   stderr: (text) => console.error(text),
 };
 
-export async function runBuildroomCli(argv: string[], io: CliIO = defaultIO): Promise<number> {
+export async function runBuildroomCli(
+  argv: string[],
+  io: CliIO = defaultIO,
+  deps: BuildroomCliDependencies = {},
+): Promise<number> {
   const args = parseArgs(argv);
   if (!args.command || args.command === 'help' || args.command === '--help') {
     io.stdout(helpText());
@@ -78,7 +94,7 @@ export async function runBuildroomCli(argv: string[], io: CliIO = defaultIO): Pr
       case 'approve':
         return commandApprove(args, io);
       case 'build':
-        return commandBuild(args, io);
+        return await commandBuild(args, io, deps);
       case 'qa':
         return commandQa(args, io);
       case 'trust':
@@ -356,7 +372,11 @@ function commandReject(args: ParsedArgs, io: CliIO): number {
   return 0;
 }
 
-function commandBuild(args: ParsedArgs, io: CliIO): number {
+async function commandBuild(
+  args: ParsedArgs,
+  io: CliIO,
+  deps: BuildroomCliDependencies,
+): Promise<number> {
   const id = requirePositional(args, 0, 'build');
   const config = loadBuildroomRoomConfig(args.root, args.room);
   assertStageAllowed(config, 'build');
@@ -364,6 +384,9 @@ function commandBuild(args: ParsedArgs, io: CliIO): number {
   const target = store.readArtifact(id);
 
   if (target.type === 'build_plan') {
+    if (args.flags.has('execute')) {
+      return executeAndReportBuildPlan(args, io, deps, config.roomId, target.id);
+    }
     io.stdout([
       `Existing build plan: ${target.id}`,
       '',
@@ -378,6 +401,9 @@ function commandBuild(args: ParsedArgs, io: CliIO): number {
 
   const existing = findBuildPlanForApproval(store, target.id);
   if (existing) {
+    if (args.flags.has('execute')) {
+      return executeAndReportBuildPlan(args, io, deps, config.roomId, existing.id);
+    }
     io.stdout([
       `Existing build plan: ${existing.id}`,
       '',
@@ -393,9 +419,13 @@ function commandBuild(args: ParsedArgs, io: CliIO): number {
     createBuildPlanArtifact({
       approval: target,
       review,
-      now: new Date().toISOString(),
+      now: nowIso(deps),
     }),
   );
+
+  if (args.flags.has('execute')) {
+    return executeAndReportBuildPlan(args, io, deps, config.roomId, plan.id);
+  }
 
   io.stdout([
     `Build plan: ${plan.id}`,
@@ -407,6 +437,46 @@ function commandBuild(args: ParsedArgs, io: CliIO): number {
     `anthroclaw buildroom show ${plan.id}`,
   ].join('\n'));
   return 0;
+}
+
+async function executeAndReportBuildPlan(
+  args: ParsedArgs,
+  io: CliIO,
+  deps: BuildroomCliDependencies,
+  roomId: string,
+  planId: string,
+): Promise<number> {
+  const receipt = await executeBuildPlan({
+    projectRoot: args.root,
+    roomId,
+    planId,
+    adapter: deps.builderAdapter ?? new NativeAgentRuntimeAdapter(),
+    now: nowIso(deps),
+  });
+
+  if (receipt.type === 'coder_receipt') {
+    io.stdout([
+      `Builder receipt: ${receipt.id}`,
+      `Runtime: ${String(receipt.payload.runtimeStatus ?? 'completed')}`,
+      '',
+      'Build consumed approval at the execution boundary.',
+      '',
+      'Next:',
+      `anthroclaw buildroom qa ${receipt.id}`,
+    ].join('\n'));
+    return 0;
+  }
+
+  io.stdout([
+    `Builder error: ${receipt.id}`,
+    `Status: ${receipt.status}`,
+    '',
+    'Build consumed approval at the execution boundary.',
+    '',
+    'Next:',
+    `anthroclaw buildroom show ${receipt.id}`,
+  ].join('\n'));
+  return 6;
 }
 
 function commandQa(args: ParsedArgs, io: CliIO): number {
@@ -781,6 +851,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       case '--save':
         out.flags.add('save');
         break;
+      case '--execute':
+        out.flags.add('execute');
+        break;
       default:
         if (!out.command) out.command = arg;
         else positional.push(arg);
@@ -800,6 +873,10 @@ function requirePositional(args: ParsedArgs, index: number, command: string): st
 
 function firstOperator(config: { operators: { id: string }[] }): string {
   return config.operators[0]?.id ?? 'cli:user:local-operator';
+}
+
+function nowIso(deps: BuildroomCliDependencies): string {
+  return deps.now?.() ?? new Date().toISOString();
 }
 
 class CliUsageError extends Error {
@@ -842,6 +919,7 @@ function helpText(): string {
     '  --room <roomId>     Buildroom ID',
     '  --operator <id>     Operator identity for init',
     '  --save              Persist report rendering when supported',
+    '  --execute           Explicitly run Builder for build plan/approval',
   ].join('\n');
 }
 
