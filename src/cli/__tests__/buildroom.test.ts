@@ -148,6 +148,36 @@ describe('buildroom CLI', () => {
     expect(store.hasArtifact('approval_20260512_docs')).toBe(false);
   });
 
+  it('blocks approval authority while the room is off, paused, or kill-switched', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('review_20260512_docs', 'main_review', {
+        decision: 'approved_for_operator',
+        lockedScope: { allowedPaths: ['docs/**'], blockedPaths: ['.env'] },
+      }),
+    );
+
+    updateRoomConfig((config) => ({ ...config, mode: 'off' }));
+    await expect(run(['approve', 'review_20260512_docs', '--root', root])).resolves.toBe(8);
+    expect(err.join('\n')).toContain('Buildroom mode is off');
+
+    err.length = 0;
+    updateRoomConfig((config) => ({ ...config, mode: 'manual_approval', paused: true }));
+    await expect(run(['approve', 'review_20260512_docs', '--root', root])).resolves.toBe(8);
+    expect(err.join('\n')).toContain('Buildroom is paused');
+
+    err.length = 0;
+    updateRoomConfig((config) => ({
+      ...config,
+      paused: false,
+      killSwitchActive: true,
+    }));
+    await expect(run(['approve', 'review_20260512_docs', '--root', root])).resolves.toBe(8);
+    expect(err.join('\n')).toContain('Kill switch is active');
+    expect(store.listArtifacts('approval')).toEqual([]);
+  });
+
   it('creates a rejection receipt and blocks later approval for that review', async () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });

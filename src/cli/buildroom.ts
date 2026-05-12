@@ -428,6 +428,7 @@ function commandShow(args: ParsedArgs, io: CliIO): number {
 function commandApprove(args: ParsedArgs, io: CliIO): number {
   const id = requirePositional(args, 0, 'approve');
   const config = loadBuildroomRoomConfig(args.root, args.room);
+  assertStageAllowed(config, 'approve');
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const review = store.readArtifact(id);
   if (findRejectionForTarget(store, review.id)) {
@@ -802,7 +803,7 @@ async function notifyLifecycle(
 
 function assertStageAllowed(
   config: { mode: string; paused?: boolean; killSwitchActive: boolean },
-  stage: 'collect' | 'propose' | 'review' | 'build' | 'qa' | 'trust' | 'retain',
+  stage: 'collect' | 'propose' | 'review' | 'approve' | 'build' | 'qa' | 'trust' | 'retain',
 ): void {
   if (config.mode === 'off') {
     throw new BuildroomStageBlockedError('Buildroom mode is off');
@@ -810,8 +811,8 @@ function assertStageAllowed(
   if (config.paused) {
     throw new BuildroomStageBlockedError('Buildroom is paused');
   }
-  if (stage === 'build' && config.mode !== 'manual_approval') {
-    throw new BuildroomStageBlockedError(`Buildroom mode does not allow build: ${config.mode}`);
+  if ((stage === 'approve' || stage === 'build') && config.mode !== 'manual_approval') {
+    throw new BuildroomStageBlockedError(`Buildroom mode does not allow ${stage}: ${config.mode}`);
   }
   if (config.killSwitchActive) {
     throw new BuildroomStageBlockedError('Kill switch is active');
