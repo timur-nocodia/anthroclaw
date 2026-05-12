@@ -1,10 +1,11 @@
 import {
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
-  statSync,
+  readlinkSync,
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { FileArtifactStore } from '../artifacts/store.js';
@@ -63,6 +64,8 @@ export async function executeBuildPlan(opts: ExecuteBuildPlanOptions): Promise<B
       scopeSummary: JSON.stringify(plan.payload.scope ?? {}),
     });
     const changedFiles = diffSnapshot(workingDirectory, baseline);
+    const changedSymlinks = listSymlinks(workingDirectory)
+      .filter((path) => changedFiles.includes(path));
 
     const artifact = result.status === 'completed'
       ? buildCoderReceipt({
@@ -70,6 +73,7 @@ export async function executeBuildPlan(opts: ExecuteBuildPlanOptions): Promise<B
           approval: consumedApproval,
           result,
           changedFiles,
+          changedSymlinks,
           preRunPolicyResult,
           now: opts.now,
         })
@@ -105,6 +109,7 @@ function buildCoderReceipt(opts: {
   approval: BuildroomArtifact;
   result: Extract<NativeBuilderRunResult, { status: 'completed' }>;
   changedFiles: string[];
+  changedSymlinks: string[];
   preRunPolicyResult: PathScopePolicyResult;
   now: string;
 }): BuildroomArtifact {
@@ -119,6 +124,10 @@ function buildCoderReceipt(opts: {
     allowedPaths: scope.allowedPaths,
     blockedPaths: scope.blockedPaths,
   });
+  const symlinkViolations = opts.changedSymlinks.map((path) => ({
+    path,
+    reason: 'symlink' as const,
+  }));
 
   return {
     id: `build_${suffix}`,
@@ -144,7 +153,9 @@ function buildCoderReceipt(opts: {
       preRunPolicyResult: opts.preRunPolicyResult,
       postRunPolicyResult: {
         ...postRunPolicyResult,
+        allowed: postRunPolicyResult.allowed && symlinkViolations.length === 0,
         changedFiles,
+        violations: [...postRunPolicyResult.violations, ...symlinkViolations],
       },
     },
   };
@@ -221,7 +232,14 @@ function snapshotDirectory(root: string): Map<string, string> {
   const snapshot = new Map<string, string>();
   if (!existsSync(root)) return snapshot;
   for (const file of listFiles(root)) {
-    snapshot.set(file, readFileSync(join(root, file)).toString('base64'));
+    const path = join(root, file);
+    const stats = lstatSync(path);
+    snapshot.set(
+      file,
+      stats.isSymbolicLink()
+        ? `symlink:${readlinkSync(path)}`
+        : readFileSync(path).toString('base64'),
+    );
   }
   return snapshot;
 }
@@ -246,7 +264,11 @@ function listFiles(root: string): string[] {
 
   for (const entry of readdirSync(root)) {
     const path = join(root, entry);
-    const stats = statSync(path);
+    const stats = lstatSync(path);
+    if (stats.isSymbolicLink()) {
+      files.push(entry);
+      continue;
+    }
     if (stats.isDirectory()) {
       for (const nested of listFiles(path)) files.push(join(entry, nested));
     } else if (stats.isFile()) {
@@ -255,6 +277,23 @@ function listFiles(root: string): string[] {
   }
 
   return files;
+}
+
+function listSymlinks(root: string): string[] {
+  const symlinks: string[] = [];
+  if (!existsSync(root)) return symlinks;
+
+  for (const entry of readdirSync(root)) {
+    const path = join(root, entry);
+    const stats = lstatSync(path);
+    if (stats.isSymbolicLink()) {
+      symlinks.push(entry);
+    } else if (stats.isDirectory()) {
+      for (const nested of listSymlinks(path)) symlinks.push(join(entry, nested));
+    }
+  }
+
+  return symlinks;
 }
 
 function listProjectFiles(root: string): string[] {
@@ -268,7 +307,8 @@ function listFilesSkipping(root: string, current: string): string[] {
   for (const entry of readdirSync(current)) {
     if (SKIPPED_PROJECT_DIRS.has(entry)) continue;
     const path = join(current, entry);
-    const stats = statSync(path);
+    const stats = lstatSync(path);
+    if (stats.isSymbolicLink()) continue;
     if (stats.isDirectory()) {
       files.push(...listFilesSkipping(root, path));
     } else if (stats.isFile()) {

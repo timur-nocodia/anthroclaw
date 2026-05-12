@@ -1,6 +1,6 @@
 import { posix } from 'node:path';
 
-export type PathPolicyViolationReason = 'blocked_path' | 'not_allowed' | 'path_escape';
+export type PathPolicyViolationReason = 'blocked_path' | 'not_allowed' | 'path_escape' | 'symlink';
 
 export interface PathPolicyViolation {
   path: string;
@@ -106,4 +106,3 @@ function escapeRegExp(char: string | undefined): string {
   if (!char) return '';
   return /[\\^$+?.()|[\]{}]/.test(char) ? `\\${char}` : char;
 }
-

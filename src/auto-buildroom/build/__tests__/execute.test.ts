@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -198,6 +198,39 @@ describe('executeBuildPlan', () => {
       }),
     };
 
+    const receipt = await executeBuildPlan({
+      projectRoot: root,
+      roomId: 'anthroclaw-core',
+      planId: plan.id,
+      adapter,
+      now: '2026-05-12T00:10:00.000Z',
+    });
+
+    expect(adapter.runBuilder).toHaveBeenCalledTimes(1);
+    expect(receipt.payload.postRunPolicyResult).toMatchObject({
+      checkedPaths: [],
+      changedFiles: [],
+      violations: [],
+    });
+  });
+
+  it('does not copy symlinked approved-path inputs into the runtime working directory', async () => {
+    mkdirSync(join(root, 'docs'), { recursive: true });
+    writeFileSync(join(root, '.env'), 'ANTHROPIC_API_KEY=sk-ant-secret', 'utf8');
+    symlinkSync('../.env', join(root, 'docs', 'linked-secret'));
+    const { plan } = seedPlan();
+    const adapter = {
+      runBuilder: vi.fn().mockImplementation(async (input: { workingDirectory: string }) => {
+        expect(() => readFileSync(join(input.workingDirectory, 'docs', 'linked-secret'), 'utf8'))
+          .toThrow();
+        return {
+          status: 'completed',
+          resultText: 'Read approved docs.',
+          runtimeRefs: [{ runtime: 'native-agent-sdk', sessionId: 'session_builder_1' }],
+        };
+      }),
+    };
+
     await executeBuildPlan({
       projectRoot: root,
       roomId: 'anthroclaw-core',
@@ -207,6 +240,36 @@ describe('executeBuildPlan', () => {
     });
 
     expect(adapter.runBuilder).toHaveBeenCalledTimes(1);
+  });
+
+  it('records post-run policy violations when builder creates a symlink', async () => {
+    const { plan } = seedPlan();
+    const adapter = {
+      runBuilder: vi.fn().mockImplementation(async (input: { workingDirectory: string }) => {
+        mkdirSync(join(input.workingDirectory, 'docs'), { recursive: true });
+        symlinkSync('../.env', join(input.workingDirectory, 'docs', 'linked-output'));
+        return {
+          status: 'completed',
+          resultText: 'Created a docs symlink.',
+          runtimeRefs: [{ runtime: 'native-agent-sdk', sessionId: 'session_builder_1' }],
+        };
+      }),
+    };
+
+    const receipt = await executeBuildPlan({
+      projectRoot: root,
+      roomId: 'anthroclaw-core',
+      planId: plan.id,
+      adapter,
+      now: '2026-05-12T00:10:00.000Z',
+    });
+
+    expect(receipt.payload.postRunPolicyResult).toMatchObject({
+      allowed: false,
+      checkedPaths: ['docs/linked-output'],
+      changedFiles: ['docs/linked-output'],
+      violations: [{ path: 'docs/linked-output', reason: 'symlink' }],
+    });
   });
 
   it('blocks before runtime when build plan scope contains path escapes', async () => {
