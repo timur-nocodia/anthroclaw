@@ -520,6 +520,7 @@ describe('buildroom CLI', () => {
     await expect(run(['status', '--root', root])).resolves.toBe(0);
 
     expect(out.join('\n')).toContain('State: blocked');
+    expect(out.join('\n')).toContain('Unresolved errors: 1');
   });
 
   it('renders and saves an operator report from latest trust receipt', async () => {

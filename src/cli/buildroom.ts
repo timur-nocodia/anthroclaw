@@ -155,6 +155,7 @@ function commandStatus(args: ParsedArgs, io: CliIO): number {
     `Approved not built: ${counts.approvedNotBuilt}`,
     `Active builds: ${counts.activeBuilds}`,
     `QA pending: ${counts.qaPending}`,
+    `Unresolved errors: ${counts.unresolvedErrors}`,
     '',
     'Next:',
     'anthroclaw buildroom collect',
