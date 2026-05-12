@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -141,6 +141,41 @@ describe('executeBuildPlan', () => {
               matchedPattern: 'agents/**',
             },
           ],
+        },
+      },
+    });
+  });
+
+  it('computes changed files independently from the working directory diff', async () => {
+    const { plan } = seedPlan();
+    const adapter = {
+      runBuilder: vi.fn().mockImplementation(async (input: { workingDirectory: string }) => {
+        mkdirSync(join(input.workingDirectory, 'docs'), { recursive: true });
+        writeFileSync(join(input.workingDirectory, 'docs', 'guide.md'), 'updated docs', 'utf8');
+        return {
+          status: 'completed',
+          resultText: 'Updated docs.',
+          runtimeRefs: [{ runtime: 'native-agent-sdk', sessionId: 'session_builder_1' }],
+        };
+      }),
+    };
+
+    const receipt = await executeBuildPlan({
+      projectRoot: root,
+      roomId: 'anthroclaw-core',
+      planId: plan.id,
+      adapter,
+      now: '2026-05-12T00:10:00.000Z',
+    });
+
+    expect(receipt).toMatchObject({
+      type: 'coder_receipt',
+      payload: {
+        postRunPolicyResult: {
+          allowed: true,
+          checkedPaths: ['docs/guide.md'],
+          changedFiles: ['docs/guide.md'],
+          violations: [],
         },
       },
     });

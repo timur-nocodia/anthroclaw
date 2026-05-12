@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { FileArtifactStore } from '../artifacts/store.js';
 import type { BuildroomArtifact } from '../artifacts/model.js';
 import { FileBuildroomLock } from '../locks/lock.js';
@@ -35,16 +37,20 @@ export async function executeBuildPlan(opts: ExecuteBuildPlanOptions): Promise<B
 
   try {
     const consumedApproval = store.writeArtifact(consumeApproval(approval, opts.now));
+    const workingDirectory = buildWorkingDirectory(opts.projectRoot, opts.roomId, plan.id);
+    mkdirSync(workingDirectory, { recursive: true });
+    const baseline = snapshotDirectory(workingDirectory);
     const result = await opts.adapter.runBuilder({
       prompt: buildBuilderPrompt(plan),
-      workingDirectory: buildWorkingDirectory(opts.projectRoot, opts.roomId, plan.id),
+      workingDirectory,
       allowedTools: ['Read', 'Edit'],
       idempotencyKey: handle.idempotencyKey,
       scopeSummary: JSON.stringify(plan.payload.scope ?? {}),
     });
+    const changedFiles = diffSnapshot(workingDirectory, baseline);
 
     const artifact = result.status === 'completed'
-      ? buildCoderReceipt({ plan, approval: consumedApproval, result, now: opts.now })
+      ? buildCoderReceipt({ plan, approval: consumedApproval, result, changedFiles, now: opts.now })
       : buildErrorReceipt({ plan, approval: consumedApproval, result, now: opts.now });
     return store.writeArtifact(artifact);
   } finally {
@@ -76,10 +82,14 @@ function buildCoderReceipt(opts: {
   plan: BuildroomArtifact;
   approval: BuildroomArtifact;
   result: Extract<NativeBuilderRunResult, { status: 'completed' }>;
+  changedFiles: string[];
   now: string;
 }): BuildroomArtifact {
   const suffix = artifactSuffix(opts.plan.id, 'plan');
-  const changedFiles = stringArray(opts.result.changedFiles);
+  const changedFiles = uniqueStrings([
+    ...stringArray(opts.result.changedFiles),
+    ...opts.changedFiles,
+  ]);
   const scope = scopePolicy(opts.plan);
   const postRunPolicyResult = evaluatePathPolicy({
     paths: changedFiles,
@@ -135,6 +145,50 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : [];
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)].sort();
+}
+
+function snapshotDirectory(root: string): Map<string, string> {
+  const snapshot = new Map<string, string>();
+  if (!existsSync(root)) return snapshot;
+  for (const file of listFiles(root)) {
+    snapshot.set(file, readFileSync(join(root, file)).toString('base64'));
+  }
+  return snapshot;
+}
+
+function diffSnapshot(root: string, before: Map<string, string>): string[] {
+  const changed = new Set<string>();
+  const after = snapshotDirectory(root);
+
+  for (const [file, hash] of after) {
+    if (before.get(file) !== hash) changed.add(file);
+  }
+  for (const file of before.keys()) {
+    if (!after.has(file)) changed.add(file);
+  }
+
+  return [...changed].sort();
+}
+
+function listFiles(root: string): string[] {
+  const files: string[] = [];
+  if (!existsSync(root)) return files;
+
+  for (const entry of readdirSync(root)) {
+    const path = join(root, entry);
+    const stats = statSync(path);
+    if (stats.isDirectory()) {
+      for (const nested of listFiles(path)) files.push(join(entry, nested));
+    } else if (stats.isFile()) {
+      files.push(relative(root, path));
+    }
+  }
+
+  return files;
 }
 
 function buildErrorReceipt(opts: {
