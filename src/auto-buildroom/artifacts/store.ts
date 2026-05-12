@@ -37,6 +37,13 @@ export class ArtifactSecretRejectedError extends Error {
   }
 }
 
+export class UnsupportedArtifactSchemaVersionError extends Error {
+  constructor(schemaVersion: unknown) {
+    super(`Unsupported artifact schema version: ${String(schemaVersion)}`);
+    this.name = 'UnsupportedArtifactSchemaVersionError';
+  }
+}
+
 const ARTIFACT_DIRS: Record<BuildroomArtifactType, string> = {
   research_packet: 'buildroom/research',
   signal: 'buildroom/signals',
@@ -128,7 +135,21 @@ function readAndVerifyArtifact(path: string): BuildroomArtifact {
   if (computeArtifactContentHash(artifact) !== artifact.contentHash) {
     throw new ArtifactHashMismatchError(artifact.id);
   }
+  assertSupportedArtifact(artifact);
   return artifact;
+}
+
+function assertSupportedArtifact(artifact: BuildroomArtifact): void {
+  if (artifact.schemaVersion !== 'auto-buildroom/v1') {
+    throw new UnsupportedArtifactSchemaVersionError(artifact.schemaVersion);
+  }
+  if (!isBuildroomArtifactType(artifact.type)) {
+    throw new Error(`Unsupported artifact type: ${String(artifact.type)}`);
+  }
+}
+
+function isBuildroomArtifactType(value: unknown): value is BuildroomArtifactType {
+  return typeof value === 'string' && value in ARTIFACT_DIRS;
 }
 
 const SECRET_PATTERNS = [

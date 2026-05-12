@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { initializeBuildroomStorage } from '../../storage/init.js';
 import { FileArtifactStore } from '../store.js';
+import { computeArtifactContentHash } from '../hash.js';
 import type { BuildroomArtifact, BuildroomArtifactType } from '../model.js';
 
 describe('FileArtifactStore', () => {
@@ -82,6 +83,21 @@ describe('FileArtifactStore', () => {
 
     expect(() => store.readArtifact(written.id)).toThrow(/Artifact hash mismatch/);
     expect(() => store.listArtifacts('research_packet')).toThrow(/Artifact hash mismatch/);
+  });
+
+  it('rejects artifacts with unsupported schema versions even when content hash matches', () => {
+    const written = store.writeArtifact(baseArtifact('research_20260512_docs', 'research_packet'));
+    const path = store.pathForArtifact(written);
+    const unsupported = {
+      ...JSON.parse(readFileSync(path, 'utf8')) as BuildroomArtifact,
+      schemaVersion: 'auto-buildroom/v999',
+      contentHash: '',
+    };
+    unsupported.contentHash = computeArtifactContentHash(unsupported);
+    writeFileSync(path, `${JSON.stringify(unsupported, null, 2)}\n`, 'utf8');
+
+    expect(() => store.readArtifact(written.id)).toThrow(/Unsupported artifact schema version/);
+    expect(() => store.listArtifacts('research_packet')).toThrow(/Unsupported artifact schema version/);
   });
 
   it('rejects artifacts that would persist obvious secrets', () => {
