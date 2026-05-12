@@ -3,7 +3,7 @@
 **Date:** 2026-05-12
 **Status:** Draft for review
 **Owner:** TBD
-**Tracking PR:** TBD
+**Tracking PR:** https://github.com/timur-nocodia/anthroclaw/pull/22
 
 ## Problem
 
@@ -82,8 +82,11 @@ CREATE TABLE mcp_pending_connections (
   code_verifier   TEXT,                     -- PKCE (oauth only)
   client_id       TEXT,                     -- DCR-registered client
   client_secret   TEXT,                     -- encrypted-at-rest if present
-  metadata_json   TEXT,                     -- discovered AS metadata
+  oauth_metadata  TEXT,                     -- discovered AS metadata, JSON string
+  tools_metadata  TEXT,                     -- populated post-token-exchange, JSON string
   requested_by    TEXT NOT NULL,            -- 'admin:<userId>' | 'agent:<sessionKey>'
+                                            -- group-chat-initiated pendings rejected at startConnection
+                                            -- (chat one-shot URLs are DM-only by policy)
   status          TEXT NOT NULL DEFAULT 'pending',
                                             -- pending | exchanging | completed
                                             -- | failed | cancelled | expired
@@ -128,7 +131,16 @@ interface McpApiKeyCredential {
 }
 ```
 
-`<serverId>` is the URL hostname's first label (`postmypost` for `mcp.postmypost.io`). On collision the next free `-2`/`-3` suffix is appended.
+`<serverId>` derivation is deterministic:
+
+1. Take URL hostname, lowercase.
+2. Strip a leading `mcp.` or `api.` label if present.
+3. Take the first remaining label (everything up to the next `.`).
+4. Keep only `[a-z0-9-]`; collapse non-matching runs to `-`; trim leading/trailing `-`.
+5. If the result is empty, fall back to `srv-<first 8 hex of sha256(hostname)>`.
+6. On collision with an existing `external_mcp_servers` entry, append the lowest free integer suffix starting from `-2`.
+
+Examples: `mcp.postmypost.io` → `postmypost`; `api.openai.com` → `openai`; `tools.example.co.uk` → `tools`; `192.168.1.10` → `srv-<hash8>`.
 
 ### Schema diff
 
@@ -168,7 +180,7 @@ Backward compatibility: existing `agent.yml` entries without `credential_ref` co
 7. Backend:
    - DCR registration → obtains `client_id` (and possibly `client_secret`).
    - PKCE: generates 32-byte `code_verifier`, derives `code_challenge`.
-   - Inserts row in `mcp_pending_connections` with `state`, `code_verifier`, `client_id`, `metadata_json`, `requested_by='admin:<userId>'`.
+   - Inserts row in `mcp_pending_connections` with `state`, `code_verifier`, `client_id`, `oauth_metadata` (JSON-stringified discovered AS metadata), `requested_by='admin:<userId>'`.
    - Returns `{ pendingId, authUrl }` where `authUrl` is the provider's authorization endpoint with `client_id`, `redirect_uri={ui_base}/api/mcp/oauth/callback`, `state`, `code_challenge`, requested scopes.
 8. Frontend `window.location = authUrl`. User authorizes at `postmypost.io`.
 9. Provider redirects to `GET /api/mcp/oauth/callback?state=…&code=…`.
@@ -178,7 +190,7 @@ Backward compatibility: existing `agent.yml` entries without `credential_ref` co
     - Token exchange (with PKCE `code_verifier`) → `{ access_token, refresh_token?, expires_in, scope }`.
     - Writes `McpOAuthCredential` to credential store under `mcp:<serverId>`.
     - Calls `tools/list` against MCP with the new token → list of `{ name, description, inputSchema }`.
-    - `UPDATE mcp_pending_connections SET status='completed', metadata_json=jsonb('{tools:[…]}')`.
+    - `UPDATE mcp_pending_connections SET status='completed', tools_metadata=?` (JSON-stringified `{tools:[…]}` written to a `TEXT` column; no SQLite `jsonb()` dependency).
     - Redirects to `{ui_base}/fleet/.../agents/.../mcp-wizard?step=tools&pendingId=…`.
 11. Wizard step 3 renders tool checkboxes (all checked by default).
 12. User clicks **Save** → frontend POSTs `/api/mcp/connect/finalize { pendingId, allowed_tools }`.
@@ -303,7 +315,9 @@ The gateway emits `[system]`-prefixed messages into the originating agent sessio
 | Pending expired (10 min sweep) | `[system] mcp_connect_timeout: <serverId>` |
 | Runtime refresh failed | `[system] mcp_reauth_required: <serverId>` |
 
-These messages are dispatched through `Gateway.dispatch()` exactly like a user message, with `meta.source` set to a corresponding tag so logs and the operator UI can distinguish them. The `[system]` prefix in the message body lets the agent's model recognise the event as a non-user signal.
+These messages are dispatched through `Gateway.dispatch()` with `meta.source` set to a corresponding tag (`mcp_oauth_callback`, `mcp_oauth_declined`, `mcp_pending_expired`, `mcp_reauth_required`) so logs and the operator UI can distinguish them. The `[system]` prefix in the message body lets the agent's model recognise the event as a non-user signal.
+
+**Queue mode for synthetic MCP messages.** All four event types are dispatched with `queueMode: 'interrupt'` regardless of the agent's configured `queue_mode`. Rationale: these messages carry causally-important state transitions (the user just finished authorizing in their browser, or a token just died). Batching them into a `collect` window or steering them into the current turn risks dropping the event entirely or surfacing it minutes later. Interrupt semantics guarantee the agent sees the event on its very next response opportunity, even if a user message is mid-flight in the same session. Existing `QueueManager` already supports `interrupt`; no new machinery needed.
 
 ## Error Handling
 
@@ -329,7 +343,8 @@ These messages are dispatched through `Gateway.dispatch()` exactly like a user m
 ## Security Considerations
 
 - All credentials are stored in `EncryptedFilesystemCredentialStore` (AES-256-GCM). No bearer tokens land in `agent.yml`, logs (beyond audit refs), or chat transcripts.
-- For chat-initiated pendings, the `authUrl` and `apikeyUrl` are one-shot URLs keyed by `pendingId` (32-byte random). Anyone holding the URL can complete the flow — which is intentional, because the link is sent privately to the user via the same chat channel that initiated the request. No admin-panel login is required, so the flow works for non-admin users (e.g. a normal Telegram user whose agent is helping them set up a tool).
+- **Chat-initiated onboarding is DM-only.** `startConnection({ requester: { kind: 'agent', chatType } })` rejects any pending whose `chatType` is `group` or `supergroup`. In a group, the agent must instruct the user to retry in a private chat (the agent tool returns `{ status: 'rejected', reason: 'mcp_onboarding_requires_dm' }` and an explanatory `message` payload). This prevents the one-shot URL from being leaked to other group members.
+- For chat-initiated pendings (DM only), the `authUrl` and `apikeyUrl` are one-shot URLs keyed by `pendingId` (32-byte random). Anyone holding the URL can complete the flow — which is intentional, because the link is sent privately to the user via the same chat channel that initiated the request. No admin-panel login is required, so the flow works for non-admin users (e.g. a normal Telegram user whose agent is helping them set up a tool).
 - The `state` token is bound to a single pending row and consumed atomically. Replay is detected by the rowcount of the UPDATE.
 - DCR client secrets, when issued by the authorization server, are stored encrypted alongside the rest of the credential.
 - The `[system]` synthetic messages carry no secrets — only the server name, server id, pending id, and tool names. The credential never appears in the transcript.
