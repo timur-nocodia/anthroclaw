@@ -3157,4 +3157,12 @@ The OAuth callback flow needs a stable public URL for the AnthroClaw UI. Set one
 - `UI_BASE_URL=https://your-anthroclaw.example.com`
 - `NEXT_PUBLIC_BASE_URL=https://your-anthroclaw.example.com`
 
+- `ANTHROCLAW_MASTER_KEY`: 32-byte hex string (64 hex characters) used to encrypt stored OAuth tokens and API keys at rest. Generate one with `openssl rand -hex 32`. **Required** — without it the credential store fails to initialize and every onboarding callback returns 500.
+
+  Example:
+
+      export ANTHROCLAW_MASTER_KEY=$(openssl rand -hex 32)
+
+  Persist this in your secrets manager / systemd EnvironmentFile / docker secrets. Rotating the master key invalidates all stored credentials.
+
 In production, the URL must use HTTPS. The system logs a warning if any OAuth endpoint (provider's token / authorization / registration URLs) is reached over HTTP in production.
