@@ -81,6 +81,64 @@ describe('AddMcpWizard — apikey path', () => {
     });
   });
 
+  it('surfaces finalize failure instead of silently closing on Save & Connect', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo) => {
+        const url = String(input);
+        if (url.endsWith('/api/mcp/probe')) {
+          return new Response(
+            JSON.stringify({ authMode: 'apikey', server: { name: 'x' } }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith('/api/mcp/connect/start')) {
+          return new Response(
+            JSON.stringify({ status: 'awaiting_apikey', pendingId: 'pnd_x' }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith('/api/mcp/connect/apikey')) {
+          return new Response(
+            JSON.stringify({ status: 'connected', tools: [{ name: 'a' }] }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith('/api/mcp/connect/finalize')) {
+          return new Response(
+            JSON.stringify({ error: 'pending_expired' }),
+            { status: 410 },
+          );
+        }
+        throw new Error('unexpected ' + url);
+      }),
+    );
+
+    const onSaved = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <AddMcpWizard agentId="a1" onSaved={onSaved} onClose={onClose} />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/mcp\.x\.io/), {
+      target: { value: 'https://mcp.test/mcp' },
+    });
+    fireEvent.click(screen.getByText(/Continue/));
+    await screen.findByText(/bearer token/i);
+    fireEvent.change(screen.getByLabelText(/api key/i), {
+      target: { value: 'sk_test' },
+    });
+    fireEvent.click(screen.getByText(/Continue/));
+    await screen.findByText('a');
+    fireEvent.click(screen.getByText(/Save & Connect/));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Couldn't save/i)).toBeInTheDocument();
+    });
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('shows error and stays on URL step when probe returns manual', async () => {
     vi.stubGlobal(
       'fetch',

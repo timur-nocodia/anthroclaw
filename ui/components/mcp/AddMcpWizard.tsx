@@ -135,11 +135,17 @@ export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
           setError('Lost pending connection — please restart');
           return;
         }
-        await fetch('/api/mcp/connect/finalize', {
+        const res = await fetch('/api/mcp/connect/finalize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pendingId, allowed_tools: [...allowed] }),
         });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          const friendly = body.error ? (FRIENDLY_REASONS[body.error] ?? `Couldn't save — ${body.error}`) : `Couldn't save (status ${res.status})`;
+          setError(friendly);
+          return;
+        }
         onSaved();
         onClose();
       }
