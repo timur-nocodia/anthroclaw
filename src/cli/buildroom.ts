@@ -125,12 +125,13 @@ function commandStatus(args: ParsedArgs, io: CliIO): number {
   const config = loadBuildroomRoomConfig(args.root, args.room);
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const counts = deriveStatusCounts(store);
+  const state = deriveRoomState(config, counts);
   const latestTrust = latestOptionalArtifact(store, 'trust_report');
   io.stdout([
     `Buildroom: ${config.roomId}`,
     `Mode: ${config.mode}`,
     `Paused: ${config.paused ? 'yes' : 'no'}`,
-    'State: idle',
+    `State: ${state}`,
     `Latest trust: ${String(latestTrust?.payload.trustState ?? 'none')}`,
     `Kill switch: ${config.killSwitchActive ? 'active' : 'inactive'}`,
     '',
@@ -163,6 +164,8 @@ function deriveStatusCounts(store: FileArtifactStore): {
   approvedNotBuilt: number;
   activeBuilds: number;
   qaPending: number;
+  trustPending: number;
+  complete: number;
 } {
   const reviews = store.listArtifacts('main_review');
   const approvals = store.listArtifacts('approval');
@@ -170,6 +173,7 @@ function deriveStatusCounts(store: FileArtifactStore): {
   const plans = store.listArtifacts('build_plan');
   const builds = store.listArtifacts('coder_receipt');
   const qaReports = store.listArtifacts('qa_report');
+  const trustReports = store.listArtifacts('trust_report');
 
   const approvedReviewIds = new Set(
     approvals.map((approval) => String(approval.payload.targetReviewId ?? '')),
@@ -183,6 +187,7 @@ function deriveStatusCounts(store: FileArtifactStore): {
     plans.map((plan) => String(plan.payload.approvalId ?? '')),
   );
   const qaBuildIds = new Set(qaReports.flatMap((qa) => qa.parentIds));
+  const trustBuildIds = new Set(trustReports.flatMap((trust) => trust.parentIds));
 
   return {
     pendingApprovals: reviews.filter(
@@ -199,7 +204,26 @@ function deriveStatusCounts(store: FileArtifactStore): {
     ).length,
     activeBuilds: builds.filter((build) => build.payload.runtimeStatus === 'running').length,
     qaPending: builds.filter((build) => !qaBuildIds.has(build.id)).length,
+    trustPending: builds.filter(
+      (build) => qaBuildIds.has(build.id) && !trustBuildIds.has(build.id),
+    ).length,
+    complete: trustReports.length,
   };
+}
+
+function deriveRoomState(
+  config: { mode: string; paused?: boolean; killSwitchActive: boolean },
+  counts: ReturnType<typeof deriveStatusCounts>,
+): string {
+  if (config.killSwitchActive) return 'blocked';
+  if (config.paused) return 'paused';
+  if (counts.activeBuilds > 0) return 'building';
+  if (counts.qaPending > 0) return 'qa_pending';
+  if (counts.trustPending > 0) return 'trust_pending';
+  if (counts.approvedNotBuilt > 0) return 'approved';
+  if (counts.pendingApprovals > 0) return 'awaiting_approval';
+  if (counts.complete > 0) return 'complete';
+  return config.mode === 'off' ? 'blocked' : 'idle';
 }
 
 function commandCollect(args: ParsedArgs, io: CliIO): number {

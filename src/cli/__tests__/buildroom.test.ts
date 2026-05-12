@@ -390,6 +390,33 @@ describe('buildroom CLI', () => {
     expect(store.listArtifacts('trust_report')).toEqual([]);
   });
 
+  it('derives status state from the active receipt chain', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+    const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
+    store.writeArtifact(
+      artifact('build_20260512_docs', 'coder_receipt', {
+        runtimeStatus: 'completed',
+        builderClaims: ['Updated operator guide.'],
+        postRunPolicyResult: { allowed: true, changedFiles: ['docs/guide.md'], violations: [] },
+      }),
+    );
+
+    out.length = 0;
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('State: qa_pending');
+
+    await run(['qa', 'build_20260512_docs', '--root', root]);
+    out.length = 0;
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('State: trust_pending');
+
+    await run(['trust', 'build_20260512_docs', '--root', root]);
+    out.length = 0;
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('State: complete');
+    expect(out.join('\n')).toContain('Latest trust: clean');
+  });
+
   it('renders and saves an operator report from latest trust receipt', async () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
