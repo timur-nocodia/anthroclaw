@@ -104,6 +104,42 @@ describe('probe', () => {
     expect(result).toEqual({ authMode: 'manual', reason: 'non_bearer_scheme' });
   });
 
+  it('advertises Accept: application/json AND text/event-stream', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        jsonrpc: '2.0',
+        id: 1,
+        result: { serverInfo: { name: 'srv', version: '1' } },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await probe(MCP_URL);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const firstCall = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+    const headers = (firstCall[1]?.headers ?? {}) as Record<string, string>;
+    expect(headers.Accept).toContain('application/json');
+    expect(headers.Accept).toContain('text/event-stream');
+  });
+
+  it('extracts serverInfo from a text/event-stream initialize body', async () => {
+    const sseBody = `: ping\n\ndata: {"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"sse-srv","version":"2"}}}\n\n`;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(sseBody, {
+            status: 200,
+            headers: { 'Content-Type': 'text/event-stream' },
+          }),
+      ),
+    );
+    const result = await probe(MCP_URL);
+    expect(result).toEqual({
+      authMode: 'none',
+      server: { name: 'sse-srv', version: '2' },
+    });
+  });
+
   it('returns authMode "manual" on 5xx', async () => {
     vi.stubGlobal(
       'fetch',
