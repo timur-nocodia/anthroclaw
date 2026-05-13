@@ -618,6 +618,45 @@ export function createOnboarding(deps: OnboardingDeps) {
   }
 
   /**
+   * Read the discovered tools + serverId metadata stored on a completed
+   * pending row. Used by the OAuth-resume route handler in the UI: after
+   * the OAuth callback lands the operator back on the agent page with
+   * `?mcpWizard=tools&pendingId=…`, the wizard needs the same `tools` and
+   * `serverId` that `attachApiKey` / `completeOAuth` already discovered
+   * so the operator can pick which to allow and then `finalize`.
+   *
+   * Returns null for unknown ids and for rows still in `pending`/`failed`
+   * states (tools are only meaningful after a successful initialize +
+   * tools/list handshake). Returns the metadata for `completed` and the
+   * intermediate `exchanging` state so a slow caller doesn't race.
+   */
+  function getPendingTools(pendingId: string): {
+    status: PendingConnection['status'];
+    agentId: string;
+    serverId?: string;
+    tools: Array<{ name: string; description?: string }>;
+  } | null {
+    const row = deps.pending.byId(pendingId);
+    if (!row) return null;
+    if (row.status === 'pending' || row.status === 'failed' || row.status === 'cancelled') {
+      return { status: row.status, agentId: row.agentId, tools: [] };
+    }
+    let parsed: { serverId?: string; tools?: Array<{ name: string; description?: string }> } = {};
+    try {
+      parsed = JSON.parse(row.toolsMetadata ?? '{}');
+    } catch {
+      // Corrupt metadata — surface as empty tools rather than 500. The
+      // caller will offer the operator a "Save with no tools" path.
+    }
+    return {
+      status: row.status,
+      agentId: row.agentId,
+      serverId: parsed.serverId,
+      tools: parsed.tools ?? [],
+    };
+  }
+
+  /**
    * Mark an mcp_oauth credential as requiring re-authorization (sets
    * `metadata.needs_reauth = '1'`) and emit a `reauth_required` event so
    * the Gateway can dispatch a synthetic `[system] mcp_reauth_required`
@@ -717,6 +756,7 @@ export function createOnboarding(deps: OnboardingDeps) {
     getAuthUrlForPending,
     cancelByState,
     getPending,
+    getPendingTools,
     cancel,
     markReauthRequired,
     events,

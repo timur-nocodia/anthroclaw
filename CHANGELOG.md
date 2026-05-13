@@ -6,6 +6,34 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.11.4] - 2026-05-13
+
+Closes the loop on OAuth onboarding. The v0.11.0 wizard let you start
+OAuth, but after the callback redirected back, nothing in the UI read
+the `?mcpWizard=tools&pendingId=…` query params — so the wizard never
+re-opened at the tool-selection step, `finalize` never ran, and the
+saved credential ended up orphaned (the server didn't appear in
+`agent.yml`).
+
+### Added
+
+- **`GET /api/mcp/pending/[pendingId]`.**
+  Returns the discovered `tools` + `serverId` for a completed pending
+  row so the wizard can resume at step 3. Surfaced from the facade as
+  `getPendingTools()`. Unauthenticated for the same reason as
+  `POST /api/mcp/connect/apikey` — the 32-byte pendingId is itself the
+  capability token.
+- **`AddMcpWizard` resume mode (`resumePendingId` prop).**
+  When the page passes a pendingId, the wizard hydrates tools from the
+  new endpoint and skips straight to step 3.
+
+### Fixed
+
+- **OAuth completion now actually persists the server to `agent.yml`.**
+  `<McpServersSection />` watches its mount URL: when it sees
+  `?mcpWizard=tools&pendingId=…` it opens the wizard in resume mode and
+  strips the params from the URL so a refresh doesn't re-trigger.
+
 ## [0.11.3] - 2026-05-13
 
 Hotfix for MCP OAuth onboarding behind a reverse proxy.

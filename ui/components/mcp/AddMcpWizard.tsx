@@ -8,7 +8,7 @@
  */
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,15 @@ export interface AddMcpWizardProps {
   agentId: string;
   onClose: () => void;
   onSaved: () => void;
+  /**
+   * Resume an in-flight onboarding at the tools-selection step. Passed by
+   * the agent page when the OAuth callback redirects back with
+   * `?mcpWizard=tools&pendingId=…` — at that point the credential is
+   * saved and `tools` have been discovered, but `finalize` hasn't run.
+   * The wizard hydrates the tools from `GET /api/mcp/pending/<id>` and
+   * skips straight to step 3.
+   */
+  resumePendingId?: string;
 }
 
 type Step = 'url' | 'auth' | 'tools';
@@ -40,10 +49,10 @@ function friendlyRejectMessage(reason: string | undefined): string {
   return FRIENDLY_REASONS[r] ?? `Couldn't connect — ${r}`;
 }
 
-export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
-  const [step, setStep] = useState<Step>('url');
+export function AddMcpWizard({ agentId, onClose, onSaved, resumePendingId }: AddMcpWizardProps) {
+  const [step, setStep] = useState<Step>(resumePendingId ? 'tools' : 'url');
   const [url, setUrl] = useState('');
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(resumePendingId ?? null);
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [serverName, setServerName] = useState<string | null>(null);
@@ -52,6 +61,38 @@ export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
   const [allowed, setAllowed] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Resume path: hydrate the tools list for the pending row whose OAuth
+  // just completed. The credential is already saved at this point — only
+  // `finalize` (run by clicking Save below) remains to be done.
+  useEffect(() => {
+    if (!resumePendingId) return;
+    let cancelled = false;
+    (async () => {
+      setBusy(true);
+      try {
+        const res = await fetch(`/api/mcp/pending/${encodeURIComponent(resumePendingId)}`);
+        if (!res.ok) {
+          if (!cancelled) setError(`Couldn't resume onboarding — pending session not found.`);
+          return;
+        }
+        const body = await res.json();
+        if (cancelled) return;
+        if (body.status !== 'completed') {
+          setError(`Onboarding ${body.status} — restart from the + Add server button.`);
+          return;
+        }
+        const discovered = (body.tools ?? []) as Array<{ name: string; description?: string }>;
+        setTools(discovered);
+        setAllowed(new Set(discovered.map((t) => t.name)));
+      } catch (err) {
+        if (!cancelled) setError((err as Error).message);
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [resumePendingId]);
 
   async function next() {
     setError(null);

@@ -83,8 +83,30 @@ export function McpServersSection({
   hideAdvanced = false,
 }: McpServersSectionProps) {
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [resumePendingId, setResumePendingId] = useState<string | null>(null);
   const [editAllowedFor, setEditAllowedFor] = useState<string | null>(null);
   const [liveStatuses, setLiveStatuses] = useState<Record<string, LiveEntry>>({});
+
+  // Resume an OAuth flow that landed back here via the callback's redirect
+  // `?mcpWizard=tools&pendingId=…`. Without this the wizard never re-opens
+  // at the tools-selection step, finalize never runs, and the saved
+  // credential is orphaned (the server doesn't show up in agent.yml).
+  // Strip the query params from the URL once consumed so a refresh doesn't
+  // re-trigger the same dialog.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("mcpWizard") !== "tools") return;
+    const pid = sp.get("pendingId");
+    if (!pid) return;
+    setResumePendingId(pid);
+    setWizardOpen(true);
+    sp.delete("mcpWizard");
+    sp.delete("pendingId");
+    const qs = sp.toString();
+    const url = window.location.pathname + (qs.length > 0 ? `?${qs}` : "");
+    window.history.replaceState({}, "", url);
+  }, []);
   const [preflightStates, setPreflightStates] = useState<
     Record<string, ExternalMcpPreflightStateSummary>
   >({});
@@ -269,8 +291,13 @@ export function McpServersSection({
       {wizardOpen && (
         <AddMcpWizard
           agentId={agentId}
-          onClose={() => setWizardOpen(false)}
+          resumePendingId={resumePendingId ?? undefined}
+          onClose={() => {
+            setWizardOpen(false);
+            setResumePendingId(null);
+          }}
           onSaved={() => {
+            setResumePendingId(null);
             void onReload();
           }}
         />
