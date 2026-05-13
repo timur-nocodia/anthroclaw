@@ -30,6 +30,15 @@ interface AgentConfigShape {
   [key: string]: unknown;
 }
 
+/**
+ * `/api/agents/[agentId]` returns `{ raw: string; parsed: AgentConfig }` —
+ * NOT the bare parsed config. McpTab needs the inner `parsed` object.
+ */
+interface AgentConfigEnvelope {
+  raw?: string;
+  parsed?: AgentConfigShape;
+}
+
 export interface McpTabProps {
   agentId: string;
 }
@@ -48,9 +57,10 @@ export function McpTab({ agentId }: McpTabProps) {
     try {
       const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}`);
       if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
-      const body = (await res.json()) as AgentConfigShape;
-      setConfig(body);
-      setDraft(body.external_mcp_servers ?? {});
+      const envelope = (await res.json()) as AgentConfigEnvelope;
+      const parsed = envelope.parsed ?? {};
+      setConfig(parsed);
+      setDraft(parsed.external_mcp_servers ?? {});
       setDirty(false);
     } catch (err) {
       setError((err as Error).message);
