@@ -688,6 +688,111 @@ describe('onboarding facade — apikey branch', () => {
     expect(row?.toolsMetadata).toBeTruthy();
   });
 
+  it('attachApiKey handles Streamable HTTP servers (SSE + session id)', async () => {
+    // Reproduces mcp.apify.com: requires Accept: text/event-stream, issues
+    // Mcp-Session-Id, expects notifications/initialized before tools/list,
+    // replies in SSE. Without the fix the apikey wizard surfaced "Invalid
+    // key" even though the token was valid.
+    probeStub.mockResolvedValueOnce({
+      authMode: 'apikey',
+      server: { name: 'apify' },
+    });
+    const started = await onboarding.startConnection({
+      url: 'https://mcp.apify.com',
+      requester: { kind: 'admin', userId: 'u1', agentId: 'a1' },
+    });
+
+    const SESSION = 'sess_apify_123';
+    let initialized = false;
+    const calls: Array<{ method: string; sessionId: string | null; accept: string | null }> = [];
+    const fetchStub = vi.fn(async (_url: string, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      const accept = headers['Accept'] ?? headers['accept'] ?? null;
+      const sessionId = headers['Mcp-Session-Id'] ?? headers['mcp-session-id'] ?? null;
+      const body = JSON.parse((init?.body as string) ?? '{}');
+      calls.push({ method: body.method, sessionId, accept });
+
+      if (!accept?.includes('text/event-stream')) {
+        return new Response(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32000, message: 'Not Acceptable' },
+            id: null,
+          }),
+          { status: 406, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      if (body.method === 'initialize') {
+        const payload = `event: message\ndata: ${JSON.stringify({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: { serverInfo: { name: 'apify-mcp-server', version: '0.10.3' } },
+        })}\n\n`;
+        return new Response(payload, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Mcp-Session-Id': SESSION,
+          },
+        });
+      }
+
+      if (body.method === 'notifications/initialized') {
+        if (sessionId !== SESSION) {
+          return new Response('Bad session', { status: 400 });
+        }
+        initialized = true;
+        return new Response(null, { status: 202 });
+      }
+
+      if (body.method === 'tools/list') {
+        if (sessionId !== SESSION || !initialized) {
+          return new Response(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              error: {
+                code: -32000,
+                message: 'Bad Request: No valid session ID provided',
+              },
+              id: null,
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        const payload = `event: message\ndata: ${JSON.stringify({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: { tools: [{ name: 'search-actors', description: 'd' }] },
+        })}\n\n`;
+        return new Response(payload, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        });
+      }
+
+      throw new Error('unexpected ' + body.method);
+    });
+    vi.stubGlobal('fetch', fetchStub);
+
+    const res = await onboarding.attachApiKey({
+      pendingId: started.pendingId!,
+      token: 'apify_api_xxx',
+    });
+    expect(res.status).toBe('connected');
+    expect(res.tools?.map((t) => t.name)).toEqual(['search-actors']);
+
+    // Verify the full handshake fired in order and propagated the session id.
+    expect(calls.map((c) => c.method)).toEqual([
+      'initialize',
+      'notifications/initialized',
+      'tools/list',
+    ]);
+    expect(calls[0]?.accept).toContain('text/event-stream');
+    expect(calls[1]?.sessionId).toBe(SESSION);
+    expect(calls[2]?.sessionId).toBe(SESSION);
+  });
+
   it('attachApiKey returns invalid_token on 401', async () => {
     probeStub.mockResolvedValueOnce({
       authMode: 'apikey',

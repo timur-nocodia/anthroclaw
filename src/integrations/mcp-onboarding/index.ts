@@ -470,42 +470,49 @@ export function createOnboarding(deps: OnboardingDeps) {
       return { status: 'invalid_token' };
     }
 
-    const initRes = await fetch(row.mcpUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${opts.token}`,
+    // MCP Streamable HTTP transport requires advertising both
+    // application/json AND text/event-stream — servers like Apify
+    // (mcp.apify.com) reject the handshake with HTTP 406 otherwise. The
+    // server may then issue a session id via the `mcp-session-id` response
+    // header that must be echoed on every subsequent call, and it may
+    // reply in either content type. See PR #26 for the equivalent fix on
+    // the unauthenticated probe.
+    const initRes = await mcpFetch(row.mcpUrl, opts.token, undefined, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'anthroclaw', version: '0.1' },
       },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: '2024-11-05',
-          capabilities: {},
-          clientInfo: { name: 'anthroclaw', version: '0.1' },
-        },
-      }),
     });
     if (!initRes.ok) return { status: 'invalid_token' };
+    const sessionId = initRes.sessionId;
 
-    const toolsRes = await fetch(row.mcpUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${opts.token}`,
-      },
-      body: JSON.stringify({
+    // Spec-required notification after initialize. Servers that don't use
+    // sessions ignore it; servers that do (Apify) reject tools/list until
+    // it's sent. Best-effort: failures here surface as failures on the
+    // next call.
+    if (sessionId) {
+      await mcpFetch(row.mcpUrl, opts.token, sessionId, {
         jsonrpc: '2.0',
-        id: 2,
-        method: 'tools/list',
+        method: 'notifications/initialized',
         params: {},
-      }),
+      }).catch(() => undefined);
+    }
+
+    const toolsRes = await mcpFetch(row.mcpUrl, opts.token, sessionId, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/list',
+      params: {},
     });
-    const toolsBody = (await toolsRes.json()) as {
+    if (!toolsRes.ok) return { status: 'invalid_token' };
+    const toolsBody = toolsRes.body as {
       result?: { tools?: Array<{ name: string; description?: string }> };
-    };
-    const tools = toolsBody.result?.tools ?? [];
+    } | null;
+    const tools = toolsBody?.result?.tools ?? [];
 
     const takenIds = await deps.listTakenServerIds(row.agentId);
     const serverId = deriveServerId(row.mcpUrl, takenIds);
@@ -763,4 +770,67 @@ async function listToolsNoAuth(
     result?: { tools?: Array<{ name: string; description?: string }> };
   };
   return body.result?.tools ?? [];
+}
+
+/**
+ * MCP Streamable HTTP transport call against an authenticated server.
+ * Mirrors `listToolsNoAuth` but: (a) sends a Bearer token, (b) passes /
+ * receives the `Mcp-Session-Id` header, (c) returns ok/body/sessionId
+ * instead of throwing, so the caller can compose the multi-step handshake
+ * (initialize → initialized notification → tools/list) and surface
+ * `invalid_token` on any failure.
+ *
+ * `notifications/initialized` is a notification (no JSON-RPC `id`) and
+ * servers reply 200/202 with no body — `body` is `null` in that case.
+ */
+async function mcpFetch(
+  url: string,
+  token: string,
+  sessionId: string | undefined,
+  payload: object,
+): Promise<{ ok: boolean; body: unknown; sessionId?: string }> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/event-stream',
+    Authorization: `Bearer ${token}`,
+  };
+  if (sessionId) headers['Mcp-Session-Id'] = sessionId;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    return { ok: false, body: null };
+  }
+  const sid = res.headers.get('mcp-session-id') ?? undefined;
+  if (!res.ok) return { ok: false, body: null, sessionId: sid };
+
+  // 202 Accepted is what servers return for notifications (initialized).
+  // 200 with empty body is also valid for some flows. Treat both as "ok,
+  // no body to parse".
+  if (res.status === 202) return { ok: true, body: null, sessionId: sid };
+  const ct = (res.headers.get('Content-Type') ?? '').toLowerCase();
+  if (ct.includes('text/event-stream')) {
+    const text = await res.text();
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (!data) continue;
+      try {
+        return { ok: true, body: JSON.parse(data), sessionId: sid };
+      } catch {
+        continue;
+      }
+    }
+    return { ok: true, body: null, sessionId: sid };
+  }
+  try {
+    return { ok: true, body: await res.json(), sessionId: sid };
+  } catch {
+    return { ok: true, body: null, sessionId: sid };
+  }
 }
