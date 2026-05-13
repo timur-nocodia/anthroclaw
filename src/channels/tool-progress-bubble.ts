@@ -1,4 +1,4 @@
-import { getToolEmoji, buildToolPreview } from './tool-display.js';
+import { resolveToolDisplay } from './tool-display.js';
 
 const THROTTLE_MS = 1500;
 const MAX_FLOOD_STRIKES = 3;
@@ -59,16 +59,21 @@ export class ToolProgressBubble {
       if (this.deps.config.subagentTools === 'parent') return;
     }
 
-    if (this.deps.config.mode === 'new' && this.seenToolsInBubble.has(payload.toolName)) {
+    const { emoji, displayName, preview } = resolveToolDisplay(
+      payload.toolName,
+      payload.toolInput,
+      this.deps.config.previewLength,
+      this.deps.config.toolEmojiOverrides,
+    );
+
+    if (this.deps.config.mode === 'new' && this.seenToolsInBubble.has(displayName)) {
       return;
     }
 
-    const emoji = getToolEmoji(payload.toolName, this.deps.config.toolEmojiOverrides);
-    const preview = buildToolPreview(payload.toolName, payload.toolInput, this.deps.config.previewLength);
     const indented = isSubagentChild && this.deps.config.subagentTools === 'indented';
     const text = preview
-      ? `${emoji} ${payload.toolName}: ${preview}`
-      : `${emoji} ${payload.toolName}`;
+      ? `${emoji} ${displayName}: ${preview}`
+      : `${emoji} ${displayName}`;
 
     const last = this.lines.at(-1);
     if (last && !last.errored && last.text === text && last.indented === indented) {
@@ -83,7 +88,7 @@ export class ToolProgressBubble {
       });
     }
 
-    this.seenToolsInBubble.add(payload.toolName);
+    this.seenToolsInBubble.add(displayName);
     this.scheduleFlush();
   }
 

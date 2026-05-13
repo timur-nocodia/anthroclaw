@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getToolEmoji, buildToolPreview } from '../tool-display.js';
+import { getToolEmoji, buildToolPreview, resolveToolDisplay } from '../tool-display.js';
 
 describe('getToolEmoji', () => {
   it('returns the right emoji for built-in tools', () => {
@@ -22,10 +22,28 @@ describe('getToolEmoji', () => {
     expect(getToolEmoji('web_search_brave')).toBe('🔎');
     expect(getToolEmoji('web_search_exa')).toBe('🔎');
     expect(getToolEmoji('list_skills')).toBe('📚');
+    expect(getToolEmoji('manage_skills')).toBe('📚');
     expect(getToolEmoji('manage_cron')).toBe('⏰');
     expect(getToolEmoji('send_message')).toBe('📤');
     expect(getToolEmoji('send_media')).toBe('📤');
     expect(getToolEmoji('access_control')).toBe('🔐');
+    expect(getToolEmoji('escalate')).toBe('🆘');
+    expect(getToolEmoji('connect_mcp')).toBe('🔌');
+    expect(getToolEmoji('local_note_propose')).toBe('📝');
+    expect(getToolEmoji('local_note_search')).toBe('📝');
+    expect(getToolEmoji('manage_human_takeover')).toBe('👤');
+    expect(getToolEmoji('manage_notifications')).toBe('🔔');
+    expect(getToolEmoji('manage_operator_console')).toBe('🎛️');
+    expect(getToolEmoji('session_search')).toBe('🕘');
+    expect(getToolEmoji('show_config')).toBe('⚙️');
+    expect(getToolEmoji('buildroom_submit_signal')).toBe('🏗️');
+    expect(getToolEmoji('buildroom_submit_session_summary')).toBe('🏗️');
+  });
+
+  it('returns book emoji for synthetic skill_read/write/edit names', () => {
+    expect(getToolEmoji('skill_read')).toBe('📚');
+    expect(getToolEmoji('skill_write')).toBe('📚');
+    expect(getToolEmoji('skill_edit')).toBe('📚');
   });
 
   it('returns plug emoji for any MCP tool', () => {
@@ -123,5 +141,71 @@ describe('buildToolPreview', () => {
   it('returns null when input is not an object', () => {
     expect(buildToolPreview('Bash', null, 40)).toBeNull();
     expect(buildToolPreview('Bash', 'string', 40)).toBeNull();
+  });
+});
+
+describe('resolveToolDisplay — skill-file detection', () => {
+  it('Read of .claude/skills/<name>/SKILL.md → skill_read with skill name preview', () => {
+    const r = resolveToolDisplay('Read', { file_path: '/repo/.claude/skills/newsletter-automation/SKILL.md' }, 40);
+    expect(r.emoji).toBe('📚');
+    expect(r.displayName).toBe('skill_read');
+    expect(r.preview).toBe('newsletter-automation');
+  });
+
+  it('Write of agents/<id>/skills/<name>/foo → skill_write', () => {
+    const r = resolveToolDisplay('Write', { file_path: '/repo/agents/timur_agent/skills/twitter-autopilot/notes.md' }, 40);
+    expect(r.emoji).toBe('📚');
+    expect(r.displayName).toBe('skill_write');
+    expect(r.preview).toBe('twitter-autopilot');
+  });
+
+  it('Edit of plugins/<id>/skills/<name>/x → skill_edit', () => {
+    const r = resolveToolDisplay('Edit', { file_path: 'plugins/operator-console/skills/some-skill/instructions.md' }, 40);
+    expect(r.emoji).toBe('📚');
+    expect(r.displayName).toBe('skill_edit');
+    expect(r.preview).toBe('some-skill');
+  });
+
+  it('Read of bare skills/<name>/x.md (relative) → skill_read', () => {
+    const r = resolveToolDisplay('Read', { file_path: 'skills/foo-bar/baz.md' }, 40);
+    expect(r.displayName).toBe('skill_read');
+    expect(r.preview).toBe('foo-bar');
+  });
+
+  it('Read of a non-skill file falls back to normal Read', () => {
+    const r = resolveToolDisplay('Read', { file_path: '/repo/src/index.ts' }, 40);
+    expect(r.emoji).toBe('📖');
+    expect(r.displayName).toBe('Read');
+    expect(r.preview).toBe('index.ts');
+  });
+
+  it('NotebookEdit is NOT considered a file op for skill detection', () => {
+    const r = resolveToolDisplay('NotebookEdit', { notebook_path: '/repo/skills/foo/x.ipynb' }, 40);
+    expect(r.displayName).toBe('NotebookEdit');
+  });
+
+  it('Bash is unaffected (not a file-op tool)', () => {
+    const r = resolveToolDisplay('Bash', { command: 'ls skills/' }, 40);
+    expect(r.emoji).toBe('💻');
+    expect(r.displayName).toBe('Bash');
+    expect(r.preview).toBe('ls skills/');
+  });
+
+  it('skill detection passes through emoji overrides', () => {
+    const r = resolveToolDisplay('Read', { file_path: '.claude/skills/foo/SKILL.md' }, 40, { skill_read: '🚀' });
+    expect(r.emoji).toBe('🚀');
+    expect(r.displayName).toBe('skill_read');
+  });
+
+  it('truncation respects previewLength for skill names', () => {
+    const r = resolveToolDisplay('Read', { file_path: '.claude/skills/very-long-skill-name-indeed/x.md' }, 10);
+    expect(r.preview?.length).toBeLessThanOrEqual(10);
+    expect(r.preview?.endsWith('…')).toBe(true);
+  });
+
+  it('non-file-op Read with non-string file_path passes through', () => {
+    const r = resolveToolDisplay('Read', { file_path: 42 }, 40);
+    expect(r.displayName).toBe('Read');
+    expect(r.preview).toBeNull();
   });
 });
