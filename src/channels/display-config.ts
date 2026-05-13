@@ -1,47 +1,85 @@
+import type { ProfileName } from '../security/types.js';
+
 export type ToolProgress = 'all' | 'new' | 'off';
+export type SubagentTools = 'parent' | 'all' | 'indented';
 
 export interface DisplayConfig {
   toolProgress: ToolProgress;
   streaming: boolean;
   toolPreviewLength: number;
   showReasoning: boolean;
+  cleanupProgress: boolean;
+  subagentTools: SubagentTools;
+  toolEmojis?: Record<string, string>;
 }
 
-const PLATFORM_DEFAULTS: Record<string, DisplayConfig> = {
-  // Tool-progress / verbose surfacing is OFF by default on every platform.
-  // It's a debug/dev affordance — for production conversational agents it
-  // looks like log spam to the end user (especially in WhatsApp DMs and
-  // public Telegram groups). Opt in per-agent via agent.yml:
-  //   display:
-  //     toolProgress: all   # every tool call posts a status line
-  //     toolProgress: new   # only the first call of each tool name
-  // Per-platform `streaming` and `toolPreviewLength` defaults are kept since
-  // those affect rendering, not whether internal trace leaks to the user.
-  telegram: { toolProgress: 'off', streaming: true, toolPreviewLength: 40, showReasoning: false },
-  whatsapp: { toolProgress: 'off', streaming: false, toolPreviewLength: 0, showReasoning: false },
+interface PlatformDefaults {
+  streaming: boolean;
+  toolPreviewLength: number;
+}
+
+// Platform-specific render concerns. Tool-progress visibility is NOT
+// per-platform; it's per safety-profile (see below).
+const PLATFORM_DEFAULTS: Record<string, PlatformDefaults> = {
+  telegram: { streaming: true, toolPreviewLength: 40 },
+  whatsapp: { streaming: false, toolPreviewLength: 0 },
 };
 
-const GLOBAL_DEFAULTS: DisplayConfig = {
-  toolProgress: 'off',
-  streaming: false,
-  toolPreviewLength: 0,
+const PLATFORM_FALLBACK: PlatformDefaults = { streaming: false, toolPreviewLength: 0 };
+
+const HARDCODED_DEFAULTS = {
   showReasoning: false,
+  cleanupProgress: false,
+  subagentTools: 'parent' as SubagentTools,
 };
 
 /**
  * Resolve display config with tiered defaults.
- * Resolution order: overrides > PLATFORM_DEFAULTS[platform] > GLOBAL_DEFAULTS
- * For each field: first non-undefined value wins.
+ *
+ * Resolution order (per field, first non-undefined wins):
+ *   1. agent.yml display.*       (agentOverrides)
+ *   2. config.yml defaults.display.* (globalDefaults)
+ *   3. safety-profile default (toolProgress only: public→off, else→new)
+ *   4. platform default (streaming, toolPreviewLength only)
+ *   5. hardcoded fallback
  */
 export function resolveDisplayConfig(
   platform: string,
-  overrides?: Partial<DisplayConfig>,
+  safetyProfile: ProfileName,
+  agentOverrides?: Partial<DisplayConfig>,
+  globalDefaults?: Partial<DisplayConfig>,
 ): DisplayConfig {
-  const platformDefaults = PLATFORM_DEFAULTS[platform];
+  const platformDefaults = PLATFORM_DEFAULTS[platform] ?? PLATFORM_FALLBACK;
+
+  const safetyToolProgress: ToolProgress = safetyProfile === 'public' ? 'off' : 'new';
+
   return {
-    toolProgress: overrides?.toolProgress ?? platformDefaults?.toolProgress ?? GLOBAL_DEFAULTS.toolProgress,
-    streaming: overrides?.streaming ?? platformDefaults?.streaming ?? GLOBAL_DEFAULTS.streaming,
-    toolPreviewLength: overrides?.toolPreviewLength ?? platformDefaults?.toolPreviewLength ?? GLOBAL_DEFAULTS.toolPreviewLength,
-    showReasoning: overrides?.showReasoning ?? platformDefaults?.showReasoning ?? GLOBAL_DEFAULTS.showReasoning,
+    toolProgress:
+      agentOverrides?.toolProgress ??
+      globalDefaults?.toolProgress ??
+      safetyToolProgress,
+    streaming:
+      agentOverrides?.streaming ??
+      globalDefaults?.streaming ??
+      platformDefaults.streaming,
+    toolPreviewLength:
+      agentOverrides?.toolPreviewLength ??
+      globalDefaults?.toolPreviewLength ??
+      platformDefaults.toolPreviewLength,
+    showReasoning:
+      agentOverrides?.showReasoning ??
+      globalDefaults?.showReasoning ??
+      HARDCODED_DEFAULTS.showReasoning,
+    cleanupProgress:
+      agentOverrides?.cleanupProgress ??
+      globalDefaults?.cleanupProgress ??
+      HARDCODED_DEFAULTS.cleanupProgress,
+    subagentTools:
+      agentOverrides?.subagentTools ??
+      globalDefaults?.subagentTools ??
+      HARDCODED_DEFAULTS.subagentTools,
+    toolEmojis:
+      agentOverrides?.toolEmojis ??
+      globalDefaults?.toolEmojis,
   };
 }

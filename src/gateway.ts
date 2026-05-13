@@ -5054,7 +5054,7 @@ export class Gateway {
       // via agent.yml `display.toolProgress: all|new|off`. Without this, a
       // long query with many tool calls looks indistinguishable from a hung
       // bot. Used together with the continuous typing indicator.
-      const displayCfg = resolveDisplayConfig(msg.channel, agent.config.display);
+      const displayCfg = resolveDisplayConfig(msg.channel, agent.safetyProfile.name, agent.config.display);
       const announcedTools = new Set<string>();
       const announceToolUse = async (toolName: string, toolInput: unknown) => {
         if (displayCfg.toolProgress === 'off') return;
