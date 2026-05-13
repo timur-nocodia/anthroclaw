@@ -275,7 +275,7 @@ describe('AddMcpWizard — apikey path', () => {
     });
   });
 
-  it('shows friendly "open MCP servers" error and stays on URL step when reject reason is no_auth_servers_not_yet_supported', async () => {
+  it('skips the auth step for open servers (authMode=none) and lands directly in tool selection', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo) => {
@@ -289,8 +289,10 @@ describe('AddMcpWizard — apikey path', () => {
         if (url.endsWith('/api/mcp/connect/start')) {
           return new Response(
             JSON.stringify({
-              status: 'rejected',
-              reason: 'no_auth_servers_not_yet_supported',
+              status: 'connected',
+              pendingId: 'pnd_open',
+              serverName: 'open',
+              tools: [{ name: 'tool_one' }, { name: 'tool_two' }],
             }),
             { status: 200 },
           );
@@ -305,16 +307,11 @@ describe('AddMcpWizard — apikey path', () => {
       target: { value: 'https://open.example/mcp' },
     });
     fireEvent.click(screen.getByText(/Continue/));
-    await screen.findByRole('alert');
-    // Friendly copy now, no raw internal reason code.
-    expect(screen.getByRole('alert').textContent).toMatch(
-      /open MCP servers aren't supported yet/i,
-    );
-    expect(screen.getByRole('alert').textContent).not.toMatch(
-      /no_auth_servers_not_yet_supported/,
-    );
-    // Still on URL step.
-    expect(screen.getByPlaceholderText(/mcp\.x\.io/)).toBeInTheDocument();
+    // Both discovered tools render directly — no API key prompt in between.
+    await screen.findByText('tool_one');
+    expect(screen.getByText('tool_two')).toBeInTheDocument();
+    // Save button is the tools-step CTA, not the auth-step Continue.
+    expect(screen.getByText(/Save & Connect/)).toBeInTheDocument();
   });
 
   it('shows friendly DCR-required error when reject reason is dcr_required_but_not_supported', async () => {

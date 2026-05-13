@@ -131,17 +131,56 @@ describe('onboarding facade — apikey branch', () => {
     expect(probeStub).not.toHaveBeenCalled();
   });
 
-  it('startConnection rejects authMode=none with helpful reason', async () => {
+  it('startConnection on authMode=none discovers tools and returns connected', async () => {
     probeStub.mockResolvedValueOnce({
       authMode: 'none',
       server: { name: 'open' },
     });
+    // Stub fetch for the tools/list call. The facade hits the MCP URL
+    // directly (no Authorization header) and expects a Streamable HTTP
+    // JSON response.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: 2,
+              result: { tools: [{ name: 'demo_tool' }] },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+      ),
+    );
+    const res = await onboarding.startConnection({
+      url: 'https://mcp.open/y',
+      requester: { kind: 'admin', userId: 'u1', agentId: 'a1' },
+    });
+    expect(res.status).toBe('connected');
+    expect(res.pendingId).toBeTruthy();
+    expect(res.tools?.map((t) => t.name)).toEqual(['demo_tool']);
+    // Row should be marked completed so finalize() will accept it.
+    const row = pending.byId(res.pendingId!);
+    expect(row?.status).toBe('completed');
+    expect(row?.authMode).toBe('none');
+  });
+
+  it('startConnection on authMode=none rejects when tools/list fails', async () => {
+    probeStub.mockResolvedValueOnce({
+      authMode: 'none',
+      server: { name: 'open' },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('boom', { status: 502 })),
+    );
     const res = await onboarding.startConnection({
       url: 'https://mcp.open/y',
       requester: { kind: 'admin', userId: 'u1', agentId: 'a1' },
     });
     expect(res.status).toBe('rejected');
-    expect(res.reason).toBe('no_auth_servers_not_yet_supported');
+    expect(res.reason).toContain('tools_list');
   });
 
   it('rejects with reason when probe returns manual', async () => {

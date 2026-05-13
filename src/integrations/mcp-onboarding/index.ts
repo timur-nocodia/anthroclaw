@@ -79,6 +79,9 @@ export interface ConnectionStartResult {
   apikeyUrl?: string;
   serverName?: string;
   reason?: string;
+  /** Populated when `status === 'connected'` from the no-auth probe path. */
+  tools?: Array<{ name: string; description?: string }>;
+  serverId?: string;
 }
 
 export interface AttachApiKeyResult {
@@ -134,12 +137,6 @@ export function createOnboarding(deps: OnboardingDeps) {
     if (probed.authMode === 'manual') {
       return { status: 'rejected', reason: probed.reason };
     }
-    if (probed.authMode === 'none') {
-      return {
-        status: 'rejected',
-        reason: 'no_auth_servers_not_yet_supported',
-      };
-    }
 
     // Resolve the existing taken set from the agent's yml so concurrent
     // flows for the same hostname don't both pick the same id and silently
@@ -194,7 +191,7 @@ export function createOnboarding(deps: OnboardingDeps) {
       agentId: opts.requester.agentId,
       agentSessionKey: opts.requester.agentSessionKey ?? null,
       mcpUrl: opts.url,
-      authMode: probed.authMode === 'oauth' ? 'oauth' : 'apikey',
+      authMode: probed.authMode,
       codeVerifier,
       clientId,
       clientSecret,
@@ -216,6 +213,31 @@ export function createOnboarding(deps: OnboardingDeps) {
         apikeyUrl: `${deps.uiBaseUrl}/mcp/connect/${pendingId}/apikey`,
         serverName: probed.server?.name ?? serverId,
       };
+    }
+
+    if (probed.authMode === 'none') {
+      // Open server, no credential needed. Discover tools immediately so the
+      // wizard can skip step 2 entirely and go straight to tool selection.
+      try {
+        const tools = await listToolsNoAuth(opts.url);
+        deps.pending.markCompleted(
+          pendingId,
+          JSON.stringify({ tools, serverId }),
+        );
+        return {
+          status: 'connected',
+          pendingId,
+          serverName: probed.server?.name ?? serverId,
+          tools,
+          serverId,
+        };
+      } catch (err) {
+        deps.pending.markFailed(pendingId, (err as Error).message);
+        return {
+          status: 'rejected',
+          reason: `tools_list_failed: ${(err as Error).message}`,
+        };
+      }
     }
 
     // OAuth: return the wizard-facing one-shot URL. The route at that path
@@ -539,16 +561,28 @@ export function createOnboarding(deps: OnboardingDeps) {
     if (!deps.writeAgentYml) {
       throw new Error('write_agent_yml_dependency_missing');
     }
+    // Open servers (authMode='none') are reachable without a credential —
+    // emit a credential_ref-free entry so resolveExternalMcpHeaders simply
+    // skips the credential lookup and passes the spec through unchanged.
+    const entry =
+      row.authMode === 'none'
+        ? {
+            type: 'http' as const,
+            url: row.mcpUrl,
+            display_name: serverId,
+            allowed_tools: allowed,
+          }
+        : {
+            type: 'http' as const,
+            url: row.mcpUrl,
+            display_name: serverId,
+            credential_ref: `mcp:${serverId}`,
+            allowed_tools: allowed,
+          };
     await deps.writeAgentYml({
       agentId: row.agentId,
       key: serverId,
-      entry: {
-        type: 'http',
-        url: row.mcpUrl,
-        display_name: serverId,
-        credential_ref: `mcp:${serverId}`,
-        allowed_tools: allowed,
-      },
+      entry,
     });
 
     return { status: 'connected', server: serverId, tools };
@@ -680,4 +714,53 @@ export function createOnboarding(deps: OnboardingDeps) {
     events,
     _debug,
   };
+}
+
+/**
+ * `tools/list` against an MCP server with no Authorization header. Used by
+ * the `authMode === 'none'` branch of `startConnection` to discover tools
+ * for open MCP servers (e.g. mcp.exa.ai) without ever issuing a
+ * credential. Throws on non-OK HTTP so the caller can mark the pending row
+ * `failed` with a useful reason. SSE responses are parsed via the first
+ * `data:` event, matching the Streamable HTTP transport.
+ */
+async function listToolsNoAuth(
+  mcpUrl: string,
+): Promise<Array<{ name: string; description?: string }>> {
+  const res = await fetch(mcpUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/list',
+      params: {},
+    }),
+  });
+  if (!res.ok) throw new Error(`tools_list_status_${res.status}`);
+  const ct = (res.headers.get('Content-Type') ?? '').toLowerCase();
+  if (ct.includes('text/event-stream')) {
+    const text = await res.text();
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (!payload) continue;
+      try {
+        const env = JSON.parse(payload) as {
+          result?: { tools?: Array<{ name: string; description?: string }> };
+        };
+        return env.result?.tools ?? [];
+      } catch {
+        continue;
+      }
+    }
+    return [];
+  }
+  const body = (await res.json()) as {
+    result?: { tools?: Array<{ name: string; description?: string }> };
+  };
+  return body.result?.tools ?? [];
 }

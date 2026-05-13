@@ -8,7 +8,7 @@ export interface PendingConnection {
   agentId: string;
   agentSessionKey: string | null;
   mcpUrl: string;
-  authMode: 'oauth' | 'apikey';
+  authMode: 'oauth' | 'apikey' | 'none';
   codeVerifier: string | null;
   clientId: string | null;
   clientSecret: string | null;
@@ -68,7 +68,7 @@ export function openPendingStore(path: string): PendingStore {
     agentId: r.agent_id as string,
     agentSessionKey: (r.agent_session_key as string | null) ?? null,
     mcpUrl: r.mcp_url as string,
-    authMode: r.auth_mode as 'oauth' | 'apikey',
+    authMode: r.auth_mode as PendingConnection['authMode'],
     codeVerifier: (r.code_verifier as string | null) ?? null,
     clientId: (r.client_id as string | null) ?? null,
     clientSecret: (r.client_secret as string | null) ?? null,

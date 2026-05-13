@@ -29,8 +29,6 @@ interface OAuthMeta {
 }
 
 const FRIENDLY_REASONS: Record<string, string> = {
-  no_auth_servers_not_yet_supported:
-    "This server doesn't require authentication. Open MCP servers aren't supported yet — paste a server URL that requires OAuth or an API key.",
   dcr_required_but_not_supported:
     'This server requires dynamic client registration, but no static client_id was configured for this instance. Configure OAUTH_STATIC_CLIENT_ID in your environment to use such servers.',
   mcp_onboarding_requires_dm:
@@ -90,6 +88,18 @@ export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
           });
         } else {
           setOauthMeta(null);
+        }
+        // Open server: facade probed, discovered tools, marked the pending
+        // row completed in a single call. Skip the auth step entirely.
+        if (start.status === 'connected') {
+          const discovered = (start.tools ?? []) as Array<{
+            name: string;
+            description?: string;
+          }>;
+          setTools(discovered);
+          setAllowed(new Set(discovered.map((t) => t.name)));
+          setStep('tools');
+          return;
         }
         setStep('auth');
         return;
