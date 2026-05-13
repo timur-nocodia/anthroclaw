@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ToolProgressBubble } from '../tool-progress-bubble.js';
+import { ToolProgressBubble, type ToolProgressBubbleDeps } from '../tool-progress-bubble.js';
 
-function makeDeps(overrides?: Partial<Parameters<typeof ToolProgressBubble.prototype.constructor>[0]['config']>) {
+function makeDeps(overrides?: Partial<ToolProgressBubbleDeps['config']>) {
   const sendFn = vi.fn(async (_text: string) => 'msg-1');
   const editFn = vi.fn(async (_id: string, _text: string) => true);
   const deleteFn = vi.fn(async (_id: string) => {});

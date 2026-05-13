@@ -108,6 +108,7 @@ import type {
 import type { ScheduledJob } from './cron/scheduler.js';
 import type { ChannelAdapter, InboundMessage } from './channels/types.js';
 import { resolveDisplayConfig } from './channels/display-config.js';
+import { ToolProgressBubble } from './channels/tool-progress-bubble.js';
 import { formatChannelOperatorContext, resolveChannelContext, resolveReplyToId } from './channels/context.js';
 import type { AgentYml, GlobalConfig } from './config/schema.js';
 import { HookEmitter } from './hooks/emitter.js';
@@ -5055,37 +5056,82 @@ export class Gateway {
       // long query with many tool calls looks indistinguishable from a hung
       // bot. Used together with the continuous typing indicator.
       const displayCfg = resolveDisplayConfig(msg.channel, agent.safetyProfile.name, agent.config.display);
-      const announcedTools = new Set<string>();
-      const announceToolUse = async (toolName: string, toolInput: unknown) => {
-        if (displayCfg.toolProgress === 'off') return;
-        if (displayCfg.toolProgress === 'new' && announcedTools.has(toolName)) return;
-        announcedTools.add(toolName);
+
+      let bubble: ToolProgressBubble | null = null;
+      let unsubBubbleStart: (() => void) | null = null;
+      let unsubBubbleError: (() => void) | null = null;
+      let contentBreakFired = false;
+
+      if (displayCfg.toolProgress !== 'off') {
         const ch = this.channels.get(msg.channel);
-        if (!ch) return;
-        const previewLen = displayCfg.toolPreviewLength;
-        let preview = '';
-        if (previewLen > 0 && toolInput && typeof toolInput === 'object') {
-          for (const value of Object.values(toolInput as Record<string, unknown>)) {
-            if (typeof value === 'string' && value.length > 0) {
-              preview = value.length > previewLen ? value.slice(0, previewLen) + '…' : value;
-              break;
-            }
+        if (ch) {
+          bubble = new ToolProgressBubble({
+            sendFn: (text) => ch.sendText(msg.peerId, text, {
+              accountId: msg.accountId,
+              threadId: msg.threadId,
+              parseMode: 'plain',
+            }).catch((err: unknown) => {
+              logger.debug({ err, agentId: agent.id }, 'bubble send failed');
+              return null;
+            }),
+            editFn: async (mid, text) => {
+              try {
+                await ch.editText(msg.peerId, mid, text, {
+                  accountId: msg.accountId,
+                  threadId: msg.threadId,
+                  parseMode: 'plain',
+                });
+                return true;
+              } catch (err) {
+                logger.debug({ err, agentId: agent.id, messageId: mid }, 'bubble edit failed');
+                return false;
+              }
+            },
+            deleteFn: displayCfg.cleanupProgress
+              ? (mid) => ch.deleteText(msg.peerId, mid, { accountId: msg.accountId })
+              : undefined,
+            config: {
+              mode: displayCfg.toolProgress,
+              subagentTools: displayCfg.subagentTools,
+              cleanupProgress: displayCfg.cleanupProgress,
+              previewLength: displayCfg.toolPreviewLength,
+              toolEmojiOverrides: displayCfg.toolEmojis,
+            },
+          });
+
+          const agentEmitter = this.hookEmitters.get(agent.id);
+          if (agentEmitter) {
+            const filter = (p: Record<string, unknown>) =>
+              p.agentId === agent.id &&
+              (!observedSessionId || p.sdkSessionId === observedSessionId);
+
+            unsubBubbleStart = agentEmitter.subscribe('on_tool_use', (p) => {
+              if (!filter(p)) return;
+              bubble?.onToolStart({
+                toolName: String(p.toolName ?? 'unknown'),
+                toolInput: p.toolInput,
+                toolUseId: String(p.toolUseId ?? ''),
+                parentToolUseId: (p as { parentToolUseId?: string | null }).parentToolUseId ?? null,
+              });
+            });
+
+            unsubBubbleError = agentEmitter.subscribe('on_tool_error', (p) => {
+              if (!filter(p)) return;
+              bubble?.onToolError({
+                toolUseId: String(p.toolUseId ?? ''),
+                toolName: String(p.toolName ?? 'unknown'),
+              });
+            });
           }
         }
-        const text = preview ? `▶ ${toolName}: ${preview}` : `▶ ${toolName}`;
-        await ch.sendText(msg.peerId, text, {
-          accountId: msg.accountId,
-          threadId: msg.threadId,
-          parseMode: 'plain',
-        }).catch((err: unknown) => {
-          logger.debug({ err, agentId: agent.id, toolName }, 'tool-progress send failed (non-fatal)');
-        });
-      };
+      }
+
+      let responseText: string | undefined;
+      let budgetInterrupted = false;
 
       try {
         const textParts: string[] = [];
         let sessionId: string | undefined;
-        let budgetInterrupted = false;
         const iterator = result[Symbol.asyncIterator]();
 
         while (true) {
@@ -5109,6 +5155,10 @@ export class Gateway {
           const hookEvent = extractHookLifecycleEvent(evt);
           if (partialText) {
             markRunActivity('partial_text');
+            if (!contentBreakFired) {
+              contentBreakFired = true;
+              bubble?.onContentBreak();
+            }
           } else if (taskNotification) {
             markRunActivity(`task_${taskNotification.status}`, taskNotification.taskId);
             this.queueManager.markTaskFinished(sessionKey, taskNotification.taskId, `task_${taskNotification.status}`);
@@ -5201,8 +5251,6 @@ export class Gateway {
               { agentId: agent.id, sessionKey, toolName },
               'agent: tool_use',
             );
-            // Verbose-mode chat surfacing (display.toolProgress).
-            void announceToolUse(toolName, (evt as Record<string, unknown>).input);
             if (budget) {
               const exceeded = budget.recordToolCall();
               const pressureWarning = budget.getPressureWarning();
@@ -5248,7 +5296,7 @@ export class Gateway {
           });
         }
 
-        const responseText = textParts.join('').trim();
+        responseText = textParts.join('').trim();
 
         // Steered/cancelled by another inbound message — exit silently so the
         // follow-up run delivers the reply instead of leaking a stub message.
@@ -5291,6 +5339,10 @@ export class Gateway {
         // guard then skips delivery.
         return '';
       } finally {
+        const silentRun = /^\s*\[SILENT\]/i.test(responseText ?? '');
+        unsubBubbleStart?.();
+        unsubBubbleError?.();
+        await bubble?.finalize(!budgetInterrupted && !abort.signal.aborted, { silent: silentRun });
         this.queueManager.unregister(sessionKey);
         this.controlRegistry.unregister(sessionKey);
         metrics.recordQueryDuration(Date.now() - queryStartMs);
