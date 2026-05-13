@@ -86,6 +86,16 @@ describe('FileArtifactStore', () => {
     expect(() => store.readArtifact(otherArtifact.id)).toThrow(/Artifact not found/);
   });
 
+  it('rejects writing an artifact whose room does not match the store room', () => {
+    const artifact = {
+      ...baseArtifact('research_20260512_wrong_room', 'research_packet'),
+      room: { id: 'other-room' },
+    };
+
+    expect(() => store.writeArtifact(artifact)).toThrow(/Artifact room mismatch/);
+    expect(store.hasArtifact(artifact.id)).toBe(false);
+  });
+
   it('stores sanitized session summaries and handoff signals in their v0.1 locations', () => {
     const summary = store.writeArtifact(baseArtifact(
       'session-summary-20260512-001',

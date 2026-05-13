@@ -43,6 +43,13 @@ export class UnsupportedArtifactSchemaVersionError extends Error {
   }
 }
 
+export class ArtifactRoomMismatchError extends Error {
+  constructor(artifactId: string, artifactRoomId: string, storeRoomId: string) {
+    super(`Artifact room mismatch: ${artifactId} belongs to ${artifactRoomId}, store is ${storeRoomId}`);
+    this.name = 'ArtifactRoomMismatchError';
+  }
+}
+
 const ARTIFACT_DIRS: Record<BuildroomArtifactType, string> = {
   session_summary: 'buildroom/session-summaries',
   handoff_signal: 'buildroom/signals',
@@ -70,6 +77,10 @@ export class FileArtifactStore {
   }
 
   writeArtifact(artifact: BuildroomArtifact): BuildroomArtifact {
+    if (artifact.room.id !== this.opts.roomId) {
+      throw new ArtifactRoomMismatchError(artifact.id, artifact.room.id, this.opts.roomId);
+    }
+
     assertNoObviousSecrets(artifact);
 
     for (const parentId of artifact.parentIds) {
