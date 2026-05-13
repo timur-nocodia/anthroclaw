@@ -9,6 +9,10 @@
 
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { CheckCircle2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 export default function ApiKeyPage() {
   const params = useParams<{ pendingId: string }>();
@@ -36,9 +40,9 @@ export default function ApiKeyPage() {
       const body = await res.json();
       if (body.status === 'connected') {
         setDone(true);
-        // Redirect placeholder — Phase 5 ships /mcp/done. For now we just
-        // surface the success state inline and home the user.
-        setTimeout(() => router.replace('/'), 1500);
+        // TODO(Phase 5+): redirect to /mcp/done once we wire the chat-side
+        // route to land there. For now just home the user after a beat.
+        setTimeout(() => router.replace('/mcp/done'), 1200);
       } else {
         setError('Invalid key — try again');
       }
@@ -51,53 +55,59 @@ export default function ApiKeyPage() {
 
   if (done) {
     return (
-      <main className="min-h-screen flex items-center justify-center">
-        <div className="max-w-md w-full p-6 border rounded-xl text-center">
-          <h1 className="text-lg font-medium mb-2">Connected</h1>
-          <p className="text-sm text-gray-600">You can close this window.</p>
+      <main className="min-h-screen bg-background flex items-center justify-center p-6">
+        <div className="max-w-md w-full rounded-xl border bg-card p-6 text-center space-y-3">
+          <CheckCircle2 className="size-10 mx-auto text-emerald-500" aria-hidden />
+          <h1 className="text-lg font-medium">Connected</h1>
+          <p className="text-sm text-muted-foreground">You can close this window.</p>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center">
+    <main className="min-h-screen bg-background flex items-center justify-center p-6">
       <form
-        className="max-w-md w-full space-y-4 p-6 border rounded-xl"
+        className="max-w-md w-full space-y-4 rounded-xl border bg-card p-6"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
         }}
       >
-        <h1 className="text-lg font-medium">Paste your API key</h1>
-        <input
-          type={show ? 'text' : 'password'}
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          className="w-full border rounded-md p-2"
-          placeholder="sk_live_..."
-          aria-label="API key"
-        />
-        <label className="text-sm flex items-center gap-2">
+        <div className="space-y-1">
+          <h1 className="text-lg font-medium">Paste your API key</h1>
+          <p className="text-xs text-muted-foreground">
+            Token will be stored encrypted in this AnthroClaw instance.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="apikey">API key</Label>
+          <Input
+            id="apikey"
+            type={show ? 'text' : 'password'}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="sk_live_..."
+            autoFocus
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <input
             type="checkbox"
+            className="size-4 rounded border-input accent-primary"
             checked={show}
             onChange={() => setShow((s) => !s)}
           />
-          Show
+          Show key
         </label>
         {error && (
-          <p className="text-sm text-red-600" role="alert">
+          <p className="text-sm text-destructive" role="alert">
             {error}
           </p>
         )}
-        <button
-          type="submit"
-          disabled={busy || !key}
-          className="bg-black text-white px-4 py-2 rounded-md disabled:opacity-50"
-        >
+        <Button type="submit" disabled={busy || !key} className="w-full">
           {busy ? 'Connecting…' : 'Connect'}
-        </button>
+        </Button>
       </form>
     </main>
   );

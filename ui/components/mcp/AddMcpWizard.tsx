@@ -9,6 +9,10 @@
 'use client';
 
 import { useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 export interface AddMcpWizardProps {
   agentId: string;
@@ -24,11 +28,6 @@ interface OAuthMeta {
   scopesSupported?: string[];
 }
 
-/**
- * Map of known reject reasons from `/api/mcp/connect/start` to operator-
- * friendly copy. Unknown reasons fall back to a generic "Couldn't connect"
- * message that still surfaces the internal code for support diagnosis.
- */
 const FRIENDLY_REASONS: Record<string, string> = {
   no_auth_servers_not_yet_supported:
     "This server doesn't require authentication. Open MCP servers aren't supported yet — paste a server URL that requires OAuth or an API key.",
@@ -122,8 +121,6 @@ export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
       }
 
       if (step === 'auth' && authMode === 'oauth') {
-        // Phase 4 fills the actual OAuth dance; here we navigate so the
-        // operator picks up at the authorize endpoint.
         if (typeof window !== 'undefined' && pendingId) {
           window.location.href = `/api/mcp/oauth/start/${pendingId}`;
         }
@@ -160,86 +157,91 @@ export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
       || (step === 'auth' && authMode === 'oauth')
       || step === 'tools';
 
+  const authHost = (() => {
+    if (!oauthMeta?.authorizationEndpoint) return 'the provider';
+    try {
+      return new URL(oauthMeta.authorizationEndpoint).hostname;
+    } catch {
+      return 'the provider';
+    }
+  })();
+
   return (
-    <div
-      role="dialog"
-      aria-modal
-      aria-label="Add MCP server"
-      className="fixed inset-0 bg-black/50 flex items-center justify-center"
-    >
-      <div className="bg-white rounded-xl max-w-md w-full p-6 space-y-4">
-        <header className="flex justify-between">
-          <h2 className="font-medium">Add MCP server</h2>
-          <button onClick={onClose} aria-label="Close">
-            X
-          </button>
-        </header>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add MCP server</DialogTitle>
+        </DialogHeader>
 
         {step === 'url' && (
           <div className="space-y-2">
-            <label className="text-sm">Server URL</label>
-            <input
-              className="w-full border rounded-md p-2"
+            <Label htmlFor="mcp-url">Server URL</Label>
+            <Input
+              id="mcp-url"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://mcp.x.io/mcp"
-              aria-label="Server URL"
+              autoFocus
             />
+            <p className="text-xs text-muted-foreground">
+              Just paste the URL — we&apos;ll figure out the rest.
+            </p>
           </div>
         )}
 
         {step === 'auth' && authMode === 'apikey' && (
           <div className="space-y-2">
-            <p className="text-sm">This server needs a bearer token.</p>
-            <input
-              className="w-full border rounded-md p-2"
+            <Label htmlFor="mcp-apikey">API key</Label>
+            <Input
+              id="mcp-apikey"
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              aria-label="API key"
+              placeholder="sk-..."
+              autoFocus
             />
+            <p className="text-xs text-muted-foreground">
+              This server needs a bearer token. It will be stored encrypted in this AnthroClaw instance.
+            </p>
           </div>
         )}
 
         {step === 'auth' && authMode === 'oauth' && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <h3 className="text-sm font-medium">
               Authorize with {serverName ?? 'this server'}
             </h3>
-            <p className="text-sm">
+            <p className="text-sm text-muted-foreground">
               You&apos;ll be redirected to{' '}
-              <code>
-                {oauthMeta?.authorizationEndpoint
-                  ? (() => {
-                      try {
-                        return new URL(oauthMeta.authorizationEndpoint).hostname;
-                      } catch {
-                        return 'the provider';
-                      }
-                    })()
-                  : 'the provider'}
-              </code>{' '}
-              to authorize. Token will be stored encrypted in this AnthroClaw
-              instance.
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{authHost}</code>{' '}
+              to authorize. Token will be stored encrypted in this AnthroClaw instance.
             </p>
-            <p className="text-xs text-gray-600">
+            <p className="text-xs text-muted-foreground">
               Scopes:{' '}
               {oauthMeta?.scopesSupported?.length
                 ? oauthMeta.scopesSupported.join(', ')
-                : 'none requested'}
+                : 'provider-default'}
             </p>
           </div>
         )}
 
         {step === 'tools' && (
           <div className="space-y-2">
-            <p className="text-sm">Choose which tools the agent can use:</p>
-            <ul className="space-y-1 max-h-64 overflow-auto">
+            <p className="text-sm text-muted-foreground">
+              Choose which tools the agent can use:
+            </p>
+            <ul className="space-y-1 max-h-64 overflow-auto rounded-md border bg-muted/40 p-3">
+              {tools.length === 0 && (
+                <li className="text-sm text-muted-foreground">
+                  No tools discovered. Save anyway to keep the credential — you can refresh tools later.
+                </li>
+              )}
               {tools.map((t) => (
                 <li key={t.name}>
-                  <label className="text-sm flex gap-2">
+                  <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
+                      className="h-4 w-4 rounded border-input accent-primary"
                       checked={allowed.has(t.name)}
                       onChange={() => {
                         const n = new Set(allowed);
@@ -248,7 +250,7 @@ export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
                         setAllowed(n);
                       }}
                     />
-                    {t.name}
+                    <span className="font-mono">{t.name}</span>
                   </label>
                 </li>
               ))}
@@ -257,24 +259,20 @@ export function AddMcpWizard({ agentId, onClose, onSaved }: AddMcpWizardProps) {
         )}
 
         {error && (
-          <p className="text-sm text-red-600" role="alert">
+          <p className="text-sm text-destructive" role="alert">
             {error}
           </p>
         )}
 
-        <footer className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1.5 rounded-md border">
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
             Cancel
-          </button>
-          <button
-            onClick={() => void next()}
-            disabled={busy || !canContinue}
-            className="px-3 py-1.5 rounded-md bg-black text-white disabled:opacity-50"
-          >
-            {step === 'tools' ? 'Save & Connect' : 'Continue →'}
-          </button>
-        </footer>
-      </div>
-    </div>
+          </Button>
+          <Button onClick={() => void next()} disabled={busy || !canContinue}>
+            {busy ? 'Working…' : step === 'tools' ? 'Save & Connect' : 'Continue →'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

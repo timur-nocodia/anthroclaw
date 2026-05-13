@@ -63,6 +63,12 @@ export interface McpServersSectionProps {
    * (which may 404 until that route is implemented).
    */
   onRemoveServer?: (name: string) => void | Promise<void>;
+  /**
+   * When true, hides the "Advanced — manually edit raw fields" disclosure.
+   * Defaults to false so existing callers (ConfigTab) keep the disclosure;
+   * McpTab passes true and surfaces the advanced editor at tab level.
+   */
+  hideAdvanced?: boolean;
 }
 
 export function McpServersSection({
@@ -72,6 +78,7 @@ export function McpServersSection({
   onChangeEntry,
   onRemoveEntry,
   onRemoveServer,
+  hideAdvanced = false,
 }: McpServersSectionProps) {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [liveStatuses, setLiveStatuses] = useState<Record<string, LiveEntry>>({});
@@ -186,7 +193,7 @@ export function McpServersSection({
         </div>
       )}
 
-      {entries.length > 0 && (
+      {entries.length > 0 && !hideAdvanced && (
         <details className="mt-3">
           <summary className="cursor-pointer text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
             Advanced — manually edit raw fields
