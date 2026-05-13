@@ -26,7 +26,19 @@ export async function withAuth<T>(
     if (err instanceof ValidationError) {
       return NextResponse.json({ error: err.code, message: err.message }, { status: 400 });
     }
+    if (isResponseLikeError(err)) {
+      return NextResponse.json(err.body, { status: err.status });
+    }
     const message = err instanceof Error ? err.message : 'Internal server error';
     return NextResponse.json({ error: 'server_error', message }, { status: 500 });
   }
+}
+
+function isResponseLikeError(err: unknown): err is { status: number; body: unknown } {
+  return Boolean(
+    err &&
+    typeof err === 'object' &&
+    typeof (err as { status?: unknown }).status === 'number' &&
+    'body' in err,
+  );
 }
