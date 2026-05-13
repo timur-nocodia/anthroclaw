@@ -132,6 +132,9 @@ interface AgentConfig {
     streaming?: boolean;
     toolPreviewLength?: number;
     showReasoning?: boolean;
+    cleanupProgress?: boolean;
+    subagentTools?: 'parent' | 'all' | 'indented';
+    toolEmojis?: Record<string, string>;
   };
   hooks?: Array<{
     event: string;
@@ -2501,16 +2504,78 @@ function ConfigTab({
                   className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
                   style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} />
               </Field>
-              <Field label="Tool progress" tooltip="Whether to show tool call activity to users. All — every call. New — only new ones. Off — hidden.">
-                <select value={cfg.display?.toolProgress ?? "all"}
-                  onChange={(e) => update({ display: { ...cfg.display, toolProgress: e.target.value } })}
+              <Field label="Tool progress" tooltip="Whether to show tool call activity to users. Auto picks based on the agent's safety profile: public → off, anything else → new.">
+                <select
+                  value={cfg.display?.toolProgress ?? "auto"}
+                  onChange={(e) => update({
+                    display: {
+                      ...cfg.display,
+                      toolProgress: e.target.value === "auto" ? undefined : e.target.value,
+                    },
+                  })}
                   className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
-                  style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
+                  style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                >
+                  <option value="auto">auto (safety-profile default)</option>
                   <option value="all">all — show every tool call</option>
-                  <option value="new">new — only new tool calls</option>
+                  <option value="new">new — only new tool types</option>
                   <option value="off">off — hide tool calls</option>
                 </select>
+                {!cfg.display?.toolProgress && (
+                  <p className="mt-1 text-[10px]" style={{ color: "var(--oc-text-dim)" }}>
+                    Resolved: <b>{cfg.safety_profile === "public" ? "off" : "new"}</b>
+                    {" — "}safety_profile={cfg.safety_profile ?? "<unset>"}
+                  </p>
+                )}
               </Field>
+
+              <Field label="Tool preview length" tooltip="Max characters of a tool's primary argument shown in the bubble. 0 disables previews (just the tool name).">
+                <input
+                  type="number"
+                  min={0}
+                  max={200}
+                  value={cfg.display?.toolPreviewLength ?? ""}
+                  placeholder="40"
+                  onChange={(e) => update({
+                    display: {
+                      ...cfg.display,
+                      toolPreviewLength: e.target.value === "" ? undefined : Number(e.target.value),
+                    },
+                  })}
+                  className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+                  style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+                />
+              </Field>
+
+              <Field label="Cleanup progress" tooltip="When ON, the tool-progress bubble is deleted after a successful response. Failures leave it as a breadcrumb.">
+                <select
+                  value={cfg.display?.cleanupProgress ? "true" : "false"}
+                  onChange={(e) => update({
+                    display: { ...cfg.display, cleanupProgress: e.target.value === "true" },
+                  })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                >
+                  <option value="false">off — leave breadcrumb in chat</option>
+                  <option value="true">on — delete bubble after success</option>
+                </select>
+              </Field>
+
+              <Field label="Subagent tools" tooltip="How to render tool calls made by subagents (via Task). Parent shows only the Task line; All shows every internal call; Indented shows internals with a two-space prefix.">
+                <select
+                  value={cfg.display?.subagentTools ?? "parent"}
+                  onChange={(e) => update({
+                    display: { ...cfg.display, subagentTools: e.target.value as 'parent' | 'all' | 'indented' },
+                  })}
+                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                  style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+                >
+                  <option value="parent">parent — Task line only</option>
+                  <option value="all">all — full internals</option>
+                  <option value="indented">indented — internals with prefix</option>
+                </select>
+              </Field>
+
               <Field label="Streaming" tooltip="Stream output — text appears as it's generated, not all at once. Works in Telegram via message editing.">
                 <select value={cfg.display?.streaming === true ? "true" : cfg.display?.streaming === false ? "false" : "auto"}
                   onChange={(e) => update({ display: { ...cfg.display, streaming: e.target.value === "auto" ? undefined : e.target.value === "true" } })}
