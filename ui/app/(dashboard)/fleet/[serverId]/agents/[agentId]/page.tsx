@@ -30,6 +30,7 @@ import {
   Settings2,
   Shield,
   Sparkles,
+  Network,
   Stethoscope,
   Terminal,
   UserCheck,
@@ -75,7 +76,7 @@ import {
   type LearningDecisionFilterValue,
 } from "@/components/learning/LearningDecisionFilters";
 import { LearningDecisionRow, type LearningDecisionRecord } from "@/components/learning/LearningDecisionRow";
-import { McpServersSection } from "@/components/mcp/McpServersSection";
+import { McpTab } from "./McpTab";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -987,6 +988,13 @@ export default function AgentEditorPage() {
             Plugins
           </TabsTrigger>
           <TabsTrigger
+            value="mcp"
+            className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
+          >
+            <Network className="mr-1.5 h-3.5 w-3.5" />
+            MCP
+          </TabsTrigger>
+          <TabsTrigger
             value="diagnostics"
             className="rounded-none border-b-2 px-3.5 py-2 text-[12.5px] data-[state=active]:border-[var(--oc-accent)] data-[state=active]:text-[var(--color-foreground)] data-[state=active]:shadow-none data-[state=inactive]:border-transparent"
           >
@@ -1021,6 +1029,9 @@ export default function AgentEditorPage() {
         </TabsContent>
         <TabsContent value="plugins" className="mt-0 flex-1 overflow-auto">
           <PluginsPanel agentId={agentId} />
+        </TabsContent>
+        <TabsContent value="mcp" className="mt-0 flex-1 overflow-auto">
+          <McpTab agentId={agentId} />
         </TabsContent>
         <TabsContent value="diagnostics" className="mt-0 flex-1 overflow-auto">
           <DoctorPanel agentId={agentId} />
@@ -1426,8 +1437,23 @@ function ConfigTab({
         if (heartbeat) clean.heartbeat = heartbeat;
         const channelContextPayload = buildChannelContextPayload();
         if (channelContextPayload) clean.channel_context = channelContextPayload;
-        const externalMcpPayload = buildExternalMcpPayload();
-        if (externalMcpPayload) clean.external_mcp_servers = externalMcpPayload;
+        // external_mcp_servers is now managed exclusively by McpTab. To avoid
+        // clobbering MCP edits when Config is saved with stale cfg state,
+        // fetch the live value from the server right before PUT.
+        try {
+          const liveRes = await fetch(`/api/agents/${encodeURIComponent(agentId)}`);
+          if (liveRes.ok) {
+            const live = (await liveRes.json()) as { external_mcp_servers?: Record<string, unknown> };
+            if (live.external_mcp_servers && Object.keys(live.external_mcp_servers).length > 0) {
+              clean.external_mcp_servers = live.external_mcp_servers;
+            }
+          }
+        } catch {
+          // If the freshness probe fails, fall back to the stale cfg value
+          // — better to write something than to wipe MCP servers entirely.
+          const externalMcpPayload = buildExternalMcpPayload();
+          if (externalMcpPayload) clean.external_mcp_servers = externalMcpPayload;
+        }
         const iterationBudget: Record<string, unknown> = {
           max_tool_calls: cfg.iteration_budget.tool_call_limit,
           timeout_ms: cfg.iteration_budget.timeout_ms,
@@ -2453,16 +2479,7 @@ function ConfigTab({
             </div>
           </Section>
 
-          <McpServersSection
-            agentId={agentId}
-            servers={cfg.external_mcp_servers}
-            onReload={onReload}
-            onChangeEntry={(serverName, next) => updateExternalMcpServer(serverName, next)}
-            onRemoveEntry={(serverName) => removeExternalMcpServer(serverName)}
-            onRemoveServer={(serverName) => {
-              removeExternalMcpServer(serverName);
-            }}
-          />
+          {/* External MCP servers moved to the dedicated MCP tab. */}
 
           {/* Display & sessions */}
           <Section title="Display & sessions"

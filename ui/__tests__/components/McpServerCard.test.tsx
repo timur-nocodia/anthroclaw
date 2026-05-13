@@ -45,12 +45,12 @@ describe('<McpServerCard />', () => {
     );
     expect(
       screen.getByTestId('mcp-server-card-status-dot').className,
-    ).toContain('bg-green-500');
+    ).toContain('bg-emerald-500');
 
     rerender(<McpServerCard {...makeProps({ status: 'refreshing' })} />);
     expect(
       screen.getByTestId('mcp-server-card-status-dot').className,
-    ).toContain('bg-yellow-500');
+    ).toContain('bg-amber-500');
 
     rerender(<McpServerCard {...makeProps({ status: 'reauth_required' })} />);
     expect(
@@ -60,7 +60,7 @@ describe('<McpServerCard />', () => {
     rerender(<McpServerCard {...makeProps({ status: 'disabled' })} />);
     expect(
       screen.getByTestId('mcp-server-card-status-dot').className,
-    ).toContain('bg-zinc-400');
+    ).toContain('bg-muted-foreground/50');
   });
 
   it('renders transport label and tool count', () => {
