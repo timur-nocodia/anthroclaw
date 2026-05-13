@@ -11,6 +11,7 @@ import {
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
+import { HelpHint } from "./HelpHint";
 import { BuildroomSettingsPanel } from "./BuildroomSettingsPanel";
 
 type BuildroomMode = "off" | "observe_only" | "manual_approval";
@@ -137,7 +138,7 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
               className="min-w-0 rounded-md border"
               style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}
             >
-              <div className="border-b px-3 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
+              <div className="relative z-20 border-b px-3 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
                 <div className="flex items-center justify-between gap-3">
                   <SectionTitle
                     label="Overview"
@@ -197,7 +198,7 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
               className="min-w-0 rounded-md border"
               style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}
             >
-              <div className="border-b px-3 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
+              <div className="relative z-20 border-b px-3 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
                 <SectionTitle
                   label="Controls"
                   hint="These controls change room authority. They do not approve proposals by themselves, and approval still does not automatically start a build."
@@ -386,19 +387,6 @@ function SectionTitle({ label, hint }: { label: string; hint: string }) {
     <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--color-foreground)" }}>
       {label}
       <HelpHint label={label} hint={hint} />
-    </span>
-  );
-}
-
-function HelpHint({ label, hint }: { label: string; hint: string }) {
-  return (
-    <span
-      aria-label={`What does ${label} mean?`}
-      title={hint}
-      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] leading-none"
-      style={{ borderColor: "var(--oc-border)", color: "var(--oc-text-muted)", background: "var(--oc-bg1)" }}
-    >
-      ?
     </span>
   );
 }

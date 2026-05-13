@@ -94,9 +94,16 @@ describe('<BuildroomOverview />', () => {
 
     expect(await screen.findByText(/Buildroom turns agent suggestions into scoped, approvable work/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Approval grants authority/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByLabelText(/What does Mode mean/i)[0]).toHaveAttribute('title', expect.stringContaining('manual_approval'));
-    expect(screen.getByLabelText(/What does Trust mean/i)).toHaveAttribute('title', expect.stringContaining('QA'));
-    expect(screen.getByLabelText(/What does Kill switch mean/i)).toHaveAttribute('title', expect.stringContaining('blocks'));
+    const modeHint = screen.getAllByLabelText(/What does Mode mean/i)[0];
+    expect(modeHint).toHaveAttribute('data-hint', expect.stringContaining('manual_approval'));
+    expect(modeHint).not.toHaveAttribute('title');
+    fireEvent.mouseEnter(modeHint);
+    expect(await screen.findByText(/manual_approval requires explicit operator approval/i)).toBeInTheDocument();
+    fireEvent.mouseLeave(modeHint);
+    expect(screen.getByLabelText(/What does Trust mean/i)).toHaveAttribute('data-hint', expect.stringContaining('QA'));
+    expect(screen.getByLabelText(/What does Trust mean/i)).not.toHaveAttribute('title');
+    expect(screen.getByLabelText(/What does Kill switch mean/i)).toHaveAttribute('data-hint', expect.stringContaining('blocks'));
+    expect(screen.getByLabelText(/What does Kill switch mean/i)).not.toHaveAttribute('title');
   });
 
   it('describes every settings group and exposes hover hints for setting fields', async () => {
@@ -119,11 +126,21 @@ describe('<BuildroomOverview />', () => {
     render(<BuildroomOverview serverId="local" />);
 
     fireEvent.click(await screen.findByRole('button', { name: /settings/i }));
-    expect(await screen.findByText(/These settings define what Buildroom may observe/i)).toBeInTheDocument();
-    expect(screen.getByText(/Watch sources decide what can become evidence/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/What does Raw transcripts mean/i)).toHaveAttribute('title', expect.stringContaining('disabled'));
-    expect(screen.getByLabelText(/What does Allowed paths mean/i)).toHaveAttribute('title', expect.stringContaining('write'));
-    expect(screen.getByLabelText(/What does Max builds per day mean/i)).toHaveAttribute('title', expect.stringContaining('safety budget'));
+    expect((await screen.findAllByText(/These settings define what Buildroom may observe/i)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Watch sources decide what can become evidence/i).length).toBeGreaterThan(0);
+    const rawTranscriptsHint = screen.getByLabelText(/What does Raw transcripts mean/i);
+    expect(rawTranscriptsHint).toHaveAttribute('data-hint', expect.stringContaining('disabled'));
+    expect(rawTranscriptsHint).not.toHaveAttribute('title');
+    fireEvent.mouseEnter(rawTranscriptsHint);
+    expect(await screen.findByText(/Raw transcripts are disabled in v0.1/i)).toBeInTheDocument();
+    fireEvent.mouseLeave(rawTranscriptsHint);
+    expect(screen.getByLabelText(/What does Allowed paths mean/i)).toHaveAttribute('data-hint', expect.stringContaining('write'));
+    expect(screen.getByLabelText(/What does Allowed paths mean/i)).not.toHaveAttribute('title');
+    const maxBuildsHint = screen.getByLabelText(/What does Max builds per day mean/i);
+    expect(maxBuildsHint).toHaveAttribute('data-hint', expect.stringContaining('safety budget'));
+    expect(maxBuildsHint).not.toHaveAttribute('title');
+    fireEvent.mouseEnter(maxBuildsHint);
+    expect(await screen.findByText(/Daily safety budget for Builder attempts/i)).toBeInTheDocument();
   });
 
   it('renders safe settings and saves config patches without raw transcript access', async () => {

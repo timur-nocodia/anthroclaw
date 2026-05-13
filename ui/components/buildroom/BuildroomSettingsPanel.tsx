@@ -2,6 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw, Save, SlidersHorizontal } from "lucide-react";
+import { HelpHint } from "./HelpHint";
 
 interface BuildroomConfigPayload {
   watch: {
@@ -112,7 +113,7 @@ export function BuildroomSettingsPanel({ initialized }: { initialized: boolean }
       className="min-w-0 rounded-md border"
       style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}
     >
-      <div className="border-b px-3 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
+      <div className="relative z-20 border-b px-3 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="h-3.5 w-3.5" style={{ color: "var(--oc-text-muted)" }} />
@@ -447,19 +448,6 @@ function NumberField({
         }}
       />
     </label>
-  );
-}
-
-function HelpHint({ label, hint }: { label: string; hint: string }) {
-  return (
-    <span
-      aria-label={`What does ${label} mean?`}
-      title={hint}
-      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] leading-none"
-      style={{ borderColor: "var(--oc-border)", color: "var(--oc-text-muted)", background: "var(--oc-bg1)" }}
-    >
-      ?
-    </span>
   );
 }
 
