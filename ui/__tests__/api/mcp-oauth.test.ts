@@ -150,4 +150,36 @@ describe('GET /api/mcp/oauth/callback', () => {
       'http://t/fleet/_local/agents/agent_a1?mcpWizard=tools&pendingId=pnd_xyz',
     );
   });
+
+  it('prefers UI_BASE_URL over the inbound request origin', async () => {
+    // Reproduces the prod scenario: Next.js sees the upstream URL behind
+    // Caddy (`http://localhost:3000/...`) but the operator's browser is at
+    // `https://openclw.nocodia.dev`. Without UI_BASE_URL precedence the
+    // redirect points the browser at localhost.
+    const prev = process.env.UI_BASE_URL;
+    process.env.UI_BASE_URL = 'https://prod.example';
+    try {
+      completeOAuthMock.mockResolvedValueOnce({
+        status: 'completed',
+        pendingId: 'pnd_p',
+        serverId: 'srv',
+        tools: [],
+        row: {
+          id: 'pnd_p',
+          agentId: 'agent_p',
+          requestedBy: 'admin:admin@test.com',
+        },
+      });
+      const res = await callbackGET(
+        new Request('http://localhost:3000/api/mcp/oauth/callback?state=st_x&code=c'),
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe(
+        'https://prod.example/fleet/_local/agents/agent_p?mcpWizard=tools&pendingId=pnd_p',
+      );
+    } finally {
+      if (prev === undefined) delete process.env.UI_BASE_URL;
+      else process.env.UI_BASE_URL = prev;
+    }
+  });
 });

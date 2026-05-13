@@ -6,6 +6,22 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-05-13
+
+Hotfix for MCP OAuth onboarding behind a reverse proxy.
+
+### Fixed
+
+- **`/api/mcp/oauth/callback` no longer redirects to `localhost:3000`
+  in production.**
+  The callback was deriving the redirect origin from `new URL(req.url).origin`,
+  which behind Caddy returns the upstream URL Next.js sees
+  (`http://localhost:3000`) rather than the public hostname. The 302 then
+  pointed the operator's browser at a host it couldn't reach. Now reads
+  `UI_BASE_URL` (same env we already trust for the OAuth redirect URI we
+  hand to the provider, so the round-trip is consistent), and only falls
+  back to the request origin in dev/tests when no env is configured.
+
 ## [0.11.2] - 2026-05-13
 
 Finishes the MCP server card actions advertised in v0.11.0. Two buttons

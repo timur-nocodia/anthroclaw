@@ -16,12 +16,21 @@
 
 import { NextResponse } from 'next/server';
 import { getOnboarding } from '@/lib/mcp-onboarding-instance';
+import { getUiBaseUrl } from '@/lib/ui-base-url';
 
-function originOf(req: Request): string {
-  // NextResponse.redirect expects an absolute URL; deriving from the request
-  // means we work the same whether deployed behind a proxy or running on
-  // localhost in dev/tests.
-  return new URL(req.url).origin;
+function resolveOrigin(req: Request): string {
+  // `new URL(req.url).origin` would give us the upstream URL Next.js sees
+  // (e.g. `http://localhost:3000`) when running behind a reverse proxy like
+  // Caddy — the resulting 302 then points the browser at a host it can't
+  // reach. Prefer the explicitly-configured public base URL (same one we
+  // already use to generate the OAuth redirect URI we hand to the provider,
+  // so the round-trip is consistent). Fall back to deriving from the request
+  // when no env is configured (dev/tests).
+  try {
+    return getUiBaseUrl();
+  } catch {
+    return new URL(req.url).origin;
+  }
 }
 
 export async function GET(req: Request): Promise<Response> {
@@ -29,7 +38,7 @@ export async function GET(req: Request): Promise<Response> {
   const state = u.searchParams.get('state');
   const code = u.searchParams.get('code');
   const error = u.searchParams.get('error');
-  const origin = originOf(req);
+  const origin = resolveOrigin(req);
 
   if (!state) {
     return new NextResponse('Missing state', { status: 400 });
