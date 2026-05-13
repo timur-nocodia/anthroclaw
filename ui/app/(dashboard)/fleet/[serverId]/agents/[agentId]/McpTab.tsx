@@ -101,7 +101,10 @@ export function McpTab({ agentId }: McpTabProps) {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      <div
+        className="flex h-full items-center justify-center text-xs"
+        style={{ color: "var(--oc-text-muted)" }}
+      >
         <Loader2 className="mr-2 size-4 animate-spin" />
         Loading agent config…
       </div>
@@ -110,14 +113,51 @@ export function McpTab({ agentId }: McpTabProps) {
 
   if (error && !config) {
     return (
-      <div className="p-6 text-sm text-destructive">
+      <div
+        className="p-5 text-xs"
+        style={{ color: "var(--oc-red, var(--oc-accent))" }}
+      >
         Couldn&apos;t load agent config: {error}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4 p-5">
+    <div className="flex max-w-[1100px] flex-col gap-3.5 p-5">
+      {/* Header bar matching ConfigTab: dirty pill + Discard/Save actions */}
+      {dirty && (
+        <div className="flex items-center justify-end gap-2.5">
+          <span
+            className="flex items-center gap-1.5 text-[11.5px]"
+            style={{ color: "var(--oc-yellow)" }}
+          >
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ background: "var(--oc-yellow)" }}
+            />
+            Unsaved advanced edits
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setDraft(config?.external_mcp_servers ?? {});
+              setDirty(false);
+            }}
+            disabled={saving}
+          >
+            Discard
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => void persist(draft)}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      )}
+
       <McpServersSection
         agentId={agentId}
         servers={draft}
@@ -141,40 +181,12 @@ export function McpTab({ agentId }: McpTabProps) {
         }}
       />
 
-      {dirty && (
-        <div
-          className="sticky bottom-4 mx-auto flex w-full max-w-2xl items-center justify-between gap-3 rounded-lg border bg-card px-4 py-2 shadow-lg"
-          role="region"
-          aria-label="Unsaved MCP changes"
-        >
-          <p className="text-sm text-muted-foreground">
-            Unsaved advanced edits. The wizard-driven changes already saved.
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setDraft(config?.external_mcp_servers ?? {});
-                setDirty(false);
-              }}
-              disabled={saving}
-            >
-              Revert
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => void persist(draft)}
-              disabled={saving}
-            >
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-          </div>
-        </div>
-      )}
-
       {error && config && (
-        <p className="text-sm text-destructive" role="alert">
+        <p
+          className="text-[11.5px]"
+          role="alert"
+          style={{ color: "var(--oc-red, var(--oc-accent))" }}
+        >
           {error}
         </p>
       )}
