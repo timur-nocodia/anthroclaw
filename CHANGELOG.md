@@ -6,6 +6,84 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-05-13
+
+Two new top-level capabilities land in this release: a **Tool Progress
+Bubble** that turns the per-tool-call chat spam into a single
+self-updating message, and the **Auto-Buildroom UI** — the operator
+cockpit for AnthroClaw's "receipts for autonomous agent work" control
+plane.
+
+### Added — Auto-Buildroom UI
+
+**What Auto-Buildroom is.** Auto-Buildroom is AnthroClaw's control room
+for autonomous agent work. It turns agent output from "the agent says
+done" into a workflow with inspectable receipts: each piece of work
+goes through a typed squad (Research → Subconscious → Signal Filter →
+Main → Builder → QA → Trust → Retention → Operator), a strict state
+machine that prevents `idea → build without review`,
+`approval → implicit execution`, and `builder-claim → trust.clean
+without QA`, and a per-job artifact ledger the operator can audit
+after the fact. Mental model: receipts for autonomy.
+
+v0.11.0 shipped the underlying control-plane (state machine, artifact
+model, CLI). v0.12.0 makes it operable from the dashboard.
+
+- **Dashboard cockpit.** New `/fleet/<server>/buildroom` page with the
+  full `<BuildroomOverview />` surface: room state, latest run, trust
+  state, pending approvals count, approved-not-built count, active
+  runtime. Sidebar entry added.
+- **Settings panel.** `<BuildroomSettingsPanel />` exposes the room
+  config — modes, kill switch, mode switches, pause/resume — all
+  proxied through new typed API routes
+  (`/api/buildroom/{config,init,kill-switch,mode,pause,resume,status}`).
+- **Per-control help.** `<HelpHint />` tooltips on every control so
+  operators don't have to round-trip to the docs (28 markdown specs
+  under `docs/Auto-Buildroom/`).
+- **CLI parity.** New `src/cli/buildroom.ts` (plus JSON output mode and
+  test coverage) so the same room operations work from terminal,
+  Telegram, or the cockpit.
+- **Telegram integration test.** `gateway-buildroom-telegram` end-to-end
+  test covers the operator flow from chat through to artifact write.
+
+### Added — Tool Progress Bubble
+
+The per-tool `announceToolUse` notifications used to land as separate
+messages — by the end of a long run a Telegram chat could have 30+
+single-line "Calling X..." bubbles. The new state machine collapses
+them into one message the gateway edits in place.
+
+- **State machine** (`src/channels/tool-progress-bubble.ts`) tracks
+  tool-call lifecycle (`start → progress → result → done`), edits the
+  single message via the channel adapter, and cleans up on turn end.
+- **Channel adapter contract** extended with `editText` and
+  `deleteText`. WhatsApp wires these through a Baileys `MessageKey`
+  cache; Telegram already had native edit/delete.
+- **12 built-in tool emojis** with path-aware skill detection
+  (Bash → 🖥, Edit → ✏, web_search → 🌐, etc.).
+- **Display schema** extended (`src/config/schema.ts`) with new fields:
+  `cleanupProgress`, `subagentTools`, `toolEmojis`, `toolPreviewLength`,
+  `showReasoning`.
+- **resolveDisplayConfig** is now safety-profile aware — strict
+  profiles get a tighter default than balanced/permissive.
+- **Per-agent override UI.** New `<AgentDisplaySection />` (extracted
+  from the agent page) exposes all display fields plus a "resolved
+  default" hint that shows where each value ultimately comes from
+  (agent → safety profile → global) so operators can tell when
+  they're overriding vs. inheriting.
+- **Global defaults in Settings.** `Display defaults` section in
+  `/fleet/<server>/settings` sets the gateway-wide fallback for every
+  agent.
+
+### Fixed
+
+- **Tool-progress regression set** (5945f17): build failure,
+  `[SILENT]`-cron leak into bubble, `contentBreak` latching across
+  turns, and YAML comment preservation when the writer touched the
+  display block.
+- **WhatsApp edit/delete test expectations** caught up with the new
+  `editText`/`deleteText` adapter methods.
+
 ## [0.11.7] - 2026-05-13
 
 ### Fixed
