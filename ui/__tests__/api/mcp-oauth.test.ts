@@ -147,7 +147,7 @@ describe('GET /api/mcp/oauth/callback', () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe(
-      'http://t/fleet/local/agents/agent_a1?mcpWizard=tools&pendingId=pnd_xyz',
+      'http://t/fleet/local/agents/agent_a1?tab=mcp&mcpWizard=tools&pendingId=pnd_xyz',
     );
   });
 
@@ -175,7 +175,7 @@ describe('GET /api/mcp/oauth/callback', () => {
       );
       expect(res.status).toBe(302);
       expect(res.headers.get('location')).toBe(
-        'https://prod.example/fleet/local/agents/agent_p?mcpWizard=tools&pendingId=pnd_p',
+        'https://prod.example/fleet/local/agents/agent_p?tab=mcp&mcpWizard=tools&pendingId=pnd_p',
       );
     } finally {
       if (prev === undefined) delete process.env.UI_BASE_URL;

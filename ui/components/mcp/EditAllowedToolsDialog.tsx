@@ -106,13 +106,19 @@ export function EditAllowedToolsDialog({
     setSaveError(null);
     try {
       // Read current config, patch only the allowed_tools for this
-      // server, then PUT. Mirrors how AddMcpWizard.tsx's finalize step
-      // touches agent.yml end-to-end so we keep one persistence path.
+      // server, then PUT. `/api/agents/<id>` returns an envelope of
+      // shape `{ raw: string, parsed: AgentConfig }` (see McpTab.tsx
+      // — same shape) so we operate on `parsed`.
       const cfgRes = await fetch(`/api/agents/${encodeURIComponent(agentId)}`);
       if (!cfgRes.ok) throw new Error(`load_config_${cfgRes.status}`);
-      const cfg = await cfgRes.json();
-      const config = cfg.config ?? cfg;
-      const servers = (config.external_mcp_servers ?? {}) as Record<string, Record<string, unknown>>;
+      const envelope = (await cfgRes.json()) as {
+        raw?: string;
+        parsed?: Record<string, unknown>;
+      };
+      const config = (envelope.parsed ?? {}) as Record<string, unknown> & {
+        external_mcp_servers?: Record<string, Record<string, unknown>>;
+      };
+      const servers = config.external_mcp_servers ?? {};
       const entry = servers[serverName];
       if (!entry) throw new Error("server_not_in_config");
       servers[serverName] = { ...entry, allowed_tools: Array.from(allowed) };

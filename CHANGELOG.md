@@ -6,6 +6,26 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.11.6] - 2026-05-13
+
+### Fixed
+
+- **OAuth callback now lands on the MCP tab, not Config.**
+  The callback redirected to `/fleet/local/agents/<id>?mcpWizard=…`
+  but the agent page defaults to the Config tab — MCP tab has no URL
+  of its own, so the operator landed on Config with a wizard dialog
+  invisibly waiting in another tab. Now the callback includes
+  `?tab=mcp`, the agent page reads it as the initial tab value, and a
+  one-shot effect strips the param so manual tab switching + refresh
+  doesn't snap back.
+- **`Edit allowed tools` save no longer always errors with
+  `server_not_in_config`.**
+  `EditAllowedToolsDialog.save()` was reading the agent config from
+  `cfg.config ?? cfg`, but `/api/agents/<id>` returns
+  `{ raw, parsed }` — neither key matched, so
+  `external_mcp_servers` was always undefined and `entry` was always
+  missing. Read from `envelope.parsed` like `McpTab` does.
+
 ## [0.11.5] - 2026-05-13
 
 ### Fixed

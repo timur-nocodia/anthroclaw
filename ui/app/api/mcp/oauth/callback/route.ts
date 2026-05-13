@@ -72,7 +72,7 @@ export async function GET(req: Request): Promise<Response> {
     return NextResponse.redirect(`${origin}/mcp/done`, { status: 302 });
   }
   return NextResponse.redirect(
-    `${origin}/fleet/local/agents/${encodeURIComponent(result.row.agentId)}?mcpWizard=tools&pendingId=${encodeURIComponent(result.pendingId)}`,
+    `${origin}/fleet/local/agents/${encodeURIComponent(result.row.agentId)}?tab=mcp&mcpWizard=tools&pendingId=${encodeURIComponent(result.pendingId)}`,
     { status: 302 },
   );
 }

@@ -821,7 +821,14 @@ export default function AgentEditorPage() {
 
   const [agent, setAgent] = useState<AgentConfig | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("config");
+  // Init tab from `?tab=` so the OAuth callback (and any future deep link)
+  // can drop the operator on a specific tab. Falls back to "config" when
+  // not set or unknown.
+  const [tab, setTab] = useState<string>(() => {
+    if (typeof window === "undefined") return "config";
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return t ?? "config";
+  });
 
   const fetchAgent = useCallback(async () => {
     try {
@@ -841,6 +848,20 @@ export default function AgentEditorPage() {
   useEffect(() => {
     fetchAgent();
   }, [fetchAgent]);
+
+  // After we've consumed `?tab=` into the initial tab state above, strip
+  // it from the URL so manually switching tabs and reloading doesn't
+  // snap back to the deep-linked tab. mcpWizard/pendingId params are
+  // cleaned up by `<McpServersSection />` once it processes them.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    if (!sp.has("tab")) return;
+    sp.delete("tab");
+    const qs = sp.toString();
+    const url = window.location.pathname + (qs.length > 0 ? `?${qs}` : "");
+    window.history.replaceState({}, "", url);
+  }, []);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
