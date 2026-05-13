@@ -22,10 +22,12 @@ import { Plug, Plus } from "lucide-react";
 import { Section } from "@/components/ui/section";
 import { Button } from "@/components/ui/button";
 import { AddMcpWizard } from "./AddMcpWizard";
+import { EditAllowedToolsDialog } from "./EditAllowedToolsDialog";
 import { McpServerCard } from "./McpServerCard";
 import {
   McpServerAdvancedEditor,
   type ExternalMcpEntry,
+  type ExternalMcpPreflightStateSummary,
 } from "./McpServerAdvancedEditor";
 
 export type { ExternalMcpEntry } from "./McpServerAdvancedEditor";
@@ -81,8 +83,60 @@ export function McpServersSection({
   hideAdvanced = false,
 }: McpServersSectionProps) {
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [editAllowedFor, setEditAllowedFor] = useState<string | null>(null);
   const [liveStatuses, setLiveStatuses] = useState<Record<string, LiveEntry>>({});
+  const [preflightStates, setPreflightStates] = useState<
+    Record<string, ExternalMcpPreflightStateSummary>
+  >({});
   const entries = Object.entries(servers);
+
+  const runPreflight = async (name: string, entry: ExternalMcpEntry) => {
+    setPreflightStates((prev) => ({ ...prev, [name]: { loading: true } }));
+    try {
+      const res = await fetch(`/api/integrations/mcp-preflight`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          spec: { [name]: entry },
+          ownerAgentId: agentId,
+          source: "external",
+          toolNamesByServer: { [name]: entry.allowed_tools ?? [] },
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setPreflightStates((prev) => ({
+          ...prev,
+          [name]: { error: err.message ?? `preflight_failed_${res.status}` },
+        }));
+        return;
+      }
+      const body = (await res.json()) as {
+        servers?: Array<{
+          serverName: string;
+          approvalStatus: "approved" | "review_required" | "blocked";
+          networkRisk: "low" | "medium" | "high";
+          filesystemRisk: "low" | "medium" | "high";
+          packageSource: string;
+          reasons: string[];
+        }>;
+      };
+      const server = body.servers?.find((s) => s.serverName === name) ?? body.servers?.[0];
+      if (!server) {
+        setPreflightStates((prev) => ({
+          ...prev,
+          [name]: { error: "Preflight returned no result for this server." },
+        }));
+        return;
+      }
+      setPreflightStates((prev) => ({ ...prev, [name]: { server } }));
+    } catch (err) {
+      setPreflightStates((prev) => ({
+        ...prev,
+        [name]: { error: (err as Error).message },
+      }));
+    }
+  };
 
   // Fetch live credential status for each configured server. The static
   // agent.yml view (`entry.credential_ref`) only tells us a credential was
@@ -165,9 +219,7 @@ export function McpServersSection({
               toolCount={entry.allowed_tools?.length ?? 0}
               status={status}
               tokenExpiresAt={live?.tokenExpiresAt}
-              onEditAllowed={() => {
-                /* future: dedicated allowed-tools subdialog */
-              }}
+              onEditAllowed={() => setEditAllowedFor(name)}
               onReauth={() => setWizardOpen(true)}
               onRemove={async () => {
                 if (typeof window !== "undefined"
@@ -206,7 +258,8 @@ export function McpServersSection({
                 entry={entry}
                 onChange={(next) => onChangeEntry?.(name, next)}
                 onRemove={() => onRemoveEntry?.(name)}
-                onPreflight={() => Promise.resolve()}
+                onPreflight={() => runPreflight(name, entry)}
+                preflight={preflightStates[name]}
               />
             ))}
           </div>
@@ -220,6 +273,16 @@ export function McpServersSection({
           onSaved={() => {
             void onReload();
           }}
+        />
+      )}
+
+      {editAllowedFor && servers[editAllowedFor] && (
+        <EditAllowedToolsDialog
+          agentId={agentId}
+          serverName={editAllowedFor}
+          currentAllowed={servers[editAllowedFor]?.allowed_tools ?? []}
+          onClose={() => setEditAllowedFor(null)}
+          onSaved={onReload}
         />
       )}
     </Section>

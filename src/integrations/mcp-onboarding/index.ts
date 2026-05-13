@@ -21,6 +21,7 @@ import {
   registerClient,
 } from './oauth-client.js';
 import { probe } from './probe.js';
+import { mcpFetch } from './mcp-fetch.js';
 import { deriveServerId } from './server-id.js';
 import type { PendingConnection, PendingStore } from './pending-store.js';
 import type { DiscoveredOAuth, Requester } from './types.js';
@@ -772,65 +773,3 @@ async function listToolsNoAuth(
   return body.result?.tools ?? [];
 }
 
-/**
- * MCP Streamable HTTP transport call against an authenticated server.
- * Mirrors `listToolsNoAuth` but: (a) sends a Bearer token, (b) passes /
- * receives the `Mcp-Session-Id` header, (c) returns ok/body/sessionId
- * instead of throwing, so the caller can compose the multi-step handshake
- * (initialize → initialized notification → tools/list) and surface
- * `invalid_token` on any failure.
- *
- * `notifications/initialized` is a notification (no JSON-RPC `id`) and
- * servers reply 200/202 with no body — `body` is `null` in that case.
- */
-async function mcpFetch(
-  url: string,
-  token: string,
-  sessionId: string | undefined,
-  payload: object,
-): Promise<{ ok: boolean; body: unknown; sessionId?: string }> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json, text/event-stream',
-    Authorization: `Bearer ${token}`,
-  };
-  if (sessionId) headers['Mcp-Session-Id'] = sessionId;
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-    });
-  } catch {
-    return { ok: false, body: null };
-  }
-  const sid = res.headers.get('mcp-session-id') ?? undefined;
-  if (!res.ok) return { ok: false, body: null, sessionId: sid };
-
-  // 202 Accepted is what servers return for notifications (initialized).
-  // 200 with empty body is also valid for some flows. Treat both as "ok,
-  // no body to parse".
-  if (res.status === 202) return { ok: true, body: null, sessionId: sid };
-  const ct = (res.headers.get('Content-Type') ?? '').toLowerCase();
-  if (ct.includes('text/event-stream')) {
-    const text = await res.text();
-    for (const line of text.split(/\r?\n/)) {
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (!data) continue;
-      try {
-        return { ok: true, body: JSON.parse(data), sessionId: sid };
-      } catch {
-        continue;
-      }
-    }
-    return { ok: true, body: null, sessionId: sid };
-  }
-  try {
-    return { ok: true, body: await res.json(), sessionId: sid };
-  } catch {
-    return { ok: true, body: null, sessionId: sid };
-  }
-}
