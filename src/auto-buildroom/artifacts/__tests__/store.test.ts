@@ -74,6 +74,18 @@ describe('FileArtifactStore', () => {
     ]);
   });
 
+  it('does not read artifacts from a different room', () => {
+    const otherStore = new FileArtifactStore({ projectRoot: root, roomId: 'other-room' });
+    const otherArtifact = {
+      ...baseArtifact('research_20260512_other', 'research_packet'),
+      room: { id: 'other-room' },
+    };
+    otherStore.writeArtifact(otherArtifact);
+
+    expect(store.hasArtifact(otherArtifact.id)).toBe(false);
+    expect(() => store.readArtifact(otherArtifact.id)).toThrow(/Artifact not found/);
+  });
+
   it('stores sanitized session summaries and handoff signals in their v0.1 locations', () => {
     const summary = store.writeArtifact(baseArtifact(
       'session-summary-20260512-001',

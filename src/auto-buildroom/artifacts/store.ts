@@ -3,11 +3,10 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { autoBuildroomRoot, roomRoot as resolveRoomRoot } from '../storage/init.js';
+import { roomRoot as resolveRoomRoot } from '../storage/init.js';
 import { computeArtifactContentHash } from './hash.js';
 import type { BuildroomArtifact, BuildroomArtifactType } from './model.js';
 
@@ -126,9 +125,7 @@ export class FileArtifactStore {
       if (existsSync(directPath)) return directPath;
     }
 
-    const root = autoBuildroomRoot(this.opts.projectRoot);
-    const legacyPath = findJsonFile(root, `${id}.json`);
-    return legacyPath;
+    return null;
   }
 }
 
@@ -177,22 +174,4 @@ function collectStrings(value: unknown): string[] {
     return Object.values(value as Record<string, unknown>).flatMap((item) => collectStrings(item));
   }
   return [];
-}
-
-function findJsonFile(root: string, filename: string): string | null {
-  if (!existsSync(root)) return null;
-
-  const entries = readdirSync(root);
-  for (const entry of entries) {
-    const path = join(root, entry);
-    const stats = statSync(path);
-    if (stats.isDirectory()) {
-      const nested = findJsonFile(path, filename);
-      if (nested) return nested;
-    } else if (stats.isFile() && entry === filename) {
-      return path;
-    }
-  }
-
-  return null;
 }
