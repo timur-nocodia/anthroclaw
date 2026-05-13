@@ -27,6 +27,8 @@ docs/*
 !docs/superpowers/
 !docs/safety-profiles.md
 !docs/customer-facing-agent-template.md
+!docs/Auto-Buildroom/
+!docs/Auto-Buildroom/**
 
 # Git worktrees (used by superpowers subagent-driven workflow)
 .worktrees/

@@ -21,6 +21,18 @@ describe('validateSafetyProfile', () => {
     expect(r.error).toMatch(/safety_profile/);
   });
 
+  it('public + buildroom_submit_signal without override → fatal', () => {
+    const r = validateSafetyProfile(base({ mcp_tools: ['buildroom_submit_signal'] }));
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/buildroom_submit_signal/);
+  });
+
+  it('public + buildroom_submit_session_summary without override → fatal', () => {
+    const r = validateSafetyProfile(base({ mcp_tools: ['buildroom_submit_session_summary'] }));
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/buildroom_submit_session_summary/);
+  });
+
   it('public + manage_cron with allow_tools override → ok with WARN', () => {
     const r = validateSafetyProfile(base({
       mcp_tools: ['manage_cron'],

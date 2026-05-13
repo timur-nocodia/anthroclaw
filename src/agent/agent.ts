@@ -1,4 +1,4 @@
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { loadAgentYml } from '../config/loader.js';
 import type { AgentYml, GlobalConfig } from '../config/schema.js';
@@ -26,6 +26,8 @@ import { createShowConfigTool } from './tools/show-config.js';
 import { createEscalateTool } from './tools/escalate.js';
 import { createConnectMcpTool } from './tools/connect-mcp.js';
 import type { createOnboarding as createMcpOnboarding } from '../integrations/mcp-onboarding/index.js';
+import { createBuildroomHandoffTool } from './tools/buildroom-handoff.js';
+import { createBuildroomSessionSummaryTool } from './tools/buildroom-session-summary.js';
 import { canManageAgent, type OperatorConsoleConfigShape } from '../security/cross-agent-perm.js';
 import type { AgentConfigWriter } from '../config/writer.js';
 import type { ConfigAuditLog } from '../config/audit.js';
@@ -526,6 +528,20 @@ export class Agent {
               'show_config listed in mcp_tools but agentConfigWriter not available',
             );
           }
+          break;
+        case 'buildroom_submit_signal':
+          tools.push(createBuildroomHandoffTool({
+            projectRoot: resolve(dataDir, '..'),
+            roomId: 'anthroclaw-core',
+            sourceAgentId: id,
+          }));
+          break;
+        case 'buildroom_submit_session_summary':
+          tools.push(createBuildroomSessionSummaryTool({
+            projectRoot: resolve(dataDir, '..'),
+            roomId: 'anthroclaw-core',
+            sourceAgentId: id,
+          }));
           break;
       }
     }

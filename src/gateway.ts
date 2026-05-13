@@ -32,6 +32,8 @@ import { AGENT_ID_MAX_LEN, AGENT_ID_RE } from './agent/sandbox/agent-workspace.j
 import { createManageCronTool } from './agent/tools/manage-cron.js';
 import { createSendMessageTool } from './agent/tools/send-message.js';
 import { createSendMediaTool } from './agent/tools/send-media.js';
+import { bindBuildroomHandoffToolsForDispatch } from './agent/tools/buildroom-handoff.js';
+import { bindBuildroomSessionSummaryToolsForDispatch } from './agent/tools/buildroom-session-summary.js';
 import { RouteTable, type RouteEntry } from './routing/table.js';
 import { AccessControl } from './routing/access.js';
 import { buildSessionKey } from './routing/session-key.js';
@@ -144,6 +146,10 @@ import { parseDecisionCallbackData } from './decisions/events.js';
 import { renderDecisionPrompt } from './decisions/renderer.js';
 import { DecisionStore } from './decisions/store.js';
 import type { DecisionChannel, DecisionDeliveryRecord, DecisionEvent, DecisionRecord } from './decisions/types.js';
+import { runBuildroomCli } from './cli/buildroom.js';
+import { loadBuildroomRoomConfig } from './auto-buildroom/storage/init.js';
+import { handleTelegramBuildroomGatewayMessage } from './auto-buildroom/telegram/gateway-adapter.js';
+import { sendTelegramBuildroomNotification } from './auto-buildroom/telegram/notification-sender.js';
 import { getSdkActiveInputStatus, type SdkActiveInputStatus } from './sdk/active-input.js';
 import {
   asAgentMcpServerSpec,
@@ -1904,7 +1910,31 @@ export class Gateway {
             threadId: msg.threadId,
           }
         : undefined;
-      const dispatchTools = agent.buildToolsForDispatch(sessionKey).map((tool) => {
+      const buildroomSourceSessionId = sessionKey ?? (msg
+        ? buildSessionKey(
+            agent.id,
+            msg.channel,
+            msg.chatType,
+            msg.peerId,
+            msg.threadId,
+          )
+        : undefined);
+      const baseDispatchTools = agent.buildToolsForDispatch(sessionKey);
+      const buildroomToolBinding = buildroomSourceSessionId
+        ? {
+            projectRoot: this.dataDir ? resolve(this.dataDir, '..') : process.cwd(),
+            roomId: 'anthroclaw-core',
+            sourceAgentId: agent.id,
+            sourceSessionId: buildroomSourceSessionId,
+          }
+        : null;
+      const dispatchTools = (buildroomToolBinding
+        ? bindBuildroomSessionSummaryToolsForDispatch(
+            bindBuildroomHandoffToolsForDispatch(baseDispatchTools, buildroomToolBinding),
+            buildroomToolBinding,
+          )
+        : baseDispatchTools
+      ).map((tool) => {
         if (tool.name === 'send_message') {
           return createSendMessageTool((id) => this.channels.get(id), {
             agentId: agent.id,
@@ -4059,9 +4089,47 @@ export class Gateway {
     }
   }
 
+  private async handleBuildroomTelegramCommand(msg: InboundMessage): Promise<boolean> {
+    if (msg.channel !== 'telegram') return false;
+    if (!this.dataDir) return false;
+    const channel = this.channels.get('telegram');
+    if (!channel) return false;
+
+    const projectRoot = resolve(this.dataDir, '..');
+    return handleTelegramBuildroomGatewayMessage(msg, {
+      projectRoot,
+      loadConfig: async () => {
+        try {
+          return loadBuildroomRoomConfig(projectRoot);
+        } catch (err) {
+          logger.debug({ err }, 'Auto-Buildroom config not available for Telegram command');
+          return null;
+        }
+      },
+      runCli: (argv, io) => runBuildroomCli(argv, io, {
+        notify: async ({ routes, text }) => {
+          await sendTelegramBuildroomNotification({
+            routes,
+            text,
+            sendText: async (target, message) => {
+              await channel.sendText(String(target.chatId), message, {
+                accountId: msg.accountId,
+                ...(target.messageThreadId == null ? {} : { threadId: String(target.messageThreadId) }),
+              });
+            },
+          });
+        },
+      }),
+      sendText: async (peerId, text, opts) => {
+        await channel.sendText(peerId, text, opts);
+      },
+    });
+  }
+
   async dispatch(msg: InboundMessage): Promise<void> {
     metrics.increment('messages_received');
     metrics.recordMessage();
+    if (await this.handleBuildroomTelegramCommand(msg)) return;
     if (!this.routeTable || !this.accessControl) return;
     if (await this.handleDecisionTextReply(msg)) return;
 
