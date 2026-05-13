@@ -69,4 +69,20 @@ describe('Auto-Buildroom config model', () => {
       'Telegram user identity is not a route',
     );
   });
+
+  it('rejects allowed and blocked path patterns that escape the repository root', () => {
+    const config = createDefaultBuildroomConfig({
+      roomId: 'anthroclaw-core',
+      operatorId: 'cli:user:local-operator',
+    });
+    config.paths.allowed = ['../outside/**'];
+    config.paths.blocked = ['/etc/passwd'];
+
+    const result = validateBuildroomConfig(config);
+
+    expect(result.success).toBe(false);
+    expect(result.issues.map((issue) => issue.message)).toContain(
+      'path pattern must stay inside repository root',
+    );
+  });
 });

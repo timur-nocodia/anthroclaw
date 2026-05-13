@@ -1,9 +1,21 @@
 import { z } from 'zod';
+import { normalizeRepoPath } from '../policy/paths.js';
 
 const OperatorIdSchema = z.string().min(1);
 const RouteIdSchema = z.string().min(1).refine(
   (value) => !value.startsWith('telegram_user:'),
   'Telegram user identity is not a route',
+);
+const PathPatternSchema = z.string().min(1).refine(
+  (value) => {
+    try {
+      normalizeRepoPath(value);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  'path pattern must stay inside repository root',
 );
 
 const OperatorSchema = z.object({
@@ -28,8 +40,8 @@ export const BuildroomConfigSchema = z.object({
     external: z.object({ enabled: z.boolean() }),
   }),
   paths: z.object({
-    allowed: z.array(z.string()),
-    blocked: z.array(z.string()),
+    allowed: z.array(PathPatternSchema),
+    blocked: z.array(PathPatternSchema),
   }),
   execution: z.object({
     mutationTarget: z.enum(['worktree', 'sandbox', 'in_place']),
