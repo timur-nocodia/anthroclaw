@@ -41,6 +41,15 @@ describe('buildroom CLI', () => {
     expect(out.join('\n')).toContain('Approved not built: 0');
   });
 
+  it('reports not initialized status instead of raw filesystem errors', async () => {
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+
+    expect(err).toEqual([]);
+    expect(out.join('\n')).toContain('Buildroom is not initialized');
+    expect(out.join('\n')).toContain('.anthroclaw/auto-buildroom/');
+    expect(out.join('\n')).toContain('anthroclaw buildroom init');
+  });
+
   it('refuses init when operator identity is invalid', async () => {
     await expect(
       run(['init', '--root', root, '--room', 'anthroclaw-core', '--operator', 'telegram_chat:-1003931616911']),
@@ -524,6 +533,26 @@ describe('buildroom CLI', () => {
     expect(out.join('\n')).toContain('Buildroom resumed');
 
     await expect(run(['collect', '--root', root])).resolves.toBe(0);
+  });
+
+  it('updates mode and kill switch without starting workflow stages', async () => {
+    await run(['init', '--root', root, '--room', 'anthroclaw-core']);
+
+    out.length = 0;
+    await expect(run(['mode', 'off', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Mode: off');
+
+    out.length = 0;
+    await expect(run(['status', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Mode: off');
+
+    out.length = 0;
+    await expect(run(['kill-switch', 'on', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Kill switch: active');
+
+    out.length = 0;
+    await expect(run(['kill-switch', 'off', '--root', root])).resolves.toBe(0);
+    expect(out.join('\n')).toContain('Kill switch: inactive');
   });
 
   it('blocks build when kill switch is active', async () => {

@@ -19,6 +19,7 @@ import {
 } from '../auto-buildroom/policy/authority.js';
 import {
   BuildroomConfigExistsError,
+  autoBuildroomRoot,
   initializeBuildroomStorage,
   loadBuildroomRoomConfig,
   roomRoot,
@@ -120,6 +121,10 @@ export async function runBuildroomCli(
         return commandPause(args, commandIO);
       case 'resume':
         return commandResume(args, commandIO);
+      case 'mode':
+        return commandMode(args, commandIO);
+      case 'kill-switch':
+        return commandKillSwitch(args, commandIO);
       default:
         if (!wantsJson(args)) {
           commandIO.stderr(`Unknown command: ${args.command}`);
@@ -176,6 +181,10 @@ function commandInit(args: ParsedArgs, io: CliIO): number {
 }
 
 function commandStatus(args: ParsedArgs, io: CliIO): number {
+  if (!existsSync(join(autoBuildroomRoot(args.root), 'buildroom.yml'))) {
+    return commandStatusNotInitialized(args, io);
+  }
+
   const config = loadBuildroomRoomConfig(args.root, args.room);
   const store = new FileArtifactStore({ projectRoot: args.root, roomId: config.roomId });
   const counts = deriveStatusCounts(store);
@@ -210,6 +219,43 @@ function commandStatus(args: ParsedArgs, io: CliIO): number {
     '',
     'Next:',
     'anthroclaw buildroom collect',
+  ].join('\n'));
+  return 0;
+}
+
+function commandStatusNotInitialized(args: ParsedArgs, io: CliIO): number {
+  const counts = emptyStatusCounts();
+  if (wantsJson(args)) {
+    writeJson(io.stdout, {
+      ok: true,
+      command: 'status',
+      roomId: args.room ?? 'anthroclaw-core',
+      initialized: false,
+      state: {
+        roomState: 'not_initialized',
+        mode: 'off',
+        paused: false,
+        killSwitchActive: false,
+        latestTrust: 'none',
+        counts,
+      },
+      artifacts: [],
+      nextActions: ['anthroclaw buildroom init'],
+    });
+    return 0;
+  }
+
+  io.stdout([
+    'Buildroom is not initialized',
+    '',
+    'Initialize creates local project state under:',
+    '.anthroclaw/auto-buildroom/',
+    '',
+    'Default mode: manual approval.',
+    'Buildroom will not auto-build.',
+    '',
+    'Next:',
+    'anthroclaw buildroom init',
   ].join('\n'));
   return 0;
 }
@@ -319,6 +365,18 @@ function deriveStatusCounts(store: FileArtifactStore): {
     ).length,
     unresolvedErrors: errors.filter((error) => error.status !== 'resolved').length,
     complete: trustReports.length,
+  };
+}
+
+function emptyStatusCounts(): ReturnType<typeof deriveStatusCounts> {
+  return {
+    pendingApprovals: 0,
+    approvedNotBuilt: 0,
+    activeBuilds: 0,
+    qaPending: 0,
+    trustPending: 0,
+    unresolvedErrors: 0,
+    complete: 0,
   };
 }
 
@@ -787,6 +845,48 @@ function commandResume(args: ParsedArgs, io: CliIO): number {
   return 0;
 }
 
+function commandMode(args: ParsedArgs, io: CliIO): number {
+  const mode = requirePositional(args, 0, 'mode');
+  if (!isBuildroomMode(mode)) {
+    throw new CliUsageError(`Invalid Buildroom mode: ${mode}`);
+  }
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  const nextConfig = { ...config, mode };
+  saveBuildroomRoomConfig(args.root, nextConfig);
+
+  io.stdout([
+    'Buildroom mode updated',
+    `Room: ${config.roomId}`,
+    `Mode: ${mode}`,
+    '',
+    mode === 'off'
+      ? 'Mode off blocks new Buildroom stages. Status and receipt inspection remain available.'
+      : 'Changing mode does not start a build by itself.',
+  ].join('\n'));
+  return 0;
+}
+
+function commandKillSwitch(args: ParsedArgs, io: CliIO): number {
+  const value = requirePositional(args, 0, 'kill-switch');
+  if (value !== 'on' && value !== 'off') {
+    throw new CliUsageError(`Invalid kill switch value: ${value}`);
+  }
+  const active = value === 'on';
+  const config = loadBuildroomRoomConfig(args.root, args.room);
+  saveBuildroomRoomConfig(args.root, { ...config, killSwitchActive: active });
+
+  io.stdout([
+    'Buildroom kill switch updated',
+    `Room: ${config.roomId}`,
+    `Kill switch: ${active ? 'active' : 'inactive'}`,
+    '',
+    active
+      ? 'Kill switch blocks scheduled stages and new builds.'
+      : 'Turning off the kill switch does not resume paused stages or start a build.',
+  ].join('\n'));
+  return 0;
+}
+
 async function notifyLifecycle(
   deps: BuildroomCliDependencies,
   projectRoot: string,
@@ -1122,6 +1222,10 @@ function wantsJson(args: ParsedArgs): boolean {
   return args.flags.has('json');
 }
 
+function isBuildroomMode(value: string): value is BuildroomConfig['mode'] {
+  return value === 'off' || value === 'observe_only' || value === 'manual_approval';
+}
+
 function commandOutputIO(args: ParsedArgs, io: CliIO): CliIO {
   if (!args.flags.has('quiet') || wantsJson(args)) return io;
   return {
@@ -1278,6 +1382,8 @@ function helpText(): string {
     '  retain    Create retention recommendation for a trust report',
     '  pause     Soft-pause new Buildroom stages',
     '  resume    Resume stage execution after pause',
+    '  mode      Set Buildroom mode: off | observe_only | manual_approval',
+    '  kill-switch  Set kill switch: on | off',
     '',
     'Options:',
     '  --root <path>       Project root',

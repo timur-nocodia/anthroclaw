@@ -8,6 +8,7 @@ import {
   LayoutGrid,
   LayoutDashboard,
   Bot,
+  Boxes,
   MessageSquare,
   History,
   Radio,
@@ -45,6 +46,7 @@ interface ChannelStatus {
 const NAV_ITEMS: NavItem[] = [
   { id: "fleet", label: "Fleet", icon: LayoutGrid, path: "/fleet", absolute: true },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "" },
+  { id: "buildroom", label: "Buildroom", icon: Boxes, path: "/buildroom" },
   { id: "agents", label: "Agents", icon: Bot, path: "/agents" },
   { id: "chat", label: "Test Chat", icon: MessageSquare, path: "/chat" },
   { id: "sessions", label: "Sessions", icon: History, path: "/sessions" },
@@ -101,6 +103,7 @@ export function Sidebar() {
     if (pathname.startsWith(prefix)) {
       const rest = pathname.slice(prefix.length);
       if (!rest || rest === "/") return "dashboard";
+      if (rest.startsWith("/buildroom")) return "buildroom";
       if (rest.startsWith("/agents")) return "agents";
       if (rest.startsWith("/chat")) return "chat";
       if (rest.startsWith("/sessions")) return "sessions";

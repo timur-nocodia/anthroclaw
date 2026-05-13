@@ -51,6 +51,34 @@ describe('buildroom CLI JSON output', () => {
     });
   });
 
+  it('renders missing config as not_initialized status JSON', async () => {
+    await expect(run(['status', '--root', root, '--json'])).resolves.toBe(0);
+
+    expect(err).toEqual([]);
+    expect(out).toHaveLength(1);
+    expect(JSON.parse(out[0])).toMatchObject({
+      ok: true,
+      command: 'status',
+      roomId: 'anthroclaw-core',
+      initialized: false,
+      state: {
+        roomState: 'not_initialized',
+        mode: 'off',
+        paused: false,
+        killSwitchActive: false,
+        latestTrust: 'none',
+        counts: {
+          pendingApprovals: 0,
+          approvedNotBuilt: 0,
+          activeBuilds: 0,
+          qaPending: 0,
+          unresolvedErrors: 0,
+        },
+      },
+      nextActions: ['anthroclaw buildroom init'],
+    });
+  });
+
   it('renders receipt inspection as JSON', async () => {
     await run(['init', '--root', root, '--room', 'anthroclaw-core']);
     const store = new FileArtifactStore({ projectRoot: root, roomId: 'anthroclaw-core' });
