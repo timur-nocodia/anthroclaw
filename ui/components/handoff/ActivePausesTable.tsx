@@ -8,9 +8,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Trash2, RefreshCw, Pause, AlertCircle } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Trash2, RefreshCw, Pause } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Section } from "@/components/ui/section";
+import { HandoffEmpty, HandoffError, HandoffIntro } from "./HandoffControls";
 
 interface PauseEntry {
   agentId: string;
@@ -86,92 +87,76 @@ export function ActivePausesTable({
   };
 
   return (
-    <Card
-      className="rounded-md"
-      style={{ background: "var(--oc-bg0)", borderColor: "var(--oc-border)" }}
+    <Section
+      title="Active pauses"
+      subtitle={`refreshes every ${Math.round(refreshIntervalMs / 1000)}s`}
+      icon={<Pause className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+      tooltip="Current peer-level pauses for this agent. A paused peer cannot trigger a model run until the pause expires or is manually removed."
+      action={
+        <Button size="sm" variant="ghost" onClick={fetchPauses} disabled={loading} aria-label="refresh">
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+        </Button>
+      }
     >
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-[14px] font-medium">
-              <Pause className="h-4 w-4" />
-              Active pauses
-            </CardTitle>
-            <CardDescription className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-              Peers currently paused for this agent. Refreshes every {Math.round(refreshIntervalMs / 1000)}s.
-            </CardDescription>
-          </div>
-          <Button size="sm" variant="ghost" onClick={fetchPauses} disabled={loading} aria-label="refresh">
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-      </CardHeader>
-
-      <CardContent>
-        {error && (
-          <div
-            className="mb-2 flex items-center gap-2 rounded border p-2 text-[12px]"
-            style={{ borderColor: "var(--oc-border)", color: "var(--oc-danger)" }}
-          >
-            <AlertCircle className="h-3.5 w-3.5" />
-            {error}
-          </div>
-        )}
+      <HandoffIntro>
+        These pauses are stored in the live peer pause store. Removing one lets the next inbound
+        message for that peer reach the agent again.
+      </HandoffIntro>
+        {error && <div className="mb-2"><HandoffError message={error} /></div>}
 
         {pauses.length === 0 ? (
-          <p className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-            No active pauses.
-          </p>
+          <HandoffEmpty>No active pauses.</HandoffEmpty>
         ) : (
-          <table className="w-full text-[12px]">
-            <thead>
-              <tr style={{ color: "var(--oc-text-muted)" }}>
-                <th className="px-2 py-1 text-left">Peer</th>
-                <th className="px-2 py-1 text-left">Channel</th>
-                <th className="px-2 py-1 text-left">Started</th>
-                <th className="px-2 py-1 text-left">Expires</th>
-                <th className="px-2 py-1 text-left">Source</th>
-                <th className="px-2 py-1 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pauses.map((p) => {
-                const [channel] = p.peerKey.split(":");
-                return (
-                  <tr
-                    key={p.peerKey}
-                    className="border-t"
-                    style={{ borderColor: "var(--oc-border)" }}
-                    data-testid={`pause-row-${p.peerKey}`}
-                  >
-                    <td className="px-2 py-1 font-mono">{p.peerKey}</td>
-                    <td className="px-2 py-1">{channel}</td>
-                    <td className="px-2 py-1">{formatTime(p.pausedAt)}</td>
-                    <td className="px-2 py-1">
-                      {p.expiresAt ? formatTime(p.expiresAt) : "indefinite"}
-                    </td>
-                    <td className="px-2 py-1" style={{ color: "var(--oc-text-muted)" }}>
-                      {p.source}
-                    </td>
-                    <td className="px-2 py-1 text-right">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleUnpause(p.peerKey)}
-                        aria-label={`unpause-${p.peerKey}`}
-                      >
-                        <Trash2 className="mr-1 h-3 w-3" />
-                        Unpause
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-[12px]">
+              <thead>
+                <tr style={{ color: "var(--oc-text-muted)" }}>
+                  <th className="px-2 py-1 text-left">Peer</th>
+                  <th className="px-2 py-1 text-left">Channel</th>
+                  <th className="px-2 py-1 text-left">Started</th>
+                  <th className="px-2 py-1 text-left">Expires</th>
+                  <th className="px-2 py-1 text-left">Source</th>
+                  <th className="px-2 py-1 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pauses.map((p) => {
+                  const [channel] = p.peerKey.split(":");
+                  return (
+                    <tr
+                      key={p.peerKey}
+                      className="border-t"
+                      style={{ borderColor: "var(--oc-border)" }}
+                      data-testid={`pause-row-${p.peerKey}`}
+                    >
+                      <td className="px-2 py-1 font-mono">{p.peerKey}</td>
+                      <td className="px-2 py-1">{channel}</td>
+                      <td className="px-2 py-1">{formatTime(p.pausedAt)}</td>
+                      <td className="px-2 py-1">
+                        {p.expiresAt ? formatTime(p.expiresAt) : "indefinite"}
+                      </td>
+                      <td className="px-2 py-1" style={{ color: "var(--oc-text-muted)" }}>
+                        {p.source}
+                      </td>
+                      <td className="px-2 py-1 text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleUnpause(p.peerKey)}
+                          aria-label={`unpause-${p.peerKey}`}
+                        >
+                          <Trash2 className="mr-1 h-3 w-3" />
+                          Unpause
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-      </CardContent>
-    </Card>
+    </Section>
   );
 }
 

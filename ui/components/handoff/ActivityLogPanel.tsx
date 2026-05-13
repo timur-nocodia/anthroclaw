@@ -9,9 +9,10 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
-import { Activity, AlertCircle, RefreshCw } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Activity, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Section } from "@/components/ui/section";
+import { HandoffEmpty, HandoffError, HandoffIntro } from "./HandoffControls";
 
 interface PauseEvent {
   kind: string;
@@ -64,47 +65,32 @@ export function ActivityLogPanel({ agentId }: ActivityLogPanelProps) {
     : events;
 
   return (
-    <Card
-      className="rounded-md"
-      style={{ background: "var(--oc-bg0)", borderColor: "var(--oc-border)" }}
+    <Section
+      title="Activity log"
+      subtitle="pause timeline"
+      icon={<Activity className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+      tooltip="Shows pause activity for this agent. The current backend endpoint derives the list from active pauses until persisted pause history lands."
+      action={
+        <Button size="sm" variant="ghost" onClick={refresh} disabled={loading} aria-label="refresh">
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+        </Button>
+      }
     >
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-[14px] font-medium">
-              <Activity className="h-4 w-4" />
-              Activity log
-            </CardTitle>
-            <CardDescription className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-              Recent pause events. Filter by peer, kind, or reason.
-            </CardDescription>
-          </div>
-          <Button size="sm" variant="ghost" onClick={refresh} disabled={loading} aria-label="refresh">
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-      </CardHeader>
-
-      <CardContent>
+      <HandoffIntro>
+        Filter pause events by peer key, event kind, or reason. This view is useful for confirming
+        whether a manager takeover actually produced a pause.
+      </HandoffIntro>
         <input
           aria-label="filter"
           type="text"
           placeholder="Filter (peer, kind, reason)…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="mb-3 h-8 w-full rounded border px-2 text-[12px]"
-          style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
+          className="mb-3 h-8 w-full rounded-[5px] border px-2 text-[12px] outline-none"
+          style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)", color: "var(--color-foreground)" }}
         />
 
-        {error && (
-          <div
-            className="mb-2 flex items-center gap-2 rounded border p-2 text-[12px]"
-            style={{ borderColor: "var(--oc-border)", color: "var(--oc-danger)" }}
-          >
-            <AlertCircle className="h-3.5 w-3.5" />
-            {error}
-          </div>
-        )}
+        {error && <div className="mb-2"><HandoffError message={error} /></div>}
 
         {note && (
           <p className="mb-2 text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
@@ -113,16 +99,14 @@ export function ActivityLogPanel({ agentId }: ActivityLogPanelProps) {
         )}
 
         {filtered.length === 0 ? (
-          <p className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-            No events match the current filter.
-          </p>
+          <HandoffEmpty>No events match the current filter.</HandoffEmpty>
         ) : (
           <ol className="space-y-2">
             {filtered.map((ev, idx) => (
               <li
                 key={`${ev.peerKey}-${ev.at}-${idx}`}
-                className="rounded border p-2 text-[12px]"
-                style={{ borderColor: "var(--oc-border)" }}
+                className="rounded-[6px] border p-2 text-[12px]"
+                style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}
                 data-testid={`activity-${idx}`}
               >
                 <div className="flex items-center justify-between">
@@ -138,8 +122,7 @@ export function ActivityLogPanel({ agentId }: ActivityLogPanelProps) {
             ))}
           </ol>
         )}
-      </CardContent>
-    </Card>
+    </Section>
   );
 }
 

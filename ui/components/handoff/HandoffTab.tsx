@@ -43,7 +43,7 @@ export interface HandoffTabProps {
 
 export function HandoffTab({ agentId, agent }: HandoffTabProps) {
   return (
-    <div className="space-y-4 p-5">
+    <div className="flex max-w-[1100px] flex-col gap-3.5 p-5">
       <HumanTakeoverCard agentId={agentId} initialConfig={agent.human_takeover} />
       <NotificationsCard
         agentId={agentId}

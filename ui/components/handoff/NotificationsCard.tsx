@@ -13,12 +13,19 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
-import { Bell, Save, Trash2, Plus, AlertCircle, Send } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
+import { Bell, Save, Trash2, Plus, Send } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { LastModifiedIndicator } from "./LastModifiedIndicator";
+import { Section } from "@/components/ui/section";
+import {
+  HandoffActions,
+  HandoffEmpty,
+  HandoffError,
+  HandoffField,
+  HandoffIntro,
+  HandoffToggleRow,
+} from "./HandoffControls";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -56,7 +63,7 @@ export interface NotificationsConfig {
 }
 
 const DEFAULT_CONFIG: NotificationsConfig = {
-  enabled: true,
+  enabled: false,
   routes: {},
   subscriptions: [],
 };
@@ -191,72 +198,59 @@ export function NotificationsCard({
   };
 
   return (
-    <Card
-      className="rounded-md"
-      style={{ background: "var(--oc-bg0)", borderColor: "var(--oc-border)" }}
+    <Section
+      title="Notifications"
+      subtitle={cfg.enabled ? "delivery enabled" : "delivery disabled"}
+      icon={<Bell className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+      tooltip="Sends operator-facing messages when pause, error, budget, or escalation events happen."
+      action={<LastModifiedIndicator agentId={agentId} section="notifications" />}
     >
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between gap-2 text-[14px] font-medium">
-          <span className="flex items-center gap-2">
-            <Bell className="h-4 w-4" />
-            Notifications
-          </span>
-          <LastModifiedIndicator agentId={agentId} section="notifications" />
-        </CardTitle>
-        <CardDescription className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-          Routes are named delivery targets. Subscriptions wire events to one of those routes,
-          optionally with a cron schedule (for periodic events) and a throttle window.
-        </CardDescription>
-      </CardHeader>
+      <HandoffIntro>
+        Notifications are separate from client replies. Define a route first, then subscribe
+        specific events to that route.
+      </HandoffIntro>
 
-      <CardContent className="space-y-4">
-        {/* Enabled */}
-        <div className="flex items-center justify-between">
-          <Label htmlFor="notif-enabled" className="text-[13px]">
-            Enabled
-          </Label>
-          <input
-            id="notif-enabled"
-            type="checkbox"
-            role="switch"
-            aria-checked={cfg.enabled}
-            checked={cfg.enabled}
-            onChange={(e) => update({ ...cfg, enabled: e.target.checked })}
-            className="h-4 w-7 cursor-pointer appearance-none rounded-full border transition-colors checked:bg-[var(--oc-accent)]"
-            style={{ borderColor: "var(--oc-border)" }}
-          />
-        </div>
+      <div className="space-y-4">
+        <HandoffToggleRow
+          id="notif-enabled"
+          label="Notification delivery"
+          ariaLabel="Enabled"
+          checked={cfg.enabled}
+          onChange={(checked) => update({ ...cfg, enabled: checked })}
+          description="When disabled, subscriptions stay in config but no notification messages are sent."
+          tooltip="Useful while testing an agent without spamming operator chats."
+        />
 
         {/* Routes */}
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <Label className="text-[13px] font-medium">Routes</Label>
+        <HandoffField
+          label="Routes"
+          tooltip="A route is a named delivery target: channel, account, and peer. Subscriptions reference routes by name."
+          hint="Example: operator -> telegram/main/123456789."
+        >
+          <div className="mb-2 flex items-center justify-end">
             <Button size="sm" variant="ghost" onClick={addRoute}>
               <Plus className="mr-1 h-3.5 w-3.5" />
               Add route
             </Button>
           </div>
           {Object.keys(cfg.routes).length === 0 ? (
-            <p className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-              No routes configured. Add one to receive notifications.
-            </p>
+            <HandoffEmpty>No routes configured. Add one before creating subscriptions.</HandoffEmpty>
           ) : (
             <div className="space-y-2">
               {Object.entries(cfg.routes).map(([name, route]) => (
                 <div
                   key={name}
-                  className="rounded border p-2"
-                  style={{ borderColor: "var(--oc-border)" }}
+                  className="rounded-[6px] border p-2"
+                  style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}
                   data-testid={`route-${name}`}
                 >
                   <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
                     <Input
                       aria-label={`route-name-${name}`}
-                      value={name}
                       onBlur={(e) => renameRoute(name, e.target.value.trim())}
-                      onChange={() => undefined}
                       defaultValue={name}
                       className="h-8 text-[12px]"
+                      style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)" }}
                     />
                     <select
                       aria-label={`route-channel-${name}`}
@@ -265,7 +259,7 @@ export function NotificationsCard({
                         updateRoute(name, { channel: e.target.value as ChannelName })
                       }
                       className="h-8 rounded border px-2 text-[12px]"
-                      style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
+                      style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)", color: "var(--color-foreground)" }}
                     >
                       {CHANNELS.map((c) => (
                         <option key={c} value={c}>
@@ -279,6 +273,7 @@ export function NotificationsCard({
                       value={route.account_id}
                       onChange={(e) => updateRoute(name, { account_id: e.target.value })}
                       className="h-8 text-[12px]"
+                      style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)" }}
                     />
                     <Input
                       aria-label={`route-peer-${name}`}
@@ -286,6 +281,7 @@ export function NotificationsCard({
                       value={route.peer_id}
                       onChange={(e) => updateRoute(name, { peer_id: e.target.value })}
                       className="h-8 text-[12px]"
+                      style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)" }}
                     />
                     <div className="flex justify-end gap-1">
                       <Button
@@ -296,8 +292,8 @@ export function NotificationsCard({
                       >
                         <Send className="mr-1 h-3 w-3" />
                         Test
-                        {testStatus[name] === "ok" && <span className="ml-1 text-green-500">✓</span>}
-                        {testStatus[name] === "fail" && <span className="ml-1 text-red-500">✗</span>}
+                        {testStatus[name] === "ok" && <span className="ml-1 text-green-500">OK</span>}
+                        {testStatus[name] === "fail" && <span className="ml-1 text-red-500">failed</span>}
                       </Button>
                       <Button
                         size="sm"
@@ -313,12 +309,15 @@ export function NotificationsCard({
               ))}
             </div>
           )}
-        </div>
+        </HandoffField>
 
         {/* Subscriptions */}
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <Label className="text-[13px] font-medium">Subscriptions</Label>
+        <HandoffField
+          label="Subscriptions"
+          tooltip="A subscription connects one event to one route. Optional schedule is cron-style for periodic summary events; optional throttle accepts values like 30s, 5m, or 1h."
+          hint="Pause events are useful for human takeover; agent_error and escalation_needed are useful for operator escalation."
+        >
+          <div className="mb-2 flex items-center justify-end">
             <Button
               size="sm"
               variant="ghost"
@@ -330,16 +329,14 @@ export function NotificationsCard({
             </Button>
           </div>
           {cfg.subscriptions.length === 0 ? (
-            <p className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-              No subscriptions yet. Add one to start receiving notifications.
-            </p>
+            <HandoffEmpty>No subscriptions yet. Add one to start receiving notifications.</HandoffEmpty>
           ) : (
             <div className="space-y-2">
               {cfg.subscriptions.map((sub, idx) => (
                 <div
                   key={idx}
-                  className="rounded border p-2"
-                  style={{ borderColor: "var(--oc-border)" }}
+                  className="rounded-[6px] border p-2"
+                  style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}
                   data-testid={`subscription-${idx}`}
                 >
                   <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
@@ -348,7 +345,7 @@ export function NotificationsCard({
                       value={sub.event}
                       onChange={(e) => updateSub(idx, { event: e.target.value as EventName })}
                       className="h-8 rounded border px-2 text-[12px]"
-                      style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
+                      style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)", color: "var(--color-foreground)" }}
                     >
                       {EVENTS.map((ev) => (
                         <option key={ev} value={ev}>
@@ -361,7 +358,7 @@ export function NotificationsCard({
                       value={sub.route}
                       onChange={(e) => updateSub(idx, { route: e.target.value })}
                       className="h-8 rounded border px-2 text-[12px]"
-                      style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
+                      style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)", color: "var(--color-foreground)" }}
                     >
                       {Object.keys(cfg.routes).map((r) => (
                         <option key={r} value={r}>
@@ -377,6 +374,7 @@ export function NotificationsCard({
                         updateSub(idx, { schedule: e.target.value || undefined })
                       }
                       className="h-8 text-[12px]"
+                      style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)" }}
                     />
                     <Input
                       aria-label={`sub-throttle-${idx}`}
@@ -386,6 +384,7 @@ export function NotificationsCard({
                         updateSub(idx, { throttle: e.target.value || undefined })
                       }
                       className="h-8 text-[12px]"
+                      style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)" }}
                     />
                     <div className="flex justify-end">
                       <Button
@@ -402,26 +401,23 @@ export function NotificationsCard({
               ))}
             </div>
           )}
-        </div>
+        </HandoffField>
 
-        {error && (
-          <div
-            className="flex items-center gap-2 rounded border p-2 text-[12px]"
-            style={{ borderColor: "var(--oc-border)", color: "var(--oc-danger)" }}
-          >
-            <AlertCircle className="h-3.5 w-3.5" />
-            {error}
-          </div>
+        {error && <HandoffError message={error} />}
+      </div>
+
+      <HandoffActions>
+        {dirty && (
+          <span className="text-[11.5px]" style={{ color: "var(--oc-yellow)" }}>
+            Unsaved changes
+          </span>
         )}
-      </CardContent>
-
-      <CardFooter className="flex justify-end">
         <Button size="sm" disabled={!dirty || saving} onClick={handleSave}>
           <Save className="mr-1.5 h-3.5 w-3.5" />
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Saving..." : "Save"}
         </Button>
-      </CardFooter>
-    </Card>
+      </HandoffActions>
+    </Section>
   );
 }
 

@@ -15,11 +15,12 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
-import { History, AlertCircle, RefreshCw } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { History, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Section } from "@/components/ui/section";
 import { relativeTime } from "@/lib/format-time";
 import type { ConfigSection } from "@backend/config/writer.js";
+import { HandoffEmpty, HandoffError, HandoffField, HandoffIntro } from "./HandoffControls";
 
 interface AuditEntry {
   ts: string;
@@ -88,46 +89,41 @@ export function ConfigAuditPanel({ agentId }: ConfigAuditPanelProps) {
   }, [refresh]);
 
   return (
-    <Card
-      className="rounded-md"
-      style={{ background: "var(--oc-bg0)", borderColor: "var(--oc-border)" }}
+    <Section
+      title="Config change history"
+      subtitle="last 50 writes"
+      icon={<History className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+      tooltip="Audit trail for saves made through this UI, chat self-config tools, and system processes."
+      action={
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={refresh}
+          disabled={loading}
+          aria-label="refresh"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+        </Button>
+      }
     >
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-[14px] font-medium">
-              <History className="h-4 w-4" />
-              Config change history
-            </CardTitle>
-            <CardDescription className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-              Recent writes to this agent&apos;s config — chat tools, UI saves, and
-              system updates. Last 50 entries.
-            </CardDescription>
-          </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={refresh}
-            disabled={loading}
-            aria-label="refresh"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-      </CardHeader>
+      <HandoffIntro>
+        Use this to see what changed, who changed it, and whether the write came from the UI,
+        a chat tool, or a system process.
+      </HandoffIntro>
 
-      <CardContent>
-        <div className="mb-3 flex items-center gap-2">
-          <label htmlFor="audit-section-filter" className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-            Section:
-          </label>
+      <div className="mb-3 max-w-[320px]">
+        <HandoffField
+          label="Section filter"
+          htmlFor="audit-section-filter"
+          tooltip="Limits the audit list to one config section. Use All sections when comparing related saves."
+        >
           <select
             id="audit-section-filter"
             aria-label="section-filter"
             value={section}
             onChange={(e) => setSection(e.target.value as "" | ConfigSection)}
-            className="h-8 rounded border px-2 text-[12px]"
-            style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
+            className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-[12px]"
+            style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg3)", color: "var(--color-foreground)" }}
           >
             {SECTIONS.map((s) => (
               <option key={s.value || "all"} value={s.value}>
@@ -135,29 +131,20 @@ export function ConfigAuditPanel({ agentId }: ConfigAuditPanelProps) {
               </option>
             ))}
           </select>
-        </div>
+        </HandoffField>
+      </div>
 
-        {error && (
-          <div
-            className="mb-2 flex items-center gap-2 rounded border p-2 text-[12px]"
-            style={{ borderColor: "var(--oc-border)", color: "var(--oc-danger)" }}
-          >
-            <AlertCircle className="h-3.5 w-3.5" />
-            {error}
-          </div>
-        )}
+        {error && <div className="mb-2"><HandoffError message={error} /></div>}
 
         {entries.length === 0 ? (
-          <p className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-            No config changes yet.
-          </p>
+          <HandoffEmpty>No config changes yet.</HandoffEmpty>
         ) : (
           <ol className="space-y-2">
             {entries.map((entry, idx) => (
               <li
                 key={`${entry.ts}-${idx}`}
-                className="rounded border p-2 text-[12px]"
-                style={{ borderColor: "var(--oc-border)" }}
+                className="rounded-[6px] border p-2 text-[12px]"
+                style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}
                 data-testid={`audit-entry-${idx}`}
               >
                 <div className="flex items-center justify-between">
@@ -187,7 +174,7 @@ export function ConfigAuditPanel({ agentId }: ConfigAuditPanelProps) {
                       className="max-h-40 overflow-auto rounded border p-1.5 text-[11px]"
                       style={{
                         borderColor: "var(--oc-border)",
-                        background: "var(--oc-bg1)",
+                        background: "var(--oc-bg3)",
                       }}
                       data-testid={`audit-prev-${idx}`}
                     >
@@ -205,7 +192,7 @@ export function ConfigAuditPanel({ agentId }: ConfigAuditPanelProps) {
                       className="max-h-40 overflow-auto rounded border p-1.5 text-[11px]"
                       style={{
                         borderColor: "var(--oc-border)",
-                        background: "var(--oc-bg1)",
+                        background: "var(--oc-bg3)",
                       }}
                       data-testid={`audit-new-${idx}`}
                     >
@@ -217,7 +204,6 @@ export function ConfigAuditPanel({ agentId }: ConfigAuditPanelProps) {
             ))}
           </ol>
         )}
-      </CardContent>
-    </Card>
+    </Section>
   );
 }

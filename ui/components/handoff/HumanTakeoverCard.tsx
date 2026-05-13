@@ -16,13 +16,19 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
-import { Save, UserCheck, AlertCircle } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
+import { Save, UserCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { LastModifiedIndicator } from "./LastModifiedIndicator";
+import { Section } from "@/components/ui/section";
+import {
+  HandoffActions,
+  HandoffEmpty,
+  HandoffError,
+  HandoffField,
+  HandoffIntro,
+  HandoffToggleRow,
+} from "./HandoffControls";
 
 const ALL_CHANNELS = ["whatsapp", "telegram"] as const;
 type Channel = (typeof ALL_CHANNELS)[number];
@@ -45,6 +51,8 @@ const DEFAULT_CONFIG: HumanTakeoverConfig = {
   ignore: ["reactions", "receipts", "typing", "protocol"],
   notification_throttle_minutes: 5,
 };
+
+const WIRED_CHANNELS: ReadonlySet<Channel> = new Set(["whatsapp"]);
 
 export interface HumanTakeoverCardProps {
   agentId: string;
@@ -122,46 +130,36 @@ export function HumanTakeoverCard({
   };
 
   return (
-    <Card
-      className="rounded-md"
-      style={{ background: "var(--oc-bg0)", borderColor: "var(--oc-border)" }}
+    <Section
+      title="Auto-pause on human takeover"
+      subtitle={cfg.enabled ? "auto-pause enabled" : "auto-pause disabled"}
+      icon={<UserCheck className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
+      tooltip="Stops the agent from replying in a conversation after a human operator sends a message from the same connected account."
+      action={<LastModifiedIndicator agentId={agentId} section="human_takeover" />}
     >
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between gap-2 text-[14px] font-medium">
-          <span className="flex items-center gap-2">
-            <UserCheck className="h-4 w-4" />
-            Auto-pause on human takeover
-          </span>
-          <LastModifiedIndicator agentId={agentId} section="human_takeover" />
-        </CardTitle>
-        <CardDescription className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-          When the operator messages a peer directly through their own account, the agent
-          pauses replies for a sliding TTL window so it doesn&apos;t talk over you.
-        </CardDescription>
-      </CardHeader>
+      <HandoffIntro>
+        Use this when a manager takes over a live client chat. A manager&apos;s outbound WhatsApp
+        message starts a per-peer pause; new manager messages extend the timer.
+      </HandoffIntro>
 
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="ht-enabled" className="text-[13px]">
-            Enabled
-          </Label>
-          <input
-            id="ht-enabled"
-            type="checkbox"
-            role="switch"
-            aria-checked={cfg.enabled}
-            checked={cfg.enabled}
-            onChange={(e) => update("enabled", e.target.checked)}
-            className="h-4 w-7 cursor-pointer appearance-none rounded-full border transition-colors checked:bg-[var(--oc-accent)]"
-            style={{ borderColor: "var(--oc-border)" }}
-          />
-        </div>
+      <div className="space-y-4">
+        <HandoffToggleRow
+          id="ht-enabled"
+          label="Auto-pause"
+          ariaLabel="Enabled"
+          checked={cfg.enabled}
+          onChange={(checked) => update("enabled", checked)}
+          description="When enabled, inbound messages from paused peers are ignored by the agent until the pause expires or is manually removed."
+          tooltip="This does not disconnect the channel. It only blocks agent replies for the matching peer."
+        />
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="ht-ttl" className="text-[12px]">
-              Pause TTL (minutes)
-            </Label>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <HandoffField
+            label="Pause TTL"
+            htmlFor="ht-ttl"
+            tooltip="Sliding pause window in minutes. Every new manager message for the same peer extends the pause by this amount."
+            hint="30 minutes is a safe default for lead handoff."
+          >
             <Input
               id="ht-ttl"
               type="number"
@@ -169,12 +167,15 @@ export function HumanTakeoverCard({
               value={cfg.pause_ttl_minutes}
               onChange={(e) => update("pause_ttl_minutes", Number(e.target.value) || 0)}
               className="h-8 text-[13px]"
+              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)" }}
             />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ht-throttle" className="text-[12px]">
-              Notification throttle (minutes)
-            </Label>
+          </HandoffField>
+          <HandoffField
+            label="Notification throttle"
+            htmlFor="ht-throttle"
+            tooltip="Minimum interval between repeated operator notifications for the same pause event."
+            hint="Set to 0 to disable throttling."
+          >
             <Input
               id="ht-throttle"
               type="number"
@@ -184,65 +185,91 @@ export function HumanTakeoverCard({
                 update("notification_throttle_minutes", Number(e.target.value) || 0)
               }
               className="h-8 text-[13px]"
+              style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)" }}
             />
-          </div>
+          </HandoffField>
         </div>
 
-        <div className="space-y-1.5">
-          <Label className="text-[12px]">Channels</Label>
+        <HandoffField
+          label="Channels"
+          tooltip="Which channel adapters are allowed to start auto-pause. The adapter must emit operator_outbound events for this to work."
+          hint="WhatsApp is wired through Baileys fromMe messages. Telegram is shown for schema compatibility but does not emit takeover events yet."
+        >
           <div className="flex flex-wrap gap-2">
             {ALL_CHANNELS.map((ch) => (
-              <Badge
+              <button
                 key={ch}
-                variant={cfg.channels.includes(ch) ? "default" : "outline"}
-                className="cursor-pointer text-[11px]"
+                type="button"
+                disabled={!WIRED_CHANNELS.has(ch)}
+                className="rounded-[5px] border px-2.5 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-55"
                 onClick={() => toggleChannel(ch)}
-                role="button"
                 aria-pressed={cfg.channels.includes(ch)}
+                style={{
+                  background: cfg.channels.includes(ch) ? "var(--oc-accent)" : "var(--oc-bg2)",
+                  borderColor: cfg.channels.includes(ch) ? "var(--oc-accent)" : "var(--oc-border)",
+                  color: cfg.channels.includes(ch) ? "#0b0d12" : "var(--color-foreground)",
+                }}
               >
                 {ch}
-              </Badge>
+                {!WIRED_CHANNELS.has(ch) && (
+                  <span className="ml-1" style={{ color: "var(--oc-text-muted)" }}>
+                    not wired
+                  </span>
+                )}
+              </button>
             ))}
           </div>
-        </div>
+        </HandoffField>
 
-        <div className="space-y-1.5">
-          <Label className="text-[12px]">Ignore (these inbound types do not trigger pause)</Label>
+        <HandoffField
+          label="Ignored WhatsApp event types"
+          tooltip="Baileys can mark reactions, read receipts, typing/protocol envelopes, and similar framework noise as fromMe. These are filtered so they do not start a takeover pause."
+        >
           <div className="flex flex-wrap gap-2">
             {ALL_IGNORE.map((i) => (
-              <Badge
+              <button
                 key={i}
-                variant={cfg.ignore.includes(i) ? "default" : "outline"}
-                className="cursor-pointer text-[11px]"
+                type="button"
+                className="rounded-[5px] border px-2.5 py-1 text-[11px] font-medium transition-colors"
                 onClick={() => toggleIgnore(i)}
-                role="button"
                 aria-pressed={cfg.ignore.includes(i)}
+                style={{
+                  background: cfg.ignore.includes(i) ? "var(--oc-accent)" : "var(--oc-bg2)",
+                  borderColor: cfg.ignore.includes(i) ? "var(--oc-accent)" : "var(--oc-border)",
+                  color: cfg.ignore.includes(i) ? "#0b0d12" : "var(--color-foreground)",
+                }}
               >
                 {i}
-              </Badge>
+              </button>
             ))}
           </div>
-        </div>
+        </HandoffField>
 
-        {error && (
-          <div className="flex items-center gap-2 rounded border p-2 text-[12px]" style={{ borderColor: "var(--oc-border)", color: "var(--oc-danger)" }}>
-            <AlertCircle className="h-3.5 w-3.5" />
-            {error}
-          </div>
+        {!cfg.enabled && (
+          <HandoffEmpty>
+            Auto-pause is currently off. Manager messages from the connected WhatsApp account will not pause this agent.
+          </HandoffEmpty>
         )}
-      </CardContent>
 
-      <CardFooter className="flex justify-end">
+        {error && <HandoffError message={error} />}
+      </div>
+
+      <HandoffActions>
+        {dirty && (
+          <span className="text-[11.5px]" style={{ color: "var(--oc-yellow)" }}>
+            Unsaved changes
+          </span>
+        )}
         <Button
           size="sm"
           disabled={!dirty || saving}
           onClick={handleSave}
         >
           <Save className="mr-1.5 h-3.5 w-3.5" />
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Saving..." : "Save"}
         </Button>
-      </CardFooter>
-    </Card>
+      </HandoffActions>
+    </Section>
   );
 }
 
