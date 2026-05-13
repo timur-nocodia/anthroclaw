@@ -126,6 +126,7 @@ describe('Gateway Telegram Buildroom commands', () => {
         return 'sent_1';
       },
       editText: async () => {},
+      deleteText: async () => {},
       sendMedia: async () => 'sent_media_1',
       sendTyping: async () => {},
       promptForApproval: async () => {},

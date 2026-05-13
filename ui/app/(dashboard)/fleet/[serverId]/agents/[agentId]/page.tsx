@@ -77,6 +77,7 @@ import {
 } from "@/components/learning/LearningDecisionFilters";
 import { LearningDecisionRow, type LearningDecisionRecord } from "@/components/learning/LearningDecisionRow";
 import { McpTab } from "./McpTab";
+import { AgentDisplaySection } from "@/components/AgentDisplaySection";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -132,6 +133,9 @@ interface AgentConfig {
     streaming?: boolean;
     toolPreviewLength?: number;
     showReasoning?: boolean;
+    cleanupProgress?: boolean;
+    subagentTools?: 'parent' | 'all' | 'indented';
+    toolEmojis?: Record<string, string>;
   };
   hooks?: Array<{
     event: string;
@@ -2522,26 +2526,11 @@ function ConfigTab({
                   className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
                   style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} />
               </Field>
-              <Field label="Tool progress" tooltip="Whether to show tool call activity to users. All — every call. New — only new ones. Off — hidden.">
-                <select value={cfg.display?.toolProgress ?? "all"}
-                  onChange={(e) => update({ display: { ...cfg.display, toolProgress: e.target.value } })}
-                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
-                  style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
-                  <option value="all">all — show every tool call</option>
-                  <option value="new">new — only new tool calls</option>
-                  <option value="off">off — hide tool calls</option>
-                </select>
-              </Field>
-              <Field label="Streaming" tooltip="Stream output — text appears as it's generated, not all at once. Works in Telegram via message editing.">
-                <select value={cfg.display?.streaming === true ? "true" : cfg.display?.streaming === false ? "false" : "auto"}
-                  onChange={(e) => update({ display: { ...cfg.display, streaming: e.target.value === "auto" ? undefined : e.target.value === "true" } })}
-                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
-                  style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}>
-                  <option value="auto">auto (platform default)</option>
-                  <option value="true">enabled</option>
-                  <option value="false">disabled</option>
-                </select>
-              </Field>
+              <AgentDisplaySection
+                display={cfg.display}
+                safetyProfile={cfg.safety_profile}
+                onChange={(display) => update({ display })}
+              />
             </FormGrid>
           </Section>
 

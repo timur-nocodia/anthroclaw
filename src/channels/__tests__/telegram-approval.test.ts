@@ -21,7 +21,8 @@ describe('ChannelAdapter approval API', () => {
     expect((WhatsappChannel as any).capabilities).toMatchObject({
       callbacks: false,
       textReplies: true,
-      editMessage: false,
+      editMessage: true,
+      deleteMessage: true,
       threads: false,
       reactions: false,
     });

@@ -99,6 +99,7 @@ function createBridgeHook(agentId: string, emitter: HookEmitter): HookCallback {
           toolName: toolInput.tool_name,
           toolUseId: toolInput.tool_use_id,
           toolInput: toHookSafeValue(toolInput.tool_input),
+          parentToolUseId: (toolInput as { parent_tool_use_id?: string | null }).parent_tool_use_id ?? null,
         });
         break;
       }
