@@ -21,7 +21,7 @@ import {
   registerClient,
 } from './oauth-client.js';
 import { probe } from './probe.js';
-import { mcpFetch } from './mcp-fetch.js';
+import { discoverMcpTools, mcpFetch } from './mcp-fetch.js';
 import { deriveServerId } from './server-id.js';
 import type { PendingConnection, PendingStore } from './pending-store.js';
 import type { DiscoveredOAuth, Requester } from './types.js';
@@ -418,23 +418,29 @@ export function createOnboarding(deps: OnboardingDeps) {
         },
       );
 
-      const toolsRes = await fetch(row.mcpUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${tokens.accessToken}`,
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 2,
-          method: 'tools/list',
-          params: {},
-        }),
-      });
-      const toolsBody = (await toolsRes.json()) as {
-        result?: { tools?: Array<{ name: string; description?: string }> };
-      };
-      const tools = toolsBody.result?.tools ?? [];
+      // Streamable HTTP servers (Linear, Apify, Browserbase, …) need the
+      // full initialize → notifications/initialized → tools/list dance
+      // with `Accept: text/event-stream` and the `Mcp-Session-Id` header.
+      // The naive single-shot tools/list we used to do here got back
+      // HTTP 400 from such servers, the JSON parse swallowed the error,
+      // and the pending row was marked completed with an empty tools
+      // list — the resume wizard then showed "No tools discovered"
+      // even though the credential was saved fine.
+      let tools: Array<{ name: string; description?: string }> = [];
+      try {
+        tools = await discoverMcpTools({
+          mcpUrl: row.mcpUrl,
+          token: tokens.accessToken,
+        });
+      } catch (err) {
+        // Persist what we have (the credential) so the operator can
+        // still finalize manually via the Edit allowed tools dialog's
+        // Refresh button. Surface the reason in the pending row's
+        // tools metadata for debugging.
+        console.warn(
+          `[mcp-onboarding] completeOAuth: tools/list failed for pendingId=${row.id}: ${(err as Error).message}`,
+        );
+      }
 
       deps.pending.markCompleted(row.id, JSON.stringify({ tools, serverId }));
       const updated = deps.pending.byId(row.id) ?? row;

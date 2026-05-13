@@ -6,6 +6,29 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.11.7] - 2026-05-13
+
+### Fixed
+
+- **OAuth onboarding now discovers tools against Streamable HTTP
+  servers.**
+  `completeOAuth` was calling `tools/list` directly with a naive
+  one-shot fetch — no `Accept: text/event-stream`, no
+  `Mcp-Session-Id`, no `initialize` or `notifications/initialized`
+  before it. Linear (`mcp.linear.app`) and other Streamable HTTP
+  servers answered HTTP 400; the JSON parse swallowed the body, and
+  the pending row landed in `completed` state with `tools: []`. The
+  resume wizard then surfaced "No tools discovered — Save anyway",
+  the operator saved an empty `allowed_tools` list, and `Edit allowed
+  tools` later showed 0 / 39.
+
+  Route the call through the existing `discoverMcpTools` helper that
+  `attachApiKey` already uses (fixed in v0.11.1) so OAuth and API-key
+  paths agree on the transport. Discovery failures are now logged and
+  result in an empty tools list rather than throwing — the credential
+  is still persisted and the operator can recover via the Edit
+  allowed tools dialog's Refresh button.
+
 ## [0.11.6] - 2026-05-13
 
 ### Fixed

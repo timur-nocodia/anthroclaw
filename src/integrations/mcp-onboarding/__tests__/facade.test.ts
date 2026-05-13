@@ -440,6 +440,15 @@ describe('onboarding facade — apikey branch', () => {
       }
       if (url === 'https://mcp.x/y') {
         const body = JSON.parse((init?.body as string) ?? '{}');
+        // completeOAuth uses the discoverMcpTools handshake, so all
+        // three calls land here: initialize, notifications/initialized,
+        // then tools/list.
+        if (body.method === 'initialize') {
+          return new Response(JSON.stringify({ result: {} }), { status: 200 });
+        }
+        if (body.method === 'notifications/initialized') {
+          return new Response(null, { status: 202 });
+        }
         if (body.method === 'tools/list') {
           return new Response(
             JSON.stringify({
@@ -467,6 +476,102 @@ describe('onboarding facade — apikey branch', () => {
     const row = pending.byId('pnd_oauth');
     expect(row?.status).toBe('completed');
     expect(row?.toolsMetadata).toBeTruthy();
+  });
+
+  it('completeOAuth discovers tools against Streamable HTTP servers (Linear)', async () => {
+    // Reproduces mcp.linear.app: the tools/list call requires
+    // Accept: text/event-stream + a Mcp-Session-Id from initialize +
+    // a notifications/initialized between the two. Without the proper
+    // handshake the call returns HTTP 400 and tools is silently empty
+    // — which is exactly what landed in prod on v0.11.0–v0.11.6, so
+    // the resume wizard offered "Save anyway. No tools discovered."
+    pending.insert({
+      id: 'pnd_linear',
+      state: 'st_linear',
+      agentId: 'a1',
+      agentSessionKey: null,
+      mcpUrl: 'https://mcp.linear.app',
+      authMode: 'oauth',
+      codeVerifier: 'verifier_linear',
+      clientId: 'cli_linear',
+      clientSecret: 'sec_linear',
+      oauthMetadata: JSON.stringify({
+        issuer: 'https://mcp.linear.app',
+        authorizationEndpoint: 'https://mcp.linear.app/authorize',
+        tokenEndpoint: 'https://mcp.linear.app/token',
+        resource: 'https://mcp.linear.app',
+      }),
+      toolsMetadata: null,
+      requestedBy: 'admin:u1',
+      status: 'pending',
+      failureReason: null,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 600_000,
+    });
+
+    const SESSION = 'linear_sess_xyz';
+    let initialized = false;
+    const fetchStub = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === 'https://mcp.linear.app/token') {
+        return new Response(
+          JSON.stringify({ access_token: 'linear_tok', expires_in: 3600 }),
+          { status: 200 },
+        );
+      }
+      if (url === 'https://mcp.linear.app') {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        const accept = headers['Accept'] ?? headers['accept'] ?? '';
+        const sessionId = headers['Mcp-Session-Id'] ?? headers['mcp-session-id'] ?? null;
+        const body = JSON.parse((init?.body as string) ?? '{}');
+
+        if (!accept.includes('text/event-stream')) {
+          return new Response(
+            JSON.stringify({ error: { code: -32000, message: 'Not Acceptable' } }),
+            { status: 406 },
+          );
+        }
+        if (body.method === 'initialize') {
+          return new Response(
+            `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} })}\n\n`,
+            {
+              status: 200,
+              headers: { 'Content-Type': 'text/event-stream', 'Mcp-Session-Id': SESSION },
+            },
+          );
+        }
+        if (body.method === 'notifications/initialized') {
+          if (sessionId !== SESSION) {
+            return new Response('Bad session', { status: 400 });
+          }
+          initialized = true;
+          return new Response(null, { status: 202 });
+        }
+        if (body.method === 'tools/list') {
+          if (sessionId !== SESSION || !initialized) {
+            return new Response('No valid session', { status: 400 });
+          }
+          return new Response(
+            `event: message\ndata: ${JSON.stringify({
+              jsonrpc: '2.0',
+              id: 2,
+              result: { tools: [{ name: 'list_issues' }, { name: 'create_issue' }] },
+            })}\n\n`,
+            { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+          );
+        }
+      }
+      throw new Error('unexpected fetch ' + url);
+    });
+    vi.stubGlobal('fetch', fetchStub);
+
+    const res = await onboarding.completeOAuth({
+      state: 'st_linear',
+      code: 'auth_code_linear',
+    });
+    expect(res.status).toBe('completed');
+    if (res.status === 'completed') {
+      expect(res.tools.map((t) => t.name)).toEqual(['list_issues', 'create_issue']);
+    }
   });
 
   it('completeOAuth returns gone for unknown state (replayed)', async () => {
