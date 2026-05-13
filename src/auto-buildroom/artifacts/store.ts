@@ -77,10 +77,7 @@ export class FileArtifactStore {
   }
 
   writeArtifact(artifact: BuildroomArtifact): BuildroomArtifact {
-    if (artifact.room.id !== this.opts.roomId) {
-      throw new ArtifactRoomMismatchError(artifact.id, artifact.room.id, this.opts.roomId);
-    }
-
+    assertArtifactRoom(artifact, this.opts.roomId);
     assertNoObviousSecrets(artifact);
 
     for (const parentId of artifact.parentIds) {
@@ -102,7 +99,9 @@ export class FileArtifactStore {
   readArtifact(id: string): BuildroomArtifact {
     const path = this.findArtifactPathById(id);
     if (!path) throw new Error(`Artifact not found: ${id}`);
-    return readAndVerifyArtifact(path);
+    const artifact = readAndVerifyArtifact(path);
+    assertArtifactRoom(artifact, this.opts.roomId);
+    return artifact;
   }
 
   hasArtifact(id: string): boolean {
@@ -119,7 +118,9 @@ export class FileArtifactStore {
 
       for (const entry of readdirSync(dir).sort()) {
         if (!entry.endsWith('.json')) continue;
-        artifacts.push(readAndVerifyArtifact(join(dir, entry)));
+        const artifact = readAndVerifyArtifact(join(dir, entry));
+        assertArtifactRoom(artifact, this.opts.roomId);
+        artifacts.push(artifact);
       }
     }
 
@@ -137,6 +138,12 @@ export class FileArtifactStore {
     }
 
     return null;
+  }
+}
+
+function assertArtifactRoom(artifact: BuildroomArtifact, storeRoomId: string): void {
+  if (artifact.room.id !== storeRoomId) {
+    throw new ArtifactRoomMismatchError(artifact.id, artifact.room.id, storeRoomId);
   }
 }
 

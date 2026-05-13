@@ -96,6 +96,21 @@ describe('FileArtifactStore', () => {
     expect(store.hasArtifact(artifact.id)).toBe(false);
   });
 
+  it('rejects persisted artifacts whose room no longer matches the store room', () => {
+    const written = store.writeArtifact(baseArtifact('research_20260512_wrong_room_on_disk', 'research_packet'));
+    const path = store.pathForArtifact(written);
+    const wrongRoom = {
+      ...JSON.parse(readFileSync(path, 'utf8')) as BuildroomArtifact,
+      room: { id: 'other-room' },
+      contentHash: '',
+    };
+    wrongRoom.contentHash = computeArtifactContentHash(wrongRoom);
+    writeFileSync(path, `${JSON.stringify(wrongRoom, null, 2)}\n`, 'utf8');
+
+    expect(() => store.readArtifact(written.id)).toThrow(/Artifact room mismatch/);
+    expect(() => store.listArtifacts('research_packet')).toThrow(/Artifact room mismatch/);
+  });
+
   it('stores sanitized session summaries and handoff signals in their v0.1 locations', () => {
     const summary = store.writeArtifact(baseArtifact(
       'session-summary-20260512-001',
