@@ -50,6 +50,13 @@ export class ArtifactRoomMismatchError extends Error {
   }
 }
 
+export class InvalidArtifactIdError extends Error {
+  constructor(id: string) {
+    super(`Invalid artifact id: ${id}`);
+    this.name = 'InvalidArtifactIdError';
+  }
+}
+
 const ARTIFACT_DIRS: Record<BuildroomArtifactType, string> = {
   session_summary: 'buildroom/session-summaries',
   handoff_signal: 'buildroom/signals',
@@ -77,6 +84,7 @@ export class FileArtifactStore {
   }
 
   writeArtifact(artifact: BuildroomArtifact): BuildroomArtifact {
+    assertArtifactId(artifact.id);
     assertArtifactRoom(artifact, this.opts.roomId);
     assertNoObviousSecrets(artifact);
 
@@ -98,6 +106,7 @@ export class FileArtifactStore {
   }
 
   readArtifact(id: string): BuildroomArtifact {
+    assertArtifactId(id);
     const path = this.findArtifactPathById(id);
     if (!path) throw new Error(`Artifact not found: ${id}`);
     const artifact = readAndVerifyArtifact(path);
@@ -106,6 +115,7 @@ export class FileArtifactStore {
   }
 
   hasArtifact(id: string): boolean {
+    assertArtifactId(id);
     return this.findArtifactPathById(id) !== null;
   }
 
@@ -129,16 +139,26 @@ export class FileArtifactStore {
   }
 
   pathForArtifact(artifact: Pick<BuildroomArtifact, 'id' | 'type'>): string {
+    assertArtifactId(artifact.id);
     return join(this.roomRoot, ARTIFACT_DIRS[artifact.type], `${artifact.id}.json`);
   }
 
   private findArtifactPathById(id: string): string | null {
+    assertArtifactId(id);
     for (const relDir of Object.values(ARTIFACT_DIRS)) {
       const directPath = join(this.roomRoot, relDir, `${id}.json`);
       if (existsSync(directPath)) return directPath;
     }
 
     return null;
+  }
+}
+
+const ARTIFACT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+function assertArtifactId(id: string): void {
+  if (!ARTIFACT_ID_PATTERN.test(id)) {
+    throw new InvalidArtifactIdError(id);
   }
 }
 

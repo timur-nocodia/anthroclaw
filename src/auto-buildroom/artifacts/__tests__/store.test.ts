@@ -43,6 +43,13 @@ describe('FileArtifactStore', () => {
     expect(raw).toContain('"contentHash": "sha256:');
   });
 
+  it('rejects artifact ids that are not safe receipt filenames', () => {
+    const artifact = baseArtifact('../escape', 'research_packet');
+
+    expect(() => store.writeArtifact(artifact)).toThrow(/Invalid artifact id/);
+    expect(() => store.pathForArtifact({ id: '../escape', type: 'research_packet' })).toThrow(/Invalid artifact id/);
+  });
+
   it('rejects a child artifact when a parent receipt is missing', () => {
     const child = baseArtifact('idea_20260512_docs', 'idea_contract');
     child.parentIds = ['research_missing'];
