@@ -7,9 +7,16 @@ export interface BudgetConfig {
   graceMessage: boolean;
 }
 
+// Inactivity timeout default. Bumped 2 min → 5 min on 2026-05-14 after
+// `claude-opus-4-7` with `thinking: adaptive` on complex design tasks
+// stalled mid-turn for ~4 minutes between SDK events (the model was
+// still thinking, just not emitting). 2 min was too tight; 5 min gives
+// adaptive thinking room without letting genuinely-hung queries hang
+// the queue forever. Override per-agent via
+// `iteration_budget.timeout_ms` when a workload needs more.
 const DEFAULT_BUDGET: BudgetConfig = {
   maxToolCalls: 30,
-  timeoutMs: 120_000,
+  timeoutMs: 300_000,
   graceMessage: true,
 };
 

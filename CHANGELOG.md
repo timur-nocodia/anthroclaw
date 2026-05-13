@@ -6,6 +6,46 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-05-14
+
+Three reliability fixes around stalled queries, lying compression
+status, and the hot-reload feedback loop.
+
+### Fixed
+
+- **`ConfigWatcher` no longer hot-reloads every agent when an agent
+  writes into its own runtime directories.**
+  The filter previously treated "no dot in the path" as "directory
+  add/remove" and triggered a global reload. That meant any time an
+  agent wrote into `agents/<id>/output/`, `memory/`, `scripts/`,
+  `credentials/`, etc., the gateway tore down and rebuilt every
+  agent's route table. Now those subtrees are explicitly ignored;
+  reloads only fire for `agent.yml`, `.md` files (system-prompt
+  resolver inputs), and top-level agent directory adds/removes.
+- **Auto-compression no longer announces "Context compressed" when
+  the summary actually failed.**
+  `summarizeAndSaveSession` swallowed errors and returned void —
+  callers unconditionally sent "💾 Context compressed. Summary saved
+  to memory." and cleared the session, even when the SDK process
+  exited with code 1 and nothing made it into the memory store. Now
+  the helper returns a boolean; the auto-compress path **keeps the
+  session intact** on failure (silent data loss was worse than a
+  growing context) and surfaces a visible warning to the operator.
+  `/newsession`, `/compact`, and the session-policy reset path now
+  also report honestly when the pre-reset summary doesn't land.
+- **Default inactivity timeout: 2 min → 5 min.**
+  `claude-opus-4-7` with `thinking: adaptive` on complex tasks can
+  pause emit-events for ~4 min while still thinking. The old 2 min
+  default killed the query mid-thought. Bumped both
+  `DEFAULT_BUDGET.timeoutMs` and the `iteration_budget.timeout_ms`
+  schema default to 300 000 ms. Existing agents with an explicit
+  override are unchanged.
+
+### Tested
+
+- Memory-write daily-path test now uses UTC across-the-board so it
+  doesn't flake at the local midnight boundary.
+
 ## [0.12.1] - 2026-05-13
 
 ### Fixed

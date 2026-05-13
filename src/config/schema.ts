@@ -517,7 +517,10 @@ export const AgentYmlSchema = z.object({
   }).optional(),
   iteration_budget: z.object({
     max_tool_calls: z.number().int().min(1).default(30),
-    timeout_ms: z.number().int().min(5000).default(120_000),
+    // Inactivity timeout. 5 min default — see budget.ts for the reasoning
+    // (adaptive thinking on Opus 4.7 can pause emit-events for ~4 min on
+    // complex tasks). Bump per-agent for known thinky workloads.
+    timeout_ms: z.number().int().min(5000).default(300_000),
     absolute_timeout_ms: z.number().int().min(5000).optional(),
     grace_message: z.boolean().default(true),
   }).optional(),

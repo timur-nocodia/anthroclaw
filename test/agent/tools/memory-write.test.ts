@@ -104,10 +104,13 @@ describe('createMemoryWriteTool', () => {
     const store = makeStore();
     const tool = createMemoryWriteTool(tmpDir, store);
 
+    // memory-write.ts defaults to timezone='UTC' for the date path, so
+    // mirror that here — otherwise this test flakes across the local
+    // midnight boundary (different `yyyy-mm-dd` for SUT vs test).
     const now = new Date();
-    const yyyy = now.getFullYear().toString();
-    const mm = (now.getMonth() + 1).toString().padStart(2, '0');
-    const dd = now.getDate().toString().padStart(2, '0');
+    const yyyy = now.getUTCFullYear().toString();
+    const mm = (now.getUTCMonth() + 1).toString().padStart(2, '0');
+    const dd = now.getUTCDate().toString().padStart(2, '0');
     const expectedFile = `memory/${yyyy}/${mm}/${yyyy}-${mm}-${dd}.md`;
 
     const response = await tool.handler({ content: 'Daily note' });

@@ -4434,9 +4434,12 @@ export class Gateway {
         });
       }
 
-      // Ask the agent to summarize before clearing
+      // Ask the agent to summarize before clearing. User explicitly asked
+      // to reset, so we clear regardless of summary success — just be
+      // honest about what got saved.
+      let summarized = true;
       if (this.sdkReady && agent.getSessionId(sessionKey)) {
-        await this.summarizeAndSaveSession(agent, sessionKey);
+        summarized = await this.summarizeAndSaveSession(agent, sessionKey);
       }
 
       agent.clearSession(sessionKey);
@@ -4447,7 +4450,10 @@ export class Gateway {
       }
 
       if (channel) {
-        await channel.sendText(msg.peerId, 'Сессия сброшена. Саммари сохранено в память.', {
+        const text = summarized
+          ? 'Сессия сброшена. Саммари сохранено в память.'
+          : '⚠️ Сессия сброшена, но сохранить саммари не удалось — старый контекст потерян.';
+        await channel.sendText(msg.peerId, text, {
           accountId: msg.accountId, threadId: msg.threadId,
         });
       }
@@ -4473,15 +4479,24 @@ export class Gateway {
           accountId: msg.accountId, threadId: msg.threadId,
         });
       }
+      // If summary fails, KEEP the session — user invoked /compact
+      // expecting compression, but silent data-loss on a botched
+      // summary is worse than ignoring the command.
+      let summarized = true;
       if (this.sdkReady && agent.getSessionId(sessionKey)) {
-        await this.summarizeAndSaveSession(agent, sessionKey);
+        summarized = await this.summarizeAndSaveSession(agent, sessionKey);
       }
-      agent.clearSession(sessionKey);
-      if (emitter) {
-        void emitter.emit('on_session_reset', { agentId: route.agentId, sessionKey, reason: 'compact' });
+      if (summarized) {
+        agent.clearSession(sessionKey);
+        if (emitter) {
+          void emitter.emit('on_session_reset', { agentId: route.agentId, sessionKey, reason: 'compact' });
+        }
       }
       if (channel) {
-        await channel.sendText(msg.peerId, '💾 Контекст сжат. Саммари сохранено в память, продолжаем с чистого листа.', {
+        const text = summarized
+          ? '💾 Контекст сжат. Саммари сохранено в память, продолжаем с чистого листа.'
+          : '⚠️ Сжать контекст не удалось — старая сессия сохранена, можешь попробовать `/compact` ещё раз.';
+        await channel.sendText(msg.peerId, text, {
           accountId: msg.accountId, threadId: msg.threadId,
         });
       }
@@ -4569,19 +4584,26 @@ export class Gateway {
     // ─── Session reset policy check ────────────────────────────────
     const sessionPolicy = agent.config.session_policy ?? 'never';
     if (sessionPolicy !== 'never' && agent.isSessionResetDue(sessionKey, sessionPolicy)) {
+      // Policy reset is deadline-driven — clear regardless of summary
+      // success, just report honestly so the operator knows whether the
+      // pre-reset summary made it into memory.
+      let summarized = true;
       if (this.sdkReady && agent.getSessionId(sessionKey)) {
-        await this.summarizeAndSaveSession(agent, sessionKey);
+        summarized = await this.summarizeAndSaveSession(agent, sessionKey);
       }
       agent.clearSession(sessionKey);
       if (emitter) {
         void emitter.emit('on_session_reset', { agentId: route.agentId, sessionKey, reason: 'policy' });
       }
       if (channel) {
-        await channel.sendText(msg.peerId, `Session auto-reset (${sessionPolicy} policy). Previous context saved to memory.`, {
+        const text = summarized
+          ? `Session auto-reset (${sessionPolicy} policy). Previous context saved to memory.`
+          : `⚠️ Session auto-reset (${sessionPolicy} policy), but the pre-reset summary failed to save.`;
+        await channel.sendText(msg.peerId, text, {
           accountId: msg.accountId, threadId: msg.threadId,
         });
       }
-      logger.info({ agentId: route.agentId, sessionKey, policy: sessionPolicy }, 'Session auto-reset by policy');
+      logger.info({ agentId: route.agentId, sessionKey, policy: sessionPolicy, summarized }, 'Session auto-reset by policy');
     }
 
     // ─── Normal flow ──────────────────────────────────────────────
@@ -4729,15 +4751,36 @@ export class Gateway {
           );
 
           if (!pluginHandledCompression) {
-            await this.summarizeAndSaveSession(agent, sessionKey);
-            agent.clearSession(sessionKey);
-            if (emitter) {
-              void emitter.emit('on_session_reset', { agentId: route.agentId, sessionKey, reason: 'auto_compress' });
-            }
-            if (channel) {
-              await channel.sendText(msg.peerId, '💾 Context compressed. Summary saved to memory.', {
-                accountId: msg.accountId, threadId: msg.threadId,
-              });
+            const summarized = await this.summarizeAndSaveSession(agent, sessionKey);
+            if (summarized) {
+              agent.clearSession(sessionKey);
+              if (emitter) {
+                void emitter.emit('on_session_reset', { agentId: route.agentId, sessionKey, reason: 'auto_compress' });
+              }
+              if (channel) {
+                await channel.sendText(msg.peerId, '💾 Context compressed. Summary saved to memory.', {
+                  accountId: msg.accountId, threadId: msg.threadId,
+                });
+              }
+            } else {
+              // Auto-compress fired because the session crossed its
+              // threshold, but the summary failed. Keep the session
+              // intact — silently wiping it after telling the operator
+              // it was "compressed" was the v0.11/v0.12 bug we just
+              // observed in prod. The session will keep growing and
+              // re-trigger compression on the next turn; meanwhile the
+              // operator gets a visible signal that something's wrong.
+              logger.warn(
+                { agentId: route.agentId, sessionKey },
+                'Auto-compress: summary failed, keeping session intact',
+              );
+              if (channel) {
+                await channel.sendText(
+                  msg.peerId,
+                  '⚠️ Сжать контекст не удалось — сессия пока остаётся как есть. Если повторится, попробуй `/compact` вручную или `/newsession`.',
+                  { accountId: msg.accountId, threadId: msg.threadId },
+                );
+              }
             }
           }
           compressionOrLcmActivity = true;
@@ -5868,9 +5911,22 @@ export class Gateway {
 
   // ─── Session summary on reset ──────────────────────────────────────
 
-  private async summarizeAndSaveSession(agent: Agent, sessionKey: string): Promise<void> {
+  /**
+   * Ask the SDK to summarize the in-flight session and persist the summary
+   * to the agent's memory store. Returns true when the SDK loop ran to a
+   * `result` event without throwing — i.e. the summary memory_write got
+   * its chance. Returns false on any failure (SDK process exit, network,
+   * etc.) so callers can decide whether to still clear the session and
+   * what to tell the operator.
+   *
+   * Previously this swallowed errors and returned void, which left
+   * callers unconditionally announcing "💾 Context compressed" even
+   * when the summary actually failed — operators thought their session
+   * was preserved when it wasn't.
+   */
+  private async summarizeAndSaveSession(agent: Agent, sessionKey: string): Promise<boolean> {
     const existingSessionId = agent.getSessionId(sessionKey);
-    if (!existingSessionId) return;
+    if (!existingSessionId) return false;
 
     try {
       const summaryPrompt = [
@@ -5898,8 +5954,10 @@ export class Gateway {
       }
 
       logger.info({ agentId: agent.id, sessionKey }, 'Session summary saved');
+      return true;
     } catch (err) {
       logger.warn({ err, agentId: agent.id, sessionKey }, 'Session summary failed');
+      return false;
     }
   }
 
