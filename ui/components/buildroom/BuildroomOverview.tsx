@@ -100,7 +100,7 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
               Auto-Buildroom
             </h1>
             <p className="mt-0.5 text-[11.5px]" style={{ color: "var(--oc-text-muted)" }}>
-              Local control plane for scoped agent work.
+              Approval and receipt layer for autonomous agent work.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -109,6 +109,7 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
               type="button"
               onClick={loadStatus}
               disabled={loading || acting !== null}
+              title="Reload Buildroom status from local artifacts and derived state. This does not start any stage."
               className="flex h-8 items-center gap-2 rounded-[5px] border px-2.5 text-xs transition-colors hover:bg-[var(--oc-bg2)] disabled:opacity-50"
               style={{ borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
             >
@@ -138,9 +139,10 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
             >
               <div className="border-b px-3 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs font-semibold" style={{ color: "var(--color-foreground)" }}>
-                    Overview
-                  </span>
+                  <SectionTitle
+                    label="Overview"
+                    hint="Buildroom is not another chat agent. It is the control surface that turns agent suggestions into scoped proposals, approvals, receipts, QA evidence, and trust reports."
+                  />
                   <span className="text-[11px]" style={{ color: "var(--oc-text-muted)", fontFamily: "var(--oc-mono)" }}>
                     {serverId}
                   </span>
@@ -149,15 +151,17 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
 
               {!initialized ? (
                 <div className="p-4">
+                  <BuildroomPrimer />
                   <InlineMessage
                     tone="yellow"
                     title="Buildroom is not initialized"
-                    text=".anthroclaw/auto-buildroom/ is missing for this project."
+                    text="This repository does not have .anthroclaw/auto-buildroom/ yet. Initialize creates local Buildroom config and folders; it does not start a build."
                   />
                   <div className="mt-4">
                     <ActionButton
                       icon={Power}
                       label="Initialize"
+                      hint="Creates project-local Buildroom config and folders under .anthroclaw/auto-buildroom/. It does not approve, build, or run agents."
                       disabled={acting !== null}
                       busy={acting === "init"}
                       onClick={() => runAction("init", () => postStatus("/api/buildroom/init", {}))}
@@ -166,23 +170,24 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
                 </div>
               ) : (
                 <div className="divide-y" style={{ borderColor: "var(--oc-border)" }}>
+                  <BuildroomPrimer />
                   <div className="grid gap-0 sm:grid-cols-2 lg:grid-cols-4">
-                    <Metric label="Room" value={status.roomId} />
-                    <Metric label="State" value={status.state.roomState} />
-                    <Metric label="Mode" value={status.state.mode} />
-                    <Metric label="Trust" value={status.state.latestTrust} />
+                    <Metric label="Room" value={status.roomId} hint="The project-local Buildroom identity. v0.1 stores room state under .anthroclaw/auto-buildroom/ for this repository." />
+                    <Metric label="State" value={status.state.roomState} hint="The current workflow state: idle, collecting, awaiting approval, approved, building, QA pending, trust pending, complete, paused, or blocked." />
+                    <Metric label="Mode" value={status.state.mode} hint="manual_approval requires explicit operator approval before any build. observe_only can collect/propose but should not build. off blocks Buildroom stages." />
+                    <Metric label="Trust" value={status.state.latestTrust} hint="Trust comes from QA and verification evidence, not Builder claims. CLEAN/WATCH/INVESTIGATE/BLOCKED tell the operator what is proven." />
                   </div>
                   <div className="grid gap-0 sm:grid-cols-2 lg:grid-cols-4">
-                    <Metric label="Pending approvals" value={counts?.pendingApprovals ?? 0} />
-                    <Metric label="Approved not built" value={counts?.approvedNotBuilt ?? 0} />
-                    <Metric label="Active builds" value={counts?.activeBuilds ?? 0} />
-                    <Metric label="QA pending" value={counts?.qaPending ?? 0} />
+                    <Metric label="Pending approvals" value={counts?.pendingApprovals ?? 0} hint="Reviewed proposals waiting for an explicit operator approval. Approval grants authority; it does not execute the build." />
+                    <Metric label="Approved not built" value={counts?.approvedNotBuilt ?? 0} hint="Approved scope that has authority but has not been consumed by a Builder run yet." />
+                    <Metric label="Active builds" value={counts?.activeBuilds ?? 0} hint="Builder runs currently executing inside approved scope through the native runtime." />
+                    <Metric label="QA pending" value={counts?.qaPending ?? 0} hint="Builds that produced claims and now need independent QA evidence before trust can be clean." />
                   </div>
                   <div className="grid gap-0 sm:grid-cols-2 lg:grid-cols-4">
-                    <Metric label="Trust pending" value={counts?.trustPending ?? 0} />
-                    <Metric label="Errors" value={counts?.unresolvedErrors ?? 0} />
-                    <Metric label="Paused" value={status.state.paused ? "yes" : "no"} />
-                    <Metric label="Kill switch" value={status.state.killSwitchActive ? "active" : "inactive"} />
+                    <Metric label="Trust pending" value={counts?.trustPending ?? 0} hint="QA exists, but verification delta or trust report still needs to be generated." />
+                    <Metric label="Errors" value={counts?.unresolvedErrors ?? 0} hint="Durable error receipts that need operator attention. Failures should leave receipts instead of disappearing." />
+                    <Metric label="Paused" value={status.state.paused ? "yes" : "no"} hint="Soft pause prevents new stages from starting. It does not mean existing native runtime work was automatically cancelled." />
+                    <Metric label="Kill switch" value={status.state.killSwitchActive ? "active" : "inactive"} hint="Kill switch blocks scheduled stages and new builds. Use it when you want the room to stop making progress." />
                   </div>
                 </div>
               )}
@@ -193,14 +198,16 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
               style={{ background: "var(--oc-bg1)", borderColor: "var(--oc-border)" }}
             >
               <div className="border-b px-3 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
-                <span className="text-xs font-semibold" style={{ color: "var(--color-foreground)" }}>
-                  Controls
-                </span>
+                <SectionTitle
+                  label="Controls"
+                  hint="These controls change room authority. They do not approve proposals by themselves, and approval still does not automatically start a build."
+                />
               </div>
               <div className="flex flex-col gap-3 p-3">
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+                  <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
                     Mode
+                    <HelpHint label="Mode" hint="manual_approval is the normal v0.1 mode: Buildroom may propose, but only an operator approval can grant build authority. observe_only is read/propose-only. off disables Buildroom stages." />
                   </span>
                   <select
                     aria-label="Mode"
@@ -227,6 +234,7 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
                     <ActionButton
                       icon={Play}
                       label="Resume"
+                      hint="Allows new Buildroom stages again after a soft pause. It does not automatically start a pending build."
                       disabled={!initialized || acting !== null}
                       busy={acting === "resume"}
                       onClick={() => runAction("resume", () => postStatus("/api/buildroom/resume", {}))}
@@ -235,6 +243,7 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
                     <ActionButton
                       icon={Pause}
                       label="Pause"
+                      hint="Soft pause blocks new Buildroom stages. It does not automatically cancel an already running native runtime."
                       disabled={!initialized || acting !== null}
                       busy={acting === "pause"}
                       onClick={() => runAction("pause", () => postStatus("/api/buildroom/pause", {}))}
@@ -243,6 +252,7 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
                   <ActionButton
                     icon={CircleStop}
                     label={status.state.killSwitchActive ? "Kill switch off" : "Kill switch on"}
+                    hint="Kill switch blocks new scheduled stages and new builds. It is the hard stop for Buildroom progress."
                     disabled={!initialized || acting !== null}
                     busy={acting === "kill-switch"}
                     danger={!status.state.killSwitchActive}
@@ -254,8 +264,9 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
                 </div>
 
                 <div className="rounded-[5px] border px-2.5 py-2" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg0)" }}>
-                  <div className="text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+                  <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
                     Next
+                    <HelpHint label="Next action" hint="Suggested CLI command for the safest next explicit operator step. It is a hint, not an automatic action." />
                   </div>
                   <div className="mt-1 break-all text-xs" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
                     {nextAction}
@@ -266,6 +277,60 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function BuildroomPrimer() {
+  return (
+    <div className="grid gap-3 border-b p-4" style={{ borderColor: "var(--oc-border)" }}>
+      <div className="rounded-md border p-3" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg0)" }}>
+        <div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--color-foreground)" }}>
+          What is this?
+          <HelpHint
+            label="Buildroom overview"
+            hint="Buildroom is the approval and receipt layer around agent work. It is not a separate chat worker and it should not bypass native runtime permissions."
+          />
+        </div>
+        <p className="mt-1.5 max-w-[920px] text-xs leading-5" style={{ color: "var(--oc-text-dim)" }}>
+          Buildroom turns agent suggestions into scoped, approvable work. Agents may notice friction,
+          Research may gather evidence, Main Review may lock scope, but only an explicit operator
+          approval grants authority. Builder then works inside that approved box, QA checks the claims,
+          and Trust tells you what is actually proven.
+        </p>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-3">
+        <ConceptCard
+          title="1. Proposal asks"
+          hint="A proposal is a request for authority. It should describe scope, non-goals, risks, acceptance criteria, and blocked paths."
+          text="Signals and ideas do not build anything. A reviewed proposal asks whether this work is worth granting authority."
+        />
+        <ConceptCard
+          title="2. Approval grants"
+          hint="Approval creates an approval artifact. In v0.1 it does not automatically launch Builder."
+          text="Approval grants authority. Build consumes authority. This separation prevents accidental builds from a casual yes."
+        />
+        <ConceptCard
+          title="3. Trust proves"
+          hint="Builder claims are not proof. QA evidence and Verification Delta decide what the operator should believe."
+          text="Runtime success is required but not sufficient. CLEAN requires QA, delta, policy checks, and no unresolved blockers."
+        />
+      </div>
+    </div>
+  );
+}
+
+function ConceptCard({ title, text, hint }: { title: string; text: string; hint: string }) {
+  return (
+    <div className="rounded-md border p-3" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg0)" }}>
+      <div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--color-foreground)" }}>
+        {title}
+        <HelpHint label={title} hint={hint} />
+      </div>
+      <p className="mt-1.5 text-xs leading-5" style={{ color: "var(--oc-text-dim)" }}>
+        {text}
+      </p>
     </div>
   );
 }
@@ -316,6 +381,28 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
   );
 }
 
+function SectionTitle({ label, hint }: { label: string; hint: string }) {
+  return (
+    <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--color-foreground)" }}>
+      {label}
+      <HelpHint label={label} hint={hint} />
+    </span>
+  );
+}
+
+function HelpHint({ label, hint }: { label: string; hint: string }) {
+  return (
+    <span
+      aria-label={`What does ${label} mean?`}
+      title={hint}
+      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] leading-none"
+      style={{ borderColor: "var(--oc-border)", color: "var(--oc-text-muted)", background: "var(--oc-bg1)" }}
+    >
+      ?
+    </span>
+  );
+}
+
 function StatusPill({ tone, label }: { tone: string; label: string }) {
   const toneColor =
     tone === "green"
@@ -351,11 +438,12 @@ function InlineMessage({ tone, title, text }: { tone: "yellow" | "red"; title: s
   );
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
+function Metric({ label, value, hint }: { label: string; value: string | number; hint: string }) {
   return (
     <div className="min-w-0 border-b p-3 sm:border-r sm:last:border-r-0 lg:border-b-0" style={{ borderColor: "var(--oc-border)" }}>
-      <div className="text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
         {label}
+        <HelpHint label={label} hint={hint} />
       </div>
       <div className="mt-1 truncate text-[13px]" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
         {value}
@@ -367,6 +455,7 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 function ActionButton({
   icon: Icon,
   label,
+  hint,
   disabled,
   busy,
   danger,
@@ -374,6 +463,7 @@ function ActionButton({
 }: {
   icon: ComponentType<{ className?: string }>;
   label: string;
+  hint?: string;
   disabled?: boolean;
   busy?: boolean;
   danger?: boolean;
@@ -393,6 +483,7 @@ function ActionButton({
     >
       {busy ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}
       {label}
+      {hint ? <HelpHint label={label} hint={hint} /> : null}
     </button>
   );
 }

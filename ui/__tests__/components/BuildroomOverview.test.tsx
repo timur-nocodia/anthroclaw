@@ -72,12 +72,58 @@ describe('<BuildroomOverview />', () => {
       expect(screen.getAllByText('active').length).toBeGreaterThan(0);
     });
 
-    fireEvent.change(screen.getByLabelText(/mode/i), { target: { value: 'off' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Mode' }), { target: { value: 'off' } });
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith('/api/buildroom/mode', expect.objectContaining({
         body: JSON.stringify({ mode: 'off' }),
       }));
     });
+  });
+
+  it('explains Buildroom concepts and exposes hover hints for controls and metrics', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith('/status')) {
+        return jsonResponse(statusPayload({ initialized: true, roomState: 'idle', mode: 'manual_approval' }));
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<BuildroomOverview serverId="local" />);
+
+    expect(await screen.findByText(/Buildroom turns agent suggestions into scoped, approvable work/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Approval grants authority/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText(/What does Mode mean/i)[0]).toHaveAttribute('title', expect.stringContaining('manual_approval'));
+    expect(screen.getByLabelText(/What does Trust mean/i)).toHaveAttribute('title', expect.stringContaining('QA'));
+    expect(screen.getByLabelText(/What does Kill switch mean/i)).toHaveAttribute('title', expect.stringContaining('blocks'));
+  });
+
+  it('describes every settings group and exposes hover hints for setting fields', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith('/status')) {
+        return jsonResponse(statusPayload({ initialized: true, roomState: 'idle', mode: 'manual_approval' }));
+      }
+      if (url.endsWith('/config')) {
+        return jsonResponse({
+          ok: true,
+          initialized: true,
+          config: configPayload({ sessions: false, maxIdeasPerDay: 5 }),
+        });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<BuildroomOverview serverId="local" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /settings/i }));
+    expect(await screen.findByText(/These settings define what Buildroom may observe/i)).toBeInTheDocument();
+    expect(screen.getByText(/Watch sources decide what can become evidence/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/What does Raw transcripts mean/i)).toHaveAttribute('title', expect.stringContaining('disabled'));
+    expect(screen.getByLabelText(/What does Allowed paths mean/i)).toHaveAttribute('title', expect.stringContaining('write'));
+    expect(screen.getByLabelText(/What does Max builds per day mean/i)).toHaveAttribute('title', expect.stringContaining('safety budget'));
   });
 
   it('renders safe settings and saves config patches without raw transcript access', async () => {
@@ -128,12 +174,12 @@ describe('<BuildroomOverview />', () => {
     render(<BuildroomOverview serverId="local" />);
 
     fireEvent.click(await screen.findByRole('button', { name: /settings/i }));
-    expect(await screen.findByText('Watch sources')).toBeInTheDocument();
-    expect(screen.getByLabelText(/raw transcripts/i)).toBeDisabled();
+    expect((await screen.findAllByText(/Watch sources/i)).length).toBeGreaterThan(0);
+    expect(screen.getByRole('checkbox', { name: /raw transcripts/i })).toBeDisabled();
 
-    fireEvent.click(screen.getByLabelText(/session summaries/i));
-    fireEvent.change(screen.getByLabelText(/allowed paths/i), { target: { value: 'docs/**' } });
-    fireEvent.change(screen.getByLabelText(/max ideas per day/i), { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /session summaries/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /allowed paths/i }), { target: { value: 'docs/**' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /max ideas per day/i }), { target: { value: '7' } });
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
 
     await waitFor(() => {

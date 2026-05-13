@@ -116,8 +116,12 @@ export function BuildroomSettingsPanel({ initialized }: { initialized: boolean }
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="h-3.5 w-3.5" style={{ color: "var(--oc-text-muted)" }} />
-            <span className="text-xs font-semibold" style={{ color: "var(--color-foreground)" }}>
+            <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--color-foreground)" }}>
               Settings
+              <HelpHint
+                label="Settings"
+                hint="These settings define what Buildroom may observe, where it may write, how much work it may schedule, and where operator notifications go."
+              />
             </span>
           </div>
           <button
@@ -134,6 +138,21 @@ export function BuildroomSettingsPanel({ initialized }: { initialized: boolean }
       </div>
 
       <div className="p-3">
+        <div className="mb-3 rounded-md border p-3" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg0)" }}>
+          <div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--color-foreground)" }}>
+            What do these settings control?
+            <HelpHint
+              label="Buildroom settings"
+              hint="Buildroom config is project-local. The UI edits only safe v0.1 fields and still validates the resulting config before saving."
+            />
+          </div>
+          <p className="mt-1.5 text-xs leading-5" style={{ color: "var(--oc-text-dim)" }}>
+            These settings define what Buildroom may observe, what repository paths are inside the
+            build box, what must stay blocked, how much work can happen per day, and where automatic
+            notifications are sent. They do not approve work and they do not bypass policy checks.
+          </p>
+        </div>
+
         {error ? <InlineMessage tone="red" title="Settings failed" text={error} /> : null}
         {message ? (
           <div className="mb-3 rounded-[5px] border px-3 py-2 text-xs" style={{ borderColor: "var(--oc-border)", color: "var(--oc-green)", background: "var(--oc-bg0)" }}>
@@ -146,60 +165,83 @@ export function BuildroomSettingsPanel({ initialized }: { initialized: boolean }
         ) : (
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.45fr)]">
             <div className="grid gap-3">
-              <SettingsBlock title="Watch sources">
+              <SettingsBlock
+                title="Watch sources"
+                hint="Watch sources decide what can become evidence or proposal input. Watching something does not approve work."
+                description="Watch sources decide what can become evidence. They do not create authority, approvals, or builds."
+              >
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  <CheckboxField label="Repository" checked={form.watch.repo} onChange={(repo) => setForm({ ...form, watch: { ...form.watch, repo } })} />
-                  <CheckboxField label="Docs" checked={form.watch.docs} onChange={(docs) => setForm({ ...form, watch: { ...form.watch, docs } })} />
-                  <CheckboxField label="Tests" checked={form.watch.tests} onChange={(tests) => setForm({ ...form, watch: { ...form.watch, tests } })} />
-                  <CheckboxField label="Session summaries" checked={form.watch.sessions} onChange={(sessions) => setForm({ ...form, watch: { ...form.watch, sessions } })} />
-                  <CheckboxField label="External signals" checked={form.watch.external} onChange={(external) => setForm({ ...form, watch: { ...form.watch, external } })} />
-                  <CheckboxField label="Raw transcripts" checked={false} disabled onChange={() => undefined} />
+                  <CheckboxField label="Repository" hint="Allow Buildroom Research to inspect approved local repository files as evidence." checked={form.watch.repo} onChange={(repo) => setForm({ ...form, watch: { ...form.watch, repo } })} />
+                  <CheckboxField label="Docs" hint="Allow documentation files to become evidence for proposals and QA checks." checked={form.watch.docs} onChange={(docs) => setForm({ ...form, watch: { ...form.watch, docs } })} />
+                  <CheckboxField label="Tests" hint="Allow tests and test fixtures to become evidence. This does not run tests by itself." checked={form.watch.tests} onChange={(tests) => setForm({ ...form, watch: { ...form.watch, tests } })} />
+                  <CheckboxField label="Session summaries" hint="Allow sanitized ordinary-agent session summaries. Raw private transcripts remain disabled." checked={form.watch.sessions} onChange={(sessions) => setForm({ ...form, watch: { ...form.watch, sessions } })} />
+                  <CheckboxField label="External signals" hint="Allow configured external read-only signals later. v0.1 still blocks external mutating side effects by default." checked={form.watch.external} onChange={(external) => setForm({ ...form, watch: { ...form.watch, external } })} />
+                  <CheckboxField label="Raw transcripts" hint="Raw transcripts are disabled in v0.1 because Buildroom should watch sanitized summaries, not private chat history." checked={false} disabled onChange={() => undefined} />
                 </div>
               </SettingsBlock>
 
-              <SettingsBlock title="Path policy">
+              <SettingsBlock
+                title="Path policy"
+                hint="Path policy defines the build box. Builder may only write approved paths and must never write blocked paths."
+                description="Allowed paths are the only places Builder may write. Blocked paths always win and protect secrets, agent config, runtime data, and Buildroom config."
+              >
                 <div className="grid gap-3 lg:grid-cols-2">
                   <TextareaField
                     label="Allowed paths"
+                    hint="Repository path patterns Builder may write after approval. Keep this narrow: docs/examples/tests are safer than broad source or config paths."
                     value={form.allowedPaths}
                     onChange={(allowedPaths) => setForm({ ...form, allowedPaths })}
                   />
                   <TextareaField
                     label="Blocked paths"
+                    hint="Repository path patterns Builder must not write even if they also match allowed paths. Use this for secrets, config, agents, data, and audit state."
                     value={form.blockedPaths}
                     onChange={(blockedPaths) => setForm({ ...form, blockedPaths })}
                   />
                 </div>
               </SettingsBlock>
 
-              <SettingsBlock title="Notifications">
+              <SettingsBlock
+                title="Notifications"
+                hint="Notification routes receive automatic Buildroom reports. They do not grant approval authority by themselves."
+                description="Notification routes are for automatic reports like blocked state, QA completed, or trust report generated. Approval still requires explicit operator commands."
+              >
                 <TextareaField
                   label="Notification routes"
+                  hint="Routes such as telegram_thread:-1003931616911:2. Notification route is route evidence, not operator identity."
                   value={form.notificationRoutes}
                   onChange={(notificationRoutes) => setForm({ ...form, notificationRoutes })}
                 />
               </SettingsBlock>
             </div>
 
-            <SettingsBlock title="Budgets">
+            <SettingsBlock
+              title="Budgets"
+              hint="Budgets limit how much autonomous Buildroom work can happen before an operator reviews the situation."
+              description="Budgets are safety rails. Lower values reduce accidental loops while the v0.1 workflow is still being proven."
+            >
               <div className="grid gap-2">
                 <NumberField
                   label="Max ideas per day"
+                  hint="Maximum idea/proposal candidates Buildroom may create per day. It limits suggestion volume, not approval."
                   value={form.budgets.maxIdeasPerDay}
                   onChange={(maxIdeasPerDay) => setForm({ ...form, budgets: { ...form.budgets, maxIdeasPerDay } })}
                 />
                 <NumberField
                   label="Max builds per day"
+                  hint="Daily safety budget for Builder attempts. A build still requires explicit approval and valid scope."
                   value={form.budgets.maxBuildsPerDay}
                   onChange={(maxBuildsPerDay) => setForm({ ...form, budgets: { ...form.budgets, maxBuildsPerDay } })}
                 />
                 <NumberField
                   label="Max active builds"
+                  hint="Maximum concurrent Builder runs. v0.1 should normally stay at 1 to prevent duplicate or competing mutations."
                   value={form.budgets.maxActiveBuilds}
                   onChange={(maxActiveBuilds) => setForm({ ...form, budgets: { ...form.budgets, maxActiveBuilds } })}
                 />
                 <NumberField
                   label="Max runtime minutes per stage"
+                  hint="Maximum runtime duration for a single Buildroom stage before it should fail closed with a durable error receipt."
                   value={form.budgets.maxRuntimeMinutesPerStage}
                   onChange={(maxRuntimeMinutesPerStage) => setForm({ ...form, budgets: { ...form.budgets, maxRuntimeMinutesPerStage } })}
                 />
@@ -286,11 +328,25 @@ function readErrorMessage(body: unknown): string {
   return "Buildroom request failed";
 }
 
-function SettingsBlock({ title, children }: { title: string; children: ReactNode }) {
+function SettingsBlock({
+  title,
+  hint,
+  description,
+  children,
+}: {
+  title: string;
+  hint: string;
+  description: string;
+  children: ReactNode;
+}) {
   return (
     <div className="rounded-md border p-3" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg0)" }}>
-      <div className="mb-3 text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
         {title}
+        <HelpHint label={title} hint={hint} />
+      </div>
+      <div className="mb-3 mt-1 text-xs leading-5" style={{ color: "var(--oc-text-dim)" }}>
+        {description}
       </div>
       {children}
     </div>
@@ -299,11 +355,13 @@ function SettingsBlock({ title, children }: { title: string; children: ReactNode
 
 function CheckboxField({
   label,
+  hint,
   checked,
   disabled,
   onChange,
 }: {
   label: string;
+  hint: string;
   checked: boolean;
   disabled?: boolean;
   onChange: (checked: boolean) => void;
@@ -318,15 +376,27 @@ function CheckboxField({
         className="h-3.5 w-3.5"
       />
       <span>{label}</span>
+      <HelpHint label={label} hint={hint} />
     </label>
   );
 }
 
-function TextareaField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function TextareaField({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <label className="flex min-w-0 flex-col gap-1.5">
-      <span className="text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+      <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
         {label}
+        <HelpHint label={label} hint={hint} />
       </span>
       <textarea
         aria-label={label}
@@ -345,11 +415,22 @@ function TextareaField({ label, value, onChange }: { label: string; value: strin
   );
 }
 
-function NumberField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function NumberField({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+      <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
         {label}
+        <HelpHint label={label} hint={hint} />
       </span>
       <input
         aria-label={label}
@@ -366,6 +447,19 @@ function NumberField({ label, value, onChange }: { label: string; value: string;
         }}
       />
     </label>
+  );
+}
+
+function HelpHint({ label, hint }: { label: string; hint: string }) {
+  return (
+    <span
+      aria-label={`What does ${label} mean?`}
+      title={hint}
+      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] leading-none"
+      style={{ borderColor: "var(--oc-border)", color: "var(--oc-text-muted)", background: "var(--oc-bg1)" }}
+    >
+      ?
+    </span>
   );
 }
 
