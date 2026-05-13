@@ -23,13 +23,16 @@ export interface SendMessageToolOptions {
    */
   notificationsEmitter?: Pick<NotificationsEmitter, 'emit'> | null;
   /**
-   * Active inbound chat context. When the model omits account_id while sending
-   * back through the same channel, use the account that received the message
-   * instead of letting the channel adapter fall back to an arbitrary default.
+   * Active inbound chat context. When the model omits `account_id` /
+   * `thread_id` while sending back through the same channel, use the
+   * values from the message we're currently handling instead of letting
+   * the channel adapter fall back to an arbitrary default (which on
+   * Telegram means "the main / General topic of the chat").
    */
   dispatchContext?: {
     channel?: 'telegram' | 'whatsapp';
     accountId?: string;
+    threadId?: string;
   };
 }
 
@@ -45,6 +48,7 @@ export function createSendMessageTool(
       peer_id: z.string().describe('Recipient peer ID'),
       text: z.string().describe('Message text to send'),
       account_id: z.string().optional().describe('Optional account ID for multi-account setups'),
+      thread_id: z.string().optional().describe('Optional Telegram forum-topic message_thread_id. If omitted on a same-channel reply, the inbound message\'s thread is used so the agent stays inside the topic it was invoked from.'),
     },
     async (args: Record<string, unknown>) => {
       const channel = args.channel as 'telegram' | 'whatsapp';
@@ -53,6 +57,9 @@ export function createSendMessageTool(
       const explicitAccountId = args.account_id as string | undefined;
       const accountId = explicitAccountId
         ?? (opts.dispatchContext?.channel === channel ? opts.dispatchContext.accountId : undefined);
+      const explicitThreadId = args.thread_id as string | undefined;
+      const threadId = explicitThreadId
+        ?? (opts.dispatchContext?.channel === channel ? opts.dispatchContext.threadId : undefined);
 
       // ─── human_takeover pause check ────────────────────────────────
       // If the operator is currently driving this peer, suppress the send
@@ -126,6 +133,7 @@ export function createSendMessageTool(
       try {
         const sendOpts: SendOptions = {};
         if (accountId) sendOpts.accountId = accountId;
+        if (threadId) sendOpts.threadId = threadId;
 
         const messageId = await adapter.sendText(peerId, text, sendOpts);
         return {

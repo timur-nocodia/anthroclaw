@@ -16,6 +16,7 @@ export function createSendMediaTool(
     dispatchContext?: {
       channel?: 'telegram' | 'whatsapp';
       accountId?: string;
+      threadId?: string;
     };
   } = {},
 ): ToolDefinition {
@@ -29,6 +30,7 @@ export function createSendMediaTool(
       type: z.enum(['image', 'video', 'audio', 'voice', 'document']).describe('Media type'),
       caption: z.string().optional().describe('Optional caption'),
       account_id: z.string().optional().describe('Optional account ID for multi-account setups'),
+      thread_id: z.string().optional().describe('Optional Telegram forum-topic message_thread_id. If omitted on a same-channel reply, the inbound message\'s thread is used so media stays in the topic the agent was invoked from.'),
     },
     async (args: Record<string, unknown>) => {
       const channel = args.channel as 'telegram' | 'whatsapp';
@@ -39,6 +41,9 @@ export function createSendMediaTool(
       const explicitAccountId = args.account_id as string | undefined;
       const accountId = explicitAccountId
         ?? (opts.dispatchContext?.channel === channel ? opts.dispatchContext.accountId : undefined);
+      const explicitThreadId = args.thread_id as string | undefined;
+      const threadId = explicitThreadId
+        ?? (opts.dispatchContext?.channel === channel ? opts.dispatchContext.threadId : undefined);
 
       // Resolve path and block traversal
       const resolvedPath = resolve(workspacePath, filePath);
@@ -74,6 +79,7 @@ export function createSendMediaTool(
 
         const opts: SendOptions = {};
         if (accountId) opts.accountId = accountId;
+        if (threadId) opts.threadId = threadId;
 
         const messageId = await adapter.sendMedia(peerId, media, opts);
         return {

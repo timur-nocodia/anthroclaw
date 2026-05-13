@@ -6,6 +6,21 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-05-13
+
+### Fixed
+
+- **`send_message` and `send_media` now inherit `thread_id` from
+  dispatch context.** When an agent invoked from a Telegram forum
+  topic called these tools without an explicit `thread_id`, the
+  message was sent to the chat's **General** topic — outside the
+  topic the agent was supposed to be scoped to (and outside the
+  agent's own route filter). Both tools now read `threadId` from
+  `dispatchContext` the same way `accountId` and `manage_cron`
+  already do, and accept an optional `thread_id` argument the model
+  can use to cross-post. Cross-channel sends still drop the thread
+  (a WhatsApp peer doesn't have Telegram threads).
+
 ## [0.12.0] - 2026-05-13
 
 Two new top-level capabilities land in this release: a **Tool Progress

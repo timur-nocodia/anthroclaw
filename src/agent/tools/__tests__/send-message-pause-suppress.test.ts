@@ -190,6 +190,67 @@ describe('send_message — pause suppression', () => {
     });
   });
 
+  it('defaults thread_id from dispatch context so replies stay inside the inbound topic', async () => {
+    // Reproduces a prod bug: agent invoked from topic 4 of a Telegram
+    // forum supergroup pinged send_message without thread_id; the message
+    // landed in General because the tool dropped the thread context.
+    const { adapter, sendText } = makeFakeAdapter();
+    const tool = createSendMessageTool(() => adapter, {
+      dispatchContext: { channel: 'telegram', accountId: 'content_sm', threadId: '4' },
+    });
+
+    const handler = getHandler(tool);
+    await handler({
+      channel: 'telegram',
+      peer_id: '-1003729315809',
+      text: 'reply stays in topic',
+    });
+
+    expect(sendText).toHaveBeenCalledWith('-1003729315809', 'reply stays in topic', {
+      accountId: 'content_sm',
+      threadId: '4',
+    });
+  });
+
+  it('explicit thread_id wins over dispatch context', async () => {
+    const { adapter, sendText } = makeFakeAdapter();
+    const tool = createSendMessageTool(() => adapter, {
+      dispatchContext: { channel: 'telegram', accountId: 'content_sm', threadId: '4' },
+    });
+
+    const handler = getHandler(tool);
+    await handler({
+      channel: 'telegram',
+      peer_id: '-1003729315809',
+      text: 'cross-topic ping',
+      thread_id: '8',
+    });
+
+    expect(sendText).toHaveBeenCalledWith('-1003729315809', 'cross-topic ping', {
+      accountId: 'content_sm',
+      threadId: '8',
+    });
+  });
+
+  it('does not default thread_id across channels', async () => {
+    const { adapter, sendText } = makeFakeAdapter();
+    const tool = createSendMessageTool(() => adapter, {
+      dispatchContext: { channel: 'telegram', accountId: 'content_sm', threadId: '4' },
+    });
+
+    const handler = getHandler(tool);
+    await handler({
+      channel: 'whatsapp',
+      account_id: 'business',
+      peer_id: '37120@s.whatsapp.net',
+      text: 'cross channel send',
+    });
+
+    expect(sendText).toHaveBeenCalledWith('37120@s.whatsapp.net', 'cross channel send', {
+      accountId: 'business',
+    });
+  });
+
   it('does not default account_id across channels', async () => {
     const { adapter, sendText } = makeFakeAdapter();
     const tool = createSendMessageTool(() => adapter, {
