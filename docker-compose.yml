@@ -20,6 +20,9 @@ services:
     ports:
       # Bind to loopback only — put nginx/caddy in front for TLS + auth.
       - "127.0.0.1:${UI_PORT:-3000}:3000"
+    networks:
+      - default
+      - honcho
     init: true
     # Sandbox support for the Claude Agent SDK (bubblewrap):
     # - user 0 + CAP_SYS_ADMIN: bwrap needs to create user namespaces and set up
@@ -46,3 +49,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+networks:
+  honcho:
+    external: true
+    name: honcho_default
