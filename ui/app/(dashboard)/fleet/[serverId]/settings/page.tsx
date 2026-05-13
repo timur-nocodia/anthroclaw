@@ -19,6 +19,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ClaudeAuthPanel } from "@/components/settings/ClaudeAuthPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -390,6 +391,10 @@ function GeneralSection({ serverId }: { serverId: string }) {
           Restart gateway
         </Button>
       </div>
+
+      <Divider />
+
+      <ClaudeAuthPanel serverId={serverId} />
 
       <Divider />
 

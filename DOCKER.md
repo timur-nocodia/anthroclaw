@@ -21,32 +21,29 @@ Persistent state is mounted from host:
 | Mount                       | Contents                                              |
 |-----------------------------|-------------------------------------------------------|
 | `./data:/app/data`          | SQLite memory DBs, WhatsApp auth, dynamic cron, media |
+| `./data/claude:/home/node/.claude` | Claude Code subscription auth managed from the UI |
 | `./agents:/app/agents`      | YAML configs, CLAUDE.md prompts, per-agent memory     |
 | `./config.yml:/app/config.yml:ro` | Global gateway config                          |
 
 ## Prerequisites on the server
 
 ```bash
-# Node + Claude Code CLI (only needed once, to mint the OAuth token)
-curl -fsSL https://nodejs.org/install.sh | bash   # or your preferred install
-npm i -g @anthropic-ai/claude-code
-
 # Docker engine + compose plugin
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker "$USER" && newgrp docker
 ```
 
-## One-time auth setup
+## Claude auth setup
 
-```bash
-claude setup-token
-# Opens a browser link → log in → paste callback → token printed.
-# Long-lived (~1 year). Stored as sk-ant-oat01-...
-```
+Use the admin UI: **Settings → Claude subscription auth → Connect Claude
+subscription**. The UI starts the official `claude auth login --claudeai`
+flow inside the container, against the same `/home/node` runtime home that
+agent turns use. Credentials persist in `./data/claude` across container
+recreates.
 
-This is the **official Anthropic headless auth path**. The Agent SDK reads
-`CLAUDE_CODE_OAUTH_TOKEN` from env and uses your existing Claude
-Max/Pro subscription — no separate API billing.
+This uses the existing Claude Max/Pro subscription through Claude Code auth;
+it does not require `ANTHROPIC_API_KEY` and does not bill a separate Console
+API key.
 
 ## Deploy
 
@@ -55,12 +52,11 @@ git clone <repo> anthroclaw && cd anthroclaw
 
 cp .env.example .env
 # Edit .env:
-#   CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...   (from setup-token above)
 #   TELEGRAM_BOT_TOKEN=...
 #   plus any optional providers you use
 
 cp config.yml.example config.yml   # if not already present
-mkdir -p data agents
+mkdir -p data/claude agents
 # Copy/clone your agent configs into ./agents/
 
 docker compose up -d --build
@@ -113,14 +109,16 @@ git pull
 docker compose up -d --build
 ```
 
-OAuth token does not need re-issuing. Refresh annually via `claude setup-token`
-on the host.
+Claude auth does not need re-issuing on ordinary app rebuilds because
+`./data/claude` is persistent. If Claude reports authentication failures,
+refresh it from the Settings auth panel.
 
 ## Troubleshooting
 
-**`Error: ANTHROPIC_API_KEY not set`** — the SDK didn't see your OAuth token.
-Check `docker compose exec app env | grep CLAUDE_CODE_OAUTH_TOKEN`. The
-`.env` file must sit next to `docker-compose.yml`.
+**`Failed to authenticate` / 401 from Claude** — open Settings → Claude
+subscription auth, click **Verify**, then **Connect Claude subscription** if
+the panel is not connected. The runtime home should be `/home/node`, and
+credentials should show as present.
 
 **`Error loading SQLite database`** — host UID/GID mismatch. The container
 runs as uid 1000 (`node` user). Either run as that user on the host or
@@ -135,26 +133,17 @@ network for native compilation. If you're behind a corporate proxy, set
 
 ## Notes on auth methods
 
-The default compose file ships with `CLAUDE_CODE_OAUTH_TOKEN` from `.env`
-because that's the path Anthropic ships for CI / GitHub Actions / Docker.
-You can also bind-mount the host's credentials:
+Recommended production path: keep `./data/claude:/home/node/.claude` mounted
+and manage auth from the UI. This keeps credentials in the same runtime home
+used by AnthroClaw, avoids root-shell auth drift, and survives Docker
+recreates.
 
-1. **Bind-mount `~/.claude`** (recommended if `claude` is installed on the
-   host) — Claude Code on the host already refreshes the access token via
-   the long-lived refresh token, so the SDK inside the container always
-   reads fresh credentials with zero token-rotation work on your part.
-   Requires UID alignment (the `node` user in `node:22-bookworm-slim` is
-   uid 1000, which matches the default `ubuntu` user on most VPSes).
-   ```yaml
-   volumes:
-     - /home/ubuntu/.claude:/home/node/.claude
-   ```
-   When you mount `.claude`, comment out `CLAUDE_CODE_OAUTH_TOKEN` in
-   `.env` — env-var takes precedence over the file and would override the
-   refreshed credentials.
-2. **`CLAUDE_CODE_OAUTH_TOKEN` env var** — single secret, no host
-   dependency on `claude` CLI. Token from `claude setup-token` lasts a
-   year; token from a host's `~/.claude/.credentials.json` only lasts
-   ~8h. Refresh annually with `setup-token`.
-3. **`ANTHROPIC_API_KEY`** — separate billing from your Claude
-   subscription, no Opus access on Max plan tier.
+Alternative paths:
+
+1. **`CLAUDE_CODE_OAUTH_TOKEN` env var** — useful for CI or immutable
+   deployments, but do not pass it into agent tool environments.
+2. **Host `~/.claude` bind mount** — acceptable when host Claude Code auth is
+   intentionally the source of truth, but keep the mount pointed at
+   `/home/node/.claude` and avoid logging in as root by accident.
+3. **`ANTHROPIC_API_KEY`** — separate Console API billing, not the Claude
+   subscription path.
