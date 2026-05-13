@@ -6,6 +6,18 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.11.5] - 2026-05-13
+
+### Fixed
+
+- **OAuth callback redirect now targets the correct fleet path.**
+  v0.11.0 hardcoded `/fleet/_local/agents/<id>` in the OAuth callback,
+  but the dashboard route is `/fleet/local/agents/<id>` (no leading
+  underscore — `local` is the canonical serverId). The
+  underscore-prefixed path 404'd, so even after v0.11.4 added the
+  resume-the-wizard logic, the operator never actually landed on the
+  agent page where that logic runs.
+
 ## [0.11.4] - 2026-05-13
 
 Closes the loop on OAuth onboarding. The v0.11.0 wizard let you start

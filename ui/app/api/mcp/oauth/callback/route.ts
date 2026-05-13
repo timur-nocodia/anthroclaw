@@ -6,7 +6,7 @@
  *    `/mcp/cancelled?reason=<reason>`.
  *  - `?code=<code>&state=<state>` happy path → call `completeOAuth`,
  *    redirect to either `/mcp/done` (chat-initiated) or
- *    `/fleet/_local/agents/<agentId>?mcpWizard=tools&pendingId=<id>`
+ *    `/fleet/local/agents/<agentId>?mcpWizard=tools&pendingId=<id>`
  *    (admin-initiated, so the wizard re-opens at step 3).
  *  - missing state → 400 (someone hit this URL by hand).
  *
@@ -72,7 +72,7 @@ export async function GET(req: Request): Promise<Response> {
     return NextResponse.redirect(`${origin}/mcp/done`, { status: 302 });
   }
   return NextResponse.redirect(
-    `${origin}/fleet/_local/agents/${encodeURIComponent(result.row.agentId)}?mcpWizard=tools&pendingId=${encodeURIComponent(result.pendingId)}`,
+    `${origin}/fleet/local/agents/${encodeURIComponent(result.row.agentId)}?mcpWizard=tools&pendingId=${encodeURIComponent(result.pendingId)}`,
     { status: 302 },
   );
 }
