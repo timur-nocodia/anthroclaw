@@ -18,9 +18,9 @@ describe('Gateway Telegram Buildroom commands', () => {
     mkdirSync(dataDir, { recursive: true });
     const initialized = initializeBuildroomStorage({
       projectRoot,
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    initialized.config.operators[0].commandRoutes = ['telegram_chat:-1003931616911'];
+    initialized.config.operators[0].commandRoutes = ['telegram_chat:-1001234567890'];
     saveBuildroomRoomConfig(projectRoot, initialized.config);
 
     const sent: Array<{ peerId: string; text: string; opts?: SendOptions }> = [];
@@ -35,7 +35,7 @@ describe('Gateway Telegram Buildroom commands', () => {
     await gw.dispatch(message());
 
     expect(sent).toHaveLength(1);
-    expect(sent[0].peerId).toBe('-1003931616911');
+    expect(sent[0].peerId).toBe('-1001234567890');
     expect(sent[0].text).toContain('Buildroom: anthroclaw-core');
   });
 
@@ -45,10 +45,10 @@ describe('Gateway Telegram Buildroom commands', () => {
     mkdirSync(dataDir, { recursive: true });
     const initialized = initializeBuildroomStorage({
       projectRoot,
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    initialized.config.operators[0].commandRoutes = ['telegram_chat:-1003931616911'];
-    initialized.config.notifications.routes = ['telegram_thread:-1003931616911:2'];
+    initialized.config.operators[0].commandRoutes = ['telegram_chat:-1001234567890'];
+    initialized.config.notifications.routes = ['telegram_thread:-1001234567890:2'];
     saveBuildroomRoomConfig(projectRoot, initialized.config);
 
     const store = new FileArtifactStore({ projectRoot, roomId: 'anthroclaw-core' });
@@ -85,12 +85,12 @@ describe('Gateway Telegram Buildroom commands', () => {
     const commandResponse = sent.find((message) => message.opts?.threadId == null);
     const notification = sent.find((message) => message.opts?.threadId === '2');
     expect(commandResponse).toMatchObject({
-      peerId: '-1003931616911',
+      peerId: '-1001234567890',
       opts: { accountId: 'main' },
     });
     expect(commandResponse?.text).toContain('Trust report: trust_20260512_docs');
     expect(notification).toMatchObject({
-      peerId: '-1003931616911',
+      peerId: '-1001234567890',
       opts: { accountId: 'main', threadId: '2' },
     });
     expect(notification?.text).toContain('Buildroom trust: CLEAN');
@@ -102,8 +102,8 @@ describe('Gateway Telegram Buildroom commands', () => {
       channel: 'telegram',
       accountId: 'main',
       chatType: 'group',
-      peerId: '-1003931616911',
-      senderId: '48705953',
+      peerId: '-1001234567890',
+      senderId: '123456789',
       text: '/buildroom status',
       messageId: '10',
       mentionedBot: true,

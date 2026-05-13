@@ -387,7 +387,7 @@ roomId: anthroclaw-core
 mode: manual_approval
 root: .anthroclaw/auto-buildroom/rooms/anthroclaw-core
 operators:
-  - telegram_user:48705953
+  - telegram_user:123456789
 allowedPaths:
   - docs/**
   - tests/**

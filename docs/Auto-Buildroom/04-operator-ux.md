@@ -559,7 +559,7 @@ research_20260511_operator_summary
 Approval identity should be visible in reports:
 
 ```text
-Approved by: telegram:48705953
+Approved by: telegram:123456789
 Approval route: telegram
 Approved at: 2026-05-11T12:00:00Z
 Approval receipt: approval_20260511_operator_summary_docs

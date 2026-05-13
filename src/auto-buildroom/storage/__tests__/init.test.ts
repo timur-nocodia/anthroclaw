@@ -86,7 +86,7 @@ describe('Auto-Buildroom storage init', () => {
       initializeBuildroomStorage({
         projectRoot: root,
         roomId: 'anthroclaw-core',
-        operatorId: 'telegram_chat:-1003931616911',
+        operatorId: 'telegram_chat:-1001234567890',
       }),
     ).toThrow(/Telegram chat\/thread route is not operator identity/);
 

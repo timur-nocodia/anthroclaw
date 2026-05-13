@@ -542,7 +542,7 @@ Example:
 ```yaml
 targetReviewId: review_20260511_operator_summary_docs
 sourceIdeaId: idea_20260511_operator_summary_docs
-approvedBy: telegram:48705953
+approvedBy: telegram:123456789
 approvalRoute: telegram
 approvedAt: 2026-05-11T12:00:00Z
 reason: "Safe docs/test MVP improvement."

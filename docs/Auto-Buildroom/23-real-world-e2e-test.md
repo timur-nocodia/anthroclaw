@@ -878,15 +878,15 @@ Recommended route model:
 
 ```yaml
 operators:
-  - id: telegram_user:48705953
+  - id: telegram_user:123456789
     commandRoutes:
-      - telegram_chat:-1003931616911
+      - telegram_chat:-1001234567890
     approvalRoutes:
-      - telegram_chat:-1003931616911
+      - telegram_chat:-1001234567890
 
 notifications:
   routes:
-    - telegram_thread:-1003931616911:2
+    - telegram_thread:-1001234567890:2
 ```
 
 The Telegram E2E must not replace the CLI E2E. CLI remains canonical for v0.1.

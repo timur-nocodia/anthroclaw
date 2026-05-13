@@ -6,23 +6,23 @@ describe('Telegram Buildroom operator commands', () => {
   it('authorizes exact approval commands by Telegram user identity and approval route', () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].commandRoutes = ['telegram_chat:-1003931616911'];
-    config.operators[0].approvalRoutes = ['telegram_chat:-1003931616911'];
+    config.operators[0].commandRoutes = ['telegram_chat:-1001234567890'];
+    config.operators[0].approvalRoutes = ['telegram_chat:-1001234567890'];
 
     const result = authorizeTelegramBuildroomCommand(config, {
       text: '/buildroom approve review_20260512_docs',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
     });
 
     expect(result).toMatchObject({
       ok: true,
       command: 'approve',
       args: ['review_20260512_docs'],
-      operatorId: 'telegram_user:48705953',
-      route: 'telegram_chat:-1003931616911',
+      operatorId: 'telegram_user:123456789',
+      route: 'telegram_chat:-1001234567890',
       sourceThread: null,
     });
   });
@@ -30,14 +30,14 @@ describe('Telegram Buildroom operator commands', () => {
   it('rejects approval from chat route alone when Telegram user is not configured', () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].approvalRoutes = ['telegram_chat:-1003931616911'];
+    config.operators[0].approvalRoutes = ['telegram_chat:-1001234567890'];
 
     const result = authorizeTelegramBuildroomCommand(config, {
       text: '/buildroom approve review_20260512_docs',
       telegramUserId: 111,
-      chatId: -1003931616911,
+      chatId: -1001234567890,
     });
 
     expect(result).toEqual({ ok: false, reason: 'unauthorized_operator' });
@@ -46,15 +46,15 @@ describe('Telegram Buildroom operator commands', () => {
   it('rejects approval from a notification thread that is not an approval route', () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].commandRoutes = ['telegram_thread:-1003931616911:2'];
-    config.operators[0].approvalRoutes = ['telegram_chat:-1003931616911'];
+    config.operators[0].commandRoutes = ['telegram_thread:-1001234567890:2'];
+    config.operators[0].approvalRoutes = ['telegram_chat:-1001234567890'];
 
     const result = authorizeTelegramBuildroomCommand(config, {
       text: '/buildroom approve review_20260512_docs',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
       messageThreadId: 2,
     });
 
@@ -64,13 +64,13 @@ describe('Telegram Buildroom operator commands', () => {
   it('does not treat ordinary replies or short words as Buildroom commands', () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
 
     expect(authorizeTelegramBuildroomCommand(config, {
       text: 'yes',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
       replyToMessageId: 123,
     })).toEqual({ ok: false, reason: 'not_buildroom_command' });
   });
@@ -78,88 +78,88 @@ describe('Telegram Buildroom operator commands', () => {
   it('classifies incomplete Buildroom slash commands as malformed', () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
 
     expect(authorizeTelegramBuildroomCommand(config, {
       text: '/buildroom',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
     })).toEqual({ ok: false, reason: 'malformed_command' });
   });
 
   it('requires approval commands to target an exact review id', () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].approvalRoutes = ['telegram_chat:-1003931616911'];
+    config.operators[0].approvalRoutes = ['telegram_chat:-1001234567890'];
 
     expect(authorizeTelegramBuildroomCommand(config, {
       text: '/buildroom approve',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
     })).toEqual({ ok: false, reason: 'malformed_command' });
     expect(authorizeTelegramBuildroomCommand(config, {
       text: '/buildroom approve idea_20260512_docs',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
     })).toEqual({ ok: false, reason: 'malformed_command' });
   });
 
   it('rejects Telegram build commands for raw ideas or reviews', () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].approvalRoutes = ['telegram_chat:-1003931616911'];
+    config.operators[0].approvalRoutes = ['telegram_chat:-1001234567890'];
 
     expect(authorizeTelegramBuildroomCommand(config, {
       text: '/buildroom build idea_20260512_docs',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
     })).toEqual({ ok: false, reason: 'malformed_command' });
     expect(authorizeTelegramBuildroomCommand(config, {
       text: '/buildroom build approval_20260512_docs',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
     })).toMatchObject({ ok: true, command: 'build', args: ['approval_20260512_docs'] });
   });
 
   it('accepts Telegram bot-suffixed slash commands in groups', () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].commandRoutes = ['telegram_thread:-1003931616911:2'];
+    config.operators[0].commandRoutes = ['telegram_thread:-1001234567890:2'];
 
     const result = authorizeTelegramBuildroomCommand(config, {
       text: '/buildroom@anthroclaw_bot status',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
       messageThreadId: 2,
     });
 
     expect(result).toMatchObject({
       ok: true,
       command: 'status',
-      route: 'telegram_thread:-1003931616911:2',
-      sourceThread: 'telegram_thread:-1003931616911:2',
+      route: 'telegram_thread:-1001234567890:2',
+      sourceThread: 'telegram_thread:-1001234567890:2',
     });
   });
 
   it('authorizes retention through command routes, not approval routes', () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].commandRoutes = ['telegram_chat:-1003931616911'];
-    config.operators[0].approvalRoutes = ['telegram_thread:-1003931616911:2'];
+    config.operators[0].commandRoutes = ['telegram_chat:-1001234567890'];
+    config.operators[0].approvalRoutes = ['telegram_thread:-1001234567890:2'];
 
     expect(authorizeTelegramBuildroomCommand(config, {
       text: '/buildroom retain trust_20260512_docs',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
     })).toMatchObject({
       ok: true,
       command: 'retain',
@@ -168,8 +168,8 @@ describe('Telegram Buildroom operator commands', () => {
 
     expect(authorizeTelegramBuildroomCommand(config, {
       text: '/buildroom retain idea_20260512_docs',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
     })).toEqual({ ok: false, reason: 'malformed_command' });
   });
 });

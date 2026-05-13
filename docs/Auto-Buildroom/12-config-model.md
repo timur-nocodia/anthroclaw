@@ -133,10 +133,10 @@ operators:
   - id: cli:user:local-operator
     routes:
       - cli:local
-  - id: telegram_user:48705953
+  - id: telegram_user:123456789
     routes:
-      - telegram_chat:-1003931616911
-      - telegram_thread:-1003931616911:2
+      - telegram_chat:-1001234567890
+      - telegram_thread:-1001234567890:2
 
 roles:
   mode: internal
@@ -298,15 +298,15 @@ Identity examples:
 
 ```text
 cli:user:local-operator
-telegram_user:48705953
+telegram_user:123456789
 ```
 
 Route examples:
 
 ```text
 cli:local
-telegram_chat:-1003931616911
-telegram_thread:-1003931616911:2
+telegram_chat:-1001234567890
+telegram_thread:-1001234567890:2
 ```
 
 Config must not treat Telegram chat ID as operator identity.
@@ -315,10 +315,10 @@ Operator entry:
 
 ```yaml
 operators:
-  - id: telegram_user:48705953
+  - id: telegram_user:123456789
     routes:
-      - telegram_chat:-1003931616911
-      - telegram_thread:-1003931616911:2
+      - telegram_chat:-1001234567890
+      - telegram_thread:-1001234567890:2
 ```
 
 Approval must match a configured operator identity and allowed approval route.

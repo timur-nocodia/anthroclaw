@@ -7,9 +7,9 @@ describe('Telegram Buildroom inbound handler', () => {
   it('routes Telegram Buildroom commands through the command handler boundary', async () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].commandRoutes = ['telegram_chat:-1003931616911'];
+    config.operators[0].commandRoutes = ['telegram_chat:-1001234567890'];
     const calls: string[][] = [];
 
     const result = await handleTelegramBuildroomInboundMessage(config, message(), {
@@ -35,14 +35,16 @@ describe('Telegram Buildroom inbound handler', () => {
       '--room',
       'anthroclaw-core',
       '--operator',
-      'telegram_user:48705953',
+      'telegram_user:123456789',
+      '--operator-route',
+      'telegram_chat:-1001234567890',
     ]]);
   });
 
   it('ignores non-Telegram messages before command authorization', async () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
     let called = false;
 
@@ -68,8 +70,8 @@ describe('Telegram Buildroom inbound handler', () => {
       channel: 'telegram',
       accountId: 'main',
       chatType: 'group',
-      peerId: '-1003931616911',
-      senderId: '48705953',
+      peerId: '-1001234567890',
+      senderId: '123456789',
       text: '/buildroom status',
       messageId: '10',
       mentionedBot: true,

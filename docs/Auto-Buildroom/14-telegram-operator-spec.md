@@ -35,14 +35,14 @@ Operator identity and Telegram route are different.
 Operator identity:
 
 ```text
-telegram_user:48705953
+telegram_user:123456789
 ```
 
 Route evidence:
 
 ```text
-telegram_chat:-1003931616911
-telegram_thread:-1003931616911:2
+telegram_chat:-1001234567890
+telegram_thread:-1001234567890:2
 ```
 
 Rules:
@@ -59,22 +59,22 @@ Config example:
 
 ```yaml
 operators:
-  - id: telegram_user:48705953
+  - id: telegram_user:123456789
     commandRoutes:
-      - telegram_chat:-1003931616911
+      - telegram_chat:-1001234567890
     approvalRoutes:
-      - telegram_chat:-1003931616911
+      - telegram_chat:-1001234567890
 notifications:
   routes:
-    - telegram_thread:-1003931616911:2
+    - telegram_thread:-1001234567890:2
 ```
 
 Approval artifact should record:
 
 ```yaml
-approvedBy: telegram_user:48705953
+approvedBy: telegram_user:123456789
 approvalRoute: telegram
-sourceChat: telegram_chat:-1003931616911
+sourceChat: telegram_chat:-1001234567890
 sourceThread: null
 ```
 
@@ -88,15 +88,15 @@ Recommended v0.1 setup:
 
 ```yaml
 operators:
-  - id: telegram_user:48705953
+  - id: telegram_user:123456789
     commandRoutes:
-      - telegram_chat:-1003931616911
+      - telegram_chat:-1001234567890
     approvalRoutes:
-      - telegram_chat:-1003931616911
+      - telegram_chat:-1001234567890
 
 notifications:
   routes:
-    - telegram_thread:-1003931616911:2
+    - telegram_thread:-1001234567890:2
 ```
 
 Rules:
@@ -248,7 +248,7 @@ Approval:
 approval_20260511_operator_summary_docs
 
 Approved by:
-telegram_user:48705953
+telegram_user:123456789
 
 Scope:
 - docs/**

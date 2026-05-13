@@ -6,14 +6,14 @@ describe('Telegram Buildroom inbound adapter', () => {
   it('maps Telegram inbound messages to Buildroom command input', () => {
     expect(telegramBuildroomInputFromInboundMessage(message({
       text: '/buildroom status',
-      senderId: '48705953',
-      peerId: '-1003931616911',
+      senderId: '123456789',
+      peerId: '-1001234567890',
       threadId: '2',
       replyToId: '99',
     }))).toEqual({
       text: '/buildroom status',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
       messageThreadId: 2,
       replyToMessageId: 99,
     });
@@ -29,8 +29,8 @@ describe('Telegram Buildroom inbound adapter', () => {
       channel: 'telegram',
       accountId: 'main',
       chatType: 'group',
-      peerId: '-1003931616911',
-      senderId: '48705953',
+      peerId: '-1001234567890',
+      senderId: '123456789',
       text: '/buildroom status',
       messageId: '10',
       mentionedBot: true,

@@ -42,7 +42,7 @@ describe('Auto-Buildroom config model', () => {
   it('rejects Telegram chat or thread routes as operator identity', () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_chat:-1003931616911',
+      operatorId: 'telegram_chat:-1001234567890',
     });
 
     const result = validateBuildroomConfig(config);
@@ -56,11 +56,11 @@ describe('Auto-Buildroom config model', () => {
   it('rejects Telegram user identities in route fields', () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].commandRoutes = ['telegram_user:48705953'];
-    config.operators[0].approvalRoutes = ['telegram_user:48705953'];
-    config.notifications.routes = ['telegram_user:48705953'];
+    config.operators[0].commandRoutes = ['telegram_user:123456789'];
+    config.operators[0].approvalRoutes = ['telegram_user:123456789'];
+    config.notifications.routes = ['telegram_user:123456789'];
 
     const result = validateBuildroomConfig(config);
 

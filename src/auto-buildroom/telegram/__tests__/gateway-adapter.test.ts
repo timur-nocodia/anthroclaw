@@ -7,9 +7,9 @@ describe('Telegram Buildroom gateway adapter', () => {
   it('handles slash commands by loading config, running CLI, and sending the result', async () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].commandRoutes = ['telegram_thread:-1003931616911:2'];
+    config.operators[0].commandRoutes = ['telegram_thread:-1001234567890:2'];
     const cliCalls: string[][] = [];
     const sent: Array<{ peerId: string; text: string; opts?: SendOptions }> = [];
 
@@ -32,7 +32,7 @@ describe('Telegram Buildroom gateway adapter', () => {
     expect(handled).toBe(true);
     expect(cliCalls).toHaveLength(1);
     expect(sent).toEqual([{
-      peerId: '-1003931616911',
+      peerId: '-1001234567890',
       text: 'Buildroom: anthroclaw-core',
       opts: { accountId: 'main', threadId: '2' },
     }]);
@@ -41,9 +41,9 @@ describe('Telegram Buildroom gateway adapter', () => {
   it('uses the loaded config room id when no explicit room override is provided', async () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].commandRoutes = ['telegram_chat:-1003931616911'];
+    config.operators[0].commandRoutes = ['telegram_chat:-1001234567890'];
     const cliCalls: string[][] = [];
 
     await handleTelegramBuildroomGatewayMessage(message(), {
@@ -102,8 +102,8 @@ describe('Telegram Buildroom gateway adapter', () => {
       channel: 'telegram',
       accountId: 'main',
       chatType: 'group',
-      peerId: '-1003931616911',
-      senderId: '48705953',
+      peerId: '-1001234567890',
+      senderId: '123456789',
       text: '/buildroom status',
       messageId: '10',
       mentionedBot: true,

@@ -7,8 +7,8 @@ describe('Telegram Buildroom notification sender', () => {
 
     await sendTelegramBuildroomNotification({
       routes: [
-        'telegram_chat:-1003931616911',
-        'telegram_thread:-1003931616911:2',
+        'telegram_chat:-1001234567890',
+        'telegram_thread:-1001234567890:2',
         'cli:local',
       ],
       text: 'Trust: WATCH\nNext: /buildroom report',
@@ -23,12 +23,12 @@ describe('Telegram Buildroom notification sender', () => {
 
     expect(sent).toEqual([
       {
-        chatId: -1003931616911,
+        chatId: -1001234567890,
         text: 'Trust: WATCH\nNext: /buildroom report',
         messageThreadId: null,
       },
       {
-        chatId: -1003931616911,
+        chatId: -1001234567890,
         text: 'Trust: WATCH\nNext: /buildroom report',
         messageThreadId: 2,
       },

@@ -9,9 +9,9 @@ describe('Telegram Buildroom command handler', () => {
   it('runs authorized Telegram commands through the canonical CLI argument path', async () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].commandRoutes = ['telegram_chat:-1003931616911'];
+    config.operators[0].commandRoutes = ['telegram_chat:-1001234567890'];
     const runCli = vi.fn(async (_argv: string[], io: { stdout: (text: string) => void }) => {
       io.stdout('Buildroom: anthroclaw-core');
       return 0;
@@ -19,8 +19,8 @@ describe('Telegram Buildroom command handler', () => {
 
     const result = await handleTelegramBuildroomCommand(config, {
       text: '/buildroom status',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
     }, {
       projectRoot: '/repo',
       roomId: 'anthroclaw-core',
@@ -41,24 +41,24 @@ describe('Telegram Buildroom command handler', () => {
       '--room',
       'anthroclaw-core',
       '--operator',
-      'telegram_user:48705953',
+      'telegram_user:123456789',
       '--operator-route',
-      'telegram_chat:-1003931616911',
+      'telegram_chat:-1001234567890',
     ], expect.anything());
   });
 
   it('rejects unauthorized Telegram commands without invoking CLI or revealing artifact existence', async () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].approvalRoutes = ['telegram_chat:-1003931616911'];
+    config.operators[0].approvalRoutes = ['telegram_chat:-1001234567890'];
     const runCli = vi.fn();
 
     const result = await handleTelegramBuildroomCommand(config, {
       text: '/buildroom approve review_20260512_docs',
       telegramUserId: 111,
-      chatId: -1003931616911,
+      chatId: -1001234567890,
     }, {
       projectRoot: '/repo',
       roomId: 'anthroclaw-core',
@@ -78,13 +78,13 @@ describe('Telegram Buildroom command handler', () => {
   it('ignores ordinary chat text so agent routing can continue', async () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
 
     const result = await handleTelegramBuildroomCommand(config, {
       text: 'yes',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
     }, {
       projectRoot: '/repo',
       roomId: 'anthroclaw-core',
@@ -97,9 +97,9 @@ describe('Telegram Buildroom command handler', () => {
   it('returns CLI stderr when an authorized command fails', async () => {
     const config = createDefaultBuildroomConfig({
       roomId: 'anthroclaw-core',
-      operatorId: 'telegram_user:48705953',
+      operatorId: 'telegram_user:123456789',
     });
-    config.operators[0].commandRoutes = ['telegram_chat:-1003931616911'];
+    config.operators[0].commandRoutes = ['telegram_chat:-1001234567890'];
     const runCli = vi.fn(async (_argv: string[], io: { stderr: (text: string) => void }) => {
       io.stderr('Artifact not found: trust_20260512_docs');
       return 5;
@@ -107,8 +107,8 @@ describe('Telegram Buildroom command handler', () => {
 
     const result = await handleTelegramBuildroomCommand(config, {
       text: '/buildroom show trust_20260512_docs',
-      telegramUserId: 48705953,
-      chatId: -1003931616911,
+      telegramUserId: 123456789,
+      chatId: -1001234567890,
     }, {
       projectRoot: '/repo',
       roomId: 'anthroclaw-core',

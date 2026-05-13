@@ -323,7 +323,7 @@ plugins:
       root: ".anthroclaw/auto-buildroom"
       mode: "manual_approval"
       operatorIds:
-        - "telegram:48705953"
+        - "telegram:123456789"
       blockedPaths:
         - ".env"
         - "**/*secret*"

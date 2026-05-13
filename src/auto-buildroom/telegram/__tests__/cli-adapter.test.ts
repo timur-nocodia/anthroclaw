@@ -18,7 +18,9 @@ describe('Telegram Buildroom CLI adapter', () => {
       '--room',
       'anthroclaw-core',
       '--operator',
-      'telegram_user:48705953',
+      'telegram_user:123456789',
+      '--operator-route',
+      'telegram_chat:-1001234567890',
     ]);
   });
 
@@ -35,7 +37,9 @@ describe('Telegram Buildroom CLI adapter', () => {
       '--room',
       'anthroclaw-core',
       '--operator',
-      'telegram_user:48705953',
+      'telegram_user:123456789',
+      '--operator-route',
+      'telegram_chat:-1001234567890',
     ]);
   });
 
@@ -47,8 +51,8 @@ describe('Telegram Buildroom CLI adapter', () => {
       ok: true,
       command,
       args,
-      operatorId: 'telegram_user:48705953',
-      route: 'telegram_chat:-1003931616911',
+      operatorId: 'telegram_user:123456789',
+      route: 'telegram_chat:-1001234567890',
       sourceThread: null,
     };
   }

@@ -140,15 +140,15 @@ Identity examples:
 
 ```text
 cli:user:local-operator
-telegram_user:48705953
+telegram_user:123456789
 ```
 
 Route examples:
 
 ```text
 cli:local
-telegram_chat:-1003931616911
-telegram_thread:-1003931616911:2
+telegram_chat:-1001234567890
+telegram_thread:-1001234567890:2
 ```
 
 Telegram chat ID and thread ID are route evidence, not operator identity. Approval identity should use the Telegram user ID when available.
