@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { useParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -34,6 +35,14 @@ import {
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
+
+interface DisplayDefaults {
+  toolProgress?: string;
+  toolPreviewLength?: number;
+  cleanupProgress?: boolean;
+  subagentTools?: "parent" | "all" | "indented";
+  streaming?: boolean;
+}
 
 interface GatewayInfo {
   uptime?: number;
@@ -302,6 +311,56 @@ function GeneralSection({ serverId }: { serverId: string }) {
   const [environment, setEnvironment] = useState<Environment>("development");
   const [envSaving, setEnvSaving] = useState(false);
 
+  // Display defaults state
+  const [display, setDisplay] = useState<DisplayDefaults>({});
+  const [displaySaving, setDisplaySaving] = useState(false);
+
+  // Parse the config YAML to extract defaults.display
+  const parsedConfig = useMemo(() => {
+    if (!config) return null;
+    try {
+      return parseYaml(config) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }, [config]);
+
+  // Sync display state when config is loaded or changes
+  useEffect(() => {
+    if (parsedConfig) {
+      const d = (parsedConfig?.defaults as Record<string, unknown> | undefined)?.display as DisplayDefaults | undefined;
+      setDisplay(d ?? {});
+    }
+  }, [parsedConfig]);
+
+  const handleSaveDisplayDefaults = async () => {
+    setDisplaySaving(true);
+    try {
+      // Merge display defaults into parsed config and re-stringify
+      const base = parsedConfig ?? {};
+      const updated = {
+        ...base,
+        defaults: {
+          ...(base.defaults as Record<string, unknown> ?? {}),
+          display: Object.fromEntries(
+            Object.entries(display).filter(([, v]) => v !== undefined && v !== ""),
+          ),
+        },
+      };
+      const newYaml = stringifyYaml(updated);
+      await fetch(`/api/fleet/${serverId}/config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ yaml: newYaml }),
+      });
+      setConfig(newYaml);
+    } catch (err) {
+      console.error("Failed to save display defaults:", err);
+    } finally {
+      setDisplaySaving(false);
+    }
+  };
+
   useEffect(() => {
     fetch(`/api/fleet/${serverId}/gateway/status`)
       .then((r) => r.json())
@@ -462,6 +521,113 @@ function GeneralSection({ serverId }: { serverId: string }) {
           lineHeight: "20px",
         }}
       />
+
+      <Divider />
+
+      {/* Display defaults */}
+      <SectionHead
+        title="Display defaults"
+        desc="Gateway-wide fallback display settings applied to all agents unless overridden per-agent."
+      />
+
+      <FieldRow label="Tool progress" hint="Show tool call activity to users. Leave unset to let each agent decide.">
+        <select
+          value={display.toolProgress ?? ""}
+          onChange={(e) =>
+            setDisplay((prev) => ({
+              ...prev,
+              toolProgress: e.target.value === "" ? undefined : e.target.value,
+            }))
+          }
+          className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+          style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+        >
+          <option value="">(unset — use safety-profile default)</option>
+          <option value="all">all</option>
+          <option value="new">new</option>
+          <option value="off">off</option>
+        </select>
+      </FieldRow>
+
+      <FieldRow label="Tool preview length" hint="Max characters of a tool's primary argument shown in the bubble. 0 disables previews. Leave blank for default (40).">
+        <input
+          type="number"
+          min={0}
+          max={200}
+          value={display.toolPreviewLength ?? ""}
+          placeholder="40"
+          onChange={(e) =>
+            setDisplay((prev) => ({
+              ...prev,
+              toolPreviewLength: e.target.value === "" ? undefined : Number(e.target.value),
+            }))
+          }
+          className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+          style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
+        />
+      </FieldRow>
+
+      <FieldRow label="Cleanup progress" hint="Delete the tool-progress bubble after a successful response. Failures leave it as a breadcrumb.">
+        <select
+          value={display.cleanupProgress === true ? "true" : display.cleanupProgress === false ? "false" : ""}
+          onChange={(e) =>
+            setDisplay((prev) => ({
+              ...prev,
+              cleanupProgress: e.target.value === "" ? undefined : e.target.value === "true",
+            }))
+          }
+          className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+          style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+        >
+          <option value="">(unset — use agent default)</option>
+          <option value="false">off — leave breadcrumb in chat</option>
+          <option value="true">on — delete bubble after success</option>
+        </select>
+      </FieldRow>
+
+      <FieldRow label="Subagent tools" hint="How to render tool calls made by subagents (via Task).">
+        <select
+          value={display.subagentTools ?? ""}
+          onChange={(e) =>
+            setDisplay((prev) => ({
+              ...prev,
+              subagentTools: e.target.value === "" ? undefined : (e.target.value as "parent" | "all" | "indented"),
+            }))
+          }
+          className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+          style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+        >
+          <option value="">(unset — use agent default)</option>
+          <option value="parent">parent — Task line only</option>
+          <option value="all">all — full internals</option>
+          <option value="indented">indented — internals with prefix</option>
+        </select>
+      </FieldRow>
+
+      <FieldRow label="Streaming" hint="Stream output — text appears as it is generated. Works in Telegram via message editing.">
+        <select
+          value={display.streaming === true ? "true" : display.streaming === false ? "false" : ""}
+          onChange={(e) =>
+            setDisplay((prev) => ({
+              ...prev,
+              streaming: e.target.value === "" ? undefined : e.target.value === "true",
+            }))
+          }
+          className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+          style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+        >
+          <option value="">(unset — use platform default)</option>
+          <option value="true">enabled</option>
+          <option value="false">disabled</option>
+        </select>
+      </FieldRow>
+
+      <div>
+        <Button size="sm" disabled={displaySaving} onClick={handleSaveDisplayDefaults}>
+          <Save className="h-3 w-3" />
+          {displaySaving ? "Saving..." : "Save defaults"}
+        </Button>
+      </div>
 
       {/* Restart confirmation */}
       <AlertDialog open={restartOpen} onOpenChange={setRestartOpen}>
