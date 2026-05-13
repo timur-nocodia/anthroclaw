@@ -6,6 +6,36 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-05-13
+
+Finishes the MCP server card actions advertised in v0.11.0. Two buttons
+on a configured MCP server (`Preflight` in the advanced editor, the
+`Edit allowed tools` pencil on the card) were stubs — they rendered but
+did nothing on click.
+
+### Added
+
+- **`POST /api/agents/<id>/mcp/<name>/tools`.**
+  Re-discovers the full tool list from an already-attached MCP server
+  using the stored credential. Reuses the Streamable HTTP handshake
+  fixed in v0.11.1 via a new `discoverMcpTools` helper. Supports both
+  `mcp_apikey` and `mcp_oauth` credentials.
+
+### Fixed
+
+- **`Preflight` button now runs preflight.**
+  POSTs the server's current spec to `/api/integrations/mcp-preflight`
+  (gateway `preflightMcpServerSpec`) and renders the result through the
+  existing `PreflightResult` block. Per-server loading/error state so
+  multiple cards can preflight independently.
+- **`Edit allowed tools` button now opens an editor.**
+  New `<EditAllowedToolsDialog />` shows the discovered tools as
+  checkboxes with descriptions, lets the operator toggle which tools
+  the agent may call, and persists by PUT-ing the updated agent config.
+  Falls back to the currently-allowed tools as the source if discovery
+  fails so the operator can still trim the list when the server is
+  unreachable.
+
 ## [0.11.1] - 2026-05-13
 
 Hotfix for external MCP onboarding. v0.11.0 advertised the URL-first
