@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { parse as parseYaml, parseDocument } from "yaml";
 import { useParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -336,18 +336,15 @@ function GeneralSection({ serverId }: { serverId: string }) {
   const handleSaveDisplayDefaults = async () => {
     setDisplaySaving(true);
     try {
-      // Merge display defaults into parsed config and re-stringify
-      const base = parsedConfig ?? {};
-      const updated = {
-        ...base,
-        defaults: {
-          ...(base.defaults as Record<string, unknown> ?? {}),
-          display: Object.fromEntries(
-            Object.entries(display).filter(([, v]) => v !== undefined && v !== ""),
-          ),
-        },
-      };
-      const newYaml = stringifyYaml(updated);
+      // Use parseDocument to preserve comments and original formatting
+      const doc = parseDocument(config ?? "");
+      doc.setIn(
+        ["defaults", "display"],
+        Object.fromEntries(
+          Object.entries(display).filter(([, v]) => v !== undefined && v !== ""),
+        ),
+      );
+      const newYaml = String(doc);
       await fetch(`/api/fleet/${serverId}/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

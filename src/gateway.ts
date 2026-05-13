@@ -5060,8 +5060,6 @@ export class Gateway {
       let bubble: ToolProgressBubble | null = null;
       let unsubBubbleStart: (() => void) | null = null;
       let unsubBubbleError: (() => void) | null = null;
-      let contentBreakFired = false;
-
       if (displayCfg.toolProgress !== 'off') {
         const ch = this.channels.get(msg.channel);
         if (ch) {
@@ -5087,9 +5085,7 @@ export class Gateway {
                 return false;
               }
             },
-            deleteFn: displayCfg.cleanupProgress
-              ? (mid) => ch.deleteText(msg.peerId, mid, { accountId: msg.accountId })
-              : undefined,
+            deleteFn: (mid) => ch.deleteText(msg.peerId, mid, { accountId: msg.accountId }),
             config: {
               mode: displayCfg.toolProgress,
               subagentTools: displayCfg.subagentTools,
@@ -5155,10 +5151,7 @@ export class Gateway {
           const hookEvent = extractHookLifecycleEvent(evt);
           if (partialText) {
             markRunActivity('partial_text');
-            if (!contentBreakFired) {
-              contentBreakFired = true;
-              bubble?.onContentBreak();
-            }
+            bubble?.onContentBreak();
           } else if (taskNotification) {
             markRunActivity(`task_${taskNotification.status}`, taskNotification.taskId);
             this.queueManager.markTaskFinished(sessionKey, taskNotification.taskId, `task_${taskNotification.status}`);

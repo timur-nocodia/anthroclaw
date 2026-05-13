@@ -13,7 +13,7 @@ describe('ToolProgressBubble — integration: full turn', () => {
     const send = vi.fn<(text: string) => Promise<string>>();
     send.mockResolvedValueOnce('bubble-1').mockResolvedValueOnce('bubble-2');
     const edit = vi.fn(async () => true);
-    const del = vi.fn(async () => {});
+    const del = vi.fn(async (_id: string) => {});
 
     const b = new ToolProgressBubble({
       sendFn: send,
@@ -41,7 +41,7 @@ describe('ToolProgressBubble — integration: full turn', () => {
     const send = vi.fn<(text: string) => Promise<string>>()
       .mockResolvedValueOnce('m1').mockResolvedValueOnce('m2');
     const edit = vi.fn(async () => true);
-    const del = vi.fn(async () => {});
+    const del = vi.fn(async (_id: string) => {});
     const b = new ToolProgressBubble({
       sendFn: send,
       editFn: edit,
