@@ -111,8 +111,8 @@ export type HookHandler = (payload: Record<string, unknown>) => void | Promise<v
  * Plugins that maintain per-agent state should resolve the right state
  * via `ctx.agentId` instead of binding to a single agent at register time.
  *
- * `sessionKey` is reserved for future use — it varies per dispatch and is
- * not currently plumbed through `Agent.refreshPluginTools`. May be undefined.
+ * `sessionKey` is present for dispatch-scoped agent turns and may be undefined
+ * for prewarmed/headless tool invocations.
  */
 export interface McpToolContext {
   /** ID of the agent invoking this tool. Always present at runtime. */
@@ -169,6 +169,14 @@ export interface ContextEngine {
 export interface AssembleInput {
   agentId: string;
   sessionKey: string;
+  sessionContext?: {
+    channel?: 'telegram' | 'whatsapp';
+    accountId?: string;
+    peerId?: string;
+    senderId?: string;
+    chatType?: 'dm' | 'group';
+    threadId?: string;
+  };
   messages: unknown[];           // SDKMessage[] — typed via @anthropic-ai/claude-agent-sdk
 }
 export interface AssembleResult {

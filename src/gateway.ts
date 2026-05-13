@@ -696,7 +696,7 @@ export function flattenAssembledMessages(messages: unknown[]): string {
  * trust it as a prompt. A buggy plugin could blow the prompt up to MBs;
  * we'd rather fall back to the original than push that into `query()`.
  */
-const MAX_ASSEMBLED_RATIO = 4;             // assembled may grow up to 4x original
+const MAX_ASSEMBLED_ADDED_LEN = 100_000;    // plugin context is additive and may dwarf short prompts
 const ABSOLUTE_MAX_ASSEMBLED_LEN = 500_000; // ~125k tokens upper bound
 
 /**
@@ -730,6 +730,14 @@ export async function tryPluginAssemble(
   sessionKey: string,
   prompt: string,
   pluginName: string | null = null,
+  sessionContext?: {
+    channel?: 'telegram' | 'whatsapp';
+    accountId?: string;
+    peerId?: string;
+    senderId?: string;
+    chatType?: 'dm' | 'group';
+    threadId?: string;
+  },
 ): Promise<string | null> {
   if (!engine?.assemble) return null;
   try {
@@ -737,6 +745,7 @@ export async function tryPluginAssemble(
       engine.assemble({
         agentId,
         sessionKey,
+        ...(sessionContext ? { sessionContext } : {}),
         messages: [{ role: 'user', content: prompt }],
       }),
       new Promise<typeof TIMEOUT_SENTINEL>((resolve) =>
@@ -755,7 +764,7 @@ export async function tryPluginAssemble(
     if (!flattened) return null;
     if (
       flattened.length > ABSOLUTE_MAX_ASSEMBLED_LEN ||
-      (prompt.length > 0 && flattened.length > prompt.length * MAX_ASSEMBLED_RATIO)
+      flattened.length - prompt.length > MAX_ASSEMBLED_ADDED_LEN
     ) {
       logger.warn(
         {
@@ -1884,16 +1893,18 @@ export class Gateway {
       ...this.sdkSessionService?.getQueryOptions(),
     });
 
-    if (msg) {
-      const dispatchContext = {
-        agentId: agent.id,
-        channel: msg.channel,
-        peerId: msg.peerId,
-        senderId: msg.senderId,
-        accountId: msg.accountId,
-        threadId: msg.threadId,
-      };
-      const dispatchTools = agent.tools.map((tool) => {
+    if (msg || sessionKey) {
+      const dispatchContext = msg
+        ? {
+            agentId: agent.id,
+            channel: msg.channel,
+            peerId: msg.peerId,
+            senderId: msg.senderId,
+            accountId: msg.accountId,
+            threadId: msg.threadId,
+          }
+        : undefined;
+      const dispatchTools = agent.buildToolsForDispatch(sessionKey).map((tool) => {
         if (tool.name === 'send_message') {
           return createSendMessageTool((id) => this.channels.get(id), {
             agentId: agent.id,
@@ -4568,6 +4579,21 @@ export class Gateway {
           sessionKey,
           response,
           source: msg.channel,
+          channel: msg.channel,
+          accountId: msg.accountId,
+          peerId: msg.peerId,
+          senderId: msg.senderId,
+          senderName: msg.senderName,
+          chatType: msg.chatType,
+          threadId: msg.threadId,
+          messageId: msg.messageId,
+          sdkSessionId: readStringMeta(
+            msg.raw && typeof msg.raw === 'object' ? msg.raw as Record<string, unknown> : {},
+            'agentSdkSessionId',
+          ),
+          media: msg.media ? { type: msg.media.type, path: msg.media.path } : undefined,
+          transcript: msg.transcript,
+          pdfText: msg.pdfText,
           newMessages,
         });
       }
@@ -4885,6 +4911,14 @@ export class Gateway {
         sessionKey,
         prompt,
         assembleEntry?.name ?? null,
+        {
+          channel: msg.channel,
+          accountId: msg.accountId,
+          peerId: msg.peerId,
+          senderId: msg.senderId,
+          chatType: msg.chatType,
+          threadId: msg.threadId,
+        },
       );
       if (assembledPrompt !== null) {
         prompt = assembledPrompt;

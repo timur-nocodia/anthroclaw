@@ -1,0 +1,10 @@
+{
+  "name": "honcho",
+  "version": "0.1.0",
+  "description": "Honcho memory and social-context integration for AnthroClaw agents.",
+  "entry": "dist/index.js",
+  "configSchema": "dist/config.js",
+  "requires": {
+    "anthroclaw": ">=0.10.0"
+  }
+}

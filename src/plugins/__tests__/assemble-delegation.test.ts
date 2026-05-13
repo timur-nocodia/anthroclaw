@@ -100,6 +100,38 @@ describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () =
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
+  it('passes dispatch session context to assemble when available', async () => {
+    const result: AssembleResult = {
+      messages: [{ role: 'user', content: 'original prompt with enough padding' }],
+    };
+    const assembleFn = vi.fn(
+      async (_input: AssembleInput): Promise<AssembleResult | null> => result,
+    );
+    const sessionContext = {
+      channel: 'telegram' as const,
+      accountId: 'main',
+      peerId: 'chat-1',
+      senderId: 'user-1',
+      chatType: 'group' as const,
+      threadId: 'topic-1',
+    };
+
+    await tryPluginAssemble(
+      { assemble: assembleFn },
+      'agent-7',
+      'sk-99',
+      'original prompt with enough padding',
+      'honcho',
+      sessionContext,
+    );
+
+    expect(assembleFn).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: 'agent-7',
+      sessionKey: 'sk-99',
+      sessionContext,
+    }));
+  });
+
   it('returns null and logs warn (with redacted err) when assemble() throws', async () => {
     const boom = new Error('engine kaboom');
     const assembleFn = vi.fn(async (): Promise<AssembleResult | null> => {
@@ -268,9 +300,28 @@ describe('tryPluginAssemble — gateway prompt-assembly delegation helper', () =
     expect(infoSpy).not.toHaveBeenCalled();
   });
 
-  it('falls back to original when assembled exceeds 4x ratio', async () => {
+  it('allows bounded plugin context even when the user prompt is short', async () => {
+    const original = 'short prompt';
+    const context = 'remembered context'.repeat(40);
+    const engine: ContextEngine = {
+      assemble: vi.fn(async () => ({
+        messages: [
+          { role: 'system', content: context },
+          { role: 'user', content: original },
+        ],
+      })),
+    };
+    const out = await tryPluginAssemble(engine, 'a', 's', original, 'honcho');
+
+    expect(out).toContain(context);
+    expect(out).toContain(original);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('falls back to original when assembled adds excessive plugin context', async () => {
     const original = 'a'.repeat(100);
-    const big = 'b'.repeat(401); // 401 > 100*4 = 400
+    const big = `${original}${'b'.repeat(100_001)}`;
     const engine: ContextEngine = {
       assemble: vi.fn(async () => ({
         messages: [{ role: 'user', content: big }],
