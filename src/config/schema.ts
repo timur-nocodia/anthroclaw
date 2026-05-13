@@ -71,6 +71,15 @@ export const GlobalConfigSchema = z.object({
       .default('openai'),
     embedding_model: z.string().default('text-embedding-3-small'),
     debounce_ms: z.number().int().min(0).default(5000).describe('Inbound message debounce delay in ms (0 to disable)'),
+    display: z.object({
+      toolProgress: z.enum(['all', 'new', 'off']).optional(),
+      toolPreviewLength: z.number().int().min(0).max(200).optional(),
+      cleanupProgress: z.boolean().optional(),
+      subagentTools: z.enum(['parent', 'all', 'indented']).optional(),
+      showReasoning: z.boolean().optional(),
+      streaming: z.boolean().optional(),
+      toolEmojis: z.record(z.string(), z.string()).optional(),
+    }).optional(),
   }).default({
     model: 'claude-sonnet-4-6',
     embedding_provider: 'openai',
@@ -519,9 +528,12 @@ export const AgentYmlSchema = z.object({
   group_sessions: z.enum(['shared', 'per_user']).default('shared'),
   display: z.object({
     toolProgress: z.enum(['all', 'new', 'off']).optional(),
-    streaming: z.boolean().optional(),
-    toolPreviewLength: z.number().int().min(0).optional(),
+    toolPreviewLength: z.number().int().min(0).max(200).optional(),
+    cleanupProgress: z.boolean().optional(),
+    subagentTools: z.enum(['parent', 'all', 'indented']).optional(),
     showReasoning: z.boolean().optional(),
+    streaming: z.boolean().optional(),
+    toolEmojis: z.record(z.string(), z.string()).optional(),
     /**
      * Forward SDK task lifecycle notifications (e.g. "Task completed: …") to the
      * end user via the channel. Off by default — these are framework-internal
