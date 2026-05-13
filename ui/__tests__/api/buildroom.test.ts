@@ -147,6 +147,105 @@ describe('POST /api/buildroom/mode and /kill-switch', () => {
   });
 });
 
+describe('GET/PATCH /api/buildroom/config', () => {
+  it('returns not_initialized when config is missing', async () => {
+    const { GET } = await import('@/app/api/buildroom/config/route');
+
+    const res = await GET();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      initialized: false,
+      config: null,
+    });
+  });
+
+  it('updates safe config fields and validates the resulting Buildroom config', async () => {
+    const initRoute = await import('@/app/api/buildroom/init/route');
+    await initRoute.POST(jsonRequest('/api/buildroom/init', {}));
+
+    const { GET, PATCH } = await import('@/app/api/buildroom/config/route');
+    const patch = await PATCH(jsonRequest('/api/buildroom/config', {
+      watch: {
+        sessions: true,
+        external: true,
+      },
+      paths: {
+        allowed: ['docs/Auto-Buildroom/examples/**', 'tests/fixtures/auto-buildroom/**'],
+        blocked: ['.env', '.env.*', 'agents/**', 'data/**'],
+      },
+      budgets: {
+        maxIdeasPerDay: 3,
+        maxBuildsPerDay: 1,
+        maxActiveBuilds: 1,
+        maxRuntimeMinutesPerStage: 15,
+      },
+      operators: [
+        {
+          id: 'telegram_user:48705953',
+          commandRoutes: ['cli:local', 'telegram_chat:-1003931616911'],
+          approvalRoutes: ['cli:local'],
+        },
+      ],
+      notifications: {
+        routes: ['telegram_thread:-1003931616911:2'],
+      },
+    }));
+
+    expect(patch.status).toBe(200);
+    await expect(patch.json()).resolves.toMatchObject({
+      ok: true,
+      initialized: true,
+      config: {
+        watch: {
+          sessions: { enabled: true },
+          rawTranscripts: { enabled: false },
+          external: { enabled: true },
+        },
+        budgets: {
+          maxIdeasPerDay: 3,
+          maxRuntimeMinutesPerStage: 15,
+        },
+        operators: [
+          {
+            id: 'telegram_user:48705953',
+            commandRoutes: ['cli:local', 'telegram_chat:-1003931616911'],
+          },
+        ],
+        notifications: {
+          routes: ['telegram_thread:-1003931616911:2'],
+        },
+      },
+    });
+
+    const readBack = await GET();
+    await expect(readBack.json()).resolves.toMatchObject({
+      config: {
+        watch: { sessions: { enabled: true } },
+        budgets: { maxIdeasPerDay: 3 },
+      },
+    });
+  });
+
+  it('rejects raw transcript enablement through the UI config API', async () => {
+    const initRoute = await import('@/app/api/buildroom/init/route');
+    await initRoute.POST(jsonRequest('/api/buildroom/init', {}));
+    const { PATCH } = await import('@/app/api/buildroom/config/route');
+
+    const res = await PATCH(jsonRequest('/api/buildroom/config', {
+      watch: { rawTranscripts: true },
+    }));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body).toMatchObject({
+      error: 'raw_transcripts_not_supported',
+    });
+  });
+});
+
 function jsonRequest(url: string, body: unknown): NextRequest {
   return new NextRequest(new URL(url, 'http://localhost:3000'), {
     method: 'POST',

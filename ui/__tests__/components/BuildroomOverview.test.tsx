@@ -79,6 +79,70 @@ describe('<BuildroomOverview />', () => {
       }));
     });
   });
+
+  it('renders safe settings and saves config patches without raw transcript access', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/status')) {
+        return jsonResponse(statusPayload({ initialized: true, roomState: 'idle', mode: 'manual_approval' }));
+      }
+      if (url.endsWith('/config') && init?.method === 'PATCH') {
+        expect(JSON.parse(String(init.body))).toMatchObject({
+          watch: {
+            repo: true,
+            docs: true,
+            tests: true,
+            sessions: true,
+            external: false,
+          },
+          paths: {
+            allowed: ['docs/**'],
+            blocked: ['.env', 'agents/**'],
+          },
+          budgets: {
+            maxIdeasPerDay: 7,
+            maxBuildsPerDay: 1,
+          },
+          notifications: {
+            routes: ['telegram_thread:-1003931616911:2'],
+          },
+        });
+        expect(String(init.body)).not.toContain('rawTranscripts');
+        return jsonResponse({
+          ok: true,
+          initialized: true,
+          config: configPayload({ sessions: true, maxIdeasPerDay: 7 }),
+        });
+      }
+      if (url.endsWith('/config')) {
+        return jsonResponse({
+          ok: true,
+          initialized: true,
+          config: configPayload({ sessions: false, maxIdeasPerDay: 5 }),
+        });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<BuildroomOverview serverId="local" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /settings/i }));
+    expect(await screen.findByText('Watch sources')).toBeInTheDocument();
+    expect(screen.getByLabelText(/raw transcripts/i)).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText(/session summaries/i));
+    fireEvent.change(screen.getByLabelText(/allowed paths/i), { target: { value: 'docs/**' } });
+    fireEvent.change(screen.getByLabelText(/max ideas per day/i), { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/buildroom/config', expect.objectContaining({
+        method: 'PATCH',
+      }));
+      expect(screen.getByText('Settings saved')).toBeInTheDocument();
+    });
+  });
 });
 
 function statusPayload(opts: {
@@ -111,5 +175,54 @@ function statusPayload(opts: {
     },
     artifacts: [],
     nextActions: ['anthroclaw buildroom collect'],
+  };
+}
+
+function configPayload(opts: { sessions: boolean; maxIdeasPerDay: number }) {
+  return {
+    schemaVersion: 'auto-buildroom/v1',
+    roomId: 'anthroclaw-core',
+    mode: 'manual_approval',
+    paused: false,
+    killSwitchActive: false,
+    operators: [
+      {
+        id: 'cli:user:local-operator',
+        commandRoutes: ['cli:local'],
+        approvalRoutes: ['cli:local'],
+      },
+    ],
+    watch: {
+      repo: { enabled: true },
+      docs: { enabled: true },
+      tests: { enabled: true },
+      sessions: { enabled: opts.sessions },
+      rawTranscripts: { enabled: false },
+      external: { enabled: false },
+    },
+    paths: {
+      allowed: ['docs/**'],
+      blocked: ['.env', 'agents/**'],
+    },
+    execution: {
+      mutationTarget: 'worktree',
+      allowInPlaceDocsTests: false,
+      requireApprovalForBuild: true,
+      consumeApprovalOnBuildStart: true,
+      retryRequiresOperatorCommand: true,
+    },
+    external: {
+      readOnlyResearch: { enabled: false },
+      sideEffects: { default: 'deny' },
+    },
+    notifications: {
+      routes: ['telegram_thread:-1003931616911:2'],
+    },
+    budgets: {
+      maxIdeasPerDay: opts.maxIdeasPerDay,
+      maxBuildsPerDay: 1,
+      maxActiveBuilds: 1,
+      maxRuntimeMinutesPerStage: 20,
+    },
   };
 }

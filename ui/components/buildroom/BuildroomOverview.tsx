@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -11,6 +11,7 @@ import {
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
+import { BuildroomSettingsPanel } from "./BuildroomSettingsPanel";
 
 type BuildroomMode = "off" | "observe_only" | "manual_approval";
 
@@ -39,11 +40,14 @@ interface BuildroomStatus {
   nextActions?: string[];
 }
 
+type BuildroomTab = "overview" | "settings";
+
 export function BuildroomOverview({ serverId }: { serverId: string }) {
   const [status, setStatus] = useState<BuildroomStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<BuildroomTab>("overview");
 
   const loadStatus = useCallback(async () => {
     setError(null);
@@ -113,6 +117,10 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
             </button>
           </div>
         </div>
+        <div className="mt-3 flex w-fit rounded-[6px] border p-0.5" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg0)" }}>
+          <TabButton label="Overview" active={tab === "overview"} onClick={() => setTab("overview")} />
+          <TabButton label="Settings" active={tab === "settings"} onClick={() => setTab("settings")} />
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-5">
@@ -120,6 +128,8 @@ export function BuildroomOverview({ serverId }: { serverId: string }) {
           <Skeleton />
         ) : error ? (
           <InlineMessage tone="red" title="Buildroom status failed" text={error} />
+        ) : status && tab === "settings" ? (
+          <BuildroomSettingsPanel initialized={initialized} />
         ) : status ? (
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
             <section
@@ -290,6 +300,22 @@ function readErrorMessage(body: unknown): string {
   return "Buildroom request failed";
 }
 
+function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="h-7 rounded-[5px] px-3 text-xs transition-colors"
+      style={{
+        color: active ? "var(--color-foreground)" : "var(--oc-text-muted)",
+        background: active ? "var(--oc-bg1)" : "transparent",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 function StatusPill({ tone, label }: { tone: string; label: string }) {
   const toneColor =
     tone === "green"
@@ -346,7 +372,7 @@ function ActionButton({
   danger,
   onClick,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   disabled?: boolean;
   busy?: boolean;
