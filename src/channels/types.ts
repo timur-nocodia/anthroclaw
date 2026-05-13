@@ -56,6 +56,7 @@ export interface ChannelCapabilities {
   callbacks: boolean;
   textReplies: boolean;
   editMessage: boolean;
+  deleteMessage: boolean;
   threads: boolean;
   reactions: boolean;
 }
@@ -114,6 +115,7 @@ export interface ChannelAdapter {
   answerCallbackQuery?(callbackQueryId: string, text?: string, accountId?: string): Promise<void>;
   sendText(peerId: string, text: string, opts?: SendOptions): Promise<string>;
   editText(peerId: string, messageId: string, text: string, opts?: SendOptions): Promise<void>;
+  deleteText(peerId: string, messageId: string, opts?: { accountId?: string; threadId?: string }): Promise<void>;
   sendMedia(peerId: string, media: OutboundMedia, opts?: SendOptions): Promise<string>;
   sendTyping(peerId: string, accountId?: string, threadId?: string): Promise<void>;
   setReaction?(peerId: string, messageId: string, emoji: string, accountId?: string): Promise<void>;

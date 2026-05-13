@@ -5,6 +5,7 @@ import makeWASocket, {
   downloadMediaMessage,
   jidNormalizedUser,
   type WASocket,
+  type WAMessageKey,
   type BaileysEventMap,
   DisconnectReason,
 } from '@whiskeysockets/baileys';
@@ -98,7 +99,8 @@ export class WhatsAppChannel implements ChannelAdapter {
   static readonly capabilities: ChannelCapabilities = {
     callbacks: false,
     textReplies: true,
-    editMessage: false,
+    editMessage: true,
+    deleteMessage: true,
     threads: false,
     reactions: false,
   };
@@ -118,6 +120,18 @@ export class WhatsAppChannel implements ChannelAdapter {
   // Channel-level event listeners (e.g., operator_outbound). Plain object
   // map keeps us off Node's EventEmitter to avoid 'error' default semantics.
   private listeners: { [E in keyof ChannelAdapterEvents]?: Set<(e: ChannelAdapterEvents[E]) => void> } = {};
+  /** Cache of messageId → Baileys MessageKey for messages we just sent.
+   *  Bounded to last 1024 entries to cap memory. */
+  private readonly sentKeys = new Map<string, WAMessageKey>();
+  private readonly SENT_KEY_CAP = 1024;
+
+  private rememberKey(messageId: string, key: WAMessageKey): void {
+    if (this.sentKeys.size >= this.SENT_KEY_CAP) {
+      const firstKey = this.sentKeys.keys().next().value;
+      if (firstKey !== undefined) this.sentKeys.delete(firstKey);
+    }
+    this.sentKeys.set(messageId, key);
+  }
 
   constructor(config: WhatsAppConfig) {
     this.config = config;
@@ -277,6 +291,7 @@ export class WhatsAppChannel implements ChannelAdapter {
         // adjacent to the user's question anyway, so quoting only adds clutter.
         const sent = await sock.sendMessage(jid, { text: chunk });
         lastId = sent?.key?.id ?? '';
+        if (sent?.key?.id) this.rememberKey(sent.key.id, sent.key);
       } catch (err) {
         // Baileys 7.x throws "Cannot read properties of undefined (reading
         // 'undefined')" on @lid JIDs whose participant device list is in a
@@ -333,13 +348,36 @@ export class WhatsAppChannel implements ChannelAdapter {
 
     // See sendText for why replyToId is ignored.
     const sent = await sock.sendMessage(jid, content as any);
+    if (sent?.key?.id) this.rememberKey(sent.key.id, sent.key);
 
     return sent?.key?.id ?? '';
   }
 
-  async editText(_peerId: string, _messageId: string, _text: string, _opts?: SendOptions): Promise<void> {
-    // WhatsApp doesn't support editing messages easily — no-op
-    logger.debug('whatsapp: editText is a no-op (not supported)');
+  async editText(peerId: string, messageId: string, text: string, opts?: SendOptions): Promise<void> {
+    const sock = this.pickSocket(opts?.accountId);
+    const key = this.sentKeys.get(messageId);
+    if (!key) {
+      logger.debug({ peerId, messageId }, 'whatsapp: editText skipped — no cached key');
+      return;
+    }
+    try {
+      await sock.sendMessage(peerId, { text, edit: key });
+    } catch (err) {
+      logger.debug({ err, peerId, messageId }, 'whatsapp: editText failed (non-fatal)');
+      throw err;  // Bubble will count this as a flood strike
+    }
+  }
+
+  async deleteText(peerId: string, messageId: string, opts?: { accountId?: string }): Promise<void> {
+    const sock = this.pickSocket(opts?.accountId);
+    const key = this.sentKeys.get(messageId);
+    if (!key) return;  // best-effort
+    try {
+      await sock.sendMessage(peerId, { delete: key });
+      this.sentKeys.delete(messageId);
+    } catch (err) {
+      logger.debug({ err, peerId, messageId }, 'whatsapp: deleteText failed (non-fatal)');
+    }
   }
 
   async sendTyping(peerId: string, accountId?: string, _threadId?: string): Promise<void> {

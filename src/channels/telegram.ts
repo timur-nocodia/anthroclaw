@@ -55,6 +55,7 @@ export class TelegramChannel implements ChannelAdapter {
     callbacks: true,
     textReplies: true,
     editMessage: true,
+    deleteMessage: true,
     threads: true,
     reactions: true,
   };
@@ -265,6 +266,20 @@ export class TelegramChannel implements ChannelAdapter {
         }
         this.log.warn({ err: retryErr, chatId, messageId }, 'Failed to edit message');
       }
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  deleteText                                                      */
+  /* ---------------------------------------------------------------- */
+
+  async deleteText(peerId: string, messageId: string, opts?: { accountId?: string }): Promise<void> {
+    const bot = this.resolveBot(opts?.accountId);
+    try {
+      await bot.api.deleteMessage(peerId, Number(messageId));
+    } catch (err: unknown) {
+      // Best-effort: messages older than 48h cannot be deleted; ignore.
+      this.log.debug({ err, chatId: peerId, messageId }, 'telegram: deleteMessage failed (non-fatal)');
     }
   }
 
