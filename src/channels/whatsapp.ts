@@ -123,10 +123,10 @@ export class WhatsAppChannel implements ChannelAdapter {
   /** Cache of messageId → Baileys MessageKey for messages we just sent.
    *  Bounded to last 1024 entries to cap memory. */
   private readonly sentKeys = new Map<string, WAMessageKey>();
-  private readonly SENT_KEY_CAP = 1024;
+  private static readonly SENT_KEY_CAP = 1024;
 
   private rememberKey(messageId: string, key: WAMessageKey): void {
-    if (this.sentKeys.size >= this.SENT_KEY_CAP) {
+    if (this.sentKeys.size >= WhatsAppChannel.SENT_KEY_CAP) {
       const firstKey = this.sentKeys.keys().next().value;
       if (firstKey !== undefined) this.sentKeys.delete(firstKey);
     }
@@ -363,8 +363,8 @@ export class WhatsAppChannel implements ChannelAdapter {
     try {
       await sock.sendMessage(peerId, { text, edit: key });
     } catch (err) {
-      logger.debug({ err, peerId, messageId }, 'whatsapp: editText failed (non-fatal)');
-      throw err;  // Bubble will count this as a flood strike
+      logger.debug({ err, peerId, messageId }, 'whatsapp: editText failed — re-throwing for flood-strike counting');
+      throw err;
     }
   }
 
