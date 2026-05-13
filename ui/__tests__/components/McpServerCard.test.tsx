@@ -40,27 +40,25 @@ describe('<McpServerCard />', () => {
   });
 
   it('renders the status dot color matching each status', () => {
+    // Dots use inline `background: var(--oc-<color>, #...)` style — assert
+    // the per-status fallback hex shows up.
     const { rerender } = render(
       <McpServerCard {...makeProps({ status: 'connected' })} />,
     );
-    expect(
-      screen.getByTestId('mcp-server-card-status-dot').className,
-    ).toContain('bg-emerald-500');
+    let dot = screen.getByTestId('mcp-server-card-status-dot');
+    expect(dot.getAttribute('style') ?? '').toMatch(/oc-green|#22c55e/);
 
     rerender(<McpServerCard {...makeProps({ status: 'refreshing' })} />);
-    expect(
-      screen.getByTestId('mcp-server-card-status-dot').className,
-    ).toContain('bg-amber-500');
+    dot = screen.getByTestId('mcp-server-card-status-dot');
+    expect(dot.getAttribute('style') ?? '').toMatch(/oc-yellow|#eab308/);
 
     rerender(<McpServerCard {...makeProps({ status: 'reauth_required' })} />);
-    expect(
-      screen.getByTestId('mcp-server-card-status-dot').className,
-    ).toContain('bg-orange-500');
+    dot = screen.getByTestId('mcp-server-card-status-dot');
+    expect(dot.getAttribute('style') ?? '').toMatch(/oc-orange|#f97316/);
 
     rerender(<McpServerCard {...makeProps({ status: 'disabled' })} />);
-    expect(
-      screen.getByTestId('mcp-server-card-status-dot').className,
-    ).toContain('bg-muted-foreground/50');
+    dot = screen.getByTestId('mcp-server-card-status-dot');
+    expect(dot.getAttribute('style') ?? '').toMatch(/oc-text-dim|#6b7280/);
   });
 
   it('renders transport label and tool count', () => {
