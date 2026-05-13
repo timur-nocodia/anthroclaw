@@ -51,6 +51,7 @@ interface ParsedArgs {
   root: string;
   room?: string;
   operator?: string;
+  operatorRoute?: string;
   telegramCommandRoutes: string[];
   telegramApprovalRoutes: string[];
   telegramNotificationRoutes: string[];
@@ -437,7 +438,10 @@ function commandApprove(args: ParsedArgs, io: CliIO): number {
   const approval = store.writeArtifact(
     createApprovalArtifact({
       review,
-      operator: { id: args.operator ?? firstOperator(config), route: 'cli:local' },
+      operator: {
+        id: args.operator ?? firstOperator(config),
+        route: args.operatorRoute ?? 'cli:local',
+      },
       now: new Date().toISOString(),
     }),
   );
@@ -464,7 +468,7 @@ function commandReject(args: ParsedArgs, io: CliIO): number {
     createOperatorDecisionArtifact({
       target,
       operatorId: args.operator ?? firstOperator(config),
-      route: 'cli:local',
+      route: args.operatorRoute ?? 'cli:local',
       now: new Date().toISOString(),
     }),
   );
@@ -1061,6 +1065,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       case '--operator':
         out.operator = argv[++i];
         break;
+      case '--operator-route':
+        out.operatorRoute = argv[++i];
+        break;
       case '--telegram-command-route':
         out.telegramCommandRoutes.push(argv[++i]);
         break;
@@ -1276,6 +1283,7 @@ function helpText(): string {
     '  --root <path>       Project root',
     '  --room <roomId>     Buildroom ID',
     '  --operator <id>     Operator identity for init',
+    '  --operator-route <route>  Operator route evidence for authority receipts',
     '  --telegram-command-route <route>       Add Telegram command route during init',
     '  --telegram-approval-route <route>      Add Telegram approval route during init',
     '  --telegram-notification-route <route>  Add Telegram notification route during init',

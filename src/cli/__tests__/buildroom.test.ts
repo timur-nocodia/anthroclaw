@@ -115,6 +115,8 @@ describe('buildroom CLI', () => {
         root,
         '--operator',
         'cli:user:local-operator',
+        '--operator-route',
+        'telegram_chat:-1003931616911',
       ]),
     ).resolves.toBe(0);
 
@@ -126,7 +128,7 @@ describe('buildroom CLI', () => {
       parentIds: ['review_20260512_docs'],
       payload: {
         approvedBy: 'cli:user:local-operator',
-        approvalRoute: 'cli:local',
+        approvalRoute: 'telegram_chat:-1003931616911',
       },
     });
 

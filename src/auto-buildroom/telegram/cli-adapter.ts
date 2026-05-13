@@ -19,5 +19,7 @@ export function telegramBuildroomCommandToCliArgs(
     opts.roomId,
     '--operator',
     command.operatorId,
+    '--operator-route',
+    command.route,
   ];
 }

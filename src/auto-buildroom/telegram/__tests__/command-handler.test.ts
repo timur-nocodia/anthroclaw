@@ -42,6 +42,8 @@ describe('Telegram Buildroom command handler', () => {
       'anthroclaw-core',
       '--operator',
       'telegram_user:48705953',
+      '--operator-route',
+      'telegram_chat:-1003931616911',
     ], expect.anything());
   });
 
