@@ -1926,7 +1926,7 @@ export class Gateway {
             dispatchContext,
           );
         }
-        if (tool.name === 'connect_mcp') {
+        if (tool.name === 'connect_mcp' && msg) {
           // Rebuild with per-dispatch context so the facade knows which
           // chat the agent is acting in (DM-only guard) and which session
           // should receive the eventual `[system] mcp_connected` event.
