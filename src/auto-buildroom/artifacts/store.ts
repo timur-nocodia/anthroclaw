@@ -81,9 +81,10 @@ export class FileArtifactStore {
     assertNoObviousSecrets(artifact);
 
     for (const parentId of artifact.parentIds) {
-      if (!this.hasArtifact(parentId)) {
+      if (!this.findArtifactPathById(parentId)) {
         throw new MissingParentArtifactError(parentId);
       }
+      this.readArtifact(parentId);
     }
 
     const withHash: BuildroomArtifact = {

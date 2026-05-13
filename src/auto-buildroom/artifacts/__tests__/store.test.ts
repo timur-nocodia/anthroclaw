@@ -61,6 +61,23 @@ describe('FileArtifactStore', () => {
     expect(store.readArtifact(written.id).parentIds).toEqual([parent.id]);
   });
 
+  it('rejects a child artifact when its parent receipt is present but invalid', () => {
+    const parent = store.writeArtifact(baseArtifact('research_20260512_invalid_parent', 'research_packet'));
+    const parentPath = store.pathForArtifact(parent);
+    const wrongRoomParent = {
+      ...JSON.parse(readFileSync(parentPath, 'utf8')) as BuildroomArtifact,
+      room: { id: 'other-room' },
+      contentHash: '',
+    };
+    wrongRoomParent.contentHash = computeArtifactContentHash(wrongRoomParent);
+    writeFileSync(parentPath, `${JSON.stringify(wrongRoomParent, null, 2)}\n`, 'utf8');
+    const child = baseArtifact('idea_20260512_invalid_parent', 'idea_contract');
+    child.parentIds = [parent.id];
+
+    expect(() => store.writeArtifact(child)).toThrow(/Artifact room mismatch/);
+    expect(store.hasArtifact(child.id)).toBe(false);
+  });
+
   it('lists artifacts by type', () => {
     store.writeArtifact(baseArtifact('research_20260512_docs', 'research_packet'));
     store.writeArtifact(baseArtifact('review_20260512_docs', 'main_review'));
