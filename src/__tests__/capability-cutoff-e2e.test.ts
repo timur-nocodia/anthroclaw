@@ -174,6 +174,43 @@ describe('capability-cutoff e2e — full buildSdkOptions pipeline pins all 7 inv
     }
   });
 
+  it('strips mcp__claude_ai_* leak via native disallow + settings.deny + deniedMcpServers (invariant 8)', () => {
+    // Issue #71: claude.ai subscription OAuth scope `user:mcp_servers` leaks
+    // server names like `mcp__claude_ai_Gmail__*` into the agent's tool
+    // announcement even with `settingSources: []` + `enabledMcpjsonServers: []`.
+    // The cutoff blocks execution but the model still SEES the names and
+    // hallucinates promises. This invariant pins the native-options filter
+    // that removes the names from the model's context.
+    const agent = fakeAgent({ id: 'a1' });
+    const options = buildSdkOptions({
+      agent,
+      approvalBroker: new ApprovalBroker(),
+      sessionContext: { peerId: 'peer1' },
+    });
+
+    // Layer 1: disallowedTools (the documented "remove from model's context").
+    // We rely on HARNESS_BLOCKLIST entries staying in place + the new wildcard
+    // rule reaching the CLI via settings.permissions.deny below. Sanity-check
+    // ToolSearch still blocked so deferred-tool discovery cannot be loaded.
+    expect(options.disallowedTools).toContain('ToolSearch');
+
+    // Layer 2: settings.permissions.deny contains the wildcard rule and at
+    // least one enumerated server prefix.
+    const settings = options.settings as
+      | { permissions?: { deny?: string[] }; deniedMcpServers?: Array<{ serverName: string }> }
+      | undefined;
+    expect(settings).toBeDefined();
+    expect(settings?.permissions?.deny).toContain('mcp__claude_ai_*');
+    expect(settings?.permissions?.deny).toContain('mcp__claude_ai_Gmail');
+    expect(settings?.permissions?.deny).toContain('mcp__claude_ai_Linear');
+
+    // Layer 3: settings.deniedMcpServers covers per-server attachment.
+    const deniedNames = (settings?.deniedMcpServers ?? []).map((e) => e.serverName);
+    expect(deniedNames).toContain('claude_ai_Gmail');
+    expect(deniedNames).toContain('claude_ai_Notion');
+    expect(deniedNames).toContain('claude_ai_Google_Calendar');
+  });
+
   it('allows mcp__<server>__* via prefix glob when external_mcp_servers declares the server', async () => {
     // Same trustedBypass=true rationale as the deny test: we are pinning
     // the cutoff gate's behaviour for a tool whose name matches the
