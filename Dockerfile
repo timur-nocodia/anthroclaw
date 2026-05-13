@@ -32,6 +32,11 @@ COPY plugins/__example/package.json ./plugins/__example/
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
+# pnpm can block package lifecycle scripts in hardened installs. The admin
+# Settings auth flow shells out to the official Claude Code CLI, so install its
+# platform-native binary explicitly instead of relying on postinstall.
+RUN node node_modules/@anthropic-ai/claude-code/install.cjs
+
 # The Claude Agent SDK ships per-arch native binaries (linux-x64/arm64 in
 # both glibc and musl flavors). pnpm installs both variants; when the SDK
 # loader picks the musl one on a glibc base image (bookworm-slim), the binary
