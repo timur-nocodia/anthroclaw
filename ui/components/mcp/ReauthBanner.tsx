@@ -1,9 +1,11 @@
 import { AlertTriangle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 
 /**
- * Inline banner shown when an MCP server's stored token has been revoked
- * or refresh-failed (credential.metadata.needs_reauth === '1').
+ * Inline warning banner shown when an MCP server's stored token has been
+ * revoked or refresh-failed (credential.metadata.needs_reauth === '1').
+ *
+ * Uses the same `var(--oc-yellow)` accent the dirty-config pill in
+ * ConfigTab uses so warnings read consistently across the agent page.
  */
 export interface ReauthBannerProps {
   serverName: string;
@@ -12,16 +14,34 @@ export interface ReauthBannerProps {
 
 export function ReauthBanner({ serverName, onReauth }: ReauthBannerProps) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
-      <div className="flex items-center gap-2 min-w-0">
-        <AlertTriangle className="size-4 shrink-0 text-amber-500" aria-hidden />
+    <div
+      className="flex items-center justify-between gap-2 rounded-[4px] border px-2.5 py-1.5 text-[11.5px]"
+      style={{
+        borderColor: 'var(--oc-yellow, #eab308)',
+        background:
+          'color-mix(in srgb, var(--oc-yellow, #eab308) 12%, transparent)',
+        color: 'var(--color-foreground)',
+      }}
+    >
+      <div className="flex min-w-0 items-center gap-1.5">
+        <AlertTriangle
+          className="h-3.5 w-3.5 shrink-0"
+          style={{ color: 'var(--oc-yellow, #eab308)' }}
+          aria-hidden
+        />
         <span className="truncate">
-          Token for <strong className="font-medium">{serverName}</strong> expired — re-authorize
+          Token for <strong className="font-medium">{serverName}</strong>{' '}
+          expired — re-authorize
         </span>
       </div>
-      <Button size="sm" variant="outline" onClick={onReauth} className="border-amber-500/40">
+      <button
+        type="button"
+        onClick={onReauth}
+        className="inline-flex items-center rounded-[4px] px-2 py-1 text-[11px] transition-colors hover:bg-[var(--oc-bg3)]"
+        style={{ color: 'var(--oc-yellow, #eab308)' }}
+      >
         Re-authorize
-      </Button>
+      </button>
     </div>
   );
 }

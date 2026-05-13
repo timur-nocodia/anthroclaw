@@ -67,9 +67,9 @@ describe('<McpServersSection />', () => {
     // advanced details (raw-name heading). Use getAllByText.
     expect(screen.getAllByText('notion').length).toBeGreaterThan(0);
     expect(screen.getAllByText('linear').length).toBeGreaterThan(0);
-    // notion has 2 tools, linear has 1
+    // notion has 2 tools, linear has 1 (card pluralises singular/plural)
     expect(screen.getByText(/http · 2 tools/)).toBeInTheDocument();
-    expect(screen.getByText(/http · 1 tools/)).toBeInTheDocument();
+    expect(screen.getByText(/http · 1 tool$/)).toBeInTheDocument();
   });
 
   it('opens AddMcpWizard when "+ Add server" is clicked', () => {
