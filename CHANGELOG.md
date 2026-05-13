@@ -6,6 +6,24 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-05-14
+
+### Fixed
+
+- **Binding wizard now shows configured channel accounts on
+  fresh agents.** The "Which telegram account should this binding
+  use?" dropdown was derived from the agent's existing routes — so a
+  newly-created agent with no routes saw "No telegram accounts
+  configured" and couldn't bind to a channel without manually
+  editing yaml first. Source is now the gateway's in-memory global
+  config (`config.yml` + runtime overlay).
+
+### Added
+
+- **`GET /api/system/accounts`.** Returns
+  `{ telegram: {...}, whatsapp: {...} }` with no secrets — just the
+  account IDs the gateway knows about. Admin auth required.
+
 ## [0.12.2] - 2026-05-14
 
 Three reliability fixes around stalled queries, lying compression

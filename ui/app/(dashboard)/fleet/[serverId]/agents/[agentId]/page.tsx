@@ -1081,6 +1081,30 @@ function ConfigTab({
   agent: AgentConfig;
   onReload: () => Promise<void> | void;
 }) {
+  // Channel accounts configured at gateway level. Fetched once on mount
+  // so the binding wizard knows which telegram/whatsapp accounts exist
+  // even before this agent has any routes. Without this the dropdown
+  // was empty on freshly-created agents (circular dependency: routes
+  // need an account, accounts were derived from existing routes).
+  const [systemAccounts, setSystemAccounts] = useState<{
+    telegram: Record<string, { username?: string }>;
+    whatsapp: Record<string, { username?: string }>;
+  }>({ telegram: {}, whatsapp: {} });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/system/accounts');
+        if (!res.ok) return;
+        const body = await res.json();
+        if (!cancelled) setSystemAccounts(body);
+      } catch {
+        // best-effort — wizard falls back to route-derived accounts
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const [mode, setMode] = useState<"form" | "raw">("form");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1990,8 +2014,14 @@ function ConfigTab({
             agentId={agentId}
             routes={cfg.routes}
             accounts={(() => {
-              const tg: Record<string, { username?: string }> = {};
-              const wa: Record<string, { username?: string }> = {};
+              // Start from gateway-configured accounts (so a brand-new
+              // agent with no routes still sees the channels it can
+              // bind to). Union in any account names that exist on
+              // this agent's current routes — covers configs that
+              // bind via a name that's wired at the route level only
+              // (rare but supported).
+              const tg: Record<string, { username?: string }> = { ...systemAccounts.telegram };
+              const wa: Record<string, { username?: string }> = { ...systemAccounts.whatsapp };
               for (const r of cfg.routes) {
                 if (r.channel === "telegram" && r.account && !(r.account in tg)) {
                   tg[r.account] = {};
