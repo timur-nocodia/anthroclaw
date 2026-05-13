@@ -6,6 +6,27 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-05-13
+
+Hotfix for external MCP onboarding. v0.11.0 advertised the URL-first
+MCP wizard, but the apikey path rejected every MCP server that uses the
+Streamable HTTP transport (Apify, Browserbase, and friends) with a
+generic "Invalid key" — even when the token was valid.
+
+### Fixed
+
+- **MCP apikey wizard now works against Streamable HTTP servers.**
+  `attachApiKey` was sending the `initialize` POST without
+  `Accept: text/event-stream`, dropping the `Mcp-Session-Id` returned
+  by the server, and skipping the spec-required
+  `notifications/initialized` notification. Servers like
+  `mcp.apify.com` responded with HTTP 406 / HTTP 400 and the wizard
+  surfaced this as "Invalid key". The handshake now sends the proper
+  Accept header, propagates the session id, sends the initialized
+  notification, and parses either `application/json` or
+  `text/event-stream` response bodies. The probe (v0.11.0, PR #26)
+  already had this; the apikey path now matches.
+
 ## [0.11.0] - 2026-05-13
 
 Honcho memory, MCP onboarding, Claude subscription auth, and
