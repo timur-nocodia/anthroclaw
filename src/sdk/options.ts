@@ -19,6 +19,10 @@ import type { ChannelAdapter } from '../channels/types.js';
 import type { SandboxDefaults } from '../security/profiles/types.js';
 import type { SdkSandboxConfig } from '../config/schema.js';
 import { HARNESS_BLOCKLIST } from '../security/harness-blocklist.js';
+import {
+  buildClaudeAiDenyRules,
+  buildClaudeAiDeniedMcpServers,
+} from '../security/claude-ai-blocklist.js';
 
 /**
  * Merges profile sandbox defaults with agent-level overrides.
@@ -118,6 +122,19 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
     ...HARNESS_BLOCKLIST,
     ...(cfg?.disallowedTools ?? []),
   ];
+
+  // Strip `mcp__claude_ai_*` tool names from the model's context. These
+  // leak in via the operator's Claude Code subscription OAuth scope
+  // (`user:mcp_servers`) even when `settingSources: []` and
+  // `enabledMcpjsonServers: []` are forced. Without this layer the model
+  // sees claude.ai-attached integrations (Gmail, Linear, Notion, ...) and
+  // hallucinates promises it cannot deliver. The capability cutoff blocks
+  // execution as a backstop, but cleaning the announcement is what stops
+  // the hallucination. Details: src/security/claude-ai-blocklist.ts.
+  options.settings = {
+    permissions: { deny: buildClaudeAiDenyRules() },
+    deniedMcpServers: buildClaudeAiDeniedMcpServers(),
+  };
 
   if (trustedBypass) {
     options.permissionMode = 'bypassPermissions';

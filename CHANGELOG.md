@@ -6,6 +6,38 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.12.4] - 2026-05-14
+
+Closes the `mcp__claude_ai_*` leak (issue #71) at the SDK-options layer —
+strictly through native `@anthropic-ai/claude-agent-sdk` knobs, no runtime
+patching.
+
+### Fixed
+
+- **Agents no longer advertise integrations they cannot reach.** When the
+  gateway ran under a Claude Code subscription OAuth token, the SDK
+  process inherited the operator's `user:mcp_servers` scope, which
+  exposed claude.ai-attached MCP servers (Gmail, Linear, Notion, ...) to
+  the model — even with `settingSources: []` and `enabledMcpjsonServers:
+  []` forced. The capability cutoff already blocked execution, but the
+  model still SAW the tool names in its announcement and confidently
+  promised it had Gmail/Linear/etc. The promises always failed.
+
+  Now `buildSdkOptions` populates three native SDK knobs on every
+  built Options object:
+  - `disallowedTools` (existing `HARNESS_BLOCKLIST` + `ToolSearch`)
+  - `settings.permissions.deny` — wildcard `mcp__claude_ai_*` rule plus
+    a per-known-server rule for each integration observed in prod
+    transcripts
+  - `settings.deniedMcpServers` — per-server attachment denial
+
+  Three layers of defence; the existing `canUseTool` cutoff stays as
+  the runtime backstop. New module: `src/security/claude-ai-blocklist.ts`.
+
+  When the operator adds a new claude.ai integration, the wildcard rule
+  is expected to catch it forward-compatibly; the per-server enumeration
+  is a snapshot covering the current set.
+
 ## [0.12.3] - 2026-05-14
 
 ### Fixed
