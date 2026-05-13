@@ -6,6 +6,125 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-05-13
+
+Honcho memory, MCP onboarding, Claude subscription auth, and
+operator-safe learning release. This release adds a first-party Honcho
+plugin, gives operators a UI-driven way to connect external MCP servers,
+adds admin-managed Claude Code subscription authorization, and turns
+learning approvals into an auditable operator workflow.
+
+### Added
+
+- **First-party Honcho plugin.**
+  New bundled `plugins/honcho` integration can observe completed agent
+  turns, ingest sanitized user/assistant/media-text messages, assemble
+  Honcho session context, and expose `honcho_*` session tools to enabled
+  agents. The plugin supports safe peer ID mapping, per-agent config,
+  bounded context assembly, local/self-hosted Honcho base URLs, and
+  operator documentation for observe/context/tools/hybrid modes.
+- **URL-first external MCP onboarding.**
+  Added an admin wizard for connecting MCP servers from a URL, including
+  server probing, deterministic server IDs, API-key credential capture,
+  OAuth start/callback routes, PKCE, Dynamic Client Registration,
+  pending connection state, timeout cleanup, success/failure pages, and
+  an agent-facing `connect_mcp` tool that can initiate onboarding from
+  chat.
+- **MCP reauth and runtime credential handling.**
+  MCP credentials now have typed variants for API keys and OAuth tokens,
+  credential references are resolved at MCP wire-up, OAuth tokens refresh
+  before load when needed, runtime 401s mark servers as `needs_reauth`,
+  and the UI surfaces reauth banners/status per server.
+- **Claude subscription auth in Settings.**
+  Added an admin Settings panel and API routes for Claude Code
+  subscription authorization using the official Claude CLI:
+  start/cancel/complete/verify/restart-runtime/status. Docker now
+  persists Claude credentials under `data/claude`, and the production
+  image includes the Claude CLI required by the flow.
+- **Operator-safe learning approvals.**
+  Added a durable decision center for learning proposals, admin chat
+  approval controls, filters, editable decision rows, resend/expire
+  actions, stale proposal rejection, state-transition guards, duplicate
+  suppression, and an audit timeline for learning decisions.
+- **Response artifacts for rich outbound content.**
+  Channel delivery can now treat generated HTML/media artifacts as files
+  instead of unsafe inline text, with Telegram/WhatsApp handling and
+  tests.
+- **Per-agent time prefix support.**
+  Agent turns can include a readable current date/time prefix, with
+  per-agent configuration and tests.
+
+### Changed
+
+- **MCP management moved into its own agent tab.**
+  The agent UI now has a dedicated MCP tab with server cards, advanced
+  editors, status rows, and design-system aligned controls instead of
+  burying external MCP configuration inside the main config surface.
+- **Handoff settings UI polish.**
+  Human takeover, active pauses, notification settings, config audit,
+  activity logs, and handoff controls were reorganized for denser,
+  clearer operator use.
+- **Honcho and deployment defaults are production-ready.**
+  Docker builds include the Honcho workspace package, the app compose
+  service can join an external `honcho_default` network, and self-hosted
+  Honcho URLs are preserved in config.
+- **Secret handling tightened.**
+  Credential listing strips secrets more exhaustively, MCP pending rows
+  zero secrets on terminal state transitions, OAuth debug helpers are
+  test-only, and insecure OAuth endpoints are rejected or warned about
+  in production paths.
+- **MCP onboarding is more forgiving where appropriate.**
+  Open MCP servers with `authMode=none` are supported, SSE initialize
+  responses are accepted, parsed config envelopes are handled in the UI,
+  and wizard rejection/finalize errors are surfaced to operators.
+
+### Fixed
+
+- `connect_mcp` system messages no longer crash headless turns that do
+  not have a normal inbound message object.
+- Send tools preserve the inbound account when replying from routed
+  channel contexts.
+- Stale learning failure banners are cleared instead of remaining
+  visible after a successful retry.
+- `auto_compress` saves from the UI now match the schema object shape.
+- Docker builds pin pnpm and include the Claude CLI native binary needed
+  by Settings auth.
+
+### Behaviour change — operator action recommended
+
+- MCP onboarding now depends on encrypted credential storage. Production
+  deployments should set and preserve `ANTHROCLAW_MASTER_KEY`; without
+  it, secret-backed MCP onboarding cannot safely persist credentials.
+- Claude subscription auth is now expected to be performed from the
+  admin Settings UI instead of manually entering a host/container shell.
+  Existing deployments should keep `data/claude` persistent.
+- Honcho remains opt-in per agent. Enable it only for agents/channels
+  where retaining conversation memory in Honcho is intended.
+
+### Safety notes
+
+- Buildroom work remains WIP and is intentionally not part of this
+  release.
+- Honcho ingestion sanitizes payloads and supports bounded message/context
+  sizes, but operators should still treat enabled agents as memory-writing
+  surfaces.
+- MCP onboarding stores credentials by reference and redacts secrets from
+  UI/API listing paths.
+
+### Tests
+
+- Verified during the release/deploy cycle:
+  - `pnpm build`: passed
+  - `pnpm --dir ui build`: passed
+  - `pnpm test`: 219 files / 2056 tests
+  - `pnpm --dir ui test`: 66 files / 589 tests
+  - Docker production build from `origin/main`: passed
+  - Production container healthcheck: healthy
+  - Production `/login`: HTTP 200
+  - Production Claude CLI: `2.1.140`
+  - Production Gateway startup: Telegram, WhatsApp, Honcho plugin, and
+    agent plugin wiring all started successfully
+
 ## [0.10.0] - 2026-05-06
 
 Agent extensibility and smarter defaults release. This release turns the
