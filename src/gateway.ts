@@ -1930,6 +1930,10 @@ export class Gateway {
           // Rebuild with per-dispatch context so the facade knows which
           // chat the agent is acting in (DM-only guard) and which session
           // should receive the eventual `[system] mcp_connected` event.
+          // In headless contexts (cron, startup prewarm) `msg` is undefined
+          // — return the default tool, which rejects connect ops via its
+          // own "no agent context" guard.
+          if (!msg) return tool;
           const sessionKey = buildSessionKey(
             agent.id,
             msg.channel,
