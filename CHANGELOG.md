@@ -6,6 +6,36 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-14 — The Funeral Release
+
+This release marks the end of active AnthroClaw development.
+
+AnthroClaw started as an experiment in making Claude Code usable
+outside the terminal: from Telegram, WhatsApp, and web chat, with
+approvals, memory, tools, sessions, telemetry, and operator receipts.
+The experiment proved that the direction is technically possible.
+
+But the original product wedge changed after Anthropic announced
+dedicated monthly Agent SDK / `claude -p` credits for paid Claude
+plans starting June 15, 2026.
+
+That move is good for users, but it removes the urgency behind
+AnthroClaw as originally imagined.
+
+This repository will remain public as:
+
+- a reference implementation
+- a research artifact
+- a snapshot of lessons learned while building around Claude Agent SDK
+- an archive of the product direction
+
+No active roadmap is planned.
+
+Thank you to everyone who looked at it, starred it, tested it, or
+gave feedback.
+
+Sometimes the right ending is a clean one.
+
 ## [0.12.4] - 2026-05-14
 
 Closes the `mcp__claude_ai_*` leak (issue #71) at the SDK-options layer —

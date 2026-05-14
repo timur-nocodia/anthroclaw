@@ -1,5 +1,14 @@
 # AnthroClaw
 
+> **🪦 Archived as a reference implementation — v1.0.0 (The Funeral Release).**
+> Active development has ended. AnthroClaw started as an experiment in making Claude Code usable outside the terminal — Telegram, WhatsApp, web chat, with approvals, memory, tools, sessions, telemetry, and operator receipts. The experiment proved the direction is technically possible.
+>
+> After Anthropic announced dedicated monthly Agent SDK / `claude -p` credits for paid Claude plans starting **June 15, 2026**, the original product wedge dissolved. That move is good for users, but it removes the urgency behind AnthroClaw as originally imagined.
+>
+> This repository will remain public as a reference implementation, research artifact, snapshot of lessons learned while building around Claude Agent SDK, and archive of the product direction. No active roadmap is planned.
+>
+> Thanks to everyone who looked at it, starred it, tested it, or gave feedback. Sometimes the right ending is a clean one. — [v1.0.0 release notes](https://github.com/timur-nocodia/anthroclaw/releases/tag/v1.0.0)
+
 Local-first control plane for Claude agents in real chat channels: Telegram, WhatsApp, and web.
 
 <p align="center">
