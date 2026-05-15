@@ -51,7 +51,7 @@ const FeatureFlagsSchema = z.object({
   sdk_active_input: false,
 });
 
-const HeadlessRuntimeProviderSchema = z.enum(['claude-agent-sdk', 'pi']);
+const HeadlessRuntimeProviderSchema = z.enum(['claude-agent-sdk', 'pi', 'opencode']);
 
 const RuntimeConfigSchema = z.object({
   headless: z.object({

@@ -91,10 +91,20 @@ Decision gate:
 
 ### PR 5: OpenCode benchmark adapter
 
+Status: draft PR #59 adds an optional OpenCode headless runtime adapter behind the existing runtime registry. It is a benchmark adapter, not a production Gateway path.
+
 Goal:
 
 - run an OpenCode server/client adapter against the same runtime contract;
 - compare event/session/permission/MCP parity against Pi.
+
+Minimum benchmark scenarios:
+
+- create an OpenCode session and send a prompt through `session.prompt`;
+- resume an existing OpenCode session id through the same `HeadlessRunInput.sessionId` field used by Pi;
+- emit normalized `RuntimeEvent` values from the benchmark `runHandle`;
+- interrupt a running OpenCode session through `session.abort`;
+- map AnthroClaw checkpoint rewind requests to OpenCode `session.revert` where available.
 
 Decision gate:
 
@@ -111,4 +121,4 @@ Decision gate:
 
 ## Near-term next action
 
-Continue the stacked migration from the smallest safe seam outward: with model loading, event text, session metadata, explicit tool policy, model-visible denial feedback, Pi event normalization, Claude-path Gateway `RuntimeEvent` consumption, a non-default Pi Gateway bridge, streamed Pi `RuntimeRunHandle` consumption, built-in Pi tool approval routed through AnthroClaw's permission broker, Pi-hosted custom AnthroClaw tools, external MCP proxying, and active-run/session/checkpoint-control registry parity covered, the next useful proof is true Pi-native file rewind or OpenCode benchmark parity.
+Continue the stacked migration from the smallest safe seam outward: with model loading, event text, session metadata, explicit tool policy, model-visible denial feedback, Pi event normalization, Claude-path Gateway `RuntimeEvent` consumption, a non-default Pi Gateway bridge, streamed Pi `RuntimeRunHandle` consumption, built-in Pi tool approval routed through AnthroClaw's permission broker, Pi-hosted custom AnthroClaw tools, external MCP proxying, active-run/session/checkpoint-control registry parity, and an OpenCode headless benchmark adapter covered, the next useful proof is either true Pi-native file rewind or an OpenCode Gateway benchmark path with permission/event parity tests.

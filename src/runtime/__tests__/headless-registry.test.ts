@@ -49,9 +49,31 @@ describe('headless runtime registry', () => {
     expect(createAgentSession).toHaveBeenCalledTimes(1);
   });
 
+  it('creates OpenCode runtimes only when explicitly selected', async () => {
+    const client = {
+      session: {
+        create: vi.fn(async () => ({ data: { id: 'oc-session-1' } })),
+        prompt: vi.fn(async () => ({
+          data: {
+            info: { sessionID: 'oc-session-1' },
+            parts: [{ type: 'text', text: 'from opencode' }],
+          },
+        })),
+      },
+    };
+    const runtime = resolveHeadlessRuntime('opencode', {
+      opencode: { client },
+    });
+
+    expect(runtime.id).toBe('opencode');
+    await expect(runtime.runText({ prompt: 'p' })).resolves.toBe('from opencode');
+    expect(client.session.create).toHaveBeenCalledTimes(1);
+  });
+
   it('identifies built-in runtime ids', () => {
     expect(isBuiltInHeadlessRuntimeId('claude-agent-sdk')).toBe(true);
     expect(isBuiltInHeadlessRuntimeId('pi')).toBe(true);
+    expect(isBuiltInHeadlessRuntimeId('opencode')).toBe(true);
     expect(isBuiltInHeadlessRuntimeId('other')).toBe(false);
   });
 });
