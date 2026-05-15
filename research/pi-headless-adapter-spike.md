@@ -122,7 +122,26 @@ Pi emits `AgentSession.subscribe()` events from `@earendil-works/pi-agent-core`:
 - `tool.call.started` / `tool.call.delta` / `tool.call.completed` / `tool.call.failed`;
 - `raw` for unsupported Pi session events.
 
-This is still a proof module, not a Gateway runtime switch. Gateway now consumes `RuntimeEvent` for the existing Claude path's partial text, usage, and tool lifecycle handling, while Claude-only task/hook/prompt suggestion events remain on their existing raw extractors. The next production-facing step is to route an explicit Pi run handle through the same normalized stream shape.
+This is still a proof module, not a default Gateway runtime switch. Gateway now consumes `RuntimeEvent` for the existing Claude path's partial text, usage, and tool lifecycle handling, while Claude-only task/hook/prompt suggestion events remain on their existing raw extractors.
+
+## Gateway headless bridge
+
+Gateway can now run web and channel queries through Pi only when global config explicitly selects it:
+
+```yaml
+runtime:
+  headless:
+    provider: pi
+```
+
+This bridge reuses the existing `HeadlessRuntime` resolver and preserves the default Claude path. It proves:
+
+- Gateway does not require Claude SDK readiness when Pi is explicitly selected;
+- prompts, model, cwd, and prior runtime session ids are passed into the Pi headless adapter;
+- returned Pi `sessionId` values are mapped back into AnthroClaw session keys;
+- channel and Web UI dispatch can return Pi text and record run/session metrics.
+
+It is intentionally not yet the production Pi agent loop. The bridge does not provide Gateway streaming, interrupts, checkpoint rewind, task/hook/prompt-suggestion events, tool progress bubbles, or production permission-broker execution for Pi tools. Those require a Pi `RuntimeRunHandle` implementation that exposes normalized `RuntimeEvent` values from `AgentSession.subscribe()`.
 
 ## Next proof points
 
