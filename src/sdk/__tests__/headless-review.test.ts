@@ -14,7 +14,7 @@ describe('runHeadlessReview', () => {
     mockedQuery.mockReset();
   });
 
-  it('calls SDK query() as a single-turn, tool-denied review', async () => {
+  it('calls the default Claude runtime as a single-turn, tool-denied review', async () => {
     const events = (async function* () {
       yield { type: 'result', result: 'review-json' };
     })();
@@ -56,6 +56,25 @@ describe('runHeadlessReview', () => {
       message: 'No tools here.',
     });
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('can run through an injected headless runtime without calling Claude SDK query()', async () => {
+    const runtime = {
+      id: 'test-headless',
+      runText: vi.fn(async () => 'runtime-output'),
+    };
+
+    await expect(runHeadlessReview({
+      prompt: 'review this',
+      purpose: 'test review',
+      runtime,
+    })).resolves.toBe('runtime-output');
+
+    expect(runtime.runText).toHaveBeenCalledWith({
+      prompt: 'review this',
+      purpose: 'test review',
+    });
+    expect(mockedQuery).not.toHaveBeenCalled();
   });
 
   it('inherits safe runtime defaults but never inherits tool access', async () => {
