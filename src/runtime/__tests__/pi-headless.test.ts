@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createPiToolPolicyExtension,
@@ -542,6 +545,56 @@ describe('PiHeadlessRuntime', () => {
       noTools: 'all',
       tools: [],
     }));
+  });
+
+  it('rewinds Pi runtime handle workspace changes through AnthroClaw snapshots', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'pi-rewind-'));
+    try {
+      mkdirSync(join(cwd, 'src'));
+      writeFileSync(join(cwd, 'src', 'file.txt'), 'before');
+      writeFileSync(join(cwd, 'deleted.txt'), 'before');
+      const session = createSession([
+        { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'changed' } },
+      ], async () => {
+        writeFileSync(join(cwd, 'src', 'file.txt'), 'after');
+        writeFileSync(join(cwd, 'created.txt'), 'created');
+        rmSync(join(cwd, 'deleted.txt'));
+      });
+      const runtime = new PiHeadlessRuntime({
+        createAgentSession: vi.fn(async () => ({ session, sessionId: 'pi-session-1' })),
+      });
+
+      const handle = await runtime.runHandle({
+        prompt: 'change files',
+        cwd,
+      }, {
+        runId: 'run-1',
+      });
+
+      for await (const _event of handle) {
+        // drain
+      }
+
+      await expect(handle.rewindFiles('user-message-1', { dryRun: true })).resolves.toMatchObject({
+        canRewind: true,
+        filesChanged: ['created.txt', 'deleted.txt', 'src/file.txt'],
+        insertions: 2,
+        deletions: 1,
+      });
+      expect(readFileSync(join(cwd, 'src', 'file.txt'), 'utf8')).toBe('after');
+
+      await expect(handle.rewindFiles('user-message-1', { dryRun: false })).resolves.toMatchObject({
+        canRewind: true,
+        filesChanged: ['created.txt', 'deleted.txt', 'src/file.txt'],
+        insertions: 2,
+        deletions: 1,
+      });
+      expect(readFileSync(join(cwd, 'src', 'file.txt'), 'utf8')).toBe('before');
+      expect(readFileSync(join(cwd, 'deleted.txt'), 'utf8')).toBe('before');
+      expect(() => readFileSync(join(cwd, 'created.txt'), 'utf8')).toThrow();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it('interrupts and closes Pi runtime handles', async () => {

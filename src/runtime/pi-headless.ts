@@ -13,7 +13,17 @@ import {
 } from './headless.js';
 import { normalizePiRuntimeEvents } from './pi-events.js';
 import type { RuntimeEvent } from './events.js';
-import type { RuntimeRunHandle } from './types.js';
+import type {
+  RuntimeRewindFilesOptions,
+  RuntimeRewindFilesResult,
+  RuntimeRunHandle,
+} from './types.js';
+import {
+  captureWorkspaceSnapshot,
+  rewindWorkspaceSnapshot,
+  type WorkspaceSnapshot,
+  type WorkspaceSnapshotOptions,
+} from './workspace-snapshot.js';
 
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 
@@ -107,6 +117,7 @@ export interface PiHeadlessRuntimeOptions {
   resolveModel?: (modelId: string, sdk: PiCodingAgentSdkModule) => unknown | Promise<unknown>;
   toolPolicy?: PiHeadlessToolPolicy | ((input: HeadlessRunInput) => PiHeadlessToolPolicy | Promise<PiHeadlessToolPolicy>);
   timeoutMs?: number;
+  workspaceRewind?: false | WorkspaceSnapshotOptions;
 }
 
 export interface PiRuntimeRunHandleContext {
@@ -199,6 +210,7 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
 
     const sessionOptions = await this.buildCreateOptions(input, sdk);
     const sessionResult = await createAgentSession(sessionOptions);
+    const rewindSnapshot = await this.captureRewindSnapshot(input);
     return new PiRuntimeRunHandle({
       input,
       session: sessionResult.session,
@@ -206,7 +218,15 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
       runId: context.runId,
       agentId: context.agentId,
       timeoutMs,
+      rewindSnapshot,
     });
+  }
+
+  private async captureRewindSnapshot(input: HeadlessRunInput): Promise<WorkspaceSnapshot | undefined> {
+    if (this.options.workspaceRewind === false) return undefined;
+    const cwd = input.cwd ?? input.runtimeDefaults?.cwd;
+    if (!cwd) return undefined;
+    return captureWorkspaceSnapshot(cwd, this.options.workspaceRewind);
   }
 
   private async loadSdk(): Promise<PiCodingAgentSdkModule> {
@@ -325,6 +345,7 @@ interface PiRuntimeRunHandleParams {
   runId: string;
   agentId?: string;
   timeoutMs: number;
+  rewindSnapshot?: WorkspaceSnapshot;
 }
 
 export class PiRuntimeRunHandle implements RuntimeRunHandle<RuntimeEvent> {
@@ -368,6 +389,13 @@ export class PiRuntimeRunHandle implements RuntimeRunHandle<RuntimeEvent> {
 
   async interrupt(): Promise<void> {
     await this.params.session.abort?.();
+  }
+
+  async rewindFiles(
+    _userMessageId: string,
+    options?: RuntimeRewindFilesOptions,
+  ): Promise<RuntimeRewindFilesResult> {
+    return rewindWorkspaceSnapshot(this.params.rewindSnapshot, options);
   }
 
   close(): void {

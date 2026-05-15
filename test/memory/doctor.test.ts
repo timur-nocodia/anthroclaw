@@ -20,8 +20,8 @@ describe('runMemoryDoctor', () => {
   });
 
   it('reports duplicate content by memory entry hash', () => {
-    store.indexFile('memory/a.md', 'Project: OpenClaw\nOwner: team');
-    store.indexFile('memory/b.md', 'Project: OpenClaw\nOwner: team');
+    store.indexFile('memory/a.md', 'Project: AnthroClaw\nOwner: team');
+    store.indexFile('memory/b.md', 'Project: AnthroClaw\nOwner: team');
 
     const report = runMemoryDoctor(store);
 

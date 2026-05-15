@@ -35,12 +35,12 @@ The source of truth for the machine-readable version is `src/runtime/contract.ts
 | Candidate | Pass | Partial | Fail | Contract score | Production blockers |
 | --- | ---: | ---: | ---: | ---: | --- |
 | Claude Agent SDK | 10 | 0 | 0 | 100% | none |
-| Pi | 9 | 1 | 0 | 95% | true provider-backed file rewind is still missing |
+| Pi | 10 | 0 | 0 | 100% | none in the current contract |
 | OpenCode | 6 | 0 | 4 | 60% | permission policy, custom tools, external MCP proxying, Gateway active-run path |
 
 ## Current read
 
-Pi is still the stronger near-term migration track. It behaves like a composable harness: prompt, session continuation, runtime events, interrupt, timeout abort, tool policy, custom tools, external MCP proxying, and opt-in Gateway active-run control are already represented behind AnthroClaw-owned boundaries. Its main missing parity item is real file rewind. Until that lands, AnthroClaw must keep returning explicit unsupported-runtime checkpoint responses for Pi.
+Pi is still the stronger near-term migration track. It behaves like a composable harness: prompt, session continuation, runtime events, interrupt, timeout abort, checkpoint rewind, tool policy, custom tools, external MCP proxying, and opt-in Gateway active-run control are already represented behind AnthroClaw-owned boundaries. Checkpoint rewind is implemented as an AnthroClaw-owned workspace snapshot fallback for explicit-cwd Gateway runs, not as a Pi session-tree primitive.
 
 OpenCode is useful as a benchmark and may be cleaner for checkpoint rewind because `session.revert` maps directly to `RuntimeRunHandle.rewindFiles()`. However, the current adapter is headless-only and does not yet carry AnthroClaw's permission, tool, external MCP, or Gateway control plane. It should not displace Pi unless those four gaps close with less complexity than adding Pi-native rewind.
 
@@ -54,6 +54,6 @@ OpenCode is useful as a benchmark and may be cleaner for checkpoint rewind becau
 
 ## Next implementation choices
 
-1. Close Pi's `checkpoint_rewind` gap with a real provider-backed rewind primitive or an AnthroClaw file snapshot fallback that is safe enough for production.
-2. In parallel or after that, build an OpenCode Gateway benchmark only if we want hard evidence that its server boundary can carry AnthroClaw permissions and tools cleanly.
-3. Keep Claude as the production baseline until the selected candidate is green across the contract.
+1. Harden Pi's snapshot fallback against larger real workspaces if we see limit pressure in smoke runs.
+2. Build an OpenCode Gateway benchmark only if we want hard evidence that its server boundary can carry AnthroClaw permissions and tools cleanly.
+3. Keep Claude as the production baseline until the selected candidate is green across the contract and has enough end-to-end smoke evidence.

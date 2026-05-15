@@ -36,11 +36,11 @@ describe('runtime contract matrix', () => {
       scorePercent: 100,
     });
     expect(runtimeContractProgress('pi')).toMatchObject({
-      pass: 9,
-      partial: 1,
+      pass: 10,
+      partial: 0,
       fail: 0,
-      requiredBlockingGaps: 1,
-      scorePercent: 95,
+      requiredBlockingGaps: 0,
+      scorePercent: 100,
     });
     expect(runtimeContractProgress('opencode')).toMatchObject({
       pass: 6,
@@ -52,8 +52,7 @@ describe('runtime contract matrix', () => {
   });
 
   it('returns production-blocking gaps only for required partial or failed scenarios', () => {
-    expect(runtimeContractBlockingGaps('pi').map((entry) => entry.scenario))
-      .toEqual(['checkpoint_rewind']);
+    expect(runtimeContractBlockingGaps('pi')).toEqual([]);
     expect(runtimeContractBlockingGaps('opencode').map((entry) => entry.scenario).sort())
       .toEqual([
         'custom_tool_execution',

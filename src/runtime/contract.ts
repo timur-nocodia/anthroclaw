@@ -131,7 +131,7 @@ export const RUNTIME_CONTRACT_MATRIX: RuntimeContractCandidateStatus[] = [
   pi('runtime_event_stream', 'pass', 'PiRuntimeRunHandle normalizes AgentSession.subscribe() events into RuntimeEvent.'),
   pi('interrupt_active_run', 'pass', 'PiRuntimeRunHandle.interrupt() calls AgentSession.abort().'),
   pi('timeout_abort', 'pass', 'Pi headless timeout path calls AgentSession.abort(), unsubscribes, and disposes.'),
-  pi('checkpoint_rewind', 'partial', 'Gateway control aliases survive, but Pi has no true file rewind primitive yet.', 'Must stay explicit unsupported-runtime until a Pi-native rewind exists.'),
+  pi('checkpoint_rewind', 'pass', 'Pi RuntimeRunHandle rewinds file changes through AnthroClaw-owned workspace snapshots when Gateway supplies an explicit cwd.'),
   pi('tool_policy_denial', 'pass', 'Pi tool policy extension returns model-visible denial feedback.'),
   pi('custom_tool_execution', 'pass', 'Pi customTools bridge registers AnthroClaw tools and rechecks policy before execute.'),
   pi('external_mcp_proxy', 'pass', 'Configured external MCP tools are proxied through AnthroClaw custom tools.'),

@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeEvent } from '../events.js';
 import type { HeadlessRunInput, HeadlessRuntime } from '../headless.js';
@@ -174,6 +177,8 @@ function piAcceptanceFixture(): RuntimeAcceptanceFixture {
     },
     events: {
       create: () => {
+        const cwd = mkdtempSync(join(tmpdir(), 'pi-accept-rewind-'));
+        writeFileSync(join(cwd, 'before.txt'), 'before');
         const session = createPiSession([
           { type: 'agent_start' },
           { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'streamed pi' } },
@@ -183,14 +188,20 @@ function piAcceptanceFixture(): RuntimeAcceptanceFixture {
           runtime: new PiHeadlessRuntime({
             createAgentSession: vi.fn(async () => ({ session, sessionId: 'pi-event-session' })),
           }),
-          input: { prompt: 'stream' },
+          input: { prompt: 'stream', cwd },
           verify: async (events, handle) => {
-            expect(events).toMatchObject([
-              { type: 'run.started', sessionId: 'pi-event-session' },
-              { type: 'text.delta', text: 'streamed pi', source: 'partial' },
-              { type: 'run.completed' },
-            ]);
-            expect(handle.rewindFiles).toBeUndefined();
+            try {
+              expect(events).toMatchObject([
+                { type: 'run.started', sessionId: 'pi-event-session' },
+                { type: 'text.delta', text: 'streamed pi', source: 'partial' },
+                { type: 'run.completed' },
+              ]);
+              await expect(handle.rewindFiles?.('user-message-1', { dryRun: true }))
+                .resolves
+                .toMatchObject({ canRewind: true });
+            } finally {
+              rmSync(cwd, { recursive: true, force: true });
+            }
           },
         };
       },
