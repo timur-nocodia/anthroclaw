@@ -81,6 +81,14 @@ pnpm headless:runtime -- --prompt "Continue." --runtime pi --session-id "<sessio
 
 The CLI is still a smoke probe: it runs the headless, tools-disabled review path only. It does not prove Gateway streaming, tools, approvals, or production session-key mapping.
 
+For the checkpoint/rewind path there is a stronger opt-in smoke probe:
+
+```bash
+pnpm smoke:pi-workspace -- --json --allow-skip
+```
+
+It creates a temporary workspace, asks Pi to edit `anthroclaw-pi-smoke.txt`, verifies `RuntimeRunHandle.rewindFiles()` dry-run, restores the file, and reports a structured `passed` / `failed` / `skipped` result. `--allow-skip` is intended for environments where the optional Pi package or auth is not installed yet; without it, missing Pi setup is a failure.
+
 ## Headless session metadata
 
 The Pi headless adapter now supports the minimum stateful contract:
@@ -215,4 +223,4 @@ This gives production-shaped continuation and interrupt behavior without pretend
 Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
 - caching/reuse strategy for external MCP discovery and long-lived MCP sessions if needed for performance;
-- end-to-end Pi smoke coverage for real workspace edits and snapshot limit behavior.
+- Gateway-level Pi smoke coverage for real channel dispatch with tool approvals.

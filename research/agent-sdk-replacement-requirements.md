@@ -348,6 +348,7 @@ Local spike adapter status:
 - Draft PRs #45-#58 build Pi from optional headless prompt into an opt-in Gateway runtime path with streamed `RuntimeEvent` values, AnthroClaw permission broker integration, custom local tools, external MCP proxying, active-run interrupts, and checkpoint-control alias preservation.
 - Draft PR #60 adds Pi to the shared runtime acceptance contract.
 - Draft PR #61 adds Pi checkpoint/file rewind through AnthroClaw-owned workspace snapshots for explicit-cwd Gateway runs. Current contract status is 10 pass, 0 partial, 0 fail.
+- Draft PR #62 adds `pnpm smoke:pi-workspace`, an opt-in real Pi workspace edit + dry-run + restore probe for environments with the optional Pi runtime and auth configured.
 
 Fit to AnthroClaw:
 
