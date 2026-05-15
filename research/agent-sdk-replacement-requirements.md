@@ -355,6 +355,7 @@ Local spike adapter status:
 - Draft PR #66 adds `pnpm smoke:pi-auth`, a credential/model preflight that checks Pi package import, model registry lookup, provider auth, and available-model status without printing secrets; `smoke:pi-all` now runs this before workspace/Gateway probes.
 - Draft PR #67 makes the Pi runtime construct Pi's default `AuthStorage` + `ModelRegistry` when a model id is provided, maps legacy AnthroClaw Claude model ids such as `claude-sonnet-4-6` to `anthropic/claude-sonnet-4-6`, and aligns Pi smoke defaults on that explicit model id.
 - Draft PR #68 adds optional Pi `auth_path` / `models_path` config and matching smoke CLI flags, so staging/CI can point AnthroClaw at isolated Pi-owned storage files without storing credential material in AnthroClaw config.
+- Draft PR #69 adds a manual GitHub Actions Pi smoke gate that decodes Pi-owned storage from repository secrets and runs `smoke:pi-all` as the repeatable real-auth decision check.
 
 Fit to AnthroClaw:
 
