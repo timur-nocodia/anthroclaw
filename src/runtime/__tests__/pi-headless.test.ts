@@ -148,6 +148,29 @@ describe('PiHeadlessRuntime', () => {
     expect(firstOptions).not.toHaveProperty('noTools');
   });
 
+  it('lets per-run tool policy override constructor-level Pi tool policy', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session })) satisfies PiCreateAgentSession;
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession,
+      toolPolicy: { mode: 'deny' },
+    });
+
+    await runtime.runText({
+      prompt: 'p',
+      toolPolicy: { mode: 'allow-list', tools: ['Read'] },
+    });
+
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      tools: ['read'],
+    }));
+    const firstOptions = (createAgentSession as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(firstOptions).not.toHaveProperty('noTools');
+  });
+
   it('installs model-visible Pi tool denial feedback on a configured resource loader', async () => {
     const session = createSession([
       { type: 'assistant_text_delta', delta: 'done' },
