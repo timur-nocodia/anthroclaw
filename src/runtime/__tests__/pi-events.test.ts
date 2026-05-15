@@ -77,6 +77,17 @@ describe('normalizePiRuntimeEvents', () => {
       },
     }, context)).toEqual([
       {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        agentId: 'agent-1',
+        timestamp: 123,
+        raw: expect.objectContaining({ type: 'message_end' }),
+        text: 'done',
+        source: 'message',
+      },
+      {
         type: 'message.completed',
         runtime: 'pi',
         runId: 'run-1',

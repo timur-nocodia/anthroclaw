@@ -313,6 +313,113 @@ describe('PiHeadlessRuntime', () => {
     }));
   });
 
+  it('creates a RuntimeRunHandle over Pi session events', async () => {
+    const session = createSession([
+      { type: 'agent_start' },
+      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'hello ' } },
+      {
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          usage: { input: 4, output: 2 },
+        },
+      },
+      { type: 'agent_end', messages: [] },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session, sessionId: 'pi-session-1' })) satisfies PiCreateAgentSession;
+    const runtime = new PiHeadlessRuntime({ createAgentSession });
+
+    const handle = await runtime.runHandle({
+      prompt: 'hello',
+      cwd: '/workspace',
+    }, {
+      runId: 'run-1',
+      agentId: 'agent-1',
+    });
+
+    const events: unknown[] = [];
+    for await (const event of handle) {
+      events.push(event);
+    }
+
+    expect(events).toMatchObject([
+      { type: 'run.started', runtime: 'pi', runId: 'run-1', sessionId: 'pi-session-1', agentId: 'agent-1' },
+      { type: 'text.delta', text: 'hello ', source: 'partial' },
+      { type: 'message.completed' },
+      { type: 'usage.updated', inputTokens: 4, outputTokens: 2 },
+      { type: 'run.completed' },
+    ]);
+    expect(session.prompt).toHaveBeenCalledWith('hello');
+    expect(session.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes sessionId and runtime defaults into Pi runtime handles', async () => {
+    const session = createSession([
+      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'continued' } },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session, sessionId: 'pi-session-1' })) satisfies PiCreateAgentSession;
+    const runtime = new PiHeadlessRuntime({ createAgentSession });
+
+    const handle = await runtime.runHandle({
+      prompt: 'continue',
+      sessionId: 'pi-session-1',
+      runtimeDefaults: {
+        model: 'anthropic/claude-sonnet-4-5',
+        cwd: '/workspace',
+      },
+    }, {
+      runId: 'run-1',
+      sessionId: 'pi-session-1',
+    });
+
+    for await (const _event of handle) {
+      // drain
+    }
+
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'pi-session-1',
+      cwd: '/workspace',
+      noTools: 'all',
+      tools: [],
+    }));
+  });
+
+  it('interrupts and closes Pi runtime handles', async () => {
+    let listener: ((event: unknown) => void) | undefined;
+    let resolvePrompt: (() => void) | undefined;
+    const unsubscribe = vi.fn();
+    const session: PiAgentSessionLike = {
+      prompt: vi.fn(() => new Promise<void>((resolve) => {
+        resolvePrompt = resolve;
+      })),
+      subscribe: vi.fn((next) => {
+        listener = next;
+        return unsubscribe;
+      }),
+      abort: vi.fn(async () => {
+        listener?.({ type: 'agent_end', messages: [{ role: 'assistant', stopReason: 'aborted' }] });
+        resolvePrompt?.();
+      }),
+      dispose: vi.fn(),
+    };
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession: vi.fn(async () => ({ session })),
+    });
+
+    const handle = await runtime.runHandle({ prompt: 'p' }, { runId: 'run-1' });
+    await handle.interrupt();
+
+    const seen: unknown[] = [];
+    for await (const event of handle) {
+      seen.push(event);
+    }
+
+    expect(seen).toMatchObject([{ type: 'run.failed' }]);
+    expect(session.abort).toHaveBeenCalledTimes(1);
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(session.dispose).toHaveBeenCalledTimes(1);
+  });
+
   it('surfaces Pi error events after prompt completion', async () => {
     const session = createSession([
       { type: 'message_update', assistantMessageEvent: { type: 'error', message: 'model unavailable' } },
