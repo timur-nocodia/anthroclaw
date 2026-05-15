@@ -178,6 +178,10 @@ export class Agent {
   private sessionModelOverrides: Map<string, string>;
   private sessionModelOverridesPath: string | null;
   private sessionMappingsPath: string | null;
+  // In-memory only — counts consecutive auto-compress failures per session.
+  // Reset on success or session clear. Used to escalate from "keep intact"
+  // to a degraded forced reset after too many failures in a row.
+  private sessionCompressFailureCount: Map<string, number> = new Map();
 
   private constructor(
     id: string,
@@ -605,8 +609,29 @@ export class Agent {
     this.sessionLastUsed.delete(sessionKey);
     this.sessionStarted.delete(sessionKey);
     this.sessionMessageCount.delete(sessionKey);
+    this.sessionCompressFailureCount.delete(sessionKey);
     // intentionally keep sessionModelOverrides — model choice persists across /newsession
     this.persistSessionMappings();
+  }
+
+  /**
+   * Count of consecutive auto-compress failures for this session.
+   * Reset on successful compress, on clearSession, or via
+   * resetCompressFailureCount.
+   */
+  getCompressFailureCount(sessionKey: string): number {
+    return this.sessionCompressFailureCount.get(sessionKey) ?? 0;
+  }
+
+  /** Increment the counter; returns the new value. */
+  incrementCompressFailureCount(sessionKey: string): number {
+    const next = this.getCompressFailureCount(sessionKey) + 1;
+    this.sessionCompressFailureCount.set(sessionKey, next);
+    return next;
+  }
+
+  resetCompressFailureCount(sessionKey: string): void {
+    this.sessionCompressFailureCount.delete(sessionKey);
   }
 
   getSessionStartTime(sessionKey: string): number | undefined {
@@ -652,6 +677,7 @@ export class Agent {
         this.sessionLastUsed.delete(key);
         this.sessionStarted.delete(key);
         this.sessionMessageCount.delete(key);
+        this.sessionCompressFailureCount.delete(key);
         evicted++;
       }
     }
