@@ -161,9 +161,10 @@ import {
   type HeadlessReviewRuntimeConfig,
 } from './sdk/headless-runtime-config.js';
 import { resolveHeadlessRuntime } from './runtime/headless-registry.js';
-import type { HeadlessRunInput, HeadlessToolPolicy } from './runtime/headless.js';
+import type { HeadlessCustomTool, HeadlessRunInput, HeadlessToolPolicy } from './runtime/headless.js';
 import type { RuntimeRunHandle } from './runtime/types.js';
 import { buildAllowedTools, createCanUseTool } from './sdk/permissions.js';
+import type { ToolDefinition } from './agent/tools/types.js';
 import { LearningQueue, detectLearningTriggers, type LearningReviewJob } from './learning/queue.js';
 import { applyMemoryCandidateAction } from './learning/memory-applier.js';
 import { runLearningReview } from './learning/runner.js';
@@ -492,7 +493,12 @@ function runtimeToolOutputToString(output: unknown): string {
   return typeof output === 'string' ? output : JSON.stringify(output ?? '');
 }
 
-function piGatewayToolNameToAnthroClawName(toolName: string, originalToolName?: string): string {
+function piGatewayToolNameToAnthroClawName(
+  toolName: string,
+  originalToolName?: string,
+  localMcpServerName?: string,
+  customToolNames?: Set<string>,
+): string {
   const normalized = toolName.trim().toLowerCase();
   switch (normalized) {
     case 'read':
@@ -510,8 +516,22 @@ function piGatewayToolNameToAnthroClawName(toolName: string, originalToolName?: 
     case 'ls':
       return 'LS';
     default:
-      return originalToolName?.trim() || toolName;
+      const localName = originalToolName?.trim() || toolName;
+      if (localName.startsWith('mcp__')) return localName;
+      if (customToolNames?.has(localName) && localMcpServerName) {
+        return `mcp__${localMcpServerName}__${localName}`;
+      }
+      return localName;
   }
+}
+
+function isPiGatewayCustomToolAllowed(
+  agent: Pick<Agent, 'mcpServer'>,
+  allowedTools: string[],
+  toolName: string,
+): boolean {
+  return allowedTools.includes(toolName)
+    || allowedTools.includes(`mcp__${agent.mcpServer.name}__${toolName}`);
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -1103,6 +1123,8 @@ export class Gateway {
       prompt: string;
       sessionId?: string;
       purpose: string;
+      sessionKey?: string;
+      message?: InboundMessage;
       channel?: ChannelAdapter;
       sessionContext?: { channel?: string; peerId: string; senderId?: string; accountId?: string; threadId?: string };
       onRuntimeEvent?: (event: RuntimeEvent) => void | Promise<void>;
@@ -1115,6 +1137,17 @@ export class Gateway {
 
     const runtime = resolveHeadlessRuntime(configured.runtime, configured.runtimeOptions);
     const model = agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6';
+    const allowedTools = buildAllowedTools(agent, false);
+    const dispatchTools = this.buildGatewayDispatchTools(agent, input.sessionKey, input.message);
+    const customTools = dispatchTools
+      .filter((tool) => isPiGatewayCustomToolAllowed(agent, allowedTools, tool.name))
+      .map((tool): HeadlessCustomTool => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        handler: (args) => tool.handler(args),
+      }));
+    const customToolNames = new Set(customTools.map((tool) => tool.name));
     const toolGate = createCanUseTool({
       agent,
       approvalBroker: this.approvalBroker,
@@ -1123,9 +1156,17 @@ export class Gateway {
     });
     const toolPolicy: HeadlessToolPolicy = {
       mode: 'allow-list',
-      tools: buildAllowedTools(agent, false),
+      tools: [
+        ...allowedTools,
+        ...customTools.map((tool) => tool.name),
+      ],
       canUseTool: async (toolCall) => {
-        const toolName = piGatewayToolNameToAnthroClawName(toolCall.toolName, toolCall.originalToolName);
+        const toolName = piGatewayToolNameToAnthroClawName(
+          toolCall.toolName,
+          toolCall.originalToolName,
+          agent.mcpServer.name,
+          customToolNames,
+        );
         return toolGate(toolName, toolCall.input, {
           signal: new AbortController().signal,
           toolUseID: toolCall.toolCallId ?? `${toolName}:${Date.now()}`,
@@ -1145,6 +1186,7 @@ export class Gateway {
       purpose: input.purpose,
       toolDenyMessage: 'Tool denied by AnthroClaw policy.',
       toolPolicy,
+      customTools,
     };
     const runtimeWithHandle = runtime as {
       runHandle?: (
@@ -2150,102 +2192,102 @@ export class Gateway {
     });
 
     if (msg || sessionKey) {
-      const dispatchContext = msg
-        ? {
-            agentId: agent.id,
-            channel: msg.channel,
-            peerId: msg.peerId,
-            senderId: msg.senderId,
-            accountId: msg.accountId,
-            threadId: msg.threadId,
-          }
-        : undefined;
-      const buildroomSourceSessionId = sessionKey ?? (msg
-        ? buildSessionKey(
-            agent.id,
-            msg.channel,
-            msg.chatType,
-            msg.peerId,
-            msg.threadId,
-          )
-        : undefined);
-      const baseDispatchTools = agent.buildToolsForDispatch(sessionKey);
-      const buildroomToolBinding = buildroomSourceSessionId
-        ? {
-            projectRoot: this.dataDir ? resolve(this.dataDir, '..') : process.cwd(),
-            roomId: 'anthroclaw-core',
-            sourceAgentId: agent.id,
-            sourceSessionId: buildroomSourceSessionId,
-          }
-        : null;
-      const dispatchTools = (buildroomToolBinding
-        ? bindBuildroomSessionSummaryToolsForDispatch(
-            bindBuildroomHandoffToolsForDispatch(baseDispatchTools, buildroomToolBinding),
-            buildroomToolBinding,
-          )
-        : baseDispatchTools
-      ).map((tool) => {
-        if (tool.name === 'send_message') {
-          return createSendMessageTool((id) => this.channels.get(id), {
-            agentId: agent.id,
-            peerPauseStore: this.peerPauseStore ?? null,
-            notificationsEmitter: this.notificationsEmitter ?? null,
-            dispatchContext,
-          });
-        }
-        if (tool.name === 'send_media') {
-          return createSendMediaTool(agent.workspacePath, (id) => this.channels.get(id), {
-            dispatchContext,
-          });
-        }
-        if (tool.name === 'manage_cron' && this.dynamicCronStore) {
-          return createManageCronTool(
-            agent.id,
-            this.dynamicCronStore,
-            () => this.reloadDynamicCron(),
-            dispatchContext,
-          );
-        }
-        if (tool.name === 'connect_mcp' && msg) {
-          // Rebuild with per-dispatch context so the facade knows which
-          // chat the agent is acting in (DM-only guard) and which session
-          // should receive the eventual `[system] mcp_connected` event.
-          // In headless contexts (cron, startup prewarm) `msg` is undefined
-          // — return the default tool, which rejects connect ops via its
-          // own "no agent context" guard.
-          if (!msg) return tool;
-          const sessionKey = buildSessionKey(
-            agent.id,
-            msg.channel,
-            msg.chatType,
-            msg.peerId,
-            msg.threadId,
-          );
-          return createConnectMcpTool(
-            agent.id,
-            () => {
-              const facade = this.getMcpOnboarding();
-              if (!facade) throw new Error('mcp_onboarding_facade_unavailable');
-              return facade;
-            },
-            () => ({
-              agentSessionKey: sessionKey,
-              chatType: msg.chatType === 'dm' ? 'private' : 'group',
-            }),
-          );
-        }
-        return tool;
-      });
       options.mcpServers = {
         ...(options.mcpServers ?? {}),
         [agent.mcpServer.name]: createClaudeSdkMcpServer({
           name: agent.mcpServer.name,
-          tools: dispatchTools as unknown as any[],
+          tools: this.buildGatewayDispatchTools(agent, sessionKey, msg) as unknown as any[],
         }),
       };
     }
 
     return options;
+  }
+
+  private buildGatewayDispatchTools(
+    agent: Agent,
+    sessionKey?: string,
+    msg?: InboundMessage,
+  ): ToolDefinition[] {
+    const dispatchContext = msg
+      ? {
+          agentId: agent.id,
+          channel: msg.channel,
+          peerId: msg.peerId,
+          senderId: msg.senderId,
+          accountId: msg.accountId,
+          threadId: msg.threadId,
+        }
+      : undefined;
+    const buildroomSourceSessionId = sessionKey ?? (msg
+      ? buildSessionKey(
+          agent.id,
+          msg.channel,
+          msg.chatType,
+          msg.peerId,
+          msg.threadId,
+        )
+      : undefined);
+    const baseDispatchTools = agent.buildToolsForDispatch(sessionKey);
+    const buildroomToolBinding = buildroomSourceSessionId
+      ? {
+          projectRoot: this.dataDir ? resolve(this.dataDir, '..') : process.cwd(),
+          roomId: 'anthroclaw-core',
+          sourceAgentId: agent.id,
+          sourceSessionId: buildroomSourceSessionId,
+        }
+      : null;
+    return (buildroomToolBinding
+      ? bindBuildroomSessionSummaryToolsForDispatch(
+          bindBuildroomHandoffToolsForDispatch(baseDispatchTools, buildroomToolBinding),
+          buildroomToolBinding,
+        )
+      : baseDispatchTools
+    ).map((tool) => {
+      if (tool.name === 'send_message') {
+        return createSendMessageTool((id) => this.channels.get(id), {
+          agentId: agent.id,
+          peerPauseStore: this.peerPauseStore ?? null,
+          notificationsEmitter: this.notificationsEmitter ?? null,
+          dispatchContext,
+        });
+      }
+      if (tool.name === 'send_media') {
+        return createSendMediaTool(agent.workspacePath, (id) => this.channels.get(id), {
+          dispatchContext,
+        });
+      }
+      if (tool.name === 'manage_cron' && this.dynamicCronStore) {
+        return createManageCronTool(
+          agent.id,
+          this.dynamicCronStore,
+          () => this.reloadDynamicCron(),
+          dispatchContext,
+        );
+      }
+      if (tool.name === 'connect_mcp' && msg) {
+        const sourceSessionKey = buildSessionKey(
+          agent.id,
+          msg.channel,
+          msg.chatType,
+          msg.peerId,
+          msg.threadId,
+        );
+        return createConnectMcpTool(
+          agent.id,
+          () => {
+            const facade = this.getMcpOnboarding();
+            if (!facade) throw new Error('mcp_onboarding_facade_unavailable');
+            return facade;
+          },
+          () => ({
+            agentSessionKey: sourceSessionKey,
+            chatType: msg.chatType === 'dm' ? 'private' : 'group',
+          }),
+        );
+      }
+      return tool;
+    });
   }
 
   private async prewarmAgent(agent: Agent): Promise<void> {
@@ -3368,6 +3410,7 @@ export class Gateway {
           prompt,
           sessionId: existingSessionId,
           purpose: 'gateway web query',
+          sessionKey,
           sessionContext: { channel: context.channel ?? 'web', peerId: 'web-user', senderId: 'web-user' },
           onRuntimeEvent: (event) => {
             if (event.type === 'text.delta' && event.source === 'partial') {
@@ -5384,6 +5427,8 @@ export class Gateway {
           prompt,
           sessionId: existingSessionId,
           purpose: 'gateway agent query',
+          sessionKey,
+          message: msg,
           channel: this.channels.get(msg.channel),
           sessionContext: { channel: msg.channel, peerId: msg.peerId, senderId: msg.senderId, accountId: msg.accountId, threadId: msg.threadId },
           onRuntimeEvent: (event) => {

@@ -68,14 +68,15 @@ Status: draft PR #45 added an optional `HeadlessRuntime` adapter shell. Draft PR
 
 Goal:
 
-- add a minimal Pi adapter behind the runtime interfaces;
+- add a Pi adapter behind the runtime interfaces;
 - run it only from tests or an explicit experimental CLI/config flag;
-- prove prompt, events, basic tools, approval gate, and session mapping.
+- prove prompt, events, basic tools, custom AnthroClaw tools, approval gate, system prompt override, and session mapping.
 
 Minimum spike scenarios:
 
 - prompt returns streamed assistant text;
 - read/write/bash/edit-style tools can be wrapped by AnthroClaw policy;
+- local AnthroClaw tools can be passed to Pi as `customTools`;
 - denied tool call returns model-visible feedback;
 - session can continue across two prompts;
 - event mapping is sufficient for Gateway UI.
@@ -107,4 +108,4 @@ Decision gate:
 
 ## Near-term next action
 
-Continue the stacked migration from the smallest safe seam outward: with model loading, event text, session metadata, explicit tool policy, model-visible denial feedback, Pi event normalization, Claude-path Gateway `RuntimeEvent` consumption, a non-default Pi Gateway bridge, streamed Pi `RuntimeRunHandle` consumption, and built-in Pi tool approval routed through AnthroClaw's permission broker covered, the next useful proof is MCP/custom AnthroClaw tool execution and system prompt/session-continuation parity for Pi-backed Gateway runs.
+Continue the stacked migration from the smallest safe seam outward: with model loading, event text, session metadata, explicit tool policy, model-visible denial feedback, Pi event normalization, Claude-path Gateway `RuntimeEvent` consumption, a non-default Pi Gateway bridge, streamed Pi `RuntimeRunHandle` consumption, built-in Pi tool approval routed through AnthroClaw's permission broker, and Pi-hosted custom AnthroClaw tools covered, the next useful proof is external MCP execution and production-grade session/checkpoint parity for Pi-backed Gateway runs.

@@ -36,6 +36,25 @@ export type HeadlessToolPolicy =
       denyMessage?: string;
     };
 
+export interface HeadlessCustomToolContent {
+  type: string;
+  text?: string;
+  [key: string]: unknown;
+}
+
+export interface HeadlessCustomToolResult {
+  content: HeadlessCustomToolContent[];
+  isError?: boolean;
+  details?: Record<string, unknown>;
+}
+
+export interface HeadlessCustomTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  handler: (args: Record<string, unknown>) => HeadlessCustomToolResult | Promise<HeadlessCustomToolResult>;
+}
+
 export interface HeadlessRunInput {
   prompt: string;
   systemPrompt?: string;
@@ -47,6 +66,7 @@ export interface HeadlessRunInput {
   purpose?: string;
   toolDenyMessage?: string;
   toolPolicy?: HeadlessToolPolicy;
+  customTools?: HeadlessCustomTool[];
 }
 
 export interface HeadlessRunResult {

@@ -1,6 +1,9 @@
 import {
   DEFAULT_HEADLESS_TIMEOUT_MS,
   type HeadlessCanUseTool,
+  type HeadlessCustomTool,
+  type HeadlessCustomToolContent,
+  type HeadlessCustomToolResult,
   type HeadlessRunInput,
   type HeadlessRunResult,
   type HeadlessRuntime,
@@ -33,8 +36,17 @@ export type PiCreateAgentSession = (options?: Record<string, unknown>) => Promis
 
 export interface PiCodingAgentSdkModule {
   createAgentSession?: PiCreateAgentSession;
+  defineTool?: (definition: PiCustomToolDefinition) => unknown;
   DefaultResourceLoader?: new (options: Record<string, unknown>) => PiResourceLoaderLike;
   getAgentDir?: () => string;
+}
+
+export interface PiCustomToolDefinition {
+  name: string;
+  label?: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  execute: (toolCallId: unknown, params: unknown) => Promise<Record<string, unknown>>;
 }
 
 export type PiSdkLoader = () => Promise<PiCodingAgentSdkModule>;
@@ -84,6 +96,7 @@ export interface PiLoadExtensionsResultLike {
 export interface PiResourceLoaderLike {
   getExtensions(): PiLoadExtensionsResultLike;
   reload?(): Promise<void>;
+  getSystemPrompt?(): string | Promise<string>;
 }
 
 export interface PiHeadlessRuntimeOptions {
@@ -261,18 +274,34 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
       : (this.options.toolPolicy ?? { mode: 'deny' }));
 
     if (policy.mode === 'deny') {
-      return {
+      const toolOptions: Record<string, unknown> = {
         noTools: 'all',
         tools: [],
       };
+      if (input.systemPrompt) {
+        toolOptions.resourceLoader = await buildPiRuntimeResourceLoader({
+          input,
+          sdk,
+          configured,
+          cwd,
+        });
+      }
+      return toolOptions;
     }
 
+    const customTools = buildPiCustomTools(input, policy, sdk);
     const toolOptions: Record<string, unknown> = {
-      tools: normalizePiToolNames(policy.tools),
+      tools: normalizePiToolNames([
+        ...policy.tools,
+        ...customToolNames(input.customTools),
+      ]),
     };
+    if (customTools.length > 0) {
+      toolOptions.customTools = customTools;
+    }
 
-    if (policy.canUseTool) {
-      toolOptions.resourceLoader = await buildPiToolPolicyResourceLoader({
+    if (policy.canUseTool || input.systemPrompt) {
+      toolOptions.resourceLoader = await buildPiRuntimeResourceLoader({
         input,
         policy,
         sdk,
@@ -476,7 +505,10 @@ export async function evaluatePiToolCallPolicy(
 
   const originalToolName = typeof event.toolName === 'string' ? event.toolName : '';
   const toolName = normalizePiToolName(originalToolName);
-  const allowedTools = new Set(normalizePiToolNames(policy.tools));
+  const allowedTools = new Set(normalizePiToolNames([
+    ...policy.tools,
+    ...customToolNames(input.customTools),
+  ]));
   if (!toolName || !allowedTools.has(toolName)) {
     return {
       block: true,
@@ -484,6 +516,14 @@ export async function evaluatePiToolCallPolicy(
         ?? input.toolDenyMessage
         ?? `Tool ${originalToolName || '<unknown>'} is not enabled for ${input.purpose ?? 'pi headless'}.`,
     };
+  }
+
+  const cacheKey = piToolPolicyCacheKey(event);
+  if (cacheKey) {
+    const cached = getPiToolPolicyCache(input);
+    if (cached.has(cacheKey)) {
+      return cached.get(cacheKey);
+    }
   }
 
   if (!policy.canUseTool) return undefined;
@@ -496,15 +536,20 @@ export async function evaluatePiToolCallPolicy(
   }, input);
   const normalizedDecision = normalizePiToolDecision(decision);
 
-  if (normalizedDecision.allowed) return undefined;
+  if (normalizedDecision.allowed) {
+    if (cacheKey) getPiToolPolicyCache(input).set(cacheKey, undefined);
+    return undefined;
+  }
 
-  return {
+  const result = {
     block: true,
     reason: normalizedDecision.reason
       ?? policy.denyMessage
       ?? input.toolDenyMessage
       ?? `Tool ${toolName} was denied by AnthroClaw policy.`,
   };
+  if (cacheKey) getPiToolPolicyCache(input).set(cacheKey, result);
+  return result;
 }
 
 function extractPiTextDelta(event: unknown): string | undefined {
@@ -593,15 +638,19 @@ const PI_TOOL_POLICY_EXTENSION_PATH = '<anthroclaw:pi-tool-policy>';
 
 interface BuildPiToolPolicyResourceLoaderParams {
   input: HeadlessRunInput;
-  policy: Extract<PiHeadlessToolPolicy, { mode: 'allow-list' }>;
+  policy?: Extract<PiHeadlessToolPolicy, { mode: 'allow-list' }>;
   sdk: PiCodingAgentSdkModule;
   configured: Record<string, unknown>;
   cwd: string;
 }
 
-async function buildPiToolPolicyResourceLoader(params: BuildPiToolPolicyResourceLoaderParams): Promise<PiResourceLoaderLike> {
+async function buildPiRuntimeResourceLoader(params: BuildPiToolPolicyResourceLoaderParams): Promise<PiResourceLoaderLike> {
   const configuredResourceLoader = params.configured.resourceLoader;
   if (isPiResourceLoader(configuredResourceLoader)) {
+    if (params.input.systemPrompt) {
+      throw new Error('Pi headless runtime cannot apply systemPrompt override to a preconfigured resourceLoader.');
+    }
+    if (!params.policy?.canUseTool) return configuredResourceLoader;
     return wrapPiResourceLoaderWithPolicyExtension(configuredResourceLoader, params.input, params.policy);
   }
 
@@ -621,9 +670,12 @@ async function buildPiToolPolicyResourceLoader(params: BuildPiToolPolicyResource
     cwd: params.cwd,
     agentDir,
     settingsManager: params.configured.settingsManager,
-    extensionFactories: [
-      createPiToolPolicyExtension(params.input, params.policy),
-    ],
+    ...(params.input.systemPrompt
+      ? { systemPromptOverride: () => params.input.systemPrompt }
+      : {}),
+    ...(params.policy?.canUseTool
+      ? { extensionFactories: [createPiToolPolicyExtension(params.input, params.policy)] }
+      : {}),
   });
   await resourceLoader.reload?.();
   return resourceLoader;
@@ -632,7 +684,7 @@ async function buildPiToolPolicyResourceLoader(params: BuildPiToolPolicyResource
 function wrapPiResourceLoaderWithPolicyExtension(
   resourceLoader: PiResourceLoaderLike,
   input: HeadlessRunInput,
-  policy: PiHeadlessToolPolicy,
+  policy: Extract<PiHeadlessToolPolicy, { mode: 'allow-list' }>,
 ): PiResourceLoaderLike {
   return new Proxy(resourceLoader, {
     get(target, prop, receiver) {
@@ -648,7 +700,7 @@ function wrapPiResourceLoaderWithPolicyExtension(
 function appendPiLoadedPolicyExtension(
   base: PiLoadExtensionsResultLike,
   input: HeadlessRunInput,
-  policy: PiHeadlessToolPolicy,
+  policy: Extract<PiHeadlessToolPolicy, { mode: 'allow-list' }>,
 ): PiLoadExtensionsResultLike {
   return {
     ...base,
@@ -659,7 +711,7 @@ function appendPiLoadedPolicyExtension(
   };
 }
 
-function createPiLoadedToolPolicyExtension(input: HeadlessRunInput, policy: PiHeadlessToolPolicy): Record<string, unknown> {
+function createPiLoadedToolPolicyExtension(input: HeadlessRunInput, policy: Extract<PiHeadlessToolPolicy, { mode: 'allow-list' }>): Record<string, unknown> {
   return {
     path: PI_TOOL_POLICY_EXTENSION_PATH,
     resolvedPath: PI_TOOL_POLICY_EXTENSION_PATH,
@@ -705,4 +757,93 @@ function normalizePiToolName(tool: string): string {
   const compact = tool.trim();
   const builtin = PI_TOOL_NAME_ALIASES[compact] ?? PI_TOOL_NAME_ALIASES[compact.toLowerCase()];
   return builtin ?? compact;
+}
+
+function buildPiCustomTools(
+  input: HeadlessRunInput,
+  policy: Extract<PiHeadlessToolPolicy, { mode: 'allow-list' }>,
+  sdk: PiCodingAgentSdkModule,
+): unknown[] {
+  return (input.customTools ?? []).map((tool) => {
+    const definition: PiCustomToolDefinition = {
+      name: tool.name,
+      label: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema,
+      execute: async (toolCallId: unknown, params: unknown) => {
+        const args = isRecord(params) ? params : {};
+        const denial = await evaluatePiToolCallPolicy(input, policy, {
+          toolName: tool.name,
+          toolCallId: typeof toolCallId === 'string' ? toolCallId : undefined,
+          input: args,
+        });
+        if (denial?.block) {
+          return piToolDeniedResult(denial.reason ?? `Tool ${tool.name} was denied.`);
+        }
+        return headlessCustomToolResultToPiResult(await tool.handler(args));
+      },
+    };
+
+    return typeof sdk.defineTool === 'function'
+      ? sdk.defineTool(definition)
+      : definition;
+  });
+}
+
+function headlessCustomToolResultToPiResult(result: HeadlessCustomToolResult): Record<string, unknown> {
+  return {
+    content: normalizePiToolResultContent(result.content),
+    details: {
+      ...(result.details ?? {}),
+      ...(result.isError ? { isError: true } : {}),
+    },
+  };
+}
+
+function piToolDeniedResult(reason: string): Record<string, unknown> {
+  return {
+    content: [{ type: 'text', text: reason }],
+    details: {
+      isError: true,
+      denied: true,
+    },
+  };
+}
+
+function normalizePiToolResultContent(content: HeadlessCustomToolContent[]): HeadlessCustomToolContent[] {
+  if (content.length === 0) {
+    return [{ type: 'text', text: '' }];
+  }
+  return content.map((entry) => ({
+    ...entry,
+    type: typeof entry.type === 'string' && entry.type ? entry.type : 'text',
+    ...(typeof entry.text === 'string' ? { text: entry.text } : {}),
+  }));
+}
+
+function customToolNames(tools: HeadlessCustomTool[] | undefined): string[] {
+  return (tools ?? []).map((tool) => tool.name);
+}
+
+const piToolPolicyDecisionCache = new WeakMap<HeadlessRunInput, Map<string, PiToolCallEventResultLike>>();
+
+function getPiToolPolicyCache(input: HeadlessRunInput): Map<string, PiToolCallEventResultLike> {
+  let cache = piToolPolicyDecisionCache.get(input);
+  if (!cache) {
+    cache = new Map();
+    piToolPolicyDecisionCache.set(input, cache);
+  }
+  return cache;
+}
+
+function piToolPolicyCacheKey(event: PiToolCallEventLike): string | undefined {
+  if (typeof event.toolCallId === 'string' && event.toolCallId) {
+    return `id:${event.toolCallId}`;
+  }
+  if (typeof event.toolName !== 'string' || !event.toolName) return undefined;
+  try {
+    return `shape:${event.toolName}:${JSON.stringify(event.input ?? {})}`;
+  } catch {
+    return undefined;
+  }
 }
