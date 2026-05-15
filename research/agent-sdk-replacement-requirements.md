@@ -292,6 +292,7 @@ Local benchmark adapter status:
 - It maps AnthroClaw `HeadlessRunInput.sessionId` to OpenCode `session.prompt({ path: { id } })` and creates a session through `session.create()` when no id is present.
 - It emits a minimal benchmark `RuntimeRunHandle` with normalized text and completion events.
 - It maps interrupts to OpenCode `session.abort()` and checkpoint rewind calls to `session.revert()` when the client supports that API.
+- Draft PR #60 adds OpenCode to the shared runtime acceptance contract. Current contract status is 6 pass, 0 partial, 4 fail: OpenCode passes headless text, session continuation, minimal event streaming, interrupt, timeout abort, and checkpoint rewind shape; it fails AnthroClaw permission policy, custom tools, external MCP proxying, and Gateway active-run integration.
 
 Fit to AnthroClaw:
 
@@ -341,6 +342,11 @@ What it provides:
 - compaction and retry behavior
 - provider layer with subscription OAuth and API-key providers
 - ChatGPT Plus/Pro, GitHub Copilot, and Claude Pro/Max auth support, though Pi docs now note Claude subscription harness use is billed from extra usage rather than plan limits
+
+Local spike adapter status:
+
+- Draft PRs #45-#58 build Pi from optional headless prompt into an opt-in Gateway runtime path with streamed `RuntimeEvent` values, AnthroClaw permission broker integration, custom local tools, external MCP proxying, active-run interrupts, and checkpoint-control alias preservation.
+- Draft PR #60 adds Pi to the shared runtime acceptance contract. Current contract status is 9 pass, 1 partial, 0 fail: Pi passes every required scenario except true provider-backed checkpoint/file rewind, which remains explicit unsupported-runtime behavior.
 
 Fit to AnthroClaw:
 
@@ -816,16 +822,16 @@ Minimum tests before a runtime can replace Claude SDK:
 
 ## Recommended next decision
 
-Run OpenCode and Pi spikes in parallel after Phase 0 runtime isolation.
+The Phase 0 boundary and both Pi/OpenCode spikes now have enough code-level evidence to stop treating this as a README comparison.
 
 Use this tie-breaker:
 
-- choose **OpenCode** if the AnthroClaw team wants fastest open-source Claude Code-like parity and accepts wrapping/forking another full server;
-- choose **Pi** if the AnthroClaw team wants maximum control and is willing to rebuild missing harness features;
+- choose **Pi** if the AnthroClaw team wants maximum control and accepts closing the remaining checkpoint/file rewind gap;
+- choose **OpenCode** only if its Gateway benchmark can close AnthroClaw permission policy, custom tools, external MCP proxying, and active-run integration with less complexity than Pi rewind;
 - choose **Copilot SDK** only if GitHub subscription/runtime dependency is acceptable as a product bet;
 - choose **OpenAI Agents JS** if the strategic priority is a clean AnthroClaw-owned SDK architecture over fastest migration.
 
-My current preference: **Phase 0 runtime boundary, then Pi + OpenCode spikes**. Pi is the cleaner long-term core; OpenCode is the stronger parity benchmark. The final choice should be made after measuring event parity, permission parity, and session-resume behavior against the acceptance tests above.
+My current preference: **continue Pi-first**. Pi is the cleaner long-term core and now has better AnthroClaw-owned control-plane parity in this codebase. OpenCode remains the stronger parity benchmark and should be kept honest through the shared runtime acceptance harness.
 
 ## Source notes
 
