@@ -6,6 +6,7 @@ import { getOverlayPath, loadGlobalConfigWithOverlay } from '../config/overlay.j
 import type { RuntimeEvent } from '../runtime/events.js';
 import type { HeadlessRunInput, HeadlessRuntime } from '../runtime/headless.js';
 import { resolveHeadlessRuntime } from '../runtime/headless-registry.js';
+import { DEFAULT_PI_MODEL_ID } from '../runtime/pi-headless.js';
 import type { RuntimeRunHandle } from '../runtime/types.js';
 
 const SMOKE_FILE = 'anthroclaw-pi-smoke.txt';
@@ -86,7 +87,7 @@ export async function runPiWorkspaceSmokeCli(
   const workspace = deps.makeWorkspace?.() ?? mkdtempSync(join(tmpdir(), 'anthroclaw-pi-workspace-smoke-'));
   let shouldRemoveWorkspace = !args.keepWorkspace;
   try {
-    const model = args.model ?? loadConfiguredModel(args, deps.loadConfig);
+    const model = args.model ?? loadConfiguredModel(args, deps.loadConfig) ?? DEFAULT_PI_MODEL_ID;
     const runtime = deps.resolveRuntime?.() ?? resolveHeadlessRuntime('pi');
     const result = await runPiWorkspaceSmoke({
       runtime,
@@ -311,7 +312,7 @@ function usage(): string {
     'Options:',
     '  --config <path>       optional config.yml path used only for default model lookup',
     '  --data <dir>          data directory for runtime overlay when --config is used (default: ./data)',
-    '  --model <model>       model override',
+    `  --model <model>       model override (default: ${DEFAULT_PI_MODEL_ID})`,
     '  --timeout-ms <ms>     positive integer timeout',
     '  --keep-workspace      keep the temporary smoke workspace for inspection',
     '  --allow-skip          exit 0 for missing optional Pi runtime/auth setup',

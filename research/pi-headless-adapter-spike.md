@@ -113,6 +113,8 @@ pnpm smoke:pi-auth -- --model anthropic/claude-sonnet-4-6 --json
 
 It checks that the optional Pi SDK package imports, the requested model exists in Pi's model registry, the provider has credentials configured through Pi auth storage or environment variables, and the requested model appears in Pi's available-model set. It does not print credential values.
 
+The Pi runtime now uses Pi's default `AuthStorage` and `ModelRegistry` when a model id is present and no explicit registry was injected. AnthroClaw's legacy Claude model ids are normalized for this path, so `claude-sonnet-4-6` resolves as `anthropic/claude-sonnet-4-6`. Other bare model names still need explicit `provider/model` form.
+
 ## Headless session metadata
 
 The Pi headless adapter now supports the minimum stateful contract:

@@ -1,8 +1,7 @@
 import 'dotenv/config';
-import { parsePiModelRef } from '../runtime/pi-headless.js';
+import { DEFAULT_PI_MODEL_ID, parsePiModelRef } from '../runtime/pi-headless.js';
 
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
-const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-6';
 
 interface PiAuthSmokeArgs {
   model: string;
@@ -198,7 +197,7 @@ export async function runPiAuthSmoke(
 
 export function parsePiAuthSmokeArgs(argv: string[]): PiAuthSmokeArgs {
   const args: PiAuthSmokeArgs = {
-    model: DEFAULT_MODEL,
+    model: DEFAULT_PI_MODEL_ID,
     allowSkip: false,
     json: false,
     help: false,
@@ -306,7 +305,7 @@ function usage(): string {
     'Usage: pnpm smoke:pi-auth -- [--json] [--allow-skip] [--model <provider/model>]',
     '',
     'Options:',
-    `  --model <provider/model>  Pi model to validate (default: ${DEFAULT_MODEL})`,
+    `  --model <provider/model>  Pi model to validate (default: ${DEFAULT_PI_MODEL_ID})`,
     '  --allow-skip              exit 0 for missing optional Pi runtime/auth setup',
     '  --json                    print structured smoke result',
   ].join('\n');
