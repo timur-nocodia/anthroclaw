@@ -77,6 +77,29 @@ describe('runHeadlessReview', () => {
     expect(mockedQuery).not.toHaveBeenCalled();
   });
 
+  it('can explicitly select the experimental Pi runtime with injected options', async () => {
+    const session = {
+      prompt: vi.fn(async () => undefined),
+      subscribe: vi.fn((listener: (event: unknown) => void) => {
+        listener({ type: 'assistant_text_delta', delta: 'pi-output' });
+        return vi.fn();
+      }),
+      dispose: vi.fn(),
+    };
+    const createAgentSession = vi.fn(async () => ({ session }));
+
+    await expect(runHeadlessReview({
+      prompt: 'review this',
+      runtime: 'pi',
+      runtimeOptions: {
+        pi: { createAgentSession },
+      },
+    })).resolves.toBe('pi-output');
+
+    expect(mockedQuery).not.toHaveBeenCalled();
+    expect(createAgentSession).toHaveBeenCalledTimes(1);
+  });
+
   it('inherits safe runtime defaults but never inherits tool access', async () => {
     const events = (async function* () {
       yield { type: 'result', result: 'review-json' };

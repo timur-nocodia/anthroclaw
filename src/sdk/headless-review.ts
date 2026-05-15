@@ -1,8 +1,13 @@
-import { claudeAgentHeadlessRuntime } from '../runtime/claude-agent-sdk.js';
-import type { HeadlessRunInput, HeadlessRuntime } from '../runtime/headless.js';
+import type { HeadlessRunInput } from '../runtime/headless.js';
+import {
+  resolveHeadlessRuntime,
+  type HeadlessRuntimeResolverOptions,
+  type HeadlessRuntimeSelection,
+} from '../runtime/headless-registry.js';
 
 export interface HeadlessReviewOptions extends HeadlessRunInput {
-  runtime?: HeadlessRuntime;
+  runtime?: HeadlessRuntimeSelection;
+  runtimeOptions?: HeadlessRuntimeResolverOptions;
 }
 
 /**
@@ -10,6 +15,6 @@ export interface HeadlessReviewOptions extends HeadlessRunInput {
  * headless runtime.
  */
 export async function runHeadlessReview(opts: HeadlessReviewOptions): Promise<string> {
-  const { runtime, ...input } = opts;
-  return (runtime ?? claudeAgentHeadlessRuntime).runText(input);
+  const { runtime, runtimeOptions, ...input } = opts;
+  return resolveHeadlessRuntime(runtime, runtimeOptions).runText(input);
 }

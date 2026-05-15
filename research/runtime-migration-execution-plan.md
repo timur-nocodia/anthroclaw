@@ -64,7 +64,7 @@ Definition of done:
 
 ### PR 4: Pi spike, non-production path
 
-Status: started as draft PR #45 with an optional `HeadlessRuntime` adapter shell. Full Pi run/tool/session proof points remain open.
+Status: draft PR #45 added an optional `HeadlessRuntime` adapter shell. Draft PR #46 adds explicit `runtime: 'pi'` selection for headless probes. Full Pi run/tool/session proof points remain open.
 
 Goal:
 
