@@ -90,11 +90,22 @@ The Pi headless adapter now supports the minimum stateful contract:
 - `runHeadlessReview()` remains text-only for current callers.
 - `runHeadlessReviewResult()` exposes `{ text, sessionId }` for smoke probes and future session mapping work.
 
+## Model and tool policy bridge
+
+The Pi headless adapter now has a narrow model/tool bridge:
+
+- model ids in `provider/model` or `provider:model` format can resolve through a Pi `ModelRegistry`-like `{ find(provider, modelId) }` object;
+- callers can still inject a custom `resolveModel()` for package-specific behavior;
+- tools are denied by default with `noTools: "all"` and `tools: []`, because Pi enables built-in tools when no tool option is provided;
+- `runtimeDefaults.allowedTools` is intentionally ignored by Pi unless a Pi-specific `toolPolicy` is explicitly provided;
+- explicit `toolPolicy: { mode: "allow-list", tools: [...] }` maps AnthroClaw/Claude-style tool names such as `Read` and `Bash` to Pi names such as `read` and `bash`.
+
+This proves the shape of the boundary. It does not yet run Pi tools through AnthroClaw's production permission broker.
+
 ## Next proof points
 
 Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
-- a model resolver wired through Pi `ModelRegistry`;
 - production session continuation mapping from AnthroClaw session keys to Pi sessions;
 - tool policy experiments for read/bash/edit/write;
 - model-visible denial feedback for blocked tools;

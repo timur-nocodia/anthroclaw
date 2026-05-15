@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createPiHeadlessRuntime,
+  normalizePiToolNames,
+  parsePiModelRef,
   PiHeadlessRuntime,
+  resolvePiModelFromRegistry,
   type PiAgentSessionLike,
   type PiCreateAgentSession,
 } from '../pi-headless.js';
@@ -45,6 +48,7 @@ describe('PiHeadlessRuntime', () => {
     expect(createAgentSession).toHaveBeenCalledWith({
       agentDir: '/tmp/pi-agent',
       cwd: '/workspace',
+      noTools: 'all',
       tools: [],
     });
     expect(session.prompt).toHaveBeenCalledWith('say hello');
@@ -68,6 +72,76 @@ describe('PiHeadlessRuntime', () => {
     })).resolves.toBe('done');
 
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({ model }));
+  });
+
+  it('can resolve model ids through a Pi ModelRegistry-like object', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session })) satisfies PiCreateAgentSession;
+    const model = { provider: 'anthropic', id: 'claude-sonnet-4-5' };
+    const modelRegistry = {
+      find: vi.fn((provider: string, modelId: string) =>
+        provider === 'anthropic' && modelId === 'claude-sonnet-4-5'
+          ? model
+          : undefined
+      ),
+    };
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession,
+      modelRegistry,
+    });
+
+    await expect(runtime.runText({
+      prompt: 'p',
+      model: 'anthropic/claude-sonnet-4-5',
+    })).resolves.toBe('done');
+
+    expect(modelRegistry.find).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-5');
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      model,
+      modelRegistry,
+    }));
+  });
+
+  it('keeps Pi headless tools denied by default even if runtime defaults mention tools', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session })) satisfies PiCreateAgentSession;
+    const runtime = new PiHeadlessRuntime({ createAgentSession });
+
+    await runtime.runText({
+      prompt: 'p',
+      runtimeDefaults: {
+        allowedTools: ['Read', 'Bash'],
+      },
+    });
+
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      noTools: 'all',
+      tools: [],
+    }));
+  });
+
+  it('maps explicit AnthroClaw tool policy into Pi tool names', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session })) satisfies PiCreateAgentSession;
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession,
+      toolPolicy: { mode: 'allow-list', tools: ['Read', 'Bash', 'Edit', 'Read'] },
+    });
+
+    await runtime.runText({ prompt: 'p' });
+
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      tools: ['read', 'bash', 'edit'],
+    }));
+    const firstOptions = (createAgentSession as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(firstOptions).not.toHaveProperty('noTools');
   });
 
   it('returns a session id from Pi run metadata', async () => {
@@ -175,5 +249,26 @@ describe('PiHeadlessRuntime', () => {
 
     await expect(runtime.runText({ prompt: 'p' }))
       .rejects.toThrow(/@earendil-works\/pi-coding-agent.*module not found/);
+  });
+
+  it('parses Pi model ids and normalizes tool aliases', () => {
+    expect(parsePiModelRef('openai/gpt-5-mini')).toEqual({
+      provider: 'openai',
+      modelId: 'gpt-5-mini',
+    });
+    expect(parsePiModelRef('anthropic:claude-sonnet-4-5')).toEqual({
+      provider: 'anthropic',
+      modelId: 'claude-sonnet-4-5',
+    });
+    expect(() => parsePiModelRef('gpt-5-mini')).toThrow(/provider\/model/);
+
+    expect(normalizePiToolNames(['Read', 'Bash', 'Glob', 'read', 'custom_tool']))
+      .toEqual(['read', 'bash', 'find', 'custom_tool']);
+  });
+
+  it('throws clear errors for missing registry models', () => {
+    expect(() => resolvePiModelFromRegistry('openai/gpt-5-mini', {
+      find: () => undefined,
+    })).toThrow(/could not find model openai\/gpt-5-mini/);
   });
 });

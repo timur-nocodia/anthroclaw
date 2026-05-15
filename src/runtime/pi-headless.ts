@@ -30,11 +30,30 @@ export interface PiCodingAgentSdkModule {
 
 export type PiSdkLoader = () => Promise<PiCodingAgentSdkModule>;
 
+export interface PiModelRegistryLike {
+  find(provider: string, modelId: string): unknown | undefined;
+}
+
+export interface PiModelRef {
+  provider: string;
+  modelId: string;
+}
+
+export type PiModelRegistryProvider =
+  | PiModelRegistryLike
+  | ((input: HeadlessRunInput, sdk: PiCodingAgentSdkModule) => PiModelRegistryLike | Promise<PiModelRegistryLike>);
+
+export type PiHeadlessToolPolicy =
+  | { mode: 'deny' }
+  | { mode: 'allow-list'; tools: string[] };
+
 export interface PiHeadlessRuntimeOptions {
   createAgentSession?: PiCreateAgentSession;
   importPiCodingAgent?: PiSdkLoader;
   createOptions?: Record<string, unknown> | ((input: HeadlessRunInput) => Record<string, unknown> | Promise<Record<string, unknown>>);
+  modelRegistry?: PiModelRegistryProvider;
   resolveModel?: (modelId: string, sdk: PiCodingAgentSdkModule) => unknown | Promise<unknown>;
+  toolPolicy?: PiHeadlessToolPolicy | ((input: HeadlessRunInput) => PiHeadlessToolPolicy | Promise<PiHeadlessToolPolicy>);
   timeoutMs?: number;
 }
 
@@ -126,7 +145,7 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
     const options: Record<string, unknown> = {
       ...configured,
       cwd: input.cwd ?? input.runtimeDefaults?.cwd ?? configured.cwd ?? process.cwd(),
-      tools: [],
+      ...(await this.buildToolOptions(input)),
     };
     const sessionId = input.sessionId ?? configured.sessionId;
     if (typeof sessionId === 'string' && sessionId) {
@@ -136,14 +155,86 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
     const modelId = input.model ?? input.runtimeDefaults?.model;
     if (modelId && this.options.resolveModel) {
       options.model = await this.options.resolveModel(modelId, sdk);
+    } else if (modelId) {
+      const registry = await this.resolveModelRegistry(input, sdk, configured);
+      if (registry) {
+        options.modelRegistry = registry;
+        options.model = resolvePiModelFromRegistry(modelId, registry);
+      }
     }
 
     return options;
+  }
+
+  private async resolveModelRegistry(
+    input: HeadlessRunInput,
+    sdk: PiCodingAgentSdkModule,
+    configured: Record<string, unknown>,
+  ): Promise<PiModelRegistryLike | undefined> {
+    if (isPiModelRegistry(configured.modelRegistry)) return configured.modelRegistry;
+    if (!this.options.modelRegistry) return undefined;
+    return typeof this.options.modelRegistry === 'function'
+      ? await this.options.modelRegistry(input, sdk)
+      : this.options.modelRegistry;
+  }
+
+  private async buildToolOptions(input: HeadlessRunInput): Promise<Record<string, unknown>> {
+    const policy = typeof this.options.toolPolicy === 'function'
+      ? await this.options.toolPolicy(input)
+      : (this.options.toolPolicy ?? { mode: 'deny' });
+
+    if (policy.mode === 'deny') {
+      return {
+        noTools: 'all',
+        tools: [],
+      };
+    }
+
+    return {
+      tools: normalizePiToolNames(policy.tools),
+    };
   }
 }
 
 export function createPiHeadlessRuntime(options: PiHeadlessRuntimeOptions = {}): HeadlessRuntime {
   return new PiHeadlessRuntime(options);
+}
+
+export function parsePiModelRef(modelId: string): PiModelRef {
+  const trimmed = modelId.trim();
+  const slashIndex = trimmed.indexOf('/');
+  const colonIndex = trimmed.indexOf(':');
+  const separatorIndex = slashIndex >= 0
+    ? slashIndex
+    : colonIndex;
+
+  if (separatorIndex <= 0 || separatorIndex >= trimmed.length - 1) {
+    throw new Error(`Pi model id must be formatted as provider/model or provider:model: ${modelId}`);
+  }
+
+  return {
+    provider: trimmed.slice(0, separatorIndex),
+    modelId: trimmed.slice(separatorIndex + 1),
+  };
+}
+
+export function resolvePiModelFromRegistry(modelId: string, registry: PiModelRegistryLike): unknown {
+  const ref = parsePiModelRef(modelId);
+  const model = registry.find(ref.provider, ref.modelId);
+  if (!model) {
+    throw new Error(`Pi model registry could not find model ${ref.provider}/${ref.modelId}`);
+  }
+  return model;
+}
+
+export function normalizePiToolNames(tools: string[]): string[] {
+  const normalized = tools.map((tool) => {
+    const compact = tool.trim();
+    const builtin = PI_TOOL_NAME_ALIASES[compact] ?? PI_TOOL_NAME_ALIASES[compact.toLowerCase()];
+    return builtin ?? compact;
+  }).filter((tool) => tool.length > 0);
+
+  return Array.from(new Set(normalized));
 }
 
 function extractPiTextDelta(event: unknown): string | undefined {
@@ -203,3 +294,27 @@ async function importPiCodingAgent(): Promise<PiCodingAgentSdkModule> {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
+
+function isPiModelRegistry(value: unknown): value is PiModelRegistryLike {
+  return isRecord(value) && typeof value.find === 'function';
+}
+
+const PI_TOOL_NAME_ALIASES: Record<string, string> = {
+  Bash: 'bash',
+  bash: 'bash',
+  Read: 'read',
+  read: 'read',
+  Edit: 'edit',
+  edit: 'edit',
+  Write: 'write',
+  write: 'write',
+  Grep: 'grep',
+  grep: 'grep',
+  Glob: 'find',
+  glob: 'find',
+  Find: 'find',
+  find: 'find',
+  LS: 'ls',
+  Ls: 'ls',
+  ls: 'ls',
+};
