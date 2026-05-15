@@ -350,6 +350,7 @@ Local spike adapter status:
 - Draft PR #61 adds Pi checkpoint/file rewind through AnthroClaw-owned workspace snapshots for explicit-cwd Gateway runs. Current contract status is 10 pass, 0 partial, 0 fail.
 - Draft PR #62 adds `pnpm smoke:pi-workspace`, an opt-in real Pi workspace edit + dry-run + restore probe for environments with the optional Pi runtime and auth configured.
 - Draft PR #63 adds `pnpm smoke:pi-gateway`, an opt-in Gateway-level Pi channel dispatch smoke probe that exercises AnthroClaw approval routing before verifying a workspace edit.
+- Draft PR #64 adds `pnpm smoke:pi-all`, a sequential aggregate smoke gate that runs both Pi probes and returns one `passed` / `failed` / `skipped` JSON verdict for Pi-authenticated environments.
 
 Fit to AnthroClaw:
 
