@@ -6,6 +6,12 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-05-15
+
+### Changed
+- fix(sdk): drop --allow-dangerously-skip-permissions when running as root (#39) (f4875df)
+
+
 ## [1.1.0] - 2026-05-15
 
 ### Changed
