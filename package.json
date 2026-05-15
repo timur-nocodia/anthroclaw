@@ -69,5 +69,8 @@
       "esbuild",
       "ssh2"
     ]
+  },
+  "optionalDependencies": {
+    "@earendil-works/pi-coding-agent": "0.74.0"
   }
 }
