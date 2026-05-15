@@ -99,14 +99,15 @@ The Pi headless adapter now has a narrow model/tool bridge:
 - tools are denied by default with `noTools: "all"` and `tools: []`, because Pi enables built-in tools when no tool option is provided;
 - `runtimeDefaults.allowedTools` is intentionally ignored by Pi unless a Pi-specific `toolPolicy` is explicitly provided;
 - explicit `toolPolicy: { mode: "allow-list", tools: [...] }` maps AnthroClaw/Claude-style tool names such as `Read` and `Bash` to Pi names such as `read` and `bash`.
+- explicit `toolPolicy.canUseTool` installs a Pi `tool_call` extension that returns `{ block: true, reason }` for denied calls, preserving model-visible denial feedback instead of silently disabling the harness guard;
+- when Pi is loaded dynamically, the adapter creates a `DefaultResourceLoader` with an inline policy extension; when a caller provides a resource loader, the adapter wraps `getExtensions()` and appends the same policy extension.
 
-This proves the shape of the boundary. It does not yet run Pi tools through AnthroClaw's production permission broker.
+This proves the shape of the boundary and the Pi hook needed for blocked-tool feedback. It still does not run Pi tools through AnthroClaw's production permission broker.
 
 ## Next proof points
 
 Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
 - production session continuation mapping from AnthroClaw session keys to Pi sessions;
-- tool policy experiments for read/bash/edit/write;
-- model-visible denial feedback for blocked tools;
+- production permission-broker mapping for read/bash/edit/write approvals;
 - normalized event mapping for Gateway streaming UI.
