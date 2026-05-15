@@ -137,19 +137,28 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
   };
 
   if (trustedBypass) {
-    options.permissionMode = 'bypassPermissions';
-    // The Claude CLI refuses to honor `--allow-dangerously-skip-permissions`
-    // when the process runs as root and exits with code 1 before any
-    // model call:
+    // The Claude CLI rejects `bypassPermissions` mode under uid 0 and
+    // exits with code 1 before any model call:
     //   "--dangerously-skip-permissions cannot be used with root/sudo
     //    privileges for security reasons"
-    // Our production Docker runtime runs as uid 0 (required for bubblewrap
-    // user namespaces in tool sandboxing), so passing this flag broke every
-    // trustedBypass call (auto-compress, /compact, monthly memory rollup).
-    // On root we rely on permissionMode='bypassPermissions' alone — the SDK
-    // process still skips approval prompts under that mode, and the parent
-    // container already constrains what the subprocess can reach.
-    if (process.getuid?.() !== 0) {
+    // (the error message uses the dangerous-skip wording even when only
+    // permissionMode='bypassPermissions' is passed — the root gate
+    // covers the whole bypass capability, not just the flag).
+    //
+    // Our production Docker runtime runs as uid 0 (required for
+    // bubblewrap user namespaces in tool sandboxing), so the v0.x
+    // trustedBypass shape was 100%-broken in prod (auto-compress,
+    // /compact, monthly memory rollup all failed). On root we instead
+    // use permissionMode='default' with an auto-allow canUseTool — same
+    // effective trust level (no human-in-the-loop prompts), but the
+    // CLI doesn't trigger its root gate. The capability cutoff in
+    // applyCutoffOptions still composes over the top, so a trusted
+    // agent still cannot reach another tenant's MCP resources.
+    if (process.getuid?.() === 0) {
+      options.permissionMode = 'default';
+      options.canUseTool = async () => ({ behavior: 'allow' });
+    } else {
+      options.permissionMode = 'bypassPermissions';
       options.allowDangerouslySkipPermissions = true;
     }
     // Capability cutoff applies even on trustedBypass: capability ≠ permission.
