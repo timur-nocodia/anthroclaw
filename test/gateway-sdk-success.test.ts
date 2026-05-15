@@ -3,9 +3,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const { startupMock, queryMock } = vi.hoisted(() => ({
+const { startupMock, queryMock, piRunMock } = vi.hoisted(() => ({
   startupMock: vi.fn(),
   queryMock: vi.fn(),
+  piRunMock: vi.fn(),
 }));
 
 function createSdkStream(events: Array<Record<string, unknown>>) {
@@ -164,6 +165,14 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
   };
 });
 
+vi.mock('../src/runtime/pi-headless.js', () => ({
+  createPiHeadlessRuntime: () => ({
+    id: 'pi',
+    run: piRunMock,
+    runText: vi.fn(),
+  }),
+}));
+
 import { Gateway } from '../src/gateway.js';
 import { metrics } from '../src/metrics/collector.js';
 import type { GlobalConfig } from '../src/config/schema.js';
@@ -176,6 +185,17 @@ function minimalConfig(): GlobalConfig {
       embedding_provider: 'openai',
       embedding_model: 'text-embedding-3-small',
       debounce_ms: 0,
+    },
+  };
+}
+
+function piGatewayConfig(): GlobalConfig {
+  return {
+    ...minimalConfig(),
+    runtime: {
+      headless: {
+        provider: 'pi',
+      },
     },
   };
 }
@@ -223,6 +243,7 @@ describe('Gateway SDK success path', () => {
     metrics._reset();
     startupMock.mockReset();
     queryMock.mockReset();
+    piRunMock.mockReset();
     seenPrompts.length = 0;
 
     startupMock.mockImplementation(async (params?: { options?: unknown }) => {
@@ -320,6 +341,67 @@ pairing:
     await gw.stop();
   });
 
+  it('dispatch can use explicit Pi Gateway runtime without Claude SDK readiness', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRunMock.mockResolvedValueOnce({
+      text: 'Pi says hi',
+      sessionId: 'pi-session-1',
+    });
+    const botDir = join(agentsDir, 'pi-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual(['Pi says hi']);
+    expect(seenPrompts.some((prompt) =>
+      typeof prompt === 'string' && prompt.includes('[Test User]: hello sdk'),
+    )).toBe(false);
+    expect(piRunMock).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('[Test User]: hello sdk'),
+      model: 'claude-sonnet-4-6',
+      cwd: botDir,
+      purpose: 'gateway agent query',
+      toolDenyMessage: 'Tools disabled for Gateway Pi runtime spike.',
+    }));
+    expect(piRunMock.mock.calls[0]?.[0]).not.toHaveProperty('sessionId');
+    expect((await gw.listAgentSessions('pi-bot'))[0]).toMatchObject({
+      sessionId: 'pi-session-1',
+      provenance: expect.objectContaining({
+        source: 'channel',
+        status: 'succeeded',
+      }),
+    });
+
+    await gw.stop();
+  });
+
   it('injects per-chat operator context and honors reply_to_mode', async () => {
     const botDir = join(agentsDir, 'context-bot');
     mkdirSync(botDir);
@@ -406,6 +488,55 @@ routes:
 
     expect(textParts.join('')).toBe('Web SDK says hi');
     expect(doneSessionId).toBe('web-sdk-session-1');
+
+    await gw.stop();
+  });
+
+  it('dispatchWebUI can use explicit Pi Gateway runtime without Claude SDK readiness', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRunMock.mockResolvedValueOnce({
+      text: 'Pi web says hi',
+      sessionId: 'pi-web-session-1',
+    });
+    const botDir = join(agentsDir, 'web-pi-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const textParts: string[] = [];
+    let doneSessionId = '';
+
+    await gw.dispatchWebUI('web-pi-bot', 'hello pi web', undefined, {}, {
+      onText: (chunk) => textParts.push(chunk),
+      onToolCall: () => {},
+      onToolResult: () => {},
+      onDone: (sid, tokens) => {
+        doneSessionId = sid;
+        expect(tokens).toBe(0);
+      },
+      onError: (err) => {
+        throw err;
+      },
+    });
+
+    expect(textParts.join('')).toBe('Pi web says hi');
+    expect(doneSessionId).toBe('pi-web-session-1');
+    expect(seenPrompts.some((prompt) =>
+      typeof prompt === 'string' && prompt.includes('[web-user]: hello pi web'),
+    )).toBe(false);
+    expect(piRunMock).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('[web-user]: hello pi web'),
+      model: 'claude-sonnet-4-6',
+      cwd: botDir,
+      purpose: 'gateway web query',
+      toolDenyMessage: 'Tools disabled for Gateway Pi runtime spike.',
+    }));
 
     await gw.stop();
   });

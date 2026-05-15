@@ -161,6 +161,7 @@ import {
   withConfiguredHeadlessRuntime,
   type HeadlessReviewRuntimeConfig,
 } from './sdk/headless-runtime-config.js';
+import { resolveHeadlessRuntime } from './runtime/headless-registry.js';
 import { buildAllowedTools } from './sdk/permissions.js';
 import { LearningQueue, detectLearningTriggers, type LearningReviewJob } from './learning/queue.js';
 import { applyMemoryCandidateAction } from './learning/memory-applier.js';
@@ -1085,6 +1086,70 @@ export class Gateway {
 
   private getHeadlessReviewRuntimeOptions(): HeadlessReviewRuntimeConfig {
     return headlessRuntimeOptionsFromConfig(this.globalConfig);
+  }
+
+  private shouldUsePiGatewayRuntime(): boolean {
+    return this.globalConfig?.runtime?.headless.provider === 'pi';
+  }
+
+  private async runPiGatewayRuntime(
+    agent: Agent,
+    input: {
+      prompt: string;
+      sessionId?: string;
+      purpose: string;
+    },
+  ): Promise<{ text: string; sessionId?: string }> {
+    const configured = this.getHeadlessReviewRuntimeOptions();
+    if (configured.runtime !== 'pi') {
+      throw new Error('Pi Gateway runtime was requested without runtime.headless.provider=pi');
+    }
+
+    const runtime = resolveHeadlessRuntime(configured.runtime, configured.runtimeOptions);
+    const model = agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6';
+    const runInput = {
+      prompt: input.prompt,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      model,
+      cwd: agent.workspacePath,
+      runtimeDefaults: {
+        model,
+        cwd: agent.workspacePath,
+      },
+      purpose: input.purpose,
+      toolDenyMessage: 'Tools disabled for Gateway Pi runtime spike.',
+    };
+
+    return runtime.run
+      ? runtime.run(runInput)
+      : {
+          text: await runtime.runText(runInput),
+        };
+  }
+
+  private async assembleGatewayPrompt(
+    agent: Agent,
+    sessionKey: string,
+    prompt: string,
+    context: {
+      channel?: 'telegram' | 'whatsapp';
+      accountId?: string;
+      peerId?: string;
+      senderId?: string;
+      chatType?: 'dm' | 'group';
+      threadId?: string;
+    },
+  ): Promise<string> {
+    const assembleEntry = this.pluginRegistry.getContextEngine(agent.id);
+    const assembledPrompt = await tryPluginAssemble(
+      assembleEntry?.engine ?? null,
+      agent.id,
+      sessionKey,
+      prompt,
+      assembleEntry?.name ?? null,
+      context,
+    );
+    return assembledPrompt ?? prompt;
   }
 
   /**
@@ -3165,7 +3230,8 @@ export class Gateway {
     metrics.increment('messages_received');
     metrics.recordMessage();
 
-    if (!this.sdkReady) {
+    const usePiGatewayRuntime = this.shouldUsePiGatewayRuntime();
+    if (!this.sdkReady && !usePiGatewayRuntime) {
       const fallback = `Agent ${agentId} received: ${message}`;
       callbacks.onText(fallback);
       callbacks.onDone(sessionKey, 0);
@@ -3215,6 +3281,45 @@ export class Gateway {
     };
 
     try {
+      if (usePiGatewayRuntime) {
+        runId = randomUUID();
+        const model = agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6';
+        metrics.recordAgentRunStart({
+          runId,
+          agentId,
+          sessionKey,
+          sdkSessionId: existingSessionId,
+          source: 'web',
+          channel: context.channel ?? 'web',
+          peerId: 'web-user',
+          status: 'running',
+          model,
+        });
+        const result = await this.runPiGatewayRuntime(agent, {
+          prompt,
+          sessionId: existingSessionId,
+          purpose: 'gateway web query',
+        });
+        const text = result.text.trim();
+        newSessionId = result.sessionId ?? existingSessionId ?? '';
+        if (newSessionId) {
+          const isNewSession = !existingSessionId || existingSessionId !== newSessionId;
+          agent.setSessionId(sessionKey, newSessionId);
+          agent.setSessionId(`web:${agentId}:${newSessionId}`, newSessionId);
+          metrics.recordSessionEvent({
+            agentId,
+            sessionId: newSessionId,
+            sessionKey,
+            eventType: isNewSession ? 'created' : 'resumed',
+          });
+        }
+        if (text) callbacks.onText(text);
+        runUsage = { durationMs: Date.now() - queryStartMs };
+        finishRun('succeeded');
+        callbacks.onDone(newSessionId || sessionKey, 0);
+        return;
+      }
+
       const options = await this.buildUserQueryOptions(
         agent,
         existingSessionId,
@@ -5078,7 +5183,8 @@ export class Gateway {
       }
     }
 
-    if (!this.sdkReady) {
+    const usePiGatewayRuntime = this.shouldUsePiGatewayRuntime();
+    if (!this.sdkReady && !usePiGatewayRuntime) {
       // Fallback when SDK is not available
       return `Agent ${agent.id} received: ${msg.text}`;
     }
@@ -5121,6 +5227,82 @@ export class Gateway {
     const abort = new AbortController();
 
     try {
+      if (usePiGatewayRuntime) {
+        runId = randomUUID();
+        const model = agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6';
+        metrics.recordAgentRunStart({
+          runId,
+          agentId: agent.id,
+          sessionKey,
+          sdkSessionId: existingSessionId,
+          source,
+          channel: msg.channel,
+          accountId: msg.accountId,
+          peerId: msg.peerId,
+          threadId: msg.threadId,
+          messageId: msg.messageId,
+          routeDecisionId,
+          status: 'running',
+          model,
+        });
+        if (prefetchedForPrompt.length > 0) {
+          metrics.recordMemoryInfluenceEvent({
+            agentId: agent.id,
+            sessionKey,
+            runId,
+            sdkSessionId: existingSessionId,
+            source: 'prefetch',
+            query: prefetchKeywords.join(' '),
+            refs: memoryRefsFromSearchResults(prefetchedForPrompt),
+          });
+        }
+
+        prompt = await this.assembleGatewayPrompt(agent, sessionKey, prompt, {
+          channel: msg.channel,
+          accountId: msg.accountId,
+          peerId: msg.peerId,
+          senderId: msg.senderId,
+          chatType: msg.chatType,
+          threadId: msg.threadId,
+        });
+
+        const result = await this.runPiGatewayRuntime(agent, {
+          prompt,
+          sessionId: existingSessionId,
+          purpose: 'gateway agent query',
+        });
+        const responseText = result.text.trim();
+        observedSessionId = result.sessionId ?? existingSessionId;
+        if (observedSessionId) {
+          const isNewSession = !existingSessionId || existingSessionId !== observedSessionId;
+          agent.setSessionId(sessionKey, observedSessionId);
+          metrics.recordSessionEvent({
+            agentId: agent.id,
+            sessionId: observedSessionId,
+            sessionKey,
+            eventType: isNewSession ? 'created' : 'resumed',
+          });
+        }
+        runUsage = { durationMs: Date.now() - queryStartMs };
+
+        if (responseText.length > 0) {
+          void this.extractPostRunMemoryCandidates(agent, {
+            runId,
+            sessionKey,
+            sdkSessionId: observedSessionId,
+            channel: msg.channel,
+            peerHash: hashIdentifier(msg.peerId),
+            userText: msg.text || msg.transcript || '[media]',
+            assistantText: responseText,
+          });
+          finishRun('succeeded');
+          return responseText;
+        }
+
+        finishRun('succeeded');
+        return '';
+      }
+
       const options = await this.buildUserQueryOptions(
         agent,
         existingSessionId,
@@ -5162,25 +5344,14 @@ export class Gateway {
       // prompt (e.g. LCM injects compressed history context), use the
       // transformed version. Otherwise pass the original prompt through
       // unchanged. Failures fall back to the original prompt silently.
-      const assembleEntry = this.pluginRegistry.getContextEngine(agent.id);
-      const assembledPrompt = await tryPluginAssemble(
-        assembleEntry?.engine ?? null,
-        agent.id,
-        sessionKey,
-        prompt,
-        assembleEntry?.name ?? null,
-        {
-          channel: msg.channel,
-          accountId: msg.accountId,
-          peerId: msg.peerId,
-          senderId: msg.senderId,
-          chatType: msg.chatType,
-          threadId: msg.threadId,
-        },
-      );
-      if (assembledPrompt !== null) {
-        prompt = assembledPrompt;
-      }
+      prompt = await this.assembleGatewayPrompt(agent, sessionKey, prompt, {
+        channel: msg.channel,
+        accountId: msg.accountId,
+        peerId: msg.peerId,
+        senderId: msg.senderId,
+        chatType: msg.chatType,
+        threadId: msg.threadId,
+      });
 
       // Warm queries are always allowed now. The historical bypass for
       // manage_cron agents was unjustified and caused prod hangs — see
