@@ -6,6 +6,12 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-05-15
+
+### Changed
+- fix(sdk): swap bypassPermissions for default+auto-allow callback under root (#40) (0f318ff)
+
+
 ## [1.1.1] - 2026-05-15
 
 ### Changed
