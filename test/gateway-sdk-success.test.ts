@@ -604,6 +604,89 @@ pairing:
     await gw.stop();
   });
 
+  it('dispatch Pi RuntimeEvent path exposes AnthroClaw per-dispatch custom tools', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-custom-tool-session-1',
+        text: 'Tool bridge done',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-custom-tool-session-1',
+      },
+    ], 'pi-custom-tool-session-1');
+    const botDir = join(agentsDir, 'pi-tools-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+mcp_tools:
+  - send_message
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: Array<{ peerId: string; text: string; accountId?: string }> = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(peerId, text, opts) {
+        sent.push({ peerId, text, accountId: opts?.accountId });
+        return `msg-${sent.length}`;
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    piRunHandleMock.mockImplementationOnce(async (runInput: Record<string, unknown>) => {
+      const customTools = runInput.customTools as Array<{
+        name: string;
+        handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }> }>;
+      }>;
+      const toolPolicy = runInput.toolPolicy as { tools: string[] };
+      const sendMessage = customTools.find((tool) => tool.name === 'send_message');
+
+      expect(sendMessage).toBeTruthy();
+      expect(toolPolicy.tools).toContain('send_message');
+      await expect(sendMessage?.handler({
+        channel: 'telegram',
+        peer_id: 'peer-123',
+        text: 'side-channel send',
+      })).resolves.toEqual({
+        content: [{ type: 'text', text: 'Message sent. ID: msg-1' }],
+      });
+
+      return handle;
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual([
+      { peerId: 'peer-123', text: 'side-channel send', accountId: 'default' },
+      { peerId: 'peer-123', text: 'Tool bridge done', accountId: 'default' },
+    ]);
+    expect(handle.close).toHaveBeenCalledTimes(1);
+
+    await gw.stop();
+  });
+
   it('injects per-chat operator context and honors reply_to_mode', async () => {
     const botDir = join(agentsDir, 'context-bot');
     mkdirSync(botDir);

@@ -148,6 +148,143 @@ describe('PiHeadlessRuntime', () => {
     expect(firstOptions).not.toHaveProperty('noTools');
   });
 
+  it('passes headless custom tools through Pi defineTool and tool allow-list', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session })) satisfies PiCreateAgentSession;
+    const defineTool = vi.fn((definition) => ({ ...definition, defined: true }));
+    const handler = vi.fn(async () => ({
+      content: [{ type: 'text', text: 'memory result' }],
+    }));
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession,
+      importPiCodingAgent: async () => ({ defineTool }),
+      toolPolicy: { mode: 'allow-list', tools: ['Read'] },
+    });
+
+    await runtime.runText({
+      prompt: 'p',
+      customTools: [{
+        name: 'memory_search',
+        description: 'Search memory',
+        inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+        handler,
+      }],
+    });
+
+    const options = (createAgentSession as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(options.tools).toEqual(['read', 'memory_search']);
+    expect(options.customTools).toHaveLength(1);
+    expect(defineTool).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'memory_search',
+      label: 'memory_search',
+      description: 'Search memory',
+      parameters: { type: 'object', properties: { query: { type: 'string' } } },
+      execute: expect.any(Function),
+    }));
+
+    const defined = (options.customTools as Array<{ execute: (id: string, params: unknown) => Promise<unknown> }>)[0];
+    await expect(defined.execute('tool-1', { query: 'plans' })).resolves.toEqual({
+      content: [{ type: 'text', text: 'memory result' }],
+      details: {},
+    });
+    expect(handler).toHaveBeenCalledWith({ query: 'plans' });
+  });
+
+  it('rechecks custom tool policy inside Pi execute when no tool_call event was observed', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session })) satisfies PiCreateAgentSession;
+    const canUseTool = vi.fn(async () => ({ behavior: 'deny' as const, message: 'needs approval' }));
+    const handler = vi.fn(async () => ({
+      content: [{ type: 'text', text: 'should not run' }],
+    }));
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession,
+      createOptions: {
+        resourceLoader: {
+          getExtensions: vi.fn(() => ({ extensions: [], errors: [], runtime: {} })),
+        },
+      },
+      toolPolicy: {
+        mode: 'allow-list',
+        tools: ['memory_search'],
+        canUseTool,
+      },
+    });
+
+    await runtime.runText({
+      prompt: 'p',
+      customTools: [{
+        name: 'memory_search',
+        description: 'Search memory',
+        inputSchema: {},
+        handler,
+      }],
+    });
+
+    const options = (createAgentSession as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls[0]?.[0] as Record<string, unknown>;
+    const customTool = (options.customTools as Array<{ execute: (id: string, params: unknown) => Promise<unknown> }>)[0];
+    await expect(customTool.execute('tool-1', { query: 'plans' })).resolves.toEqual({
+      content: [{ type: 'text', text: 'needs approval' }],
+      details: {
+        isError: true,
+        denied: true,
+      },
+    });
+    expect(handler).not.toHaveBeenCalled();
+    expect(canUseTool).toHaveBeenCalledWith({
+      toolName: 'memory_search',
+      originalToolName: 'memory_search',
+      toolCallId: 'tool-1',
+      input: { query: 'plans' },
+    }, expect.objectContaining({ prompt: 'p' }));
+  });
+
+  it('wires systemPrompt through Pi DefaultResourceLoader override', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session })) satisfies PiCreateAgentSession;
+    const reload = vi.fn(async () => undefined);
+    const DefaultResourceLoader = vi.fn(function DefaultResourceLoader(this: PiResourceLoaderLike, options: Record<string, unknown>) {
+      this.getExtensions = vi.fn(() => ({ extensions: [], errors: [], runtime: {} }));
+      this.reload = reload;
+      Object.assign(this, { options });
+    });
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession,
+      importPiCodingAgent: async () => ({
+        DefaultResourceLoader: DefaultResourceLoader as unknown as new (options: Record<string, unknown>) => PiResourceLoaderLike,
+        getAgentDir: () => '/tmp/pi-agent',
+      }),
+    });
+
+    await runtime.runText({
+      prompt: 'p',
+      cwd: '/workspace',
+      systemPrompt: 'You are AnthroClaw.',
+    });
+
+    expect(DefaultResourceLoader).toHaveBeenCalledWith(expect.objectContaining({
+      cwd: '/workspace',
+      agentDir: '/tmp/pi-agent',
+      systemPromptOverride: expect.any(Function),
+    }));
+    const options = DefaultResourceLoader.mock.calls[0]?.[0] as { systemPromptOverride: () => string };
+    expect(options.systemPromptOverride()).toBe('You are AnthroClaw.');
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      resourceLoader: expect.any(Object),
+      noTools: 'all',
+      tools: [],
+    }));
+  });
+
   it('lets per-run tool policy override constructor-level Pi tool policy', async () => {
     const session = createSession([
       { type: 'assistant_text_delta', delta: 'done' },
