@@ -1,5 +1,5 @@
-import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type { InboundMessage } from '../channels/types.js';
+import type { RuntimeRunHandle } from '../runtime/types.js';
 
 type QueueMode = 'collect' | 'serial' | 'steer' | 'interrupt';
 
@@ -16,7 +16,7 @@ export interface ActiveQueryMetadata {
 }
 
 interface ActiveQuery {
-  query: Query;
+  query: RuntimeRunHandle;
   abortController: AbortController;
   registeredAt: number;
   lastActivityAt: number;
@@ -46,7 +46,7 @@ export class QueueManager {
   private pending = new Map<string, InboundMessage[]>();
 
   /** Register a running query for a session key */
-  register(sessionKey: string, q: Query, abort: AbortController, metadata: ActiveQueryMetadata = {}): void {
+  register(sessionKey: string, q: RuntimeRunHandle, abort: AbortController, metadata: ActiveQueryMetadata = {}): void {
     const now = Date.now();
     this.active.set(sessionKey, {
       query: q,

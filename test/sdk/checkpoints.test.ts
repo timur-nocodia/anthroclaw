@@ -57,6 +57,22 @@ describe('SdkCheckpointRegistry', () => {
     });
   });
 
+  it('returns a structured error when the runtime handle cannot rewind files', async () => {
+    const registry = new SdkCheckpointRegistry();
+
+    registry.register(['session-1'], { interrupt: vi.fn(), close: vi.fn() } as any);
+
+    await expect(registry.rewindFiles({
+      sessionId: 'session-1',
+      userMessageId: 'msg-1',
+    })).resolves.toMatchObject({
+      sessionId: 'session-1',
+      userMessageId: 'msg-1',
+      canRewind: false,
+      error: 'The active runtime handle does not support file rewind.',
+    });
+  });
+
   it('expires old handles', async () => {
     let now = 1000;
     const registry = new SdkCheckpointRegistry({
