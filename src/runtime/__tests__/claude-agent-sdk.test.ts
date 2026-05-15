@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildClaudeRuntimeOptions,
   claudeAgentSdkRuntime,
+  ClaudeRuntimeRunHandle,
   createClaudeSdkMcpServer,
   initializeClaudeAgentRuntime,
+  runClaudeAgentHandle,
   runClaudeAgentQuery,
   startClaudeAgentRuntime,
 } from '../claude-agent-sdk.js';
@@ -58,6 +60,59 @@ describe('claude-agent-sdk runtime adapter', () => {
 
     expect(runClaudeAgentQuery({ prompt: 'hello', options: options as any })).toBe(stream);
     expect(mockedQuery).toHaveBeenCalledWith({ prompt: 'hello', options });
+  });
+
+  it('creates runtime run handles over Claude Query objects', async () => {
+    const events = (async function* () {
+      yield { type: 'assistant', message: { content: [] } };
+      yield { type: 'result', result: 'done' };
+    })();
+    const queryHandle = {
+      [Symbol.asyncIterator]: () => events,
+      interrupt: vi.fn(async () => undefined),
+      close: vi.fn(),
+      rewindFiles: vi.fn(async () => ({ canRewind: true, filesChanged: ['a.ts'] })),
+    };
+    mockedQuery.mockReturnValueOnce(queryHandle);
+
+    const handle = runClaudeAgentHandle({ prompt: 'hello', options: { model: 'x' } as any });
+    expect(handle).toBeInstanceOf(ClaudeRuntimeRunHandle);
+    expect(handle.query).toBe(queryHandle);
+
+    const seen: unknown[] = [];
+    for await (const event of handle) {
+      seen.push(event);
+    }
+    expect(seen).toEqual([
+      { type: 'assistant', message: { content: [] } },
+      { type: 'result', result: 'done' },
+    ]);
+
+    await expect(handle.interrupt()).resolves.toBeUndefined();
+    expect(queryHandle.interrupt).toHaveBeenCalledTimes(1);
+
+    await expect(handle.rewindFiles('msg-1', { dryRun: true })).resolves.toEqual({
+      canRewind: true,
+      filesChanged: ['a.ts'],
+    });
+    expect(queryHandle.rewindFiles).toHaveBeenCalledWith('msg-1', { dryRun: true });
+
+    handle.close();
+    expect(queryHandle.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes run() on the adapter for new runtime-handle callers', () => {
+    const queryHandle = {
+      [Symbol.asyncIterator]: () => (async function* () {})(),
+      interrupt: vi.fn(async () => undefined),
+      close: vi.fn(),
+      rewindFiles: vi.fn(),
+    };
+    mockedQuery.mockReturnValueOnce(queryHandle);
+
+    const handle = claudeAgentSdkRuntime.run?.({ prompt: 'hello', options: { model: 'x' } as any });
+    expect(handle).toBeInstanceOf(ClaudeRuntimeRunHandle);
+    expect(mockedQuery).toHaveBeenCalledWith({ prompt: 'hello', options: { model: 'x' } });
   });
 
   it('delegates startup calls with and without options', async () => {

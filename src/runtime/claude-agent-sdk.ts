@@ -15,7 +15,15 @@ import type {
   WarmQuery,
 } from '@anthropic-ai/claude-agent-sdk';
 import { buildSdkOptions, type BuildSdkOptionsParams } from '../sdk/options.js';
-import type { RuntimeAdapter, RuntimeMcpServerInput, RuntimeRunInput, RuntimeStartupInput } from './types.js';
+import type {
+  RuntimeAdapter,
+  RuntimeMcpServerInput,
+  RuntimeRewindFilesOptions,
+  RuntimeRewindFilesResult,
+  RuntimeRunHandle,
+  RuntimeRunInput,
+  RuntimeStartupInput,
+} from './types.js';
 
 export type ClaudeAgentDefinition = AgentDefinition;
 export type ClaudeAgentMcpServerSpec = AgentMcpServerSpec;
@@ -37,6 +45,33 @@ export function runClaudeAgentQuery(input: RuntimeRunInput<Options>): Query {
     prompt: input.prompt as string | AsyncIterable<SDKUserMessage>,
     options: input.options,
   }) as Query;
+}
+
+export class ClaudeRuntimeRunHandle implements RuntimeRunHandle<unknown> {
+  constructor(readonly query: Query) {}
+
+  [Symbol.asyncIterator](): AsyncIterator<unknown> {
+    return this.query[Symbol.asyncIterator]() as AsyncIterator<unknown>;
+  }
+
+  async interrupt(): Promise<void> {
+    await this.query.interrupt();
+  }
+
+  close(): void {
+    this.query.close?.();
+  }
+
+  async rewindFiles(
+    userMessageId: string,
+    options?: RuntimeRewindFilesOptions,
+  ): Promise<RuntimeRewindFilesResult> {
+    return this.query.rewindFiles(userMessageId, options);
+  }
+}
+
+export function runClaudeAgentHandle(input: RuntimeRunInput<Options>): ClaudeRuntimeRunHandle {
+  return new ClaudeRuntimeRunHandle(runClaudeAgentQuery(input));
 }
 
 export async function startClaudeAgentRuntime(input: RuntimeStartupInput<Options>): Promise<WarmQuery> {
@@ -70,6 +105,7 @@ export const claudeAgentSdkRuntime: RuntimeAdapter<Options, Query, WarmQuery, Mc
   },
   buildOptions: buildClaudeRuntimeOptions,
   query: runClaudeAgentQuery,
+  run: runClaudeAgentHandle,
   startup: startClaudeAgentRuntime,
   createMcpServer: createClaudeSdkMcpServer,
 };
