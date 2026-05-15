@@ -54,7 +54,8 @@ OpenCode is useful as a benchmark and may be cleaner for checkpoint rewind becau
 
 ## Next implementation choices
 
-1. Run `pnpm smoke:pi-all -- --json` in an environment with Pi provider auth configured.
-2. Treat a real aggregate smoke pass as the Pi-first decision checkpoint for workspace rewind, channel dispatch, approval routing, and workspace mutation.
-3. Build an OpenCode Gateway benchmark only if we want hard evidence that its server boundary can carry AnthroClaw permissions and tools cleanly.
-4. Keep Claude as the production baseline until the selected candidate is green across the contract and has enough end-to-end smoke evidence.
+1. Run `pnpm smoke:pi-auth -- --model anthropic/claude-sonnet-4-6 --json` in an environment with Pi provider auth configured.
+2. Run `pnpm smoke:pi-all -- --json` after the auth preflight passes.
+3. Treat a real aggregate smoke pass as the Pi-first decision checkpoint for workspace rewind, channel dispatch, approval routing, and workspace mutation.
+4. Build an OpenCode Gateway benchmark only if we want hard evidence that its server boundary can carry AnthroClaw permissions and tools cleanly.
+5. Keep Claude as the production baseline until the selected candidate is green across the contract and has enough end-to-end smoke evidence.

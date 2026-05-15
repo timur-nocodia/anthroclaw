@@ -103,7 +103,15 @@ For a decision-ready local run, use the aggregate smoke gate:
 pnpm smoke:pi-all -- --json --allow-skip
 ```
 
-It runs the workspace probe first and the Gateway probe second, forwarding `--model`, `--timeout-ms`, `--keep-workspace`, and `--allow-skip` to both. The result is a single JSON envelope with top-level `status` and per-probe results. In a Pi-authenticated environment, run it without `--allow-skip`; any missing optional package/auth issue or runtime failure is then a hard failure.
+It runs the auth/model preflight first, then the workspace probe, then the Gateway probe. `--model` and `--allow-skip` are forwarded to the auth preflight; `--model`, `--timeout-ms`, `--keep-workspace`, and `--allow-skip` are forwarded to the runtime probes. The result is a single JSON envelope with top-level `status` and per-probe results. In a Pi-authenticated environment, run it without `--allow-skip`; any missing optional package/auth issue or runtime failure is then a hard failure.
+
+The auth preflight can also be run directly:
+
+```bash
+pnpm smoke:pi-auth -- --model anthropic/claude-sonnet-4-6 --json
+```
+
+It checks that the optional Pi SDK package imports, the requested model exists in Pi's model registry, the provider has credentials configured through Pi auth storage or environment variables, and the requested model appears in Pi's available-model set. It does not print credential values.
 
 ## Headless session metadata
 
@@ -239,4 +247,5 @@ This gives production-shaped continuation and interrupt behavior without pretend
 Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
 - caching/reuse strategy for external MCP discovery and long-lived MCP sessions if needed for performance;
-- `pnpm smoke:pi-all -- --json` to pass in a Pi-authenticated environment, not only through the injected-runtime unit harness.
+- `pnpm smoke:pi-auth -- --model anthropic/claude-sonnet-4-6 --json` to pass in a Pi-authenticated environment;
+- `pnpm smoke:pi-all -- --json` to pass after auth preflight, not only through the injected-runtime unit harness.

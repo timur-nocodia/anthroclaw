@@ -5,9 +5,10 @@ import {
 } from '../pi-smoke-suite.js';
 
 describe('Pi smoke suite CLI', () => {
-  it('runs workspace then Gateway probes and reports a suite pass', async () => {
+  it('runs auth, workspace, then Gateway probes and reports a suite pass', async () => {
     const stdout = createWriter();
     const stderr = createWriter();
+    const auth = createProbe('passed');
     const workspace = createProbe('passed');
     const gateway = createProbe('passed');
 
@@ -17,6 +18,7 @@ describe('Pi smoke suite CLI', () => {
       '--keep-workspace',
       '--json',
     ], {
+      runAuthCli: auth,
       runWorkspaceCli: workspace,
       runGatewayCli: gateway,
       stdout,
@@ -25,7 +27,12 @@ describe('Pi smoke suite CLI', () => {
 
     expect(code).toBe(0);
     expect(stderr.text()).toBe('');
+    expect(auth).toHaveBeenCalledBefore(workspace);
     expect(workspace).toHaveBeenCalledBefore(gateway);
+    expect(auth.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'test/model',
+    ]);
     expect(workspace.mock.calls[0]?.[0]).toEqual([
       '--json',
       '--model', 'test/model',
@@ -36,6 +43,7 @@ describe('Pi smoke suite CLI', () => {
       status: 'passed',
       runtime: 'pi',
       probes: {
+        auth: { status: 'passed', code: 0 },
         workspace: { status: 'passed', code: 0 },
         gateway: { status: 'passed', code: 0 },
       },
@@ -47,6 +55,7 @@ describe('Pi smoke suite CLI', () => {
     const stderr = createWriter();
 
     const code = await runPiSmokeSuiteCli(['--allow-skip', '--json'], {
+      runAuthCli: createProbe('passed'),
       runWorkspaceCli: createProbe('skipped'),
       runGatewayCli: createProbe('skipped'),
       stdout,
@@ -58,6 +67,7 @@ describe('Pi smoke suite CLI', () => {
     expect(JSON.parse(stdout.text())).toMatchObject({
       status: 'skipped',
       probes: {
+        auth: { status: 'passed', code: 0 },
         workspace: { status: 'skipped', code: 0 },
         gateway: { status: 'skipped', code: 0 },
       },
@@ -69,6 +79,7 @@ describe('Pi smoke suite CLI', () => {
     const stderr = createWriter();
 
     const code = await runPiSmokeSuiteCli(['--json'], {
+      runAuthCli: createProbe('passed'),
       runWorkspaceCli: createProbe('passed'),
       runGatewayCli: createProbe('failed', 1),
       stdout,
@@ -80,11 +91,50 @@ describe('Pi smoke suite CLI', () => {
     expect(JSON.parse(stderr.text())).toMatchObject({
       status: 'failed',
       probes: {
+        auth: { status: 'passed', code: 0 },
         workspace: { status: 'passed', code: 0 },
         gateway: {
           status: 'failed',
           code: 1,
           error: 'Smoke probe exited with code 1.',
+        },
+      },
+    });
+  });
+
+  it('stops after failed auth preflight and marks runtime probes skipped', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+    const workspace = createProbe('passed');
+    const gateway = createProbe('passed');
+
+    const code = await runPiSmokeSuiteCli(['--json'], {
+      runAuthCli: createProbe('failed', 1),
+      runWorkspaceCli: workspace,
+      runGatewayCli: gateway,
+      stdout,
+      stderr,
+    });
+
+    expect(code).toBe(1);
+    expect(workspace).not.toHaveBeenCalled();
+    expect(gateway).not.toHaveBeenCalled();
+    expect(JSON.parse(stderr.text())).toMatchObject({
+      status: 'failed',
+      probes: {
+        auth: {
+          status: 'failed',
+          code: 1,
+        },
+        workspace: {
+          status: 'skipped',
+          code: 0,
+          error: 'Skipped because Pi auth preflight did not pass.',
+        },
+        gateway: {
+          status: 'skipped',
+          code: 0,
+          error: 'Skipped because Pi auth preflight did not pass.',
         },
       },
     });
