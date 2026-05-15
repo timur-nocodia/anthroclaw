@@ -52,6 +52,35 @@ function createQueryForPrompt(prompt: unknown) {
     ]);
   }
 
+  if (text.includes('hello web runtime')) {
+    return createSdkStream([
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'Partial hello' },
+        },
+      },
+      {
+        type: 'tool_use',
+        id: 'tool-1',
+        name: 'Bash',
+        input: { command: 'pwd' },
+      },
+      {
+        type: 'tool_result',
+        tool_use_id: 'tool-1',
+        name: 'Bash',
+        output: 'ok',
+      },
+      {
+        type: 'result',
+        result: 'Partial hello',
+        session_id: 'web-runtime-session-1',
+      },
+    ]);
+  }
+
   if (text.includes('[web-user]:')) {
     return createSdkStream([
       { session_id: 'web-sdk-session-1' },
@@ -377,6 +406,44 @@ routes:
 
     expect(textParts.join('')).toBe('Web SDK says hi');
     expect(doneSessionId).toBe('web-sdk-session-1');
+
+    await gw.stop();
+  });
+
+  it('dispatchWebUI consumes runtime-normalized partial text and tool events', async () => {
+    const botDir = join(agentsDir, 'web-runtime-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const partialText: string[] = [];
+    const toolCalls: Array<{ name: string; input: Record<string, unknown> }> = [];
+    const toolResults: Array<{ name: string; output: string }> = [];
+    let doneSessionId = '';
+
+    await gw.dispatchWebUI('web-runtime-bot', 'hello web runtime', undefined, {}, {
+      onText: () => {},
+      onPartialText: (chunk) => partialText.push(chunk),
+      onToolCall: (name, input) => toolCalls.push({ name, input }),
+      onToolResult: (name, output) => toolResults.push({ name, output }),
+      onDone: (sid) => {
+        doneSessionId = sid;
+      },
+      onError: (err) => {
+        throw err;
+      },
+    });
+
+    expect(partialText).toEqual(['Partial hello']);
+    expect(toolCalls).toEqual([{ name: 'Bash', input: { command: 'pwd' } }]);
+    expect(toolResults).toEqual([{ name: 'Bash', output: 'ok' }]);
+    expect(doneSessionId).toBe('web-runtime-session-1');
 
     await gw.stop();
   });

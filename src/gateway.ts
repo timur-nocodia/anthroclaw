@@ -39,6 +39,13 @@ import {
   type ClaudeRuntimeQuery as Query,
   type ClaudeRuntimeUserMessage as SDKUserMessage,
 } from './runtime/claude-agent-sdk.js';
+import { normalizeClaudeRuntimeEvents } from './runtime/claude-events.js';
+import type {
+  RuntimeEvent,
+  RuntimeTextDeltaEvent,
+  RuntimeToolEvent,
+  RuntimeUsageUpdatedEvent,
+} from './runtime/events.js';
 import { Agent } from './agent/agent.js';
 import { AGENT_ID_MAX_LEN, AGENT_ID_RE } from './agent/sandbox/agent-workspace.js';
 import { createManageCronTool } from './agent/tools/manage-cron.js';
@@ -442,6 +449,49 @@ function readResultUsage(event: Record<string, unknown>, durationMs: number): St
     durationApiMs: typeof event.duration_api_ms === 'number' ? event.duration_api_ms : undefined,
     numTurns: typeof event.num_turns === 'number' ? event.num_turns : undefined,
   }) as StoredAgentRunUsage;
+}
+
+function runtimeTextDeltas(
+  events: RuntimeEvent[],
+  source: RuntimeTextDeltaEvent['source'],
+): RuntimeTextDeltaEvent[] {
+  return events.filter((event): event is RuntimeTextDeltaEvent =>
+    event.type === 'text.delta' && event.source === source);
+}
+
+function runtimeUsageEvent(events: RuntimeEvent[]): RuntimeUsageUpdatedEvent | undefined {
+  return events.find((event): event is RuntimeUsageUpdatedEvent => event.type === 'usage.updated');
+}
+
+function runtimeToolEvent(
+  events: RuntimeEvent[],
+  type: RuntimeToolEvent['type'],
+): RuntimeToolEvent | undefined {
+  return events.find((event): event is RuntimeToolEvent => event.type === type);
+}
+
+function runtimeUsageToStored(
+  event: RuntimeUsageUpdatedEvent,
+  durationMs: number,
+): StoredAgentRunUsage {
+  return definedBudget({
+    inputTokens: event.inputTokens,
+    outputTokens: event.outputTokens,
+    cacheReadTokens: event.cacheReadTokens,
+    cacheWriteTokens: event.cacheWriteTokens,
+    totalCostUsd: event.costUsd,
+    durationMs: event.durationMs ?? durationMs,
+    durationApiMs: event.durationApiMs,
+    numTurns: event.numTurns,
+  }) as StoredAgentRunUsage;
+}
+
+function runtimeToolOutputToString(output: unknown): string {
+  return typeof output === 'string' ? output : JSON.stringify(output ?? '');
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
 }
 
 function routeCandidateFromEntry(entry: RouteEntry): StoredRouteDecisionCandidate {
@@ -3227,13 +3277,20 @@ export class Gateway {
         if (next.done) break;
 
         const evt = next.value as Record<string, unknown>;
+        const runtimeEvents = normalizeClaudeRuntimeEvents(evt, {
+          runId: runId ?? 'web-query',
+          sessionId: newSessionId || existingSessionId,
+          agentId,
+          durationMs: Date.now() - queryStartMs,
+        });
 
         if (evt.session_id && typeof evt.session_id === 'string') {
           newSessionId = evt.session_id;
           this.controlRegistry.alias(newSessionId, sessionKey);
         }
 
-        const partialText = extractPartialText(evt);
+        const partialText = runtimeTextDeltas(runtimeEvents, 'partial')[0]?.text
+          ?? extractPartialText(evt);
         if (partialText) {
           streamedPartialText = true;
           callbacks.onPartialText?.(partialText);
@@ -3268,23 +3325,23 @@ export class Gateway {
           break;
         }
 
+        const messageTextDeltas = runtimeTextDeltas(runtimeEvents, 'message');
+        const resultTextDelta = runtimeTextDeltas(runtimeEvents, 'result')[0];
+        const usageEvent = runtimeUsageEvent(runtimeEvents);
+        const toolStartEvent = runtimeToolEvent(runtimeEvents, 'tool.call.started');
+        const toolCompletedEvent = runtimeToolEvent(runtimeEvents, 'tool.call.completed')
+          ?? runtimeToolEvent(runtimeEvents, 'tool.call.failed');
+
         if (evt.type === 'assistant') {
-          const message = evt.message as Record<string, unknown> | undefined;
-          if (message?.content && Array.isArray(message.content)) {
-            for (const block of message.content) {
-              if (block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string') {
-                assistantTextParts.push(block.text);
-                if (!streamedPartialText) {
-                  callbacks.onText(block.text);
-                }
-              }
+          for (const textEvent of messageTextDeltas) {
+            assistantTextParts.push(textEvent.text);
+            if (!streamedPartialText) {
+              callbacks.onText(textEvent.text);
             }
           }
-          // Token usage if present
-          if (message?.usage && typeof message.usage === 'object') {
-            const usage = message.usage as Record<string, unknown>;
-            if (typeof usage.input_tokens === 'number') inputTokens += usage.input_tokens;
-            if (typeof usage.output_tokens === 'number') outputTokens += usage.output_tokens;
+          if (usageEvent) {
+            if (typeof usageEvent.inputTokens === 'number') inputTokens += usageEvent.inputTokens;
+            if (typeof usageEvent.outputTokens === 'number') outputTokens += usageEvent.outputTokens;
             totalTokens = inputTokens + outputTokens;
           }
         } else if (evt.type === 'result') {
@@ -3292,40 +3349,43 @@ export class Gateway {
           if (evt.session_id && typeof evt.session_id === 'string') {
             newSessionId = evt.session_id;
           }
-          const resultUsage = readResultUsage(evt, Date.now() - queryStartMs);
+          const resultUsage = usageEvent
+            ? runtimeUsageToStored(usageEvent, Date.now() - queryStartMs)
+            : readResultUsage(evt, Date.now() - queryStartMs);
           if (Object.keys(resultUsage).length > 1) {
             runUsage = resultUsage;
             inputTokens = resultUsage.inputTokens ?? inputTokens;
             outputTokens = resultUsage.outputTokens ?? outputTokens;
             totalTokens = inputTokens + outputTokens;
           }
-          if (typeof evt.result === 'string' && evt.result.length > 0) {
+          if (resultTextDelta?.text) {
             assistantTextParts.length = 0;
-            assistantTextParts.push(evt.result);
+            assistantTextParts.push(resultTextDelta.text);
           }
           if (!shouldReadPromptSuggestion) {
             break;
           }
-        } else if (evt.type === 'tool_use') {
+        } else if (toolStartEvent) {
           metrics.increment('tool_calls');
-          const toolName = typeof evt.name === 'string' ? evt.name : 'unknown';
+          const toolName = toolStartEvent.toolName;
           metrics.recordToolEvent({
             agentId,
             sessionKey,
             toolName,
             status: 'started',
           });
-          const toolInput = (evt.input && typeof evt.input === 'object' ? evt.input : {}) as Record<string, unknown>;
+          const toolInput = asRecord(toolStartEvent.input);
           callbacks.onToolCall(toolName, toolInput);
-        } else if (evt.type === 'tool_result') {
-          const toolName = typeof evt.name === 'string' ? evt.name : 'unknown';
+        } else if (toolCompletedEvent) {
+          const toolName = toolCompletedEvent.toolName;
+          const toolStatus = toolCompletedEvent.type === 'tool.call.failed' ? 'failed' : 'completed';
           metrics.recordToolEvent({
             agentId,
             sessionKey,
             toolName,
-            status: 'completed',
+            status: toolStatus,
           });
-          const output = typeof evt.output === 'string' ? evt.output : JSON.stringify(evt.output ?? '');
+          const output = runtimeToolOutputToString(toolCompletedEvent.output);
           callbacks.onToolResult(toolName, output);
         }
 
@@ -5287,7 +5347,14 @@ export class Gateway {
           }
 
           const evt = next.value as Record<string, unknown>;
-          const partialText = extractPartialText(evt);
+          const runtimeEvents = normalizeClaudeRuntimeEvents(evt, {
+            runId: runId ?? 'agent-query',
+            sessionId: observedSessionId,
+            agentId: agent.id,
+            durationMs: Date.now() - queryStartMs,
+          });
+          const partialText = runtimeTextDeltas(runtimeEvents, 'partial')[0]?.text
+            ?? extractPartialText(evt);
           const taskProgress = extractTaskProgress(evt);
           const taskNotification = extractTaskNotification(evt);
           const taskLifecycle = extractTaskLifecycleEvent(evt);
@@ -5312,7 +5379,7 @@ export class Gateway {
           } else if (hookEvent) {
             markRunActivity(hookEvent.subtype);
           } else {
-            markRunActivity(typeof evt.type === 'string' ? evt.type : 'sdk_event');
+            markRunActivity(runtimeEvents[0]?.type ?? (typeof evt.type === 'string' ? evt.type : 'sdk_event'));
           }
 
           if (evt.session_id && typeof evt.session_id === 'string') {
@@ -5321,40 +5388,37 @@ export class Gateway {
             this.controlRegistry.alias(sessionId, sessionKey);
           }
 
+          const messageTextDeltas = runtimeTextDeltas(runtimeEvents, 'message');
+          const resultTextDelta = runtimeTextDeltas(runtimeEvents, 'result')[0];
+          const usageEvent = runtimeUsageEvent(runtimeEvents);
+          const toolStartEvent = runtimeToolEvent(runtimeEvents, 'tool.call.started');
+          const toolCompletedEvent = runtimeToolEvent(runtimeEvents, 'tool.call.completed')
+            ?? runtimeToolEvent(runtimeEvents, 'tool.call.failed');
+
           if (evt.type === 'assistant') {
-            const message = evt.message as Record<string, unknown> | undefined;
-            if (message?.content && Array.isArray(message.content)) {
-              for (const block of message.content) {
-                if (block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string') {
-                  textParts.push(block.text);
-                }
-              }
+            for (const textEvent of messageTextDeltas) {
+              textParts.push(textEvent.text);
             }
           } else if (evt.type === 'result') {
-            if (typeof evt.result === 'string' && evt.result.length > 0) {
+            if (resultTextDelta?.text) {
               textParts.length = 0;
-              textParts.push(evt.result);
+              textParts.push(resultTextDelta.text);
             }
             if (evt.session_id && typeof evt.session_id === 'string') {
               sessionId = evt.session_id;
               observedSessionId = sessionId;
             }
-            const usage = evt.usage as {
-              input_tokens?: number;
-              output_tokens?: number;
-              cache_read_input_tokens?: number;
-            } | undefined;
-            if (usage) {
+            if (usageEvent) {
               const model = (options.model as string) ?? 'unknown';
-              const cacheReadTokens = usage.cache_read_input_tokens ?? 0;
-              metrics.recordTokens(model, usage.input_tokens ?? 0, usage.output_tokens ?? 0, cacheReadTokens);
+              const cacheReadTokens = usageEvent.cacheReadTokens ?? 0;
+              metrics.recordTokens(model, usageEvent.inputTokens ?? 0, usageEvent.outputTokens ?? 0, cacheReadTokens);
               const usageRecord = {
                 sessionKey,
                 agentId: agent.id,
                 platform: msg.channel,
                 timestamp: Date.now(),
-                inputTokens: usage.input_tokens ?? 0,
-                outputTokens: usage.output_tokens ?? 0,
+                inputTokens: usageEvent.inputTokens ?? 0,
+                outputTokens: usageEvent.outputTokens ?? 0,
                 cacheReadTokens,
                 toolCalls: {},
                 durationMs: Date.now() - queryStartMs,
@@ -5363,10 +5427,12 @@ export class Gateway {
               this.insightsEngine.record(usageRecord);
               metrics.recordUsage(usageRecord);
             }
-            runUsage = readResultUsage(evt, Date.now() - queryStartMs);
+            runUsage = usageEvent
+              ? runtimeUsageToStored(usageEvent, Date.now() - queryStartMs)
+              : readResultUsage(evt, Date.now() - queryStartMs);
             break;
-          } else if (evt.type === 'tool_use') {
-            const toolName = typeof evt.name === 'string' ? evt.name : 'unknown';
+          } else if (toolStartEvent) {
+            const toolName = toolStartEvent.toolName;
             toolCallsForLearning += 1;
             if (isLearningRelevantToolName(toolName)) {
               skillOrMemoryActivityForLearning = true;
@@ -5399,12 +5465,12 @@ export class Gateway {
                 break;
               }
             }
-          } else if (evt.type === 'tool_result') {
-            const toolName = typeof evt.name === 'string' ? evt.name : 'unknown';
+          } else if (toolCompletedEvent) {
+            const toolName = toolCompletedEvent.toolName;
             if (isLearningRelevantToolName(toolName)) {
               skillOrMemoryActivityForLearning = true;
             }
-            if (evt.is_error === true || evt.status === 'error') {
+            if (toolCompletedEvent.type === 'tool.call.failed') {
               recoveredToolErrorsForLearning += 1;
               // Runtime 401 trap: when an external MCP tool returns an
               // auth-style error, mark the credential needs_reauth and
