@@ -1149,6 +1149,10 @@ export class Gateway {
       channel?: ChannelAdapter;
       sessionContext?: { channel?: string; peerId: string; senderId?: string; accountId?: string; threadId?: string };
       onRuntimeEvent?: (event: RuntimeEvent) => void | Promise<void>;
+      onRunHandle?: (
+        handle: RuntimeRunHandle<RuntimeEvent>,
+        context: { runId: string; sessionId?: string; agentId: string },
+      ) => void;
     },
   ): Promise<{ text: string; sessionId?: string; usage?: StoredAgentRunUsage; totalTokens: number }> {
     const configured = this.getHeadlessReviewRuntimeOptions();
@@ -1231,6 +1235,11 @@ export class Gateway {
       const handle = await runtimeWithHandle.runHandle(runInput, {
         runId: input.runId,
         sessionId: input.sessionId,
+        agentId: agent.id,
+      });
+      input.onRunHandle?.(handle, {
+        runId: input.runId,
+        sessionId: (handle as { sessionId?: string }).sessionId ?? input.sessionId,
         agentId: agent.id,
       });
       const partialTextParts: string[] = [];
@@ -3455,6 +3464,8 @@ export class Gateway {
         });
         let streamedPartialText = false;
         let deliveredText = false;
+        const abort = new AbortController();
+        const keepCheckpointHandle = Boolean(agent.config.sdk?.enableFileCheckpointing);
         const result = await this.runPiGatewayRuntime(agent, {
           runId,
           prompt,
@@ -3462,7 +3473,29 @@ export class Gateway {
           purpose: 'gateway web query',
           sessionKey,
           sessionContext: { channel: context.channel ?? 'web', peerId: 'web-user', senderId: 'web-user' },
+          onRunHandle: (handle) => {
+            const registryHandle = runtimeRegistryHandle(handle);
+            this.controlRegistry.register(
+              [runId!, sessionKey, ...(existingSessionId ? [existingSessionId] : []), ...(sessionId ? [sessionId] : [])],
+              registryHandle,
+              abort,
+            );
+            if (keepCheckpointHandle) {
+              this.checkpointRegistry.register(
+                [sessionKey, ...(existingSessionId ? [existingSessionId] : []), ...(sessionId ? [sessionId] : [])],
+                registryHandle,
+              );
+            }
+          },
           onRuntimeEvent: (event) => {
+            if (event.sessionId) {
+              this.controlRegistry.alias(event.sessionId, sessionKey);
+              this.controlRegistry.alias(`web:${agentId}:${event.sessionId}`, sessionKey);
+              if (keepCheckpointHandle) {
+                this.checkpointRegistry.alias(event.sessionId, sessionKey);
+                this.checkpointRegistry.alias(`web:${agentId}:${event.sessionId}`, sessionKey);
+              }
+            }
             if (event.type === 'text.delta' && event.source === 'partial') {
               streamedPartialText = true;
               callbacks.onPartialText?.(event.text);
@@ -3501,6 +3534,12 @@ export class Gateway {
             sessionKey,
             eventType: isNewSession ? 'created' : 'resumed',
           });
+          this.controlRegistry.alias(newSessionId, sessionKey);
+          this.controlRegistry.alias(`web:${agentId}:${newSessionId}`, sessionKey);
+          if (keepCheckpointHandle) {
+            this.checkpointRegistry.alias(newSessionId, sessionKey);
+            this.checkpointRegistry.alias(`web:${agentId}:${newSessionId}`, sessionKey);
+          }
         }
         if (text && !streamedPartialText && !deliveredText) callbacks.onText(text);
         runUsage = result.usage ?? { durationMs: Date.now() - queryStartMs };
@@ -5472,49 +5511,97 @@ export class Gateway {
           threadId: msg.threadId,
         });
 
-        const result = await this.runPiGatewayRuntime(agent, {
-          runId,
-          prompt,
-          sessionId: existingSessionId,
-          purpose: 'gateway agent query',
-          sessionKey,
-          message: msg,
-          channel: this.channels.get(msg.channel),
-          sessionContext: { channel: msg.channel, peerId: msg.peerId, senderId: msg.senderId, accountId: msg.accountId, threadId: msg.threadId },
-          onRuntimeEvent: (event) => {
-            if (event.type === 'tool.call.started') {
-              toolCallsForLearning += 1;
-              if (isLearningRelevantToolName(event.toolName)) {
-                skillOrMemoryActivityForLearning = true;
-              }
-              metrics.increment('tool_calls');
-              metrics.recordToolEvent({
-                agentId: agent.id,
-                sessionKey,
-                toolName: event.toolName,
-                status: 'started',
+        const keepCheckpointHandle = Boolean(agent.config.sdk?.enableFileCheckpointing);
+        let registeredPiHandle = false;
+        let result: { text: string; sessionId?: string; usage?: StoredAgentRunUsage; totalTokens: number };
+        try {
+          result = await this.runPiGatewayRuntime(agent, {
+            runId,
+            prompt,
+            sessionId: existingSessionId,
+            purpose: 'gateway agent query',
+            sessionKey,
+            message: msg,
+            channel: this.channels.get(msg.channel),
+            sessionContext: { channel: msg.channel, peerId: msg.peerId, senderId: msg.senderId, accountId: msg.accountId, threadId: msg.threadId },
+            onRunHandle: (handle) => {
+              const registryHandle = runtimeRegistryHandle(handle);
+              registeredPiHandle = true;
+              this.queueManager.register(sessionKey, registryHandle, abort, {
+                traceId: runId,
+                channelDeliveryTarget: {
+                  channel: msg.channel,
+                  peerId: msg.peerId,
+                  accountId: msg.accountId,
+                  threadId: msg.threadId,
+                },
               });
-            } else if (event.type === 'tool.call.completed' || event.type === 'tool.call.failed') {
-              if (isLearningRelevantToolName(event.toolName)) {
-                skillOrMemoryActivityForLearning = true;
+              this.controlRegistry.register(
+                [runId!, sessionKey, ...(existingSessionId ? [existingSessionId] : [])],
+                registryHandle,
+                abort,
+              );
+              if (keepCheckpointHandle) {
+                this.checkpointRegistry.register(
+                  [sessionKey, ...(existingSessionId ? [existingSessionId] : [])],
+                  registryHandle,
+                );
               }
-              if (event.type === 'tool.call.failed') {
-                recoveredToolErrorsForLearning += 1;
+            },
+            onRuntimeEvent: (event) => {
+              if (event.sessionId) {
+                this.controlRegistry.alias(event.sessionId, sessionKey);
+                if (keepCheckpointHandle) {
+                  this.checkpointRegistry.alias(event.sessionId, sessionKey);
+                }
               }
-              metrics.recordToolEvent({
-                agentId: agent.id,
-                sessionKey,
-                toolName: event.toolName,
-                status: event.type === 'tool.call.failed' ? 'failed' : 'completed',
-              });
-            }
-          },
-        });
+              if (event.type === 'tool.call.started') {
+                toolCallsForLearning += 1;
+                if (isLearningRelevantToolName(event.toolName)) {
+                  skillOrMemoryActivityForLearning = true;
+                }
+                metrics.increment('tool_calls');
+                metrics.recordToolEvent({
+                  agentId: agent.id,
+                  sessionKey,
+                  toolName: event.toolName,
+                  status: 'started',
+                });
+                this.queueManager.markActivity(sessionKey, 'tool_call_started');
+              } else if (event.type === 'tool.call.completed' || event.type === 'tool.call.failed') {
+                if (isLearningRelevantToolName(event.toolName)) {
+                  skillOrMemoryActivityForLearning = true;
+                }
+                if (event.type === 'tool.call.failed') {
+                  recoveredToolErrorsForLearning += 1;
+                }
+                metrics.recordToolEvent({
+                  agentId: agent.id,
+                  sessionKey,
+                  toolName: event.toolName,
+                  status: event.type === 'tool.call.failed' ? 'failed' : 'completed',
+                });
+                this.queueManager.markActivity(sessionKey, event.type);
+              } else if (event.type === 'text.delta') {
+                this.queueManager.markActivity(sessionKey, 'text_delta');
+              }
+            },
+          });
+        } finally {
+          if (registeredPiHandle) {
+            this.queueManager.unregister(sessionKey);
+            this.controlRegistry.unregister(sessionKey);
+          }
+        }
         const responseText = result.text.trim();
         observedSessionId = result.sessionId ?? existingSessionId;
         if (observedSessionId) {
           const isNewSession = !existingSessionId || existingSessionId !== observedSessionId;
           agent.setSessionId(sessionKey, observedSessionId);
+          this.controlRegistry.alias(observedSessionId, sessionKey);
+          if (keepCheckpointHandle) {
+            this.checkpointRegistry.alias(observedSessionId, sessionKey);
+          }
           metrics.recordSessionEvent({
             agentId: agent.id,
             sessionId: observedSessionId,
@@ -7038,6 +7125,17 @@ export class Gateway {
     this.profileRateLimiters.set(agentId, limiter);
     logger.debug({ agentId, floor }, 'Profile floor rate limiter registered');
   }
+}
+
+function runtimeRegistryHandle(handle: RuntimeRunHandle<RuntimeEvent>): RuntimeRunHandle<RuntimeEvent> {
+  return {
+    interrupt: () => handle.interrupt(),
+    close: () => undefined,
+    ...(handle.rewindFiles
+      ? { rewindFiles: (userMessageId, options) => handle.rewindFiles!(userMessageId, options) }
+      : {}),
+    [Symbol.asyncIterator]: () => handle[Symbol.asyncIterator](),
+  };
 }
 
 function memoryRefsFromSearchResults(results: SearchResult[]): StoredMemoryInfluenceRef[] {

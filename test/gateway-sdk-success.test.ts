@@ -222,6 +222,33 @@ function createRuntimeEventHandle(events: Array<Record<string, unknown>>, sessio
   };
 }
 
+function createBlockingRuntimeEventHandle(events: Array<Record<string, unknown>>, sessionId?: string) {
+  let release!: () => void;
+  let iteratorStarted!: () => void;
+  const releasePromise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const iteratorStartedPromise = new Promise<void>((resolve) => {
+    iteratorStarted = resolve;
+  });
+  const handle = {
+    sessionId,
+    interrupt: vi.fn(async () => {
+      release();
+    }),
+    close: vi.fn(),
+    waitForIterator: () => iteratorStartedPromise,
+    async *[Symbol.asyncIterator]() {
+      iteratorStarted();
+      await releasePromise;
+      for (const event of events) {
+        yield event;
+      }
+    },
+  };
+  return handle;
+}
+
 function writeAgentYml(dir: string, content: string): void {
   const yaml = content.includes('safety_profile:') ? content : `safety_profile: trusted\n${content}`;
   writeFileSync(join(dir, 'agent.yml'), yaml);
@@ -423,6 +450,17 @@ pairing:
       }),
     });
 
+    piRunMock.mockResolvedValueOnce({
+      text: 'Pi continues',
+      sessionId: 'pi-session-1',
+    });
+    await gw.dispatch(makeMsg({ text: 'continue please', messageId: 'mid-2' }));
+
+    expect(piRunMock.mock.calls[1]?.[0]).toMatchObject({
+      sessionId: 'pi-session-1',
+    });
+    expect(sent).toEqual(['Pi says hi', 'Pi continues']);
+
     await gw.stop();
   });
 
@@ -510,6 +548,148 @@ pairing:
         source: 'channel',
         status: 'succeeded',
       }),
+    });
+
+    await gw.stop();
+  });
+
+  it('dispatch Pi RuntimeEvent path registers active control handles for interrupts', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createBlockingRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-interrupt-session-1',
+        text: 'Stopped cleanly',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-interrupt-session-1',
+      },
+    ], 'pi-interrupt-session-1');
+    piRunHandleMock.mockResolvedValueOnce(handle);
+    const botDir = join(agentsDir, 'pi-interrupt-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    const dispatchPromise = gw.dispatch(makeMsg());
+    await handle.waitForIterator();
+
+    const active = gw.listActiveAgentRuns('pi-interrupt-bot');
+    expect(active).toMatchObject([{
+      agentId: 'pi-interrupt-bot',
+      sessionKey: 'pi-interrupt-bot:telegram:dm:peer-123',
+      channelDeliveryTarget: {
+        channel: 'telegram',
+        peerId: 'peer-123',
+      },
+    }]);
+
+    const interrupt = await gw.interruptAgentRun('pi-interrupt-bot', active[0]!.runId!, 'test');
+    expect(interrupt).toMatchObject({
+      interrupted: true,
+      sessionKey: 'pi-interrupt-bot:telegram:dm:peer-123',
+    });
+    expect(handle.interrupt).toHaveBeenCalledTimes(1);
+
+    await dispatchPromise;
+    expect(sent).toEqual(['Stopped cleanly']);
+    expect(gw.listActiveAgentRuns('pi-interrupt-bot')).toEqual([]);
+
+    await gw.stop();
+  });
+
+  it('dispatch Pi RuntimeEvent path keeps checkpoint registry aliases with explicit unsupported rewind', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-checkpoint-session-1',
+        text: 'Checkpoint boundary',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-checkpoint-session-1',
+      },
+    ], 'pi-checkpoint-session-1');
+    piRunHandleMock.mockResolvedValueOnce(handle);
+    const botDir = join(agentsDir, 'pi-checkpoint-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+sdk:
+  enableFileCheckpointing: true
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText() {
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    await expect(gw.rewindAgentSessionFiles('pi-checkpoint-bot', 'pi-checkpoint-session-1', {
+      userMessageId: 'user-msg-1',
+      dryRun: true,
+    })).resolves.toMatchObject({
+      sessionId: 'pi-checkpoint-session-1',
+      userMessageId: 'user-msg-1',
+      canRewind: false,
+      error: 'The active runtime handle does not support file rewind.',
     });
 
     await gw.stop();
