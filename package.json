@@ -22,6 +22,7 @@
     "reset-password": "tsx src/cli/reset-password.ts",
     "learning": "tsx src/cli/learning.ts",
     "headless:runtime": "tsx src/cli/headless-runtime.ts",
+    "smoke:pi-workspace": "tsx src/cli/pi-workspace-smoke.ts",
     "buildroom": "tsx src/cli/buildroom.ts",
     "plugins": "tsx src/cli/plugins.ts",
     "migrate:safety-profile": "tsx scripts/migrate-safety-profile.ts",

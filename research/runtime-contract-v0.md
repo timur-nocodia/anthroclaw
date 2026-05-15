@@ -54,6 +54,7 @@ OpenCode is useful as a benchmark and may be cleaner for checkpoint rewind becau
 
 ## Next implementation choices
 
-1. Harden Pi's snapshot fallback against larger real workspaces if we see limit pressure in smoke runs.
-2. Build an OpenCode Gateway benchmark only if we want hard evidence that its server boundary can carry AnthroClaw permissions and tools cleanly.
-3. Keep Claude as the production baseline until the selected candidate is green across the contract and has enough end-to-end smoke evidence.
+1. Run `pnpm smoke:pi-workspace -- --json` in an environment with the optional Pi runtime and auth configured.
+2. Add Gateway-level Pi smoke coverage for real channel dispatch with tool approvals.
+3. Build an OpenCode Gateway benchmark only if we want hard evidence that its server boundary can carry AnthroClaw permissions and tools cleanly.
+4. Keep Claude as the production baseline until the selected candidate is green across the contract and has enough end-to-end smoke evidence.
