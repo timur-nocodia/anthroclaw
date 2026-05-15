@@ -20,7 +20,7 @@ describe('headless runtime CLI', () => {
   });
 
   it('uses runtime.headless.provider from config for smoke runs', async () => {
-    const review = vi.fn(async () => 'pi-ok');
+    const review = vi.fn(async () => ({ text: 'pi-ok', sessionId: 'pi-session-1' }));
     const loadConfig = vi.fn(() => GlobalConfigSchema.parse({
       defaults: { model: 'claude-haiku-4-5' },
       runtime: { headless: { provider: 'pi' } },
@@ -47,7 +47,7 @@ describe('headless runtime CLI', () => {
   });
 
   it('lets --runtime override config provider explicitly', async () => {
-    const review = vi.fn(async () => 'claude-ok');
+    const review = vi.fn(async () => ({ text: 'claude-ok' }));
     const loadConfig = vi.fn(() => GlobalConfigSchema.parse({
       runtime: { headless: { provider: 'pi' } },
     }));
@@ -66,7 +66,7 @@ describe('headless runtime CLI', () => {
   it('can read the prompt from a file', async () => {
     const promptPath = join(root, 'prompt.txt');
     writeFileSync(promptPath, 'from file', 'utf-8');
-    const review = vi.fn(async () => 'ok');
+    const review = vi.fn(async () => ({ text: 'ok' }));
 
     await runHeadlessRuntimeCli([
       '--prompt-file', promptPath,
@@ -79,6 +79,30 @@ describe('headless runtime CLI', () => {
 
     expect(review).toHaveBeenCalledWith(expect.objectContaining({
       prompt: 'from file',
+    }));
+  });
+
+  it('can pass a session id and print chainable JSON', async () => {
+    const review = vi.fn(async () => ({ text: 'continued', sessionId: 'pi-session-2' }));
+    const stdout = createWriter();
+
+    await runHeadlessRuntimeCli([
+      '--prompt', 'continue',
+      '--session-id', 'pi-session-1',
+      '--json',
+    ], {
+      review,
+      loadConfig: vi.fn(() => GlobalConfigSchema.parse({})),
+      stdout,
+      stderr: createWriter(),
+    });
+
+    expect(JSON.parse(stdout.text())).toEqual({
+      text: 'continued',
+      sessionId: 'pi-session-2',
+    });
+    expect(review).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'pi-session-1',
     }));
   });
 

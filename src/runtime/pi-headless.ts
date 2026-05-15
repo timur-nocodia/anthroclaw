@@ -1,12 +1,15 @@
 import {
   DEFAULT_HEADLESS_TIMEOUT_MS,
   type HeadlessRunInput,
+  type HeadlessRunResult,
   type HeadlessRuntime,
 } from './headless.js';
 
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 
 export interface PiAgentSessionLike {
+  id?: string;
+  sessionId?: string;
   prompt(text: string, options?: unknown): Promise<void>;
   subscribe(listener: (event: unknown) => void): () => void;
   abort?(): Promise<void>;
@@ -15,6 +18,8 @@ export interface PiAgentSessionLike {
 
 export interface PiCreateAgentSessionResult {
   session: PiAgentSessionLike;
+  id?: string;
+  sessionId?: string;
 }
 
 export type PiCreateAgentSession = (options?: Record<string, unknown>) => Promise<PiCreateAgentSessionResult>;
@@ -39,6 +44,10 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
   constructor(private readonly options: PiHeadlessRuntimeOptions = {}) {}
 
   async runText(input: HeadlessRunInput): Promise<string> {
+    return (await this.run(input)).text;
+  }
+
+  async run(input: HeadlessRunInput): Promise<HeadlessRunResult> {
     const timeoutMs = input.timeoutMs
       ?? input.runtimeDefaults?.timeoutMs
       ?? this.options.timeoutMs
@@ -50,7 +59,8 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
     }
 
     const sessionOptions = await this.buildCreateOptions(input, sdk);
-    const { session } = await createAgentSession(sessionOptions);
+    const sessionResult = await createAgentSession(sessionOptions);
+    const { session } = sessionResult;
     const chunks: string[] = [];
     let eventError: Error | undefined;
 
@@ -90,7 +100,10 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
     if (!result) {
       throw new Error(`${input.purpose ?? 'pi headless'} returned empty result`);
     }
-    return result;
+    return {
+      text: result,
+      sessionId: extractPiSessionId(sessionResult),
+    };
   }
 
   private async loadSdk(): Promise<PiCodingAgentSdkModule> {
@@ -115,6 +128,10 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
       cwd: input.cwd ?? input.runtimeDefaults?.cwd ?? configured.cwd ?? process.cwd(),
       tools: [],
     };
+    const sessionId = input.sessionId ?? configured.sessionId;
+    if (typeof sessionId === 'string' && sessionId) {
+      options.sessionId = sessionId;
+    }
 
     const modelId = input.model ?? input.runtimeDefaults?.model;
     if (modelId && this.options.resolveModel) {
@@ -160,6 +177,16 @@ function extractPiError(event: unknown): Error | undefined {
       return new Error(typeof assistantEvent.message === 'string' ? assistantEvent.message : 'Pi assistant runtime error');
     }
   }
+  return undefined;
+}
+
+function extractPiSessionId(result: PiCreateAgentSessionResult): string | undefined {
+  if (typeof result.sessionId === 'string' && result.sessionId) return result.sessionId;
+  if (typeof result.id === 'string' && result.id) return result.id;
+  if (typeof result.session.sessionId === 'string' && result.session.sessionId) {
+    return result.session.sessionId;
+  }
+  if (typeof result.session.id === 'string' && result.session.id) return result.session.id;
   return undefined;
 }
 

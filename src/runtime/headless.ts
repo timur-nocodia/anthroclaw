@@ -15,12 +15,19 @@ export interface HeadlessRunInput {
   model?: string;
   cwd?: string;
   timeoutMs?: number;
+  sessionId?: string;
   runtimeDefaults?: HeadlessRuntimeDefaults;
   purpose?: string;
   toolDenyMessage?: string;
 }
 
+export interface HeadlessRunResult {
+  text: string;
+  sessionId?: string;
+}
+
 export interface HeadlessRuntime {
   id: RuntimeId;
+  run?(input: HeadlessRunInput): Promise<HeadlessRunResult>;
   runText(input: HeadlessRunInput): Promise<string>;
 }

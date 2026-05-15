@@ -1,4 +1,4 @@
-import type { HeadlessRunInput } from '../runtime/headless.js';
+import type { HeadlessRunInput, HeadlessRunResult } from '../runtime/headless.js';
 import {
   resolveHeadlessRuntime,
   type HeadlessRuntimeResolverOptions,
@@ -15,6 +15,14 @@ export interface HeadlessReviewOptions extends HeadlessRunInput {
  * headless runtime.
  */
 export async function runHeadlessReview(opts: HeadlessReviewOptions): Promise<string> {
+  return (await runHeadlessReviewResult(opts)).text;
+}
+
+export async function runHeadlessReviewResult(opts: HeadlessReviewOptions): Promise<HeadlessRunResult> {
   const { runtime, runtimeOptions, ...input } = opts;
-  return resolveHeadlessRuntime(runtime, runtimeOptions).runText(input);
+  const resolved = resolveHeadlessRuntime(runtime, runtimeOptions);
+  if (resolved.run) return resolved.run(input);
+  return {
+    text: await resolved.runText(input),
+  };
 }

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { getOverlayPath, loadGlobalConfigWithOverlay } from '../config/overlay.js';
 import type { HeadlessRuntimeProvider } from '../config/schema.js';
-import { runHeadlessReview } from '../sdk/headless-review.js';
+import { runHeadlessReviewResult } from '../sdk/headless-review.js';
 import {
   headlessRuntimeOptionsFromConfig,
 } from '../sdk/headless-runtime-config.js';
@@ -17,11 +17,13 @@ interface HeadlessRuntimeCliArgs {
   model?: string;
   cwd?: string;
   timeoutMs?: number;
+  sessionId?: string;
+  json: boolean;
   help: boolean;
 }
 
 interface HeadlessRuntimeCliDeps {
-  review?: typeof runHeadlessReview;
+  review?: typeof runHeadlessReviewResult;
   loadConfig?: typeof loadGlobalConfigWithOverlay;
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
   stderr?: Pick<NodeJS.WriteStream, 'write'>;
@@ -33,7 +35,7 @@ export async function runHeadlessRuntimeCli(
 ): Promise<number> {
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
-  const review = deps.review ?? runHeadlessReview;
+  const review = deps.review ?? runHeadlessReviewResult;
   const loadConfig = deps.loadConfig ?? loadGlobalConfigWithOverlay;
 
   let args: HeadlessRuntimeCliArgs;
@@ -66,13 +68,21 @@ export async function runHeadlessRuntimeCli(
       model: args.model ?? config.defaults.model,
       cwd: args.cwd ? resolve(args.cwd) : process.cwd(),
       timeoutMs: args.timeoutMs,
+      sessionId: args.sessionId,
       purpose: 'headless runtime smoke',
       toolDenyMessage: 'Tools disabled for headless runtime smoke.',
       ...runtimeFromConfig,
       ...runtimeFromFlag,
     });
 
-    stdout.write(`${result}\n`);
+    if (args.json) {
+      stdout.write(`${JSON.stringify({
+        text: result.text,
+        sessionId: result.sessionId ?? null,
+      })}\n`);
+    } else {
+      stdout.write(`${result.text}\n`);
+    }
     return 0;
   } catch (err) {
     stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
@@ -84,6 +94,7 @@ export function parseHeadlessRuntimeCliArgs(argv: string[]): HeadlessRuntimeCliA
   const args: HeadlessRuntimeCliArgs = {
     configPath: './config.yml',
     dataDir: './data',
+    json: false,
     help: false,
   };
 
@@ -117,6 +128,12 @@ export function parseHeadlessRuntimeCliArgs(argv: string[]): HeadlessRuntimeCliA
         break;
       case '--timeout-ms':
         args.timeoutMs = parsePositiveInt(requireValue(argv, ++i, '--timeout-ms'), '--timeout-ms');
+        break;
+      case '--session-id':
+        args.sessionId = requireValue(argv, ++i, '--session-id');
+        break;
+      case '--json':
+        args.json = true;
         break;
       default:
         throw new Error(`Unknown argument: ${arg}`);
@@ -172,6 +189,8 @@ function usage(): string {
     '  --model <model>       model override',
     '  --cwd <dir>           working directory for the headless run',
     '  --timeout-ms <ms>     positive integer timeout',
+    '  --session-id <id>     continue an existing runtime session when supported',
+    '  --json                print { text, sessionId } for smoke chaining',
   ].join('\n');
 }
 

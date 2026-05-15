@@ -70,6 +70,53 @@ describe('PiHeadlessRuntime', () => {
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({ model }));
   });
 
+  it('returns a session id from Pi run metadata', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'started' },
+    ]);
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession: vi.fn(async () => ({
+        session,
+        sessionId: 'pi-session-1',
+      })),
+    });
+
+    await expect(runtime.run({
+      prompt: 'start',
+    })).resolves.toEqual({
+      text: 'started',
+      sessionId: 'pi-session-1',
+    });
+  });
+
+  it('passes sessionId into the next Pi session for continuation probes', async () => {
+    const sessions = [
+      createSession([{ type: 'assistant_text_delta', delta: 'first' }]),
+      createSession([{ type: 'assistant_text_delta', delta: 'second' }]),
+    ];
+    let callIndex = 0;
+    const createAgentSession = vi.fn(async (options?: Record<string, unknown>) => ({
+      session: sessions[callIndex++],
+      sessionId: typeof options?.sessionId === 'string' ? options.sessionId : 'pi-session-1',
+    })) satisfies PiCreateAgentSession;
+    const runtime = new PiHeadlessRuntime({ createAgentSession });
+
+    const first = await runtime.run({ prompt: 'first prompt' });
+    const second = await runtime.run({
+      prompt: 'second prompt',
+      sessionId: first.sessionId,
+    });
+
+    expect(first).toEqual({ text: 'first', sessionId: 'pi-session-1' });
+    expect(second).toEqual({ text: 'second', sessionId: 'pi-session-1' });
+    expect(createAgentSession).toHaveBeenNthCalledWith(1, expect.not.objectContaining({
+      sessionId: expect.anything(),
+    }));
+    expect(createAgentSession).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      sessionId: 'pi-session-1',
+    }));
+  });
+
   it('surfaces Pi error events after prompt completion', async () => {
     const session = createSession([
       { type: 'message_update', assistantMessageEvent: { type: 'error', message: 'model unavailable' } },
