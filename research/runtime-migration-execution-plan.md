@@ -64,7 +64,7 @@ Definition of done:
 
 ### PR 4: Pi spike, non-production path
 
-Status: draft PR #45 added an optional `HeadlessRuntime` adapter shell. Draft PR #46 adds explicit `runtime: 'pi'` selection for headless probes. Draft PR #47 adds local config/CLI opt-in for tools-disabled headless smoke runs. Draft PR #48 adds headless session metadata plumbing for continuation probes. Draft PR #49 adds ModelRegistry-like resolution and explicit Pi tool policy mapping. Full Pi tool execution/Gateway proof points remain open.
+Status: draft PR #45 added an optional `HeadlessRuntime` adapter shell. Draft PR #46 adds explicit `runtime: 'pi'` selection for headless probes. Draft PR #47 adds local config/CLI opt-in for tools-disabled headless smoke runs. Draft PR #48 adds headless session metadata plumbing for continuation probes. Draft PR #49 adds ModelRegistry-like resolution and explicit Pi tool policy mapping. Draft PR #50 adds Pi `tool_call` denial feedback through an inline policy extension. Full Pi tool execution/Gateway proof points remain open.
 
 Goal:
 
@@ -107,4 +107,4 @@ Decision gate:
 
 ## Near-term next action
 
-Continue the stacked migration from the smallest safe seam outward: use the local Pi headless smoke path to prove model loading, event text, session metadata, and explicit tool policy with the real package, then add model-visible denial feedback before attempting Gateway streaming.
+Continue the stacked migration from the smallest safe seam outward: with model loading, event text, session metadata, explicit tool policy, and model-visible denial feedback covered in the headless seam, the next useful proof is normalized Pi event mapping for Gateway streaming before production tool approval wiring.

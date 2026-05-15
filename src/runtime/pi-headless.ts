@@ -26,6 +26,8 @@ export type PiCreateAgentSession = (options?: Record<string, unknown>) => Promis
 
 export interface PiCodingAgentSdkModule {
   createAgentSession?: PiCreateAgentSession;
+  DefaultResourceLoader?: new (options: Record<string, unknown>) => PiResourceLoaderLike;
+  getAgentDir?: () => string;
 }
 
 export type PiSdkLoader = () => Promise<PiCodingAgentSdkModule>;
@@ -43,9 +45,61 @@ export type PiModelRegistryProvider =
   | PiModelRegistryLike
   | ((input: HeadlessRunInput, sdk: PiCodingAgentSdkModule) => PiModelRegistryLike | Promise<PiModelRegistryLike>);
 
+export interface PiHeadlessToolCall {
+  toolName: string;
+  originalToolName: string;
+  toolCallId?: string;
+  input: Record<string, unknown>;
+}
+
+export type PiHeadlessToolDecision =
+  | boolean
+  | { behavior: 'allow' | 'deny'; message?: string; reason?: string }
+  | { allow: boolean; message?: string; reason?: string }
+  | undefined;
+
+export type PiHeadlessCanUseTool = (
+  toolCall: PiHeadlessToolCall,
+  input: HeadlessRunInput,
+) => PiHeadlessToolDecision | Promise<PiHeadlessToolDecision>;
+
 export type PiHeadlessToolPolicy =
   | { mode: 'deny' }
-  | { mode: 'allow-list'; tools: string[] };
+  | {
+      mode: 'allow-list';
+      tools: string[];
+      canUseTool?: PiHeadlessCanUseTool;
+      denyMessage?: string;
+    };
+
+export interface PiToolCallEventLike {
+  toolName?: unknown;
+  toolCallId?: unknown;
+  input?: unknown;
+}
+
+export type PiToolCallEventResultLike = { block?: boolean; reason?: string } | undefined;
+
+export interface PiExtensionApiLike {
+  on(
+    event: 'tool_call',
+    handler: (event: PiToolCallEventLike, context: unknown) => PiToolCallEventResultLike | Promise<PiToolCallEventResultLike>,
+  ): void;
+}
+
+export type PiExtensionFactoryLike = (pi: PiExtensionApiLike) => void | Promise<void>;
+
+export interface PiLoadExtensionsResultLike {
+  extensions: unknown[];
+  errors: unknown[];
+  runtime?: unknown;
+  [key: string]: unknown;
+}
+
+export interface PiResourceLoaderLike {
+  getExtensions(): PiLoadExtensionsResultLike;
+  reload?(): Promise<void>;
+}
 
 export interface PiHeadlessRuntimeOptions {
   createAgentSession?: PiCreateAgentSession;
@@ -126,7 +180,6 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
   }
 
   private async loadSdk(): Promise<PiCodingAgentSdkModule> {
-    if (this.options.createAgentSession) return {};
     if (this.options.importPiCodingAgent) {
       try {
         return await this.options.importPiCodingAgent();
@@ -135,6 +188,7 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
         throw new Error(`Pi headless runtime requires optional package ${PI_PACKAGE_NAME}. Install it for the experimental Pi spike. Original error: ${message}`);
       }
     }
+    if (this.options.createAgentSession) return {};
     return importPiCodingAgent();
   }
 
@@ -142,10 +196,11 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
     const configured = typeof this.options.createOptions === 'function'
       ? await this.options.createOptions(input)
       : (this.options.createOptions ?? {});
+    const cwd = input.cwd ?? input.runtimeDefaults?.cwd ?? configured.cwd ?? process.cwd();
     const options: Record<string, unknown> = {
       ...configured,
-      cwd: input.cwd ?? input.runtimeDefaults?.cwd ?? configured.cwd ?? process.cwd(),
-      ...(await this.buildToolOptions(input)),
+      cwd,
+      ...(await this.buildToolOptions(input, sdk, configured, String(cwd))),
     };
     const sessionId = input.sessionId ?? configured.sessionId;
     if (typeof sessionId === 'string' && sessionId) {
@@ -178,7 +233,12 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
       : this.options.modelRegistry;
   }
 
-  private async buildToolOptions(input: HeadlessRunInput): Promise<Record<string, unknown>> {
+  private async buildToolOptions(
+    input: HeadlessRunInput,
+    sdk: PiCodingAgentSdkModule,
+    configured: Record<string, unknown>,
+    cwd: string,
+  ): Promise<Record<string, unknown>> {
     const policy = typeof this.options.toolPolicy === 'function'
       ? await this.options.toolPolicy(input)
       : (this.options.toolPolicy ?? { mode: 'deny' });
@@ -190,9 +250,21 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
       };
     }
 
-    return {
+    const toolOptions: Record<string, unknown> = {
       tools: normalizePiToolNames(policy.tools),
     };
+
+    if (policy.canUseTool) {
+      toolOptions.resourceLoader = await buildPiToolPolicyResourceLoader({
+        input,
+        policy,
+        sdk,
+        configured,
+        cwd,
+      });
+    }
+
+    return toolOptions;
   }
 }
 
@@ -229,12 +301,64 @@ export function resolvePiModelFromRegistry(modelId: string, registry: PiModelReg
 
 export function normalizePiToolNames(tools: string[]): string[] {
   const normalized = tools.map((tool) => {
-    const compact = tool.trim();
-    const builtin = PI_TOOL_NAME_ALIASES[compact] ?? PI_TOOL_NAME_ALIASES[compact.toLowerCase()];
-    return builtin ?? compact;
+    return normalizePiToolName(tool);
   }).filter((tool) => tool.length > 0);
 
   return Array.from(new Set(normalized));
+}
+
+export function createPiToolPolicyExtension(
+  input: HeadlessRunInput,
+  policy: PiHeadlessToolPolicy,
+): PiExtensionFactoryLike {
+  return (pi) => {
+    pi.on('tool_call', async (event) => evaluatePiToolCallPolicy(input, policy, event));
+  };
+}
+
+export async function evaluatePiToolCallPolicy(
+  input: HeadlessRunInput,
+  policy: PiHeadlessToolPolicy,
+  event: PiToolCallEventLike,
+): Promise<PiToolCallEventResultLike> {
+  if (policy.mode === 'deny') {
+    return {
+      block: true,
+      reason: input.toolDenyMessage ?? `Tools disabled for ${input.purpose ?? 'pi headless'}.`,
+    };
+  }
+
+  const originalToolName = typeof event.toolName === 'string' ? event.toolName : '';
+  const toolName = normalizePiToolName(originalToolName);
+  const allowedTools = new Set(normalizePiToolNames(policy.tools));
+  if (!toolName || !allowedTools.has(toolName)) {
+    return {
+      block: true,
+      reason: policy.denyMessage
+        ?? input.toolDenyMessage
+        ?? `Tool ${originalToolName || '<unknown>'} is not enabled for ${input.purpose ?? 'pi headless'}.`,
+    };
+  }
+
+  if (!policy.canUseTool) return undefined;
+
+  const decision = await policy.canUseTool({
+    toolName,
+    originalToolName,
+    toolCallId: typeof event.toolCallId === 'string' ? event.toolCallId : undefined,
+    input: isRecord(event.input) ? event.input : {},
+  }, input);
+  const normalizedDecision = normalizePiToolDecision(decision);
+
+  if (normalizedDecision.allowed) return undefined;
+
+  return {
+    block: true,
+    reason: normalizedDecision.reason
+      ?? policy.denyMessage
+      ?? input.toolDenyMessage
+      ?? `Tool ${toolName} was denied by AnthroClaw policy.`,
+  };
 }
 
 function extractPiTextDelta(event: unknown): string | undefined {
@@ -318,3 +442,121 @@ const PI_TOOL_NAME_ALIASES: Record<string, string> = {
   Ls: 'ls',
   ls: 'ls',
 };
+
+const PI_TOOL_POLICY_EXTENSION_PATH = '<anthroclaw:pi-tool-policy>';
+
+interface BuildPiToolPolicyResourceLoaderParams {
+  input: HeadlessRunInput;
+  policy: Extract<PiHeadlessToolPolicy, { mode: 'allow-list' }>;
+  sdk: PiCodingAgentSdkModule;
+  configured: Record<string, unknown>;
+  cwd: string;
+}
+
+async function buildPiToolPolicyResourceLoader(params: BuildPiToolPolicyResourceLoaderParams): Promise<PiResourceLoaderLike> {
+  const configuredResourceLoader = params.configured.resourceLoader;
+  if (isPiResourceLoader(configuredResourceLoader)) {
+    return wrapPiResourceLoaderWithPolicyExtension(configuredResourceLoader, params.input, params.policy);
+  }
+
+  const ResourceLoader = params.sdk.DefaultResourceLoader;
+  if (typeof ResourceLoader !== 'function') {
+    throw new Error('Pi headless runtime needs Pi DefaultResourceLoader or createOptions.resourceLoader to install tool denial feedback.');
+  }
+
+  const agentDir = typeof params.configured.agentDir === 'string'
+    ? params.configured.agentDir
+    : params.sdk.getAgentDir?.();
+  if (!agentDir) {
+    throw new Error('Pi headless runtime needs agentDir or Pi getAgentDir() to install tool denial feedback.');
+  }
+
+  const resourceLoader = new ResourceLoader({
+    cwd: params.cwd,
+    agentDir,
+    settingsManager: params.configured.settingsManager,
+    extensionFactories: [
+      createPiToolPolicyExtension(params.input, params.policy),
+    ],
+  });
+  await resourceLoader.reload?.();
+  return resourceLoader;
+}
+
+function wrapPiResourceLoaderWithPolicyExtension(
+  resourceLoader: PiResourceLoaderLike,
+  input: HeadlessRunInput,
+  policy: PiHeadlessToolPolicy,
+): PiResourceLoaderLike {
+  return new Proxy(resourceLoader, {
+    get(target, prop, receiver) {
+      if (prop === 'getExtensions') {
+        return () => appendPiLoadedPolicyExtension(target.getExtensions(), input, policy);
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+function appendPiLoadedPolicyExtension(
+  base: PiLoadExtensionsResultLike,
+  input: HeadlessRunInput,
+  policy: PiHeadlessToolPolicy,
+): PiLoadExtensionsResultLike {
+  return {
+    ...base,
+    extensions: [
+      ...base.extensions,
+      createPiLoadedToolPolicyExtension(input, policy),
+    ],
+  };
+}
+
+function createPiLoadedToolPolicyExtension(input: HeadlessRunInput, policy: PiHeadlessToolPolicy): Record<string, unknown> {
+  return {
+    path: PI_TOOL_POLICY_EXTENSION_PATH,
+    resolvedPath: PI_TOOL_POLICY_EXTENSION_PATH,
+    sourceInfo: {
+      path: PI_TOOL_POLICY_EXTENSION_PATH,
+      source: 'AnthroClaw',
+      scope: 'temporary',
+      origin: 'top-level',
+    },
+    handlers: new Map<string, unknown[]>([
+      ['tool_call', [
+        async (event: PiToolCallEventLike) => evaluatePiToolCallPolicy(input, policy, event),
+      ]],
+    ]),
+    tools: new Map(),
+    messageRenderers: new Map(),
+    commands: new Map(),
+    flags: new Map(),
+    shortcuts: new Map(),
+  };
+}
+
+function isPiResourceLoader(value: unknown): value is PiResourceLoaderLike {
+  return isRecord(value) && typeof value.getExtensions === 'function';
+}
+
+function normalizePiToolDecision(decision: PiHeadlessToolDecision): { allowed: boolean; reason?: string } {
+  if (decision === undefined) return { allowed: true };
+  if (typeof decision === 'boolean') return { allowed: decision };
+  if ('behavior' in decision) {
+    return {
+      allowed: decision.behavior === 'allow',
+      reason: decision.reason ?? decision.message,
+    };
+  }
+  return {
+    allowed: decision.allow,
+    reason: decision.reason ?? decision.message,
+  };
+}
+
+function normalizePiToolName(tool: string): string {
+  const compact = tool.trim();
+  const builtin = PI_TOOL_NAME_ALIASES[compact] ?? PI_TOOL_NAME_ALIASES[compact.toLowerCase()];
+  return builtin ?? compact;
+}

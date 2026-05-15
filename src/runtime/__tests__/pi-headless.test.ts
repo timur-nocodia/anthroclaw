@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  createPiToolPolicyExtension,
   createPiHeadlessRuntime,
+  evaluatePiToolCallPolicy,
   normalizePiToolNames,
   parsePiModelRef,
   PiHeadlessRuntime,
   resolvePiModelFromRegistry,
   type PiAgentSessionLike,
   type PiCreateAgentSession,
+  type PiLoadExtensionsResultLike,
+  type PiResourceLoaderLike,
 } from '../pi-headless.js';
 
 function createSession(events: unknown[], promptImpl?: () => Promise<void>): PiAgentSessionLike {
@@ -144,6 +148,124 @@ describe('PiHeadlessRuntime', () => {
     expect(firstOptions).not.toHaveProperty('noTools');
   });
 
+  it('installs model-visible Pi tool denial feedback on a configured resource loader', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session })) satisfies PiCreateAgentSession;
+    const canUseTool = vi.fn(async () => ({
+      behavior: 'deny' as const,
+      message: 'bash requires review',
+    }));
+    const baseExtensions: PiLoadExtensionsResultLike = {
+      extensions: [{ path: '<base>' }],
+      errors: [],
+      runtime: {},
+    };
+    const resourceLoader: PiResourceLoaderLike = {
+      getExtensions: vi.fn(() => baseExtensions),
+      reload: vi.fn(async () => undefined),
+    };
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession,
+      createOptions: { resourceLoader },
+      toolPolicy: {
+        mode: 'allow-list',
+        tools: ['Bash'],
+        canUseTool,
+      },
+    });
+
+    await runtime.runText({
+      prompt: 'p',
+      purpose: 'tool proof',
+    });
+
+    const firstOptions = (createAgentSession as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(firstOptions.tools).toEqual(['bash']);
+    expect(firstOptions.resourceLoader).not.toBe(resourceLoader);
+
+    const wrappedLoader = firstOptions.resourceLoader as PiResourceLoaderLike;
+    const extensions = wrappedLoader.getExtensions().extensions as Array<Record<string, unknown>>;
+    expect(extensions.map((extension) => extension.path)).toEqual(['<base>', '<anthroclaw:pi-tool-policy>']);
+    const policyExtension = extensions[1];
+    const handlers = policyExtension.handlers as Map<string, Array<(event: unknown) => Promise<unknown>>>;
+
+    await expect(handlers.get('tool_call')?.[0]({
+      toolName: 'bash',
+      toolCallId: 'call-1',
+      input: { command: 'rm -rf /tmp/x' },
+    })).resolves.toEqual({
+      block: true,
+      reason: 'bash requires review',
+    });
+    expect(canUseTool).toHaveBeenCalledWith({
+      toolName: 'bash',
+      originalToolName: 'bash',
+      toolCallId: 'call-1',
+      input: { command: 'rm -rf /tmp/x' },
+    }, expect.objectContaining({ purpose: 'tool proof' }));
+  });
+
+  it('uses Pi DefaultResourceLoader to install tool denial feedback when no resource loader is configured', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session })) satisfies PiCreateAgentSession;
+    const reload = vi.fn(async () => undefined);
+    const DefaultResourceLoader = vi.fn(function DefaultResourceLoader(this: PiResourceLoaderLike, options: Record<string, unknown>) {
+      this.getExtensions = vi.fn(() => ({ extensions: [], errors: [], runtime: {} }));
+      this.reload = reload;
+      Object.assign(this, { options });
+    });
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession,
+      importPiCodingAgent: async () => ({
+        DefaultResourceLoader: DefaultResourceLoader as unknown as new (options: Record<string, unknown>) => PiResourceLoaderLike,
+        getAgentDir: () => '/tmp/pi-agent',
+      }),
+      toolPolicy: {
+        mode: 'allow-list',
+        tools: ['Read'],
+        canUseTool: async () => true,
+      },
+    });
+
+    await runtime.runText({
+      prompt: 'p',
+      cwd: '/workspace',
+    });
+
+    expect(DefaultResourceLoader).toHaveBeenCalledWith(expect.objectContaining({
+      cwd: '/workspace',
+      agentDir: '/tmp/pi-agent',
+      extensionFactories: [expect.any(Function)],
+    }));
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      tools: ['read'],
+      resourceLoader: expect.any(Object),
+    }));
+  });
+
+  it('fails closed when dynamic Pi tool policy cannot be installed', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession: vi.fn(async () => ({ session })),
+      toolPolicy: {
+        mode: 'allow-list',
+        tools: ['Bash'],
+        canUseTool: async () => false,
+      },
+    });
+
+    await expect(runtime.runText({ prompt: 'p' }))
+      .rejects.toThrow(/DefaultResourceLoader.*resourceLoader/);
+  });
+
   it('returns a session id from Pi run metadata', async () => {
     const session = createSession([
       { type: 'assistant_text_delta', delta: 'started' },
@@ -270,5 +392,66 @@ describe('PiHeadlessRuntime', () => {
     expect(() => resolvePiModelFromRegistry('openai/gpt-5-mini', {
       find: () => undefined,
     })).toThrow(/could not find model openai\/gpt-5-mini/);
+  });
+
+  it('exposes a Pi policy extension helper for direct SDK resource loader wiring', async () => {
+    const registered: Array<(event: unknown) => Promise<unknown>> = [];
+    const extension = createPiToolPolicyExtension({
+      prompt: 'p',
+      toolDenyMessage: 'denied by smoke',
+    }, {
+      mode: 'allow-list',
+      tools: ['Read'],
+      canUseTool: async () => false,
+    });
+
+    extension({
+      on: (_event, handler) => {
+        registered.push(handler as (event: unknown) => Promise<unknown>);
+      },
+    });
+
+    await expect(registered[0]?.({
+      toolName: 'read',
+      input: { filePath: 'a.txt' },
+    })).resolves.toEqual({
+      block: true,
+      reason: 'denied by smoke',
+    });
+  });
+
+  it('evaluates Pi tool policy allow, deny, and outside-allowlist calls', async () => {
+    await expect(evaluatePiToolCallPolicy({ prompt: 'p' }, {
+      mode: 'allow-list',
+      tools: ['Read'],
+      canUseTool: async () => ({ allow: true }),
+    }, {
+      toolName: 'read',
+      input: { filePath: 'README.md' },
+    })).resolves.toBeUndefined();
+
+    await expect(evaluatePiToolCallPolicy({ prompt: 'p' }, {
+      mode: 'allow-list',
+      tools: ['Read'],
+      canUseTool: async () => false,
+      denyMessage: 'no reads',
+    }, {
+      toolName: 'read',
+      input: { filePath: 'README.md' },
+    })).resolves.toEqual({
+      block: true,
+      reason: 'no reads',
+    });
+
+    await expect(evaluatePiToolCallPolicy({ prompt: 'p', purpose: 'policy test' }, {
+      mode: 'allow-list',
+      tools: ['Read'],
+    }, {
+      toolName: 'bash',
+      input: { command: 'pwd' },
+    })).resolves.toEqual({
+      block: true,
+      reason: 'Tool bash is not enabled for policy test.',
+    });
   });
 });
