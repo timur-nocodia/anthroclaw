@@ -1,5 +1,4 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import { runClaudeAgentQuery, type ClaudeRuntimeOptions as Options } from '../runtime/claude-agent-sdk.js';
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 
@@ -50,7 +49,7 @@ export async function runHeadlessReview(opts: HeadlessReviewOptions): Promise<st
       : { type: 'preset', preset: 'claude_code', excludeDynamicSections: true },
   };
 
-  const stream = query({ prompt: opts.prompt, options: sdkOptions });
+  const stream = runClaudeAgentQuery({ prompt: opts.prompt, options: sdkOptions });
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let result = '';

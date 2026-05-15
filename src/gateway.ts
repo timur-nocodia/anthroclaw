@@ -26,8 +26,18 @@ const ANTHROCLAW_VERSION = (() => {
     return '0.0.0';
   }
 })();
-import { createSdkMcpServer, query, startup } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import {
+  createClaudeSdkMcpServer,
+  initializeClaudeAgentRuntime,
+  runClaudeAgentQuery,
+  type ClaudeAgentDefinition as AgentDefinition,
+  type ClaudeAgentMcpServerSpec as AgentMcpServerSpec,
+  type ClaudeElicitationRequest as ElicitationRequest,
+  type ClaudeElicitationResult as ElicitationResult,
+  type ClaudeRuntimeOptions as Options,
+  type ClaudeRuntimeQuery as Query,
+  type ClaudeRuntimeUserMessage as SDKUserMessage,
+} from './runtime/claude-agent-sdk.js';
 import { Agent } from './agent/agent.js';
 import { AGENT_ID_MAX_LEN, AGENT_ID_RE } from './agent/sandbox/agent-workspace.js';
 import { createManageCronTool } from './agent/tools/manage-cron.js';
@@ -1298,7 +1308,7 @@ export class Gateway {
 
     // Initialize the SDK (handles OAuth, etc.)
     try {
-      const healthCheck = await startup();
+      const healthCheck = await initializeClaudeAgentRuntime();
       healthCheck.close();
       this.sdkReady = true;
       logger.info('Claude Agent SDK initialized');
@@ -2022,7 +2032,7 @@ export class Gateway {
       });
       options.mcpServers = {
         ...(options.mcpServers ?? {}),
-        [agent.mcpServer.name]: createSdkMcpServer({
+        [agent.mcpServer.name]: createClaudeSdkMcpServer({
           name: agent.mcpServer.name,
           tools: dispatchTools as unknown as any[],
         }),
@@ -2066,7 +2076,7 @@ export class Gateway {
         { agentId: agent.id, warmUsed: false, externalMcpCount, reason: resume ? 'resume' : 'no-warm-available' },
         'SDK query starting',
       );
-      return query({ prompt, options: options as any }) as Query;
+      return runClaudeAgentQuery({ prompt, options: options as any }) as Query;
     }
 
     try {
@@ -2080,7 +2090,7 @@ export class Gateway {
     } catch (err) {
       logger.warn({ err, agentId: agent.id }, 'SDK warm query failed; falling back to regular query');
       void this.prewarmAgent(agent);
-      return query({ prompt, options: options as any }) as Query;
+      return runClaudeAgentQuery({ prompt, options: options as any }) as Query;
     }
   }
 
@@ -3057,7 +3067,7 @@ export class Gateway {
         options.disallowedTools = buildAllowedTools(agent, false);
         options.canUseTool = async () => ({ behavior: 'deny', message: 'Tools disabled for title generation.' });
 
-        const result = query({
+        const result = runClaudeAgentQuery({
           prompt,
           options: options as any,
         });
@@ -5908,7 +5918,7 @@ export class Gateway {
             trustedBypass: true,
             includeMcpServer: false,
           });
-          const result = query({
+          const result = runClaudeAgentQuery({
             prompt: summaryPrompt,
             options: options as any,
           });
@@ -6045,7 +6055,7 @@ export class Gateway {
           if (trimmed.length > 0) stderrLines.push(trimmed);
         }
       };
-      const result = query({
+      const result = runClaudeAgentQuery({
         prompt: summaryPrompt,
         options: options as any,
       });
