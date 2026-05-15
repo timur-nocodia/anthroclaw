@@ -20,6 +20,8 @@ const AFTER_TEXT = 'after AnthroClaw Pi Gateway smoke\n';
 
 interface PiGatewaySmokeArgs {
   model?: string;
+  authPath?: string;
+  modelsPath?: string;
   timeoutMs: number;
   keepWorkspace: boolean;
   allowSkip: boolean;
@@ -76,6 +78,8 @@ export async function runPiGatewaySmokeCli(
       GatewayCtor: deps.GatewayCtor,
       workspace,
       model: args.model,
+      authPath: args.authPath,
+      modelsPath: args.modelsPath,
       timeoutMs: args.timeoutMs,
     });
     writeResult(stdout, args.json, result);
@@ -108,6 +112,8 @@ export async function runPiGatewaySmoke(input: {
   GatewayCtor?: new () => Gateway;
   workspace: string;
   model?: string;
+  authPath?: string;
+  modelsPath?: string;
   timeoutMs: number;
 }): Promise<PiGatewaySmokeResult> {
   const workspace = resolve(input.workspace);
@@ -137,7 +143,10 @@ export async function runPiGatewaySmoke(input: {
   });
 
   try {
-    await gateway.start(smokeConfig(), agentsDir, dataDir, pluginsDir);
+    await gateway.start(smokeConfig({
+      authPath: input.authPath,
+      modelsPath: input.modelsPath,
+    }), agentsDir, dataDir, pluginsDir);
     gateway._setChannel(CHANNEL_ID, channel);
     const priorFailedRunIds = new Set(
       gateway.listAgentRuns({ agentId: AGENT_ID, status: 'failed', limit: 1000 }).map((run) => run.runId),
@@ -194,6 +203,12 @@ export function parsePiGatewaySmokeArgs(argv: string[]): PiGatewaySmokeArgs {
       case '--model':
         args.model = requireValue(argv, ++i, '--model');
         break;
+      case '--auth-path':
+        args.authPath = requireValue(argv, ++i, '--auth-path');
+        break;
+      case '--models-path':
+        args.modelsPath = requireValue(argv, ++i, '--models-path');
+        break;
       case '--timeout-ms':
         args.timeoutMs = parsePositiveInt(requireValue(argv, ++i, '--timeout-ms'), '--timeout-ms');
         break;
@@ -224,7 +239,7 @@ async function ensurePiRuntimeImportable(): Promise<void> {
   }
 }
 
-function smokeConfig() {
+function smokeConfig(input: { authPath?: string; modelsPath?: string } = {}) {
   return GlobalConfigSchema.parse({
     defaults: {
       model: DEFAULT_PI_MODEL_ID,
@@ -235,6 +250,10 @@ function smokeConfig() {
     runtime: {
       headless: {
         provider: 'pi',
+        pi: {
+          ...(input.authPath ? { auth_path: input.authPath } : {}),
+          ...(input.modelsPath ? { models_path: input.modelsPath } : {}),
+        },
       },
     },
   });
@@ -377,6 +396,8 @@ function usage(): string {
     '',
     'Options:',
     '  --model <model>       model override for the temporary smoke agent',
+    '  --auth-path <path>    optional Pi auth.json path',
+    '  --models-path <path>  optional Pi models.json path',
     '  --timeout-ms <ms>     positive integer dispatch timeout (default: 120000)',
     '  --keep-workspace      keep the temporary smoke workspace for inspection',
     '  --allow-skip          exit 0 for missing optional Pi runtime/auth setup',

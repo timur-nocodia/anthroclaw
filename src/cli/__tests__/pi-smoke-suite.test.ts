@@ -14,6 +14,8 @@ describe('Pi smoke suite CLI', () => {
 
     const code = await runPiSmokeSuiteCli([
       '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
       '--timeout-ms', '1000',
       '--keep-workspace',
       '--json',
@@ -32,13 +34,18 @@ describe('Pi smoke suite CLI', () => {
     expect(auth.mock.calls[0]?.[0]).toEqual([
       '--json',
       '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
     ]);
     expect(workspace.mock.calls[0]?.[0]).toEqual([
       '--json',
       '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
       '--timeout-ms', '1000',
       '--keep-workspace',
     ]);
+    expect(gateway.mock.calls[0]?.[0]).toEqual(workspace.mock.calls[0]?.[0]);
     expect(JSON.parse(stdout.text())).toMatchObject({
       status: 'passed',
       runtime: 'pi',
@@ -144,12 +151,16 @@ describe('Pi smoke suite CLI', () => {
     expect(parsePiSmokeSuiteArgs([
       '--',
       '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
       '--timeout-ms', '500',
       '--keep-workspace',
       '--allow-skip',
       '--json',
     ])).toMatchObject({
       model: 'test/model',
+      authPath: '/secure/pi-auth.json',
+      modelsPath: '/secure/pi-models.json',
       timeoutMs: 500,
       keepWorkspace: true,
       allowSkip: true,

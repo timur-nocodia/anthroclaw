@@ -5,6 +5,8 @@ const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 
 interface PiAuthSmokeArgs {
   model: string;
+  authPath?: string;
+  modelsPath?: string;
   allowSkip: boolean;
   json: boolean;
   help: boolean;
@@ -18,10 +20,10 @@ interface PiAuthSmokeDeps {
 
 interface PiAuthSdkModule {
   AuthStorage: {
-    create: () => PiAuthStorageLike;
+    create: (authPath?: string) => PiAuthStorageLike;
   };
   ModelRegistry: {
-    create: (authStorage: PiAuthStorageLike) => PiModelRegistryLike;
+    create: (authStorage: PiAuthStorageLike, modelsPath?: string) => PiModelRegistryLike;
   };
   VERSION?: string;
 }
@@ -91,7 +93,10 @@ export async function runPiAuthSmokeCli(
   const ref = parsePiModelRef(args.model);
   try {
     const sdk = await (deps.loadSdk ?? loadPiSdk)();
-    const result = await runPiAuthSmoke(args.model, ref, sdk);
+    const result = await runPiAuthSmoke(args.model, ref, sdk, {
+      authPath: args.authPath,
+      modelsPath: args.modelsPath,
+    });
     const normalized = args.allowSkip && result.status === 'failed' && isSkippablePiSetupError(result.error ?? '')
       ? { ...result, status: 'skipped' as const }
       : result;
@@ -131,9 +136,10 @@ export async function runPiAuthSmoke(
   requestedModel: string,
   ref = parsePiModelRef(requestedModel),
   sdk: PiAuthSdkModule,
+  options: { authPath?: string; modelsPath?: string } = {},
 ): Promise<PiAuthSmokeResult> {
-  const authStorage = sdk.AuthStorage.create();
-  const modelRegistry = sdk.ModelRegistry.create(authStorage);
+  const authStorage = sdk.AuthStorage.create(options.authPath);
+  const modelRegistry = sdk.ModelRegistry.create(authStorage, options.modelsPath);
   const model = modelRegistry.find(ref.provider, ref.modelId);
   const available = await modelRegistry.getAvailable();
   const providerAuthConfigured = await modelRegistry.hasConfiguredAuth(ref.provider);
@@ -214,6 +220,12 @@ export function parsePiAuthSmokeArgs(argv: string[]): PiAuthSmokeArgs {
         break;
       case '--model':
         args.model = requireValue(argv, ++i, '--model');
+        break;
+      case '--auth-path':
+        args.authPath = requireValue(argv, ++i, '--auth-path');
+        break;
+      case '--models-path':
+        args.modelsPath = requireValue(argv, ++i, '--models-path');
         break;
       case '--allow-skip':
         args.allowSkip = true;
@@ -306,6 +318,8 @@ function usage(): string {
     '',
     'Options:',
     `  --model <provider/model>  Pi model to validate (default: ${DEFAULT_PI_MODEL_ID})`,
+    '  --auth-path <path>        optional Pi auth.json path',
+    '  --models-path <path>      optional Pi models.json path',
     '  --allow-skip              exit 0 for missing optional Pi runtime/auth setup',
     '  --json                    print structured smoke result',
   ].join('\n');

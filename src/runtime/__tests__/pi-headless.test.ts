@@ -141,12 +141,43 @@ describe('PiHeadlessRuntime', () => {
     })).resolves.toBe('done');
 
     expect(authCreate).toHaveBeenCalledTimes(1);
-    expect(registryCreate).toHaveBeenCalledWith(authStorage);
+    expect(registryCreate).toHaveBeenCalledWith(authStorage, undefined);
     expect(modelRegistry.find).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-6');
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
       model,
       modelRegistry,
     }));
+  });
+
+  it('passes configured Pi auth and model storage paths into the default registry', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session })) satisfies PiCreateAgentSession;
+    const authStorage = {};
+    const model = { provider: 'anthropic', id: 'claude-sonnet-4-6' };
+    const modelRegistry = {
+      find: vi.fn(() => model),
+    };
+    const authCreate = vi.fn(() => authStorage);
+    const registryCreate = vi.fn(() => modelRegistry);
+    const runtime = new PiHeadlessRuntime({
+      authStoragePath: '/secure/pi-auth.json',
+      modelsPath: '/secure/pi-models.json',
+      importPiCodingAgent: async () => ({
+        createAgentSession,
+        AuthStorage: { create: authCreate },
+        ModelRegistry: { create: registryCreate },
+      }),
+    });
+
+    await expect(runtime.runText({
+      prompt: 'p',
+      model: 'claude-sonnet-4-6',
+    })).resolves.toBe('done');
+
+    expect(authCreate).toHaveBeenCalledWith('/secure/pi-auth.json');
+    expect(registryCreate).toHaveBeenCalledWith(authStorage, '/secure/pi-models.json');
   });
 
   it('keeps Pi headless tools denied by default even if runtime defaults mention tools', async () => {

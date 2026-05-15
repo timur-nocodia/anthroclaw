@@ -104,6 +104,25 @@ describe('GlobalConfigSchema', () => {
     expect(result.runtime.headless.provider).toBe('pi');
   });
 
+  it('accepts Pi headless auth and model storage paths', () => {
+    const result = GlobalConfigSchema.parse({
+      runtime: {
+        headless: {
+          provider: 'pi',
+          pi: {
+            auth_path: '/secure/pi-auth.json',
+            models_path: '/secure/pi-models.json',
+          },
+        },
+      },
+    });
+
+    expect(result.runtime.headless.pi).toEqual({
+      auth_path: '/secure/pi-auth.json',
+      models_path: '/secure/pi-models.json',
+    });
+  });
+
   it('accepts OpenCode as an explicit headless runtime provider', () => {
     const result = GlobalConfigSchema.parse({
       runtime: {

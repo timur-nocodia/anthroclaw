@@ -64,7 +64,12 @@ Local smoke runs can now select Pi through `config.yml`:
 runtime:
   headless:
     provider: pi
+    pi:
+      auth_path: /secure/pi-auth.json
+      models_path: /secure/pi-models.json
 ```
+
+`auth_path` and `models_path` are optional. They point at Pi-owned storage files and do not move credential material into AnthroClaw config; the default remains Pi's own storage location when these fields are omitted.
 
 The same path is available through the probe CLI:
 
@@ -103,7 +108,7 @@ For a decision-ready local run, use the aggregate smoke gate:
 pnpm smoke:pi-all -- --json --allow-skip
 ```
 
-It runs the auth/model preflight first, then the workspace probe, then the Gateway probe. `--model` and `--allow-skip` are forwarded to the auth preflight; `--model`, `--timeout-ms`, `--keep-workspace`, and `--allow-skip` are forwarded to the runtime probes. The result is a single JSON envelope with top-level `status` and per-probe results. In a Pi-authenticated environment, run it without `--allow-skip`; any missing optional package/auth issue or runtime failure is then a hard failure.
+It runs the auth/model preflight first, then the workspace probe, then the Gateway probe. `--model`, `--auth-path`, `--models-path`, and `--allow-skip` are forwarded to the auth preflight; `--model`, `--auth-path`, `--models-path`, `--timeout-ms`, `--keep-workspace`, and `--allow-skip` are forwarded to the runtime probes. The result is a single JSON envelope with top-level `status` and per-probe results. In a Pi-authenticated environment, run it without `--allow-skip`; any missing optional package/auth issue or runtime failure is then a hard failure.
 
 The auth preflight can also be run directly:
 
@@ -113,7 +118,7 @@ pnpm smoke:pi-auth -- --model anthropic/claude-sonnet-4-6 --json
 
 It checks that the optional Pi SDK package imports, the requested model exists in Pi's model registry, the provider has credentials configured through Pi auth storage or environment variables, and the requested model appears in Pi's available-model set. It does not print credential values.
 
-The Pi runtime now uses Pi's default `AuthStorage` and `ModelRegistry` when a model id is present and no explicit registry was injected. AnthroClaw's legacy Claude model ids are normalized for this path, so `claude-sonnet-4-6` resolves as `anthropic/claude-sonnet-4-6`. Other bare model names still need explicit `provider/model` form.
+The Pi runtime now uses Pi's default `AuthStorage` and `ModelRegistry` when a model id is present and no explicit registry was injected. AnthroClaw's legacy Claude model ids are normalized for this path, so `claude-sonnet-4-6` resolves as `anthropic/claude-sonnet-4-6`. Other bare model names still need explicit `provider/model` form. For isolated staging/CI runs, pass `--auth-path /secure/pi-auth.json --models-path /secure/pi-models.json` to `smoke:pi-auth`, `smoke:pi-workspace`, `smoke:pi-gateway`, or `smoke:pi-all`; the same values flow into Pi's default `AuthStorage.create()` and `ModelRegistry.create()`.
 
 ## Headless session metadata
 
