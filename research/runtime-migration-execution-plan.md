@@ -31,6 +31,8 @@ Definition of done:
 
 ### PR 2: Runtime-owned event and run contract
 
+Status: draft PR #42, followed by draft PR #43 for moving active run registries onto `RuntimeRunHandle`.
+
 Goal:
 
 - add normalized `RuntimeEvent` types for the events AnthroClaw already consumes;
@@ -46,6 +48,8 @@ Definition of done:
 
 ### PR 3: Headless runtime contract
 
+Status: draft PR #44.
+
 Goal:
 
 - move title generation, memory extraction, plugin subagent runner, learning review, and session recall onto a `HeadlessRuntime` interface;
@@ -59,6 +63,8 @@ Definition of done:
 - tool-denied invariant remains tested.
 
 ### PR 4: Pi spike, non-production path
+
+Status: started as draft PR #45 with an optional `HeadlessRuntime` adapter shell. Full Pi run/tool/session proof points remain open.
 
 Goal:
 
@@ -101,4 +107,4 @@ Decision gate:
 
 ## Near-term next action
 
-Finish PR #41 as the protected baseline. Then start PR 2 unless there is a blocking review comment on #41.
+Continue the stacked migration from the smallest safe seam outward: finish the optional Pi headless probe, then add explicit opt-in loading and parity tests before attempting Gateway streaming or tool execution.
