@@ -23,6 +23,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
 });
 
 vi.mock('../../runtime/pi-headless.js', () => ({
+  DEFAULT_PI_MODEL_ID: 'anthropic/claude-sonnet-4-6',
   createPiHeadlessRuntime: () => {
     const runtime: Record<string, unknown> = {
       id: 'pi',

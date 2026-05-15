@@ -26,6 +26,7 @@ import {
 } from './workspace-snapshot.js';
 
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
+export const DEFAULT_PI_MODEL_ID = 'anthropic/claude-sonnet-4-6';
 
 export interface PiAgentSessionLike {
   id?: string;
@@ -47,6 +48,12 @@ export type PiCreateAgentSession = (options?: Record<string, unknown>) => Promis
 export interface PiCodingAgentSdkModule {
   createAgentSession?: PiCreateAgentSession;
   defineTool?: (definition: PiCustomToolDefinition) => unknown;
+  AuthStorage?: {
+    create: () => unknown;
+  };
+  ModelRegistry?: {
+    create: (authStorage: unknown) => PiModelRegistryLike;
+  };
   DefaultResourceLoader?: new (options: Record<string, unknown>) => PiResourceLoaderLike;
   getAgentDir?: () => string;
 }
@@ -277,10 +284,15 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
     configured: Record<string, unknown>,
   ): Promise<PiModelRegistryLike | undefined> {
     if (isPiModelRegistry(configured.modelRegistry)) return configured.modelRegistry;
-    if (!this.options.modelRegistry) return undefined;
-    return typeof this.options.modelRegistry === 'function'
-      ? await this.options.modelRegistry(input, sdk)
-      : this.options.modelRegistry;
+    if (this.options.modelRegistry) {
+      return typeof this.options.modelRegistry === 'function'
+        ? await this.options.modelRegistry(input, sdk)
+        : this.options.modelRegistry;
+    }
+    if (sdk.AuthStorage?.create && sdk.ModelRegistry?.create) {
+      return sdk.ModelRegistry.create(sdk.AuthStorage.create());
+    }
+    return undefined;
   }
 
   private async buildToolOptions(
@@ -476,7 +488,7 @@ class RuntimeEventQueue implements AsyncIterable<RuntimeEvent> {
 }
 
 export function parsePiModelRef(modelId: string): PiModelRef {
-  const trimmed = modelId.trim();
+  const trimmed = normalizePiModelId(modelId);
   const slashIndex = trimmed.indexOf('/');
   const colonIndex = trimmed.indexOf(':');
   const separatorIndex = slashIndex >= 0
@@ -491,6 +503,13 @@ export function parsePiModelRef(modelId: string): PiModelRef {
     provider: trimmed.slice(0, separatorIndex),
     modelId: trimmed.slice(separatorIndex + 1),
   };
+}
+
+export function normalizePiModelId(modelId: string): string {
+  const trimmed = modelId.trim();
+  if (trimmed.includes('/') || trimmed.includes(':')) return trimmed;
+  if (trimmed.startsWith('claude-')) return `anthropic/${trimmed}`;
+  return trimmed;
 }
 
 export function resolvePiModelFromRegistry(modelId: string, registry: PiModelRegistryLike): unknown {

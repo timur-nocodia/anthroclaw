@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { runPiAuthSmokeCli } from './pi-auth-smoke.js';
 import { runPiGatewaySmokeCli } from './pi-gateway-smoke.js';
 import { runPiWorkspaceSmokeCli } from './pi-workspace-smoke.js';
+import { DEFAULT_PI_MODEL_ID } from '../runtime/pi-headless.js';
 
 type SmokeStatus = 'passed' | 'failed' | 'skipped';
 type SmokeCliDeps = { stdout?: Pick<NodeJS.WriteStream, 'write'>; stderr?: Pick<NodeJS.WriteStream, 'write'> };
@@ -104,6 +105,7 @@ export async function runPiSmokeSuiteCli(
 
 export function parsePiSmokeSuiteArgs(argv: string[]): PiSmokeSuiteArgs {
   const args: PiSmokeSuiteArgs = {
+    model: DEFAULT_PI_MODEL_ID,
     keepWorkspace: false,
     allowSkip: false,
     json: false,
@@ -194,14 +196,14 @@ async function runProbe(
 
 function buildAuthProbeArgs(args: PiSmokeSuiteArgs): string[] {
   const out = ['--json'];
-  if (args.model) out.push('--model', args.model);
+  out.push('--model', args.model ?? DEFAULT_PI_MODEL_ID);
   if (args.allowSkip) out.push('--allow-skip');
   return out;
 }
 
 function buildRuntimeProbeArgs(args: PiSmokeSuiteArgs): string[] {
   const out = ['--json'];
-  if (args.model) out.push('--model', args.model);
+  out.push('--model', args.model ?? DEFAULT_PI_MODEL_ID);
   if (args.timeoutMs) out.push('--timeout-ms', String(args.timeoutMs));
   if (args.keepWorkspace) out.push('--keep-workspace');
   if (args.allowSkip) out.push('--allow-skip');
@@ -295,7 +297,7 @@ function usage(): string {
     '  3. Gateway channel dispatch + approval smoke',
     '',
     'Options:',
-    '  --model <model>       model override forwarded to both probes',
+    `  --model <model>       model override forwarded to all probes (default: ${DEFAULT_PI_MODEL_ID})`,
     '  --timeout-ms <ms>     positive integer timeout forwarded to both probes',
     '  --keep-workspace      keep temporary smoke workspaces for inspection',
     '  --allow-skip          exit 0 when probes report missing optional Pi runtime/auth setup',

@@ -111,6 +111,44 @@ describe('PiHeadlessRuntime', () => {
     }));
   });
 
+  it('can resolve model ids through the SDK default ModelRegistry when available', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session })) satisfies PiCreateAgentSession;
+    const authStorage = {};
+    const model = { provider: 'anthropic', id: 'claude-sonnet-4-6' };
+    const modelRegistry = {
+      find: vi.fn((provider: string, modelId: string) =>
+        provider === 'anthropic' && modelId === 'claude-sonnet-4-6'
+          ? model
+          : undefined
+      ),
+    };
+    const authCreate = vi.fn(() => authStorage);
+    const registryCreate = vi.fn(() => modelRegistry);
+    const runtime = new PiHeadlessRuntime({
+      importPiCodingAgent: async () => ({
+        createAgentSession,
+        AuthStorage: { create: authCreate },
+        ModelRegistry: { create: registryCreate },
+      }),
+    });
+
+    await expect(runtime.runText({
+      prompt: 'p',
+      model: 'claude-sonnet-4-6',
+    })).resolves.toBe('done');
+
+    expect(authCreate).toHaveBeenCalledTimes(1);
+    expect(registryCreate).toHaveBeenCalledWith(authStorage);
+    expect(modelRegistry.find).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-6');
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      model,
+      modelRegistry,
+    }));
+  });
+
   it('keeps Pi headless tools denied by default even if runtime defaults mention tools', async () => {
     const session = createSession([
       { type: 'assistant_text_delta', delta: 'done' },
@@ -701,6 +739,10 @@ describe('PiHeadlessRuntime', () => {
     expect(parsePiModelRef('anthropic:claude-sonnet-4-5')).toEqual({
       provider: 'anthropic',
       modelId: 'claude-sonnet-4-5',
+    });
+    expect(parsePiModelRef('claude-sonnet-4-6')).toEqual({
+      provider: 'anthropic',
+      modelId: 'claude-sonnet-4-6',
     });
     expect(() => parsePiModelRef('gpt-5-mini')).toThrow(/provider\/model/);
 

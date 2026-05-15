@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import type { ApprovalRequest, ChannelAdapter, InboundMessage, SendOptions, OutboundMedia } from '../channels/types.js';
 import { GlobalConfigSchema } from '../config/schema.js';
 import { Gateway } from '../gateway.js';
+import { DEFAULT_PI_MODEL_ID } from '../runtime/pi-headless.js';
 
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const AGENT_ID = 'pi-gateway-smoke';
@@ -226,7 +227,7 @@ async function ensurePiRuntimeImportable(): Promise<void> {
 function smokeConfig() {
   return GlobalConfigSchema.parse({
     defaults: {
-      model: 'claude-sonnet-4-6',
+      model: DEFAULT_PI_MODEL_ID,
       embedding_provider: 'openai',
       embedding_model: 'text-embedding-3-small',
       debounce_ms: 0,
