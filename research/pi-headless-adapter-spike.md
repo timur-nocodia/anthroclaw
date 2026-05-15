@@ -72,14 +72,30 @@ The same path is available through the probe CLI:
 pnpm headless:runtime -- --prompt "Summarize this transcript." --runtime pi
 ```
 
-`--runtime` intentionally overrides config so an operator can force `claude-agent-sdk` while testing a Pi-enabled config. The CLI is still a smoke probe: it runs the headless, tools-disabled review path only. It does not prove Gateway streaming, tools, approvals, or session continuation.
+`--runtime` intentionally overrides config so an operator can force `claude-agent-sdk` while testing a Pi-enabled config. For continuation probes, the CLI can emit and accept runtime session metadata:
+
+```bash
+pnpm headless:runtime -- --prompt "Start." --runtime pi --json
+pnpm headless:runtime -- --prompt "Continue." --runtime pi --session-id "<sessionId-from-json>" --json
+```
+
+The CLI is still a smoke probe: it runs the headless, tools-disabled review path only. It does not prove Gateway streaming, tools, approvals, or production session-key mapping.
+
+## Headless session metadata
+
+The Pi headless adapter now supports the minimum stateful contract:
+
+- `HeadlessRunInput.sessionId` is passed into Pi session creation when present.
+- `HeadlessRunResult.sessionId` is returned from Pi session metadata when exposed by the SDK/session object.
+- `runHeadlessReview()` remains text-only for current callers.
+- `runHeadlessReviewResult()` exposes `{ text, sessionId }` for smoke probes and future session mapping work.
 
 ## Next proof points
 
 Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
 - a model resolver wired through Pi `ModelRegistry`;
-- session continuation mapping from AnthroClaw session keys to Pi sessions;
+- production session continuation mapping from AnthroClaw session keys to Pi sessions;
 - tool policy experiments for read/bash/edit/write;
 - model-visible denial feedback for blocked tools;
 - normalized event mapping for Gateway streaming UI.

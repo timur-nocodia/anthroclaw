@@ -18,6 +18,7 @@ import { buildSdkOptions, type BuildSdkOptionsParams } from '../sdk/options.js';
 import {
   DEFAULT_HEADLESS_TIMEOUT_MS,
   type HeadlessRunInput,
+  type HeadlessRunResult,
   type HeadlessRuntime,
 } from './headless.js';
 import type {
@@ -165,6 +166,12 @@ export async function runClaudeHeadlessText(input: HeadlessRunInput): Promise<st
   return result;
 }
 
+export async function runClaudeHeadless(input: HeadlessRunInput): Promise<HeadlessRunResult> {
+  return {
+    text: await runClaudeHeadlessText(input),
+  };
+}
+
 export async function startClaudeAgentRuntime(input: RuntimeStartupInput<Options>): Promise<WarmQuery> {
   return startup({ options: input.options });
 }
@@ -203,5 +210,6 @@ export const claudeAgentSdkRuntime: RuntimeAdapter<Options, Query, WarmQuery, Mc
 
 export const claudeAgentHeadlessRuntime: HeadlessRuntime = {
   id: 'claude-agent-sdk',
+  run: runClaudeHeadless,
   runText: runClaudeHeadlessText,
 };

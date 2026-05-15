@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { runHeadlessReview } from '../headless-review.js';
+import { runHeadlessReview, runHeadlessReviewResult } from '../headless-review.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -74,6 +74,30 @@ describe('runHeadlessReview', () => {
       prompt: 'review this',
       purpose: 'test review',
     });
+    expect(mockedQuery).not.toHaveBeenCalled();
+  });
+
+  it('can return headless runtime metadata without changing text callers', async () => {
+    const runtime = {
+      id: 'stateful-headless',
+      run: vi.fn(async () => ({ text: 'runtime-output', sessionId: 'session-1' })),
+      runText: vi.fn(async () => 'unused'),
+    };
+
+    await expect(runHeadlessReviewResult({
+      prompt: 'review this',
+      runtime,
+      sessionId: 'session-0',
+    })).resolves.toEqual({
+      text: 'runtime-output',
+      sessionId: 'session-1',
+    });
+
+    expect(runtime.run).toHaveBeenCalledWith({
+      prompt: 'review this',
+      sessionId: 'session-0',
+    });
+    expect(runtime.runText).not.toHaveBeenCalled();
     expect(mockedQuery).not.toHaveBeenCalled();
   });
 
