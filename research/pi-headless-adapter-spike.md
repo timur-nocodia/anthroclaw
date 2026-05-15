@@ -89,6 +89,14 @@ pnpm smoke:pi-workspace -- --json --allow-skip
 
 It creates a temporary workspace, asks Pi to edit `anthroclaw-pi-smoke.txt`, verifies `RuntimeRunHandle.rewindFiles()` dry-run, restores the file, and reports a structured `passed` / `failed` / `skipped` result. `--allow-skip` is intended for environments where the optional Pi package or auth is not installed yet; without it, missing Pi setup is a failure.
 
+For the Gateway path there is an opt-in channel dispatch smoke probe:
+
+```bash
+pnpm smoke:pi-gateway -- --json --allow-skip
+```
+
+It starts a temporary Gateway with `runtime.headless.provider: pi`, creates a trusted Telegram-routed smoke agent, injects a real channel-shaped inbound message, auto-resolves the Write/Edit approval through `Gateway.handleApprovalCallback()`, verifies that `ApprovalBroker` observed at least one request, and checks that the agent workspace file was changed. In environments without the optional Pi package, `--allow-skip` returns a structured `skipped` result; in a Pi-configured environment this is the first smoke gate that exercises channel dispatch, Pi `RuntimeRunHandle`, AnthroClaw tool policy, approval routing, session mapping, and final channel delivery together.
+
 ## Headless session metadata
 
 The Pi headless adapter now supports the minimum stateful contract:
@@ -223,4 +231,4 @@ This gives production-shaped continuation and interrupt behavior without pretend
 Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
 - caching/reuse strategy for external MCP discovery and long-lived MCP sessions if needed for performance;
-- Gateway-level Pi smoke coverage for real channel dispatch with tool approvals.
+- the Gateway smoke probe to be run in a Pi-authenticated environment, not only through the injected-runtime unit harness.
