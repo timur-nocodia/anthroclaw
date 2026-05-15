@@ -14,6 +14,9 @@ describe('runtime import boundary', () => {
       'src/gateway.ts',
       'src/sdk/headless-review.ts',
       'src/sdk/warm-pool.ts',
+      'src/sdk/control-registry.ts',
+      'src/sdk/checkpoints.ts',
+      'src/routing/queue-manager.ts',
     ];
 
     for (const file of files) {

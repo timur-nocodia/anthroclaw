@@ -1,4 +1,4 @@
-import type { Query, RewindFilesResult } from '@anthropic-ai/claude-agent-sdk';
+import type { RuntimeRewindFilesResult, RuntimeRunHandle } from '../runtime/types.js';
 
 export interface RewindRequest {
   sessionId: string;
@@ -6,7 +6,7 @@ export interface RewindRequest {
   dryRun?: boolean;
 }
 
-export interface RewindResponse extends RewindFilesResult {
+export interface RewindResponse extends RuntimeRewindFilesResult {
   sessionId: string;
   userMessageId: string;
 }
@@ -18,7 +18,7 @@ export interface SdkCheckpointRegistryOptions {
 }
 
 interface HandleEntry {
-  query: Query;
+  query: RuntimeRunHandle;
   touchedAt: number;
   expiresAt: number;
 }
@@ -36,7 +36,7 @@ export class SdkCheckpointRegistry {
     this.now = options.now ?? (() => Date.now());
   }
 
-  register(ids: string[], query: Query): void {
+  register(ids: string[], query: RuntimeRunHandle): void {
     const canonicalId = ids.find(Boolean);
     if (!canonicalId) return;
 
@@ -85,6 +85,15 @@ export class SdkCheckpointRegistry {
       };
     }
 
+    if (!query.rewindFiles) {
+      return {
+        sessionId: request.sessionId,
+        userMessageId: request.userMessageId,
+        canRewind: false,
+        error: 'The active runtime handle does not support file rewind.',
+      };
+    }
+
     const result = await query.rewindFiles(request.userMessageId, {
       dryRun: request.dryRun,
     });
@@ -109,7 +118,7 @@ export class SdkCheckpointRegistry {
     }
   }
 
-  private get(sessionId: string): Query | null {
+  private get(sessionId: string): RuntimeRunHandle | null {
     this.sweep();
     const canonicalId = this.resolveCanonicalId(sessionId);
     if (!canonicalId) return null;
