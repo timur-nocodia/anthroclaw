@@ -122,7 +122,7 @@ Pi emits `AgentSession.subscribe()` events from `@earendil-works/pi-agent-core`:
 - `tool.call.started` / `tool.call.delta` / `tool.call.completed` / `tool.call.failed`;
 - `raw` for unsupported Pi session events.
 
-This is still a proof module, not a Gateway runtime switch. Gateway currently consumes Claude-shaped stream events directly, so the next production-facing step is to make Gateway consume `RuntimeEvent` for the existing Claude path first, then route Pi through the same shape.
+This is still a proof module, not a Gateway runtime switch. Gateway now consumes `RuntimeEvent` for the existing Claude path's partial text, usage, and tool lifecycle handling, while Claude-only task/hook/prompt suggestion events remain on their existing raw extractors. The next production-facing step is to route an explicit Pi run handle through the same normalized stream shape.
 
 ## Next proof points
 
@@ -130,4 +130,4 @@ Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
 - production session continuation mapping from AnthroClaw session keys to Pi sessions;
 - production permission-broker mapping for read/bash/edit/write approvals;
-- Gateway consumption of `RuntimeEvent` instead of provider-specific stream events.
+- explicit non-default Pi Gateway run handle selection using normalized `RuntimeEvent`.

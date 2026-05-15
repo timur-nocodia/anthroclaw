@@ -37,7 +37,7 @@ export function normalizePiRuntimeEvents(
   if (eventType === 'message_update') {
     const text = extractPiAssistantTextDelta(event.assistantMessageEvent);
     return text
-      ? [{ ...common, type: 'text.delta', text }]
+      ? [{ ...common, type: 'text.delta', text, source: 'partial' }]
       : [{ ...common, type: 'raw', event }];
   }
 
@@ -132,13 +132,14 @@ function piAgentEndHasError(event: Record<string, unknown>): boolean {
 
 function normalizePiUsage(usage: unknown): Omit<RuntimeUsageUpdatedEvent, keyof RuntimeEventBase> | undefined {
   if (!isRecord(usage)) return undefined;
-  return defined({
+  const normalized = defined({
     inputTokens: typeof usage.input === 'number' ? usage.input : undefined,
     outputTokens: typeof usage.output === 'number' ? usage.output : undefined,
     cacheReadTokens: typeof usage.cacheRead === 'number' ? usage.cacheRead : undefined,
     cacheWriteTokens: typeof usage.cacheWrite === 'number' ? usage.cacheWrite : undefined,
     costUsd: readPiUsageCost(usage.cost),
   });
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 function readPiUsageCost(cost: unknown): number | undefined {

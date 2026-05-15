@@ -55,6 +55,7 @@ describe('normalizePiRuntimeEvents', () => {
       timestamp: 123,
       raw: expect.objectContaining({ type: 'message_update' }),
       text: 'hello ',
+      source: 'partial',
     }]);
   });
 

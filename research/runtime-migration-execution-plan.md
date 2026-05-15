@@ -64,7 +64,7 @@ Definition of done:
 
 ### PR 4: Pi spike, non-production path
 
-Status: draft PR #45 added an optional `HeadlessRuntime` adapter shell. Draft PR #46 adds explicit `runtime: 'pi'` selection for headless probes. Draft PR #47 adds local config/CLI opt-in for tools-disabled headless smoke runs. Draft PR #48 adds headless session metadata plumbing for continuation probes. Draft PR #49 adds ModelRegistry-like resolution and explicit Pi tool policy mapping. Draft PR #50 adds Pi `tool_call` denial feedback through an inline policy extension. Draft PR #51 adds Pi session event normalization into AnthroClaw `RuntimeEvent`. Full Pi tool execution/Gateway consumption proof points remain open.
+Status: draft PR #45 added an optional `HeadlessRuntime` adapter shell. Draft PR #46 adds explicit `runtime: 'pi'` selection for headless probes. Draft PR #47 adds local config/CLI opt-in for tools-disabled headless smoke runs. Draft PR #48 adds headless session metadata plumbing for continuation probes. Draft PR #49 adds ModelRegistry-like resolution and explicit Pi tool policy mapping. Draft PR #50 adds Pi `tool_call` denial feedback through an inline policy extension. Draft PR #51 adds Pi session event normalization into AnthroClaw `RuntimeEvent`. Draft PR #52 adds Claude SDK event normalization and moves Gateway stream loops for partial text, usage, and tool lifecycle onto `RuntimeEvent`. Full Pi tool execution/Gateway runtime selection proof points remain open.
 
 Goal:
 
@@ -107,4 +107,4 @@ Decision gate:
 
 ## Near-term next action
 
-Continue the stacked migration from the smallest safe seam outward: with model loading, event text, session metadata, explicit tool policy, model-visible denial feedback, and Pi event normalization covered, the next useful proof is making Gateway consume `RuntimeEvent` for the existing Claude path before routing Pi into the same stream.
+Continue the stacked migration from the smallest safe seam outward: with model loading, event text, session metadata, explicit tool policy, model-visible denial feedback, Pi event normalization, and Claude-path Gateway `RuntimeEvent` consumption covered, the next useful proof is a non-default Pi Gateway run handle path behind explicit runtime selection.

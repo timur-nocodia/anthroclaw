@@ -33,6 +33,7 @@ export interface RuntimeEventBase<TType extends RuntimeEventType = RuntimeEventT
 
 export interface RuntimeTextDeltaEvent extends RuntimeEventBase<'text.delta'> {
   text: string;
+  source?: 'partial' | 'message' | 'result';
 }
 
 export interface RuntimeToolEvent extends RuntimeEventBase<
@@ -61,6 +62,9 @@ export interface RuntimeUsageUpdatedEvent extends RuntimeEventBase<'usage.update
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
   costUsd?: number;
+  durationMs?: number;
+  durationApiMs?: number;
+  numTurns?: number;
 }
 
 export interface RuntimeRawEvent extends RuntimeEventBase<'raw'> {
