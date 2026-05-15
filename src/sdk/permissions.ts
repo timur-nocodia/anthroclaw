@@ -198,7 +198,7 @@ export function buildAllowedTools(
 }
 
 export interface CanUseToolDeps {
-  agent: Pick<Agent, 'config' | 'safetyProfile' | 'id'>;
+  agent: Pick<Agent, 'config' | 'safetyProfile' | 'id'> & Partial<Pick<Agent, 'workspacePath'>>;
   approvalBroker: ApprovalBroker;
   channel?: ChannelAdapter;
   sessionContext: { channel?: string; peerId: string; senderId?: string; accountId?: string; threadId?: string };
@@ -284,6 +284,24 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
         return deny(
           `safety_profile=public: send_message can only target the originating peer (got "${targetPeer}", expected "${sessionContext.peerId}")`,
         );
+      }
+    }
+
+    if (toolName === 'Bash' || localName === 'Bash') {
+      const command = typeof input.command === 'string' ? input.command : '';
+      const extraPatterns = agent.config.sdk?.permissions?.denied_bash_patterns ?? [];
+      const blockedPatterns = [...DANGEROUS_BASH_PATTERNS, ...extraPatterns];
+      const blocked = blockedPatterns.find((pattern) => command.includes(pattern));
+      if (blocked) {
+        return deny(`Blocked dangerous Bash pattern: ${blocked}`);
+      }
+    }
+
+    const workspacePath = agent.workspacePath;
+    if (workspacePath) {
+      const protectedPath = findProtectedPath(localName, input, workspacePath);
+      if (protectedPath) {
+        return deny(`Protected ${protectedPath.action} path denied: ${protectedPath.path}`);
       }
     }
 

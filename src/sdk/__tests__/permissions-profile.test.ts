@@ -35,6 +35,30 @@ describe('canUseTool profile gating', () => {
     expect(r.behavior).toBe('allow');
   });
 
+  it('canUseTool denies protected read paths before runtime execution', async () => {
+    const can = createCanUseTool({
+      agent: fakeAgent(publicProfile),
+      approvalBroker: new ApprovalBroker(),
+      channel: undefined,
+      sessionContext: { peerId: '1', senderId: '1' },
+    });
+    const r = await can('Read', { file_path: '.env' }, { signal: new AbortController().signal, toolUseID: "test" } as any);
+    expect(r.behavior).toBe('deny');
+    expect((r as any).message).toMatch(/Protected read path denied/);
+  });
+
+  it('canUseTool denies dangerous Bash patterns before approval', async () => {
+    const can = createCanUseTool({
+      agent: fakeAgent(privateProfile),
+      approvalBroker: new ApprovalBroker(),
+      channel: { supportsApproval: true, promptForApproval: vi.fn() } as any,
+      sessionContext: { peerId: '1', senderId: '1' },
+    });
+    const r = await can('Bash', { command: 'sudo rm -rf /tmp/x' }, { signal: new AbortController().signal, toolUseID: "test" } as any);
+    expect(r.behavior).toBe('deny');
+    expect((r as any).message).toMatch(/Blocked dangerous Bash pattern/);
+  });
+
   it('trusted: destructive Write requests approval via channel', async () => {
     const broker = new ApprovalBroker();
     const promptForApproval = vi.fn(async () => undefined);

@@ -161,9 +161,9 @@ import {
   type HeadlessReviewRuntimeConfig,
 } from './sdk/headless-runtime-config.js';
 import { resolveHeadlessRuntime } from './runtime/headless-registry.js';
-import type { HeadlessRunInput } from './runtime/headless.js';
+import type { HeadlessRunInput, HeadlessToolPolicy } from './runtime/headless.js';
 import type { RuntimeRunHandle } from './runtime/types.js';
-import { buildAllowedTools } from './sdk/permissions.js';
+import { buildAllowedTools, createCanUseTool } from './sdk/permissions.js';
 import { LearningQueue, detectLearningTriggers, type LearningReviewJob } from './learning/queue.js';
 import { applyMemoryCandidateAction } from './learning/memory-applier.js';
 import { runLearningReview } from './learning/runner.js';
@@ -490,6 +490,28 @@ function runtimeUsageToStored(
 
 function runtimeToolOutputToString(output: unknown): string {
   return typeof output === 'string' ? output : JSON.stringify(output ?? '');
+}
+
+function piGatewayToolNameToAnthroClawName(toolName: string, originalToolName?: string): string {
+  const normalized = toolName.trim().toLowerCase();
+  switch (normalized) {
+    case 'read':
+      return 'Read';
+    case 'write':
+      return 'Write';
+    case 'edit':
+      return 'Edit';
+    case 'bash':
+      return 'Bash';
+    case 'grep':
+      return 'Grep';
+    case 'find':
+      return 'Glob';
+    case 'ls':
+      return 'LS';
+    default:
+      return originalToolName?.trim() || toolName;
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -1081,6 +1103,8 @@ export class Gateway {
       prompt: string;
       sessionId?: string;
       purpose: string;
+      channel?: ChannelAdapter;
+      sessionContext?: { channel?: string; peerId: string; senderId?: string; accountId?: string; threadId?: string };
       onRuntimeEvent?: (event: RuntimeEvent) => void | Promise<void>;
     },
   ): Promise<{ text: string; sessionId?: string; usage?: StoredAgentRunUsage; totalTokens: number }> {
@@ -1091,6 +1115,24 @@ export class Gateway {
 
     const runtime = resolveHeadlessRuntime(configured.runtime, configured.runtimeOptions);
     const model = agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6';
+    const toolGate = createCanUseTool({
+      agent,
+      approvalBroker: this.approvalBroker,
+      channel: input.channel,
+      sessionContext: input.sessionContext ?? { peerId: '__headless__' },
+    });
+    const toolPolicy: HeadlessToolPolicy = {
+      mode: 'allow-list',
+      tools: buildAllowedTools(agent, false),
+      canUseTool: async (toolCall) => {
+        const toolName = piGatewayToolNameToAnthroClawName(toolCall.toolName, toolCall.originalToolName);
+        return toolGate(toolName, toolCall.input, {
+          signal: new AbortController().signal,
+          toolUseID: toolCall.toolCallId ?? `${toolName}:${Date.now()}`,
+        } as any);
+      },
+      denyMessage: 'Tool denied by AnthroClaw policy.',
+    };
     const runInput = {
       prompt: input.prompt,
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
@@ -1101,7 +1143,8 @@ export class Gateway {
         cwd: agent.workspacePath,
       },
       purpose: input.purpose,
-      toolDenyMessage: 'Tools disabled for Gateway Pi runtime spike.',
+      toolDenyMessage: 'Tool denied by AnthroClaw policy.',
+      toolPolicy,
     };
     const runtimeWithHandle = runtime as {
       runHandle?: (
@@ -3325,6 +3368,7 @@ export class Gateway {
           prompt,
           sessionId: existingSessionId,
           purpose: 'gateway web query',
+          sessionContext: { channel: context.channel ?? 'web', peerId: 'web-user', senderId: 'web-user' },
           onRuntimeEvent: (event) => {
             if (event.type === 'text.delta' && event.source === 'partial') {
               streamedPartialText = true;
@@ -5340,6 +5384,8 @@ export class Gateway {
           prompt,
           sessionId: existingSessionId,
           purpose: 'gateway agent query',
+          channel: this.channels.get(msg.channel),
+          sessionContext: { channel: msg.channel, peerId: msg.peerId, senderId: msg.senderId, accountId: msg.accountId, threadId: msg.threadId },
           onRuntimeEvent: (event) => {
             if (event.type === 'tool.call.started') {
               toolCallsForLearning += 1;

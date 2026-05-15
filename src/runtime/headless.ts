@@ -9,6 +9,33 @@ export interface HeadlessRuntimeDefaults {
   allowedTools?: string[];
 }
 
+export interface HeadlessToolCall {
+  toolName: string;
+  originalToolName: string;
+  toolCallId?: string;
+  input: Record<string, unknown>;
+}
+
+export type HeadlessToolDecision =
+  | boolean
+  | { behavior: 'allow' | 'deny'; message?: string; reason?: string }
+  | { allow: boolean; message?: string; reason?: string }
+  | undefined;
+
+export type HeadlessCanUseTool = (
+  toolCall: HeadlessToolCall,
+  input: HeadlessRunInput,
+) => HeadlessToolDecision | Promise<HeadlessToolDecision>;
+
+export type HeadlessToolPolicy =
+  | { mode: 'deny' }
+  | {
+      mode: 'allow-list';
+      tools: string[];
+      canUseTool?: HeadlessCanUseTool;
+      denyMessage?: string;
+    };
+
 export interface HeadlessRunInput {
   prompt: string;
   systemPrompt?: string;
@@ -19,6 +46,7 @@ export interface HeadlessRunInput {
   runtimeDefaults?: HeadlessRuntimeDefaults;
   purpose?: string;
   toolDenyMessage?: string;
+  toolPolicy?: HeadlessToolPolicy;
 }
 
 export interface HeadlessRunResult {

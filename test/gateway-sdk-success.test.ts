@@ -407,7 +407,7 @@ pairing:
       model: 'claude-sonnet-4-6',
       cwd: botDir,
       purpose: 'gateway agent query',
-      toolDenyMessage: 'Tools disabled for Gateway Pi runtime spike.',
+      toolDenyMessage: 'Tool denied by AnthroClaw policy.',
     }));
     expect(piRunMock.mock.calls[0]?.[0]).not.toHaveProperty('sessionId');
     expect((await gw.listAgentSessions('pi-bot'))[0]).toMatchObject({
@@ -506,6 +506,96 @@ pairing:
         status: 'succeeded',
       }),
     });
+
+    await gw.stop();
+  });
+
+  it('dispatch Pi RuntimeEvent path routes tool approval through AnthroClaw broker', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-approval-session-1',
+        text: 'Approved write',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-approval-session-1',
+      },
+    ], 'pi-approval-session-1');
+    const botDir = join(agentsDir, 'pi-approval-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    const promptForApproval = vi.fn(async () => undefined);
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      supportsApproval: true,
+      promptForApproval,
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    let approvalDecision: unknown;
+    piRunHandleMock.mockImplementationOnce(async (runInput: Record<string, unknown>) => {
+      const policy = runInput.toolPolicy as {
+        mode: 'allow-list';
+        tools: string[];
+        canUseTool: (toolCall: Record<string, unknown>, input: Record<string, unknown>) => Promise<unknown>;
+      };
+      expect(policy.mode).toBe('allow-list');
+      expect(policy.tools).toContain('Write');
+
+      const decisionPromise = policy.canUseTool({
+        toolName: 'write',
+        originalToolName: 'write',
+        toolCallId: 'pi-tool-1',
+        input: { file_path: 'notes.txt', content: 'ok' },
+      }, runInput);
+
+      const approvalRequest = promptForApproval.mock.calls[0]?.[0] as { id: string; toolName: string; peerId: string };
+      expect(approvalRequest).toMatchObject({
+        toolName: 'Write',
+        peerId: 'peer-123',
+      });
+      await Promise.resolve();
+      expect(gw.handleApprovalCallback(`approve:${approvalRequest.id}`, 'sender-456')).toBe(true);
+      approvalDecision = await decisionPromise;
+      return handle;
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(approvalDecision).toMatchObject({ behavior: 'allow' });
+    expect(sent).toEqual(['Approved write']);
+    expect(promptForApproval).toHaveBeenCalledTimes(1);
+    expect(handle.close).toHaveBeenCalledTimes(1);
 
     await gw.stop();
   });
@@ -643,7 +733,7 @@ routes:
       model: 'claude-sonnet-4-6',
       cwd: botDir,
       purpose: 'gateway web query',
-      toolDenyMessage: 'Tools disabled for Gateway Pi runtime spike.',
+      toolDenyMessage: 'Tool denied by AnthroClaw policy.',
     }));
 
     await gw.stop();

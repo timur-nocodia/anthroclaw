@@ -98,11 +98,12 @@ The Pi headless adapter now has a narrow model/tool bridge:
 - callers can still inject a custom `resolveModel()` for package-specific behavior;
 - tools are denied by default with `noTools: "all"` and `tools: []`, because Pi enables built-in tools when no tool option is provided;
 - `runtimeDefaults.allowedTools` is intentionally ignored by Pi unless a Pi-specific `toolPolicy` is explicitly provided;
+- `HeadlessRunInput.toolPolicy` can now override the constructor policy for a single run, which lets Gateway pass per-dispatch policy instead of mutating a process-global Pi runtime;
 - explicit `toolPolicy: { mode: "allow-list", tools: [...] }` maps AnthroClaw/Claude-style tool names such as `Read` and `Bash` to Pi names such as `read` and `bash`.
 - explicit `toolPolicy.canUseTool` installs a Pi `tool_call` extension that returns `{ block: true, reason }` for denied calls, preserving model-visible denial feedback instead of silently disabling the harness guard;
 - when Pi is loaded dynamically, the adapter creates a `DefaultResourceLoader` with an inline policy extension; when a caller provides a resource loader, the adapter wraps `getExtensions()` and appends the same policy extension.
 
-This proves the shape of the boundary and the Pi hook needed for blocked-tool feedback. It still does not run Pi tools through AnthroClaw's production permission broker.
+This proves the shape of the boundary and the Pi hook needed for blocked-tool feedback. Gateway now uses the same hook for built-in Pi tool approval, but MCP/custom AnthroClaw tool execution is still open.
 
 ## Gateway event mapping proof
 
@@ -154,12 +155,26 @@ Pi now has a `RuntimeRunHandle` implementation over `AgentSession.subscribe()`:
 - Web UI receives Pi partial text, tool lifecycle callbacks, usage totals, and session ids from normalized events;
 - channel dispatch aggregates Pi text deltas, records usage/tool metrics, and maps returned session ids to AnthroClaw session keys.
 
-This proves the Gateway-facing stream shape. It still does not execute Pi tools through AnthroClaw's production permission broker or channel approval UI. The current Pi tool policy remains the explicit adapter-level allow/deny bridge.
+This proves the Gateway-facing stream shape. The current bridge still does not execute MCP/custom AnthroClaw tools, but built-in Pi tool calls can now be guarded by AnthroClaw's per-run policy bridge.
+
+## Gateway permission-broker bridge
+
+The explicit Gateway Pi path now builds a per-run `HeadlessToolPolicy` from AnthroClaw's existing permission stack:
+
+- `buildAllowedTools(agent, false)` provides the allowed tool names for the Pi allow-list;
+- Pi tool names such as `write`, `edit`, `bash`, and `read` are mapped back to AnthroClaw names such as `Write`, `Edit`, `Bash`, and `Read` before policy evaluation;
+- `createCanUseTool()` remains the authoritative decision point for safety profile checks, public `send_message` peer binding, and interactive approval;
+- channel dispatch passes the current channel plus `{ peerId, senderId, accountId, threadId }`, so `ApprovalBroker.resolveBySender()` preserves the same sender-authenticated approval semantics as the Claude SDK path;
+- web dispatch passes a non-interactive `web-user` context, so approval-required tools fail closed unless a future Web UI approval channel is added;
+- dangerous Bash and protected read/write path checks now live in `createCanUseTool()` as well as the Claude SDK pre-tool hook, so Pi does not lose that hard-deny layer.
+
+This is production-relevant for Pi's built-in read/write/edit/bash-style tools, but it is not full production parity yet. Pi still needs an AnthroClaw tool execution bridge for local MCP tools, plugin tools, external MCP tools, and dynamic per-dispatch tool context such as `send_message`, `send_media`, `manage_cron`, and `connect_mcp`.
 
 ## Next proof points
 
 Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
 - production session continuation mapping from AnthroClaw session keys to Pi sessions;
-- production permission-broker mapping for read/bash/edit/write approvals;
+- MCP/custom AnthroClaw tool execution on Pi, including dynamic per-dispatch tool context;
+- system prompt wiring in Pi session options;
 - production-grade interrupt/checkpoint behavior for Pi-backed active sessions.

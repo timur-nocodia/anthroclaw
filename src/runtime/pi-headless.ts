@@ -1,8 +1,12 @@
 import {
   DEFAULT_HEADLESS_TIMEOUT_MS,
+  type HeadlessCanUseTool,
   type HeadlessRunInput,
   type HeadlessRunResult,
   type HeadlessRuntime,
+  type HeadlessToolCall,
+  type HeadlessToolDecision,
+  type HeadlessToolPolicy,
 } from './headless.js';
 import { normalizePiRuntimeEvents } from './pi-events.js';
 import type { RuntimeEvent } from './events.js';
@@ -48,32 +52,10 @@ export type PiModelRegistryProvider =
   | PiModelRegistryLike
   | ((input: HeadlessRunInput, sdk: PiCodingAgentSdkModule) => PiModelRegistryLike | Promise<PiModelRegistryLike>);
 
-export interface PiHeadlessToolCall {
-  toolName: string;
-  originalToolName: string;
-  toolCallId?: string;
-  input: Record<string, unknown>;
-}
-
-export type PiHeadlessToolDecision =
-  | boolean
-  | { behavior: 'allow' | 'deny'; message?: string; reason?: string }
-  | { allow: boolean; message?: string; reason?: string }
-  | undefined;
-
-export type PiHeadlessCanUseTool = (
-  toolCall: PiHeadlessToolCall,
-  input: HeadlessRunInput,
-) => PiHeadlessToolDecision | Promise<PiHeadlessToolDecision>;
-
-export type PiHeadlessToolPolicy =
-  | { mode: 'deny' }
-  | {
-      mode: 'allow-list';
-      tools: string[];
-      canUseTool?: PiHeadlessCanUseTool;
-      denyMessage?: string;
-    };
+export type PiHeadlessToolCall = HeadlessToolCall;
+export type PiHeadlessToolDecision = HeadlessToolDecision;
+export type PiHeadlessCanUseTool = HeadlessCanUseTool;
+export type PiHeadlessToolPolicy = HeadlessToolPolicy;
 
 export interface PiToolCallEventLike {
   toolName?: unknown;
@@ -274,9 +256,9 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
     configured: Record<string, unknown>,
     cwd: string,
   ): Promise<Record<string, unknown>> {
-    const policy = typeof this.options.toolPolicy === 'function'
+    const policy = input.toolPolicy ?? (typeof this.options.toolPolicy === 'function'
       ? await this.options.toolPolicy(input)
-      : (this.options.toolPolicy ?? { mode: 'deny' });
+      : (this.options.toolPolicy ?? { mode: 'deny' }));
 
     if (policy.mode === 'deny') {
       return {
