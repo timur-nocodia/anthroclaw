@@ -3025,27 +3025,13 @@ export class Gateway {
 
     try {
       const title = await generateSessionTitle(userText, assistantText, async (prompt) => {
-        const options = buildSdkOptions({
-          agent,
-          includeMcpServer: false,
-        });
-        options.allowedTools = [];
-        options.disallowedTools = buildAllowedTools(agent, false);
-        options.canUseTool = async () => ({ behavior: 'deny', message: 'Tools disabled for title generation.' });
-
-        const result = runClaudeAgentQuery({
+        return runHeadlessReview({
           prompt,
-          options: options as any,
+          model: agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6',
+          cwd: agent.workspacePath,
+          purpose: 'title generation',
+          toolDenyMessage: 'Tools disabled for title generation.',
         });
-
-        for await (const event of result) {
-          const evt = event as Record<string, unknown>;
-          if (evt.type === 'result' && typeof evt.result === 'string') {
-            return evt.result;
-          }
-        }
-
-        return '';
       });
 
       await this.sdkSessionService.setAgentSessionTitle(agent, sessionId, title);

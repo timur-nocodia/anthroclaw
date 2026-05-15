@@ -8,7 +8,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 import { query } from '@anthropic-ai/claude-agent-sdk';
 
 describe('runSubagent', () => {
-  it('calls SDK query() with maxTurns:1, tools:[], canUseTool: deny', async () => {
+  it('calls the default headless runtime with maxTurns:1, tools:[], canUseTool: deny', async () => {
     const events = (async function* () {
       yield { type: 'result', result: 'mock-summary-text' };
     })();
@@ -96,8 +96,8 @@ describe('runSubagent', () => {
     await expect(runSubagent({ prompt: 'p' })).rejects.toThrow(/empty|no result/i);
   });
 
-  // M2: Test SDKResultError surfacing.
-  it('surfaces SDKResultError as a thrown error with subtype and errors', async () => {
+  // M2: Test provider result error surfacing.
+  it('surfaces provider result errors with subtype and errors', async () => {
     const events = (async function* () {
       yield {
         type: 'result',

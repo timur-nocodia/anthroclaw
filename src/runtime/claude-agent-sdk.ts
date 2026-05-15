@@ -15,6 +15,11 @@ import type {
   WarmQuery,
 } from '@anthropic-ai/claude-agent-sdk';
 import { buildSdkOptions, type BuildSdkOptionsParams } from '../sdk/options.js';
+import {
+  DEFAULT_HEADLESS_TIMEOUT_MS,
+  type HeadlessRunInput,
+  type HeadlessRuntime,
+} from './headless.js';
 import type {
   RuntimeAdapter,
   RuntimeMcpServerInput,
@@ -74,6 +79,92 @@ export function runClaudeAgentHandle(input: RuntimeRunInput<Options>): ClaudeRun
   return new ClaudeRuntimeRunHandle(runClaudeAgentQuery(input));
 }
 
+export async function runClaudeHeadlessText(input: HeadlessRunInput): Promise<string> {
+  const timeoutMs = input.timeoutMs ?? input.runtimeDefaults?.timeoutMs ?? DEFAULT_HEADLESS_TIMEOUT_MS;
+  const controller = new AbortController();
+  const purpose = input.purpose ?? 'headless review';
+
+  const sdkOptions: Options = {
+    model: input.model ?? input.runtimeDefaults?.model ?? 'claude-sonnet-4-6',
+    cwd: input.cwd ?? input.runtimeDefaults?.cwd ?? process.cwd(),
+    tools: [],
+    allowedTools: [],
+    permissionMode: 'dontAsk',
+    canUseTool: async () => ({
+      behavior: 'deny',
+      message: input.toolDenyMessage ?? `Tools disabled for ${purpose}.`,
+    }),
+    abortController: controller,
+    settingSources: ['project'],
+    persistSession: false,
+    maxTurns: 1,
+    systemPrompt: input.systemPrompt
+      ? { type: 'preset', preset: 'claude_code', excludeDynamicSections: true, append: input.systemPrompt }
+      : { type: 'preset', preset: 'claude_code', excludeDynamicSections: true },
+  };
+
+  const stream = runClaudeAgentQuery({ prompt: input.prompt, options: sdkOptions });
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let result = '';
+  let resultFound = false;
+  const accumulated: string[] = [];
+
+  const completePromise = (async () => {
+    for await (const evt of stream) {
+      const e = evt as Record<string, unknown>;
+
+      const subtype = (e as { subtype?: string }).subtype ?? 'unknown';
+      const isErrorResult = e.type === 'result'
+        && Boolean((e as { is_error?: boolean }).is_error)
+        && subtype !== 'success';
+      if (isErrorResult) {
+        const errors = (e as { errors?: string[] }).errors ?? [];
+        throw new Error(`${purpose} LLM error (${subtype}): ${errors.join('; ') || subtype}`);
+      }
+
+      if (e.type === 'result' && typeof e.result === 'string') {
+        result = e.result.trim();
+        resultFound = true;
+        break;
+      }
+
+      if (e.type === 'assistant') {
+        const msg = e.message as { content?: Array<{ type?: string; text?: string }> } | undefined;
+        if (!msg?.content) continue;
+        for (const block of msg.content) {
+          if (block.type === 'text' && typeof block.text === 'string') {
+            accumulated.push(block.text);
+          }
+        }
+      }
+    }
+  })();
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    controller.signal.addEventListener('abort', () => {
+      reject(new Error(`${purpose} timeout after ${timeoutMs}ms`));
+    });
+  });
+
+  try {
+    await Promise.race([completePromise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer);
+    stream.close?.();
+  }
+
+  if (!resultFound) {
+    result = accumulated.join('').trim();
+  }
+
+  if (!result) {
+    throw new Error(`${purpose} returned empty result`);
+  }
+
+  return result;
+}
+
 export async function startClaudeAgentRuntime(input: RuntimeStartupInput<Options>): Promise<WarmQuery> {
   return startup({ options: input.options });
 }
@@ -108,4 +199,9 @@ export const claudeAgentSdkRuntime: RuntimeAdapter<Options, Query, WarmQuery, Mc
   run: runClaudeAgentHandle,
   startup: startClaudeAgentRuntime,
   createMcpServer: createClaudeSdkMcpServer,
+};
+
+export const claudeAgentHeadlessRuntime: HeadlessRuntime = {
+  id: 'claude-agent-sdk',
+  runText: runClaudeHeadlessText,
 };

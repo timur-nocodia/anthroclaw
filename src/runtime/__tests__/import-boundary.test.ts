@@ -13,10 +13,14 @@ describe('runtime import boundary', () => {
     const files = [
       'src/gateway.ts',
       'src/sdk/headless-review.ts',
+      'src/plugins/subagent-runner.ts',
+      'src/learning/runner.ts',
+      'src/session/title-generator.ts',
       'src/sdk/warm-pool.ts',
       'src/sdk/control-registry.ts',
       'src/sdk/checkpoints.ts',
       'src/routing/queue-manager.ts',
+      'src/runtime/headless.ts',
     ];
 
     for (const file of files) {

@@ -48,7 +48,7 @@ export interface PluginContext {
    */
   registerSlashCommand(cmd: PluginSlashCommand): void;
 
-  // Единственный способ LLM-вызова — через SDK query() с maxTurns:1, tools:[]
+  // Единственный способ headless LLM-вызова — через runtime contract с tools:[]
   runSubagent(opts: RunSubagentOpts): Promise<string>;
 
   logger: PluginLogger;
