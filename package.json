@@ -23,6 +23,7 @@
     "learning": "tsx src/cli/learning.ts",
     "headless:runtime": "tsx src/cli/headless-runtime.ts",
     "smoke:pi-workspace": "tsx src/cli/pi-workspace-smoke.ts",
+    "smoke:pi-gateway": "tsx src/cli/pi-gateway-smoke.ts",
     "buildroom": "tsx src/cli/buildroom.ts",
     "plugins": "tsx src/cli/plugins.ts",
     "migrate:safety-profile": "tsx scripts/migrate-safety-profile.ts",
