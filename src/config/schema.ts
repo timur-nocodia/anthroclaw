@@ -56,6 +56,10 @@ const HeadlessRuntimeProviderSchema = z.enum(['claude-agent-sdk', 'pi', 'opencod
 const RuntimeConfigSchema = z.object({
   headless: z.object({
     provider: HeadlessRuntimeProviderSchema.default('claude-agent-sdk'),
+    pi: z.object({
+      auth_path: z.string().min(1).optional(),
+      models_path: z.string().min(1).optional(),
+    }).optional(),
   }).default({
     provider: 'claude-agent-sdk',
   }),

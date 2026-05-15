@@ -22,7 +22,21 @@ export function headlessRuntimeOptionsForProvider(
 export function headlessRuntimeOptionsFromConfig(
   config?: Pick<GlobalConfig, 'runtime'> | null,
 ): HeadlessReviewRuntimeConfig {
-  return headlessRuntimeOptionsForProvider(config?.runtime?.headless.provider);
+  const base = headlessRuntimeOptionsForProvider(config?.runtime?.headless.provider);
+  const piConfig = config?.runtime?.headless.pi;
+  if (base.runtime !== 'pi' || !piConfig) return base;
+
+  const piOptions: NonNullable<HeadlessRuntimeResolverOptions['pi']> = {};
+  if (piConfig.auth_path) piOptions.authStoragePath = piConfig.auth_path;
+  if (piConfig.models_path) piOptions.modelsPath = piConfig.models_path;
+
+  if (Object.keys(piOptions).length === 0) return base;
+  return {
+    ...base,
+    runtimeOptions: {
+      pi: piOptions,
+    },
+  };
 }
 
 export function withConfiguredHeadlessRuntime<T extends HeadlessReviewRuntimeConfig>(

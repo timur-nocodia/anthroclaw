@@ -49,10 +49,10 @@ export interface PiCodingAgentSdkModule {
   createAgentSession?: PiCreateAgentSession;
   defineTool?: (definition: PiCustomToolDefinition) => unknown;
   AuthStorage?: {
-    create: () => unknown;
+    create: (authPath?: string) => unknown;
   };
   ModelRegistry?: {
-    create: (authStorage: unknown) => PiModelRegistryLike;
+    create: (authStorage: unknown, modelsPath?: string) => PiModelRegistryLike;
   };
   DefaultResourceLoader?: new (options: Record<string, unknown>) => PiResourceLoaderLike;
   getAgentDir?: () => string;
@@ -120,6 +120,8 @@ export interface PiHeadlessRuntimeOptions {
   createAgentSession?: PiCreateAgentSession;
   importPiCodingAgent?: PiSdkLoader;
   createOptions?: Record<string, unknown> | ((input: HeadlessRunInput) => Record<string, unknown> | Promise<Record<string, unknown>>);
+  authStoragePath?: string;
+  modelsPath?: string;
   modelRegistry?: PiModelRegistryProvider;
   resolveModel?: (modelId: string, sdk: PiCodingAgentSdkModule) => unknown | Promise<unknown>;
   toolPolicy?: PiHeadlessToolPolicy | ((input: HeadlessRunInput) => PiHeadlessToolPolicy | Promise<PiHeadlessToolPolicy>);
@@ -290,7 +292,10 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
         : this.options.modelRegistry;
     }
     if (sdk.AuthStorage?.create && sdk.ModelRegistry?.create) {
-      return sdk.ModelRegistry.create(sdk.AuthStorage.create());
+      return sdk.ModelRegistry.create(
+        sdk.AuthStorage.create(this.options.authStoragePath),
+        this.options.modelsPath,
+      );
     }
     return undefined;
   }

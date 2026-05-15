@@ -10,6 +10,8 @@ type SmokeCliRunner = (argv: string[], deps?: SmokeCliDeps) => Promise<number>;
 
 interface PiSmokeSuiteArgs {
   model?: string;
+  authPath?: string;
+  modelsPath?: string;
   timeoutMs?: number;
   keepWorkspace: boolean;
   allowSkip: boolean;
@@ -124,6 +126,12 @@ export function parsePiSmokeSuiteArgs(argv: string[]): PiSmokeSuiteArgs {
       case '--model':
         args.model = requireValue(argv, ++i, '--model');
         break;
+      case '--auth-path':
+        args.authPath = requireValue(argv, ++i, '--auth-path');
+        break;
+      case '--models-path':
+        args.modelsPath = requireValue(argv, ++i, '--models-path');
+        break;
       case '--timeout-ms':
         args.timeoutMs = parsePositiveInt(requireValue(argv, ++i, '--timeout-ms'), '--timeout-ms');
         break;
@@ -197,6 +205,8 @@ async function runProbe(
 function buildAuthProbeArgs(args: PiSmokeSuiteArgs): string[] {
   const out = ['--json'];
   out.push('--model', args.model ?? DEFAULT_PI_MODEL_ID);
+  if (args.authPath) out.push('--auth-path', args.authPath);
+  if (args.modelsPath) out.push('--models-path', args.modelsPath);
   if (args.allowSkip) out.push('--allow-skip');
   return out;
 }
@@ -204,6 +214,8 @@ function buildAuthProbeArgs(args: PiSmokeSuiteArgs): string[] {
 function buildRuntimeProbeArgs(args: PiSmokeSuiteArgs): string[] {
   const out = ['--json'];
   out.push('--model', args.model ?? DEFAULT_PI_MODEL_ID);
+  if (args.authPath) out.push('--auth-path', args.authPath);
+  if (args.modelsPath) out.push('--models-path', args.modelsPath);
   if (args.timeoutMs) out.push('--timeout-ms', String(args.timeoutMs));
   if (args.keepWorkspace) out.push('--keep-workspace');
   if (args.allowSkip) out.push('--allow-skip');
@@ -298,6 +310,8 @@ function usage(): string {
     '',
     'Options:',
     `  --model <model>       model override forwarded to all probes (default: ${DEFAULT_PI_MODEL_ID})`,
+    '  --auth-path <path>    optional Pi auth.json path forwarded to all probes',
+    '  --models-path <path>  optional Pi models.json path forwarded to all probes',
     '  --timeout-ms <ms>     positive integer timeout forwarded to both probes',
     '  --keep-workspace      keep temporary smoke workspaces for inspection',
     '  --allow-skip          exit 0 when probes report missing optional Pi runtime/auth setup',

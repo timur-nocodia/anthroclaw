@@ -153,12 +153,16 @@ describe('Pi Gateway smoke CLI', () => {
     expect(parsePiGatewaySmokeArgs([
       '--',
       '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
       '--timeout-ms', '1000',
       '--keep-workspace',
       '--allow-skip',
       '--json',
     ])).toMatchObject({
       model: 'test/model',
+      authPath: '/secure/pi-auth.json',
+      modelsPath: '/secure/pi-models.json',
       timeoutMs: 1000,
       keepWorkspace: true,
       allowSkip: true,

@@ -27,6 +27,30 @@ describe('headless runtime config helpers', () => {
     expect(headlessRuntimeOptionsFromConfig(config)).toEqual({ runtime: 'pi' });
   });
 
+  it('maps Pi auth/model storage paths into runtime options', () => {
+    const config = GlobalConfigSchema.parse({
+      runtime: {
+        headless: {
+          provider: 'pi',
+          pi: {
+            auth_path: '/secure/pi-auth.json',
+            models_path: '/secure/pi-models.json',
+          },
+        },
+      },
+    });
+
+    expect(headlessRuntimeOptionsFromConfig(config)).toEqual({
+      runtime: 'pi',
+      runtimeOptions: {
+        pi: {
+          authStoragePath: '/secure/pi-auth.json',
+          modelsPath: '/secure/pi-models.json',
+        },
+      },
+    });
+  });
+
   it('maps explicit OpenCode config to a runtime selection', () => {
     const config = GlobalConfigSchema.parse({
       runtime: {

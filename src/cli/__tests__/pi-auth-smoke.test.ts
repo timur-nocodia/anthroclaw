@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   parsePiAuthSmokeArgs,
   runPiAuthSmoke,
@@ -140,14 +140,48 @@ describe('Pi auth smoke CLI', () => {
     });
   });
 
+  it('passes configured auth and model storage paths into Pi SDK storage', async () => {
+    const authStorage = {};
+    const authCreate = vi.fn(() => authStorage);
+    const registryCreate = vi.fn(() => ({
+      find: (provider: string, modelId: string) => ({ provider, id: modelId, name: 'Test Model' }),
+      getAvailable: async () => [
+        { provider: 'anthropic', id: 'claude-sonnet-4-6', name: 'Test Model' },
+      ],
+      hasConfiguredAuth: async () => true,
+    }));
+
+    const result = await runPiAuthSmoke(
+      'anthropic/claude-sonnet-4-6',
+      undefined,
+      {
+        VERSION: '0.74.0-test',
+        AuthStorage: { create: authCreate },
+        ModelRegistry: { create: registryCreate },
+      },
+      {
+        authPath: '/secure/pi-auth.json',
+        modelsPath: '/secure/pi-models.json',
+      },
+    );
+
+    expect(result.status).toBe('passed');
+    expect(authCreate).toHaveBeenCalledWith('/secure/pi-auth.json');
+    expect(registryCreate).toHaveBeenCalledWith(authStorage, '/secure/pi-models.json');
+  });
+
   it('parses flags narrowly', () => {
     expect(parsePiAuthSmokeArgs([
       '--',
       '--model', 'openai/gpt-5-mini',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
       '--allow-skip',
       '--json',
     ])).toEqual({
       model: 'openai/gpt-5-mini',
+      authPath: '/secure/pi-auth.json',
+      modelsPath: '/secure/pi-models.json',
       allowSkip: true,
       json: true,
       help: false,

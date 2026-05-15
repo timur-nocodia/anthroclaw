@@ -18,6 +18,8 @@ interface PiWorkspaceSmokeArgs {
   configPath?: string;
   dataDir: string;
   model?: string;
+  authPath?: string;
+  modelsPath?: string;
   timeoutMs?: number;
   keepWorkspace: boolean;
   allowSkip: boolean;
@@ -88,7 +90,12 @@ export async function runPiWorkspaceSmokeCli(
   let shouldRemoveWorkspace = !args.keepWorkspace;
   try {
     const model = args.model ?? loadConfiguredModel(args, deps.loadConfig) ?? DEFAULT_PI_MODEL_ID;
-    const runtime = deps.resolveRuntime?.() ?? resolveHeadlessRuntime('pi');
+    const runtime = deps.resolveRuntime?.() ?? resolveHeadlessRuntime('pi', {
+      pi: {
+        authStoragePath: args.authPath,
+        modelsPath: args.modelsPath,
+      },
+    });
     const result = await runPiWorkspaceSmoke({
       runtime,
       workspace,
@@ -215,6 +222,12 @@ export function parsePiWorkspaceSmokeArgs(argv: string[]): PiWorkspaceSmokeArgs 
       case '--model':
         args.model = requireValue(argv, ++i, '--model');
         break;
+      case '--auth-path':
+        args.authPath = requireValue(argv, ++i, '--auth-path');
+        break;
+      case '--models-path':
+        args.modelsPath = requireValue(argv, ++i, '--models-path');
+        break;
       case '--timeout-ms':
         args.timeoutMs = parsePositiveInt(requireValue(argv, ++i, '--timeout-ms'), '--timeout-ms');
         break;
@@ -313,6 +326,8 @@ function usage(): string {
     '  --config <path>       optional config.yml path used only for default model lookup',
     '  --data <dir>          data directory for runtime overlay when --config is used (default: ./data)',
     `  --model <model>       model override (default: ${DEFAULT_PI_MODEL_ID})`,
+    '  --auth-path <path>    optional Pi auth.json path',
+    '  --models-path <path>  optional Pi models.json path',
     '  --timeout-ms <ms>     positive integer timeout',
     '  --keep-workspace      keep the temporary smoke workspace for inspection',
     '  --allow-skip          exit 0 for missing optional Pi runtime/auth setup',
