@@ -1,12 +1,14 @@
 import { claudeAgentHeadlessRuntime } from './claude-agent-sdk.js';
 import type { HeadlessRuntime } from './headless.js';
+import { createOpenCodeHeadlessRuntime, type OpenCodeHeadlessRuntimeOptions } from './opencode-headless.js';
 import { createPiHeadlessRuntime, type PiHeadlessRuntimeOptions } from './pi-headless.js';
 
-export type BuiltInHeadlessRuntimeId = 'claude-agent-sdk' | 'pi';
+export type BuiltInHeadlessRuntimeId = 'claude-agent-sdk' | 'pi' | 'opencode';
 export type HeadlessRuntimeSelection = BuiltInHeadlessRuntimeId | HeadlessRuntime;
 
 export interface HeadlessRuntimeResolverOptions {
   pi?: PiHeadlessRuntimeOptions;
+  opencode?: OpenCodeHeadlessRuntimeOptions;
 }
 
 export function resolveHeadlessRuntime(
@@ -19,6 +21,10 @@ export function resolveHeadlessRuntime(
 
   if (runtime === 'pi') {
     return createPiHeadlessRuntime(options.pi);
+  }
+
+  if (runtime === 'opencode') {
+    return createOpenCodeHeadlessRuntime(options.opencode);
   }
 
   if (isHeadlessRuntime(runtime)) {
@@ -36,5 +42,5 @@ function isHeadlessRuntime(value: unknown): value is HeadlessRuntime {
 }
 
 export function isBuiltInHeadlessRuntimeId(value: string): value is BuiltInHeadlessRuntimeId {
-  return value === 'claude-agent-sdk' || value === 'pi';
+  return value === 'claude-agent-sdk' || value === 'pi' || value === 'opencode';
 }

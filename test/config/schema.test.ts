@@ -104,6 +104,18 @@ describe('GlobalConfigSchema', () => {
     expect(result.runtime.headless.provider).toBe('pi');
   });
 
+  it('accepts OpenCode as an explicit headless runtime provider', () => {
+    const result = GlobalConfigSchema.parse({
+      runtime: {
+        headless: {
+          provider: 'opencode',
+        },
+      },
+    });
+
+    expect(result.runtime.headless.provider).toBe('opencode');
+  });
+
   it('rejects unknown headless runtime providers', () => {
     expect(() => GlobalConfigSchema.parse({
       runtime: {

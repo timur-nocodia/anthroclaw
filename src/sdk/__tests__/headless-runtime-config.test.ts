@@ -27,6 +27,18 @@ describe('headless runtime config helpers', () => {
     expect(headlessRuntimeOptionsFromConfig(config)).toEqual({ runtime: 'pi' });
   });
 
+  it('maps explicit OpenCode config to a runtime selection', () => {
+    const config = GlobalConfigSchema.parse({
+      runtime: {
+        headless: {
+          provider: 'opencode',
+        },
+      },
+    });
+
+    expect(headlessRuntimeOptionsFromConfig(config)).toEqual({ runtime: 'opencode' });
+  });
+
   it('does not overwrite an explicitly supplied runtime object', async () => {
     const runtime = {
       id: 'custom',

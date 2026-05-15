@@ -285,6 +285,14 @@ What it provides:
 - server/client architecture designed for multiple clients
 - plugin hooks such as `permission.ask`, `tool.execute.before`, `tool.execute.after`, session compaction hooks
 
+Local benchmark adapter status:
+
+- Draft PR #59 adds an optional AnthroClaw `HeadlessRuntime` adapter for OpenCode.
+- The adapter uses an injected OpenCode client or dynamically imports `@opencode-ai/sdk`, so OpenCode remains an experimental dependency instead of a required install.
+- It maps AnthroClaw `HeadlessRunInput.sessionId` to OpenCode `session.prompt({ path: { id } })` and creates a session through `session.create()` when no id is present.
+- It emits a minimal benchmark `RuntimeRunHandle` with normalized text and completion events.
+- It maps interrupts to OpenCode `session.abort()` and checkpoint rewind calls to `session.revert()` when the client supports that API.
+
 Fit to AnthroClaw:
 
 - Strongest feature parity among open-source candidates.

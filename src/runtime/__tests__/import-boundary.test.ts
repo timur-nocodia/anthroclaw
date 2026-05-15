@@ -23,6 +23,7 @@ describe('runtime import boundary', () => {
       'src/runtime/headless.ts',
       'src/runtime/headless-registry.ts',
       'src/runtime/pi-headless.ts',
+      'src/runtime/opencode-headless.ts',
     ];
 
     for (const file of files) {
