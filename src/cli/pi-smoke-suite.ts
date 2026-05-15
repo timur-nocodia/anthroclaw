@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { runPiAuthSmokeCli } from './pi-auth-smoke.js';
 import { runPiGatewaySmokeCli } from './pi-gateway-smoke.js';
 import { runPiWorkspaceSmokeCli } from './pi-workspace-smoke.js';
 
@@ -16,6 +17,7 @@ interface PiSmokeSuiteArgs {
 }
 
 interface PiSmokeSuiteDeps {
+  runAuthCli?: SmokeCliRunner;
   runWorkspaceCli?: SmokeCliRunner;
   runGatewayCli?: SmokeCliRunner;
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
@@ -23,7 +25,7 @@ interface PiSmokeSuiteDeps {
 }
 
 interface ProbeRunResult {
-  name: 'workspace' | 'gateway';
+  name: 'auth' | 'workspace' | 'gateway';
   code: number;
   status: SmokeStatus;
   stdout?: string;
@@ -37,6 +39,7 @@ interface PiSmokeSuiteResult {
   runtime: 'pi';
   durationMs: number;
   probes: {
+    auth: ProbeRunResult;
     workspace: ProbeRunResult;
     gateway: ProbeRunResult;
   };
@@ -64,21 +67,32 @@ export async function runPiSmokeSuiteCli(
   }
 
   const startedAt = Date.now();
-  const workspace = await runProbe(
-    'workspace',
-    deps.runWorkspaceCli ?? runPiWorkspaceSmokeCli,
-    buildProbeArgs(args),
+  const auth = await runProbe(
+    'auth',
+    deps.runAuthCli ?? runPiAuthSmokeCli,
+    buildAuthProbeArgs(args),
   );
-  const gateway = await runProbe(
-    'gateway',
-    deps.runGatewayCli ?? runPiGatewaySmokeCli,
-    buildProbeArgs(args),
-  );
+  const shouldRunRuntimeProbes = auth.status === 'passed' && auth.code === 0;
+  const workspace = shouldRunRuntimeProbes
+    ? await runProbe(
+        'workspace',
+        deps.runWorkspaceCli ?? runPiWorkspaceSmokeCli,
+        buildRuntimeProbeArgs(args),
+      )
+    : skippedDueToAuth('workspace');
+  const gateway = shouldRunRuntimeProbes
+    ? await runProbe(
+        'gateway',
+        deps.runGatewayCli ?? runPiGatewaySmokeCli,
+        buildRuntimeProbeArgs(args),
+      )
+    : skippedDueToAuth('gateway');
   const result: PiSmokeSuiteResult = {
-    status: aggregateStatus([workspace, gateway]),
+    status: aggregateStatus([auth, workspace, gateway]),
     runtime: 'pi',
     durationMs: Date.now() - startedAt,
     probes: {
+      auth,
       workspace,
       gateway,
     },
@@ -178,13 +192,29 @@ async function runProbe(
   };
 }
 
-function buildProbeArgs(args: PiSmokeSuiteArgs): string[] {
+function buildAuthProbeArgs(args: PiSmokeSuiteArgs): string[] {
+  const out = ['--json'];
+  if (args.model) out.push('--model', args.model);
+  if (args.allowSkip) out.push('--allow-skip');
+  return out;
+}
+
+function buildRuntimeProbeArgs(args: PiSmokeSuiteArgs): string[] {
   const out = ['--json'];
   if (args.model) out.push('--model', args.model);
   if (args.timeoutMs) out.push('--timeout-ms', String(args.timeoutMs));
   if (args.keepWorkspace) out.push('--keep-workspace');
   if (args.allowSkip) out.push('--allow-skip');
   return out;
+}
+
+function skippedDueToAuth(name: 'workspace' | 'gateway'): ProbeRunResult {
+  return {
+    name,
+    code: 0,
+    status: 'skipped',
+    error: 'Skipped because Pi auth preflight did not pass.',
+  };
 }
 
 function aggregateStatus(probes: ProbeRunResult[]): SmokeStatus {
@@ -219,6 +249,7 @@ function writeResult(
   stream.write([
     `Pi smoke suite ${result.status}.`,
     `durationMs: ${result.durationMs}`,
+    `auth: ${result.probes.auth.status}`,
     `workspace: ${result.probes.workspace.status}`,
     `gateway: ${result.probes.gateway.status}`,
   ].join('\n'));
@@ -258,9 +289,10 @@ function usage(): string {
   return [
     'Usage: pnpm smoke:pi-all -- [--json] [--allow-skip]',
     '',
-    'Runs both Pi smoke probes in sequence:',
-    '  1. workspace edit + rewind smoke',
-    '  2. Gateway channel dispatch + approval smoke',
+    'Runs Pi smoke probes in sequence:',
+    '  1. auth/model preflight',
+    '  2. workspace edit + rewind smoke',
+    '  3. Gateway channel dispatch + approval smoke',
     '',
     'Options:',
     '  --model <model>       model override forwarded to both probes',

@@ -22,6 +22,7 @@
     "reset-password": "tsx src/cli/reset-password.ts",
     "learning": "tsx src/cli/learning.ts",
     "headless:runtime": "tsx src/cli/headless-runtime.ts",
+    "smoke:pi-auth": "tsx src/cli/pi-auth-smoke.ts",
     "smoke:pi-workspace": "tsx src/cli/pi-workspace-smoke.ts",
     "smoke:pi-gateway": "tsx src/cli/pi-gateway-smoke.ts",
     "smoke:pi-all": "tsx src/cli/pi-smoke-suite.ts",
