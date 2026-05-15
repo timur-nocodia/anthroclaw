@@ -164,6 +164,7 @@ import {
 import { resolveHeadlessRuntime } from './runtime/headless-registry.js';
 import type { HeadlessCustomTool, HeadlessRunInput, HeadlessToolPolicy } from './runtime/headless.js';
 import type { RuntimeRunHandle } from './runtime/types.js';
+import { buildExternalMcpCustomTools } from './runtime/external-mcp-custom-tools.js';
 import { buildAllowedTools, createCanUseTool } from './sdk/permissions.js';
 import type { ToolDefinition } from './agent/tools/types.js';
 import { LearningQueue, detectLearningTriggers, type LearningReviewJob } from './learning/queue.js';
@@ -1158,6 +1159,16 @@ export class Gateway {
     const runtime = resolveHeadlessRuntime(configured.runtime, configured.runtimeOptions);
     const model = agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6';
     const allowedTools = buildAllowedTools(agent, false);
+    const externalMcpServers = await this.resolveAgentExternalMcpServers(agent);
+    const externalMcpCustomTools = (await buildExternalMcpCustomTools({
+      servers: externalMcpServers,
+      cwd: agent.workspacePath,
+      onError: (err, context) => logger.warn({
+        err,
+        agentId: agent.id,
+        ...context,
+      }, 'Pi Gateway external MCP custom tool bridge skipped or failed'),
+    })).filter((tool) => isPiGatewayCustomToolAllowed(agent, allowedTools, tool.name));
     const dispatchTools = this.buildGatewayDispatchTools(agent, input.sessionKey, input.message);
     const customTools = dispatchTools
       .filter((tool) => isPiGatewayCustomToolAllowed(agent, allowedTools, tool.name))
@@ -1166,7 +1177,8 @@ export class Gateway {
         description: tool.description,
         inputSchema: tool.inputSchema,
         handler: (args) => tool.handler(args),
-      }));
+      }))
+      .concat(externalMcpCustomTools);
     const customToolNames = new Set(customTools.map((tool) => tool.name));
     const toolGate = createCanUseTool({
       agent,
@@ -2143,27 +2155,7 @@ export class Gateway {
     msg?: InboundMessage,
     channel?: ChannelAdapter,
   ) {
-    // Materialize any `credential_ref` entries in the agent's
-    // external_mcp_servers block before handing the spec to the SDK. Skipped
-    // entirely when no external MCP servers are configured so tests / agents
-    // that don't use credentials never construct the credential store (which
-    // would require `ANTHROCLAW_MASTER_KEY`).
-    let externalMcpServersOverride
-      = agent.config.external_mcp_servers as AgentYml['external_mcp_servers'];
-    if (hasExternalMcpServers(agent.config.external_mcp_servers)) {
-      try {
-        externalMcpServersOverride = await resolveExternalMcpHeaders(
-          agent.config.external_mcp_servers,
-          this.getCredentialStore(),
-          { agentId: agent.id },
-        );
-      } catch {
-        // ANTHROCLAW_MASTER_KEY missing or store fails — fall back to the raw
-        // spec. Entries with credential_ref will probe-fail at SDK init; the
-        // operator surfaces that via existing MCP preflight notifications.
-        externalMcpServersOverride = agent.config.external_mcp_servers;
-      }
-    }
+    const externalMcpServersOverride = await this.resolveAgentExternalMcpServers(agent);
 
     const options = buildSdkOptions({
       agent,
@@ -2222,6 +2214,30 @@ export class Gateway {
     }
 
     return options;
+  }
+
+  private async resolveAgentExternalMcpServers(agent: Agent): Promise<AgentYml['external_mcp_servers']> {
+    // Materialize any `credential_ref` entries in the agent's
+    // external_mcp_servers block before handing the spec to a runtime. Skipped
+    // entirely when no external MCP servers are configured so tests / agents
+    // that don't use credentials never construct the credential store (which
+    // would require `ANTHROCLAW_MASTER_KEY`).
+    if (!hasExternalMcpServers(agent.config.external_mcp_servers)) {
+      return agent.config.external_mcp_servers;
+    }
+
+    try {
+      return await resolveExternalMcpHeaders(
+        agent.config.external_mcp_servers,
+        this.getCredentialStore(),
+        { agentId: agent.id },
+      );
+    } catch {
+      // ANTHROCLAW_MASTER_KEY missing or store fails — fall back to the raw
+      // spec. Entries with credential_ref will probe-fail at runtime; the
+      // operator surfaces that via existing MCP preflight notifications.
+      return agent.config.external_mcp_servers;
+    }
   }
 
   private buildGatewayDispatchTools(
