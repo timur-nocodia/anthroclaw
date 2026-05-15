@@ -89,6 +89,29 @@ describe('GlobalConfigSchema', () => {
     expect(result.defaults.embedding_provider).toBe('openai');
     expect(result.defaults.embedding_model).toBe('text-embedding-3-small');
     expect(result.features.sdk_active_input).toBe(false);
+    expect(result.runtime.headless.provider).toBe('claude-agent-sdk');
+  });
+
+  it('accepts explicit headless runtime provider config', () => {
+    const result = GlobalConfigSchema.parse({
+      runtime: {
+        headless: {
+          provider: 'pi',
+        },
+      },
+    });
+
+    expect(result.runtime.headless.provider).toBe('pi');
+  });
+
+  it('rejects unknown headless runtime providers', () => {
+    expect(() => GlobalConfigSchema.parse({
+      runtime: {
+        headless: {
+          provider: 'other',
+        },
+      },
+    })).toThrow();
   });
 
   it('accepts feature flags with SDK active input defaulting off', () => {

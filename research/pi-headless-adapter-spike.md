@@ -56,11 +56,28 @@ await runHeadlessReview({
 
 This keeps production behavior stable while giving local spikes a real `HeadlessRuntime` path. The next production-facing step should be a config/CLI flag that builds these options intentionally, not an ambient runtime switch.
 
+## Local config/CLI opt-in
+
+Local smoke runs can now select Pi through `config.yml`:
+
+```yaml
+runtime:
+  headless:
+    provider: pi
+```
+
+The same path is available through the probe CLI:
+
+```bash
+pnpm headless:runtime -- --prompt "Summarize this transcript." --runtime pi
+```
+
+`--runtime` intentionally overrides config so an operator can force `claude-agent-sdk` while testing a Pi-enabled config. The CLI is still a smoke probe: it runs the headless, tools-disabled review path only. It does not prove Gateway streaming, tools, approvals, or session continuation.
+
 ## Next proof points
 
 Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
-- a local opt-in CLI/config path that loads `@earendil-works/pi-coding-agent` and calls `runHeadlessReview({ runtime: 'pi' })`;
 - a model resolver wired through Pi `ModelRegistry`;
 - session continuation mapping from AnthroClaw session keys to Pi sessions;
 - tool policy experiments for read/bash/edit/write;

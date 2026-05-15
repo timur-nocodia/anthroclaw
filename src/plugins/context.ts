@@ -39,6 +39,7 @@ export interface ContextDeps {
 
   getAgentConfig(agentId: string): unknown;
   getGlobalConfig(): unknown;
+  runSubagent?(opts: RunSubagentOpts): Promise<string>;
 
   // ── Optional cross-plugin handles (gateway-injected) ──────────────
   getPeerPauseStore?(): unknown;
@@ -89,7 +90,7 @@ export function createPluginContext(deps: ContextDeps): PluginContext {
     },
 
     runSubagent(opts: RunSubagentOpts): Promise<string> {
-      return runSubagentImpl(opts);
+      return (deps.runSubagent ?? runSubagentImpl)(opts);
     },
 
     getAgentConfig(agentId: string): unknown {

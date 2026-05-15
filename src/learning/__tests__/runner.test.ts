@@ -118,6 +118,23 @@ describe('runLearningReview', () => {
     }));
   });
 
+  it('passes configured headless runtime selection into the reviewer', async () => {
+    mockedRunHeadlessReview.mockResolvedValue(JSON.stringify({ actions: [] }));
+
+    await runLearningReview({
+      job: makeJob({ triggers: ['user_correction'] }),
+      agent: makeAgent({ learningMode: 'propose' }),
+      dataDir,
+      store: learningStore,
+      headlessRuntime: { runtime: 'pi' },
+    });
+
+    expect(mockedRunHeadlessReview).toHaveBeenCalledWith(expect.objectContaining({
+      runtime: 'pi',
+      purpose: 'learning review',
+    }));
+  });
+
   it('auto-applies high-confidence private memory actions in auto_private mode', async () => {
     mockedRunHeadlessReview.mockResolvedValue(JSON.stringify({
       actions: [{

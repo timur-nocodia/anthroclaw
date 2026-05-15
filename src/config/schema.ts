@@ -51,6 +51,20 @@ const FeatureFlagsSchema = z.object({
   sdk_active_input: false,
 });
 
+const HeadlessRuntimeProviderSchema = z.enum(['claude-agent-sdk', 'pi']);
+
+const RuntimeConfigSchema = z.object({
+  headless: z.object({
+    provider: HeadlessRuntimeProviderSchema.default('claude-agent-sdk'),
+  }).default({
+    provider: 'claude-agent-sdk',
+  }),
+}).default({
+  headless: {
+    provider: 'claude-agent-sdk',
+  },
+});
+
 // ─── GlobalConfigSchema ────────────────────────────────────────────
 
 export const GlobalConfigSchema = z.object({
@@ -103,6 +117,7 @@ export const GlobalConfigSchema = z.object({
   }).optional(),
   webhooks: z.record(z.string(), DirectWebhookSchema).optional(),
   features: FeatureFlagsSchema,
+  runtime: RuntimeConfigSchema,
   plugins: z.record(z.string(), z.object({
     defaults: z.record(z.string(), z.unknown()).optional(),
   }).passthrough()).optional(),
@@ -607,6 +622,8 @@ export const AgentYmlSchema = z.object({
 // ─── Exported types ────────────────────────────────────────────────
 
 export type GlobalConfig = z.infer<typeof GlobalConfigSchema>;
+export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>;
+export type HeadlessRuntimeProvider = z.infer<typeof HeadlessRuntimeProviderSchema>;
 export type AgentYml = z.infer<typeof AgentYmlSchema>;
 export type HumanTakeoverConfig = z.infer<typeof HumanTakeoverSchema>;
 export type NotificationsConfig = z.infer<typeof NotificationsSchema>;

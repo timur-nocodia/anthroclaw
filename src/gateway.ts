@@ -10,6 +10,7 @@ import {
   PluginInstallStore,
   buildPluginStartupPlan,
   createPluginContext,
+  runSubagent as runPluginSubagent,
   PluginRegistry,
   startPluginsWatcher,
   type DiscoveredPlugin,
@@ -148,6 +149,11 @@ import {
 import { classifyIntegrationToolName } from './integrations/audit.js';
 import { buildSdkOptions } from './sdk/options.js';
 import { runHeadlessReview } from './sdk/headless-review.js';
+import {
+  headlessRuntimeOptionsFromConfig,
+  withConfiguredHeadlessRuntime,
+  type HeadlessReviewRuntimeConfig,
+} from './sdk/headless-runtime-config.js';
 import { buildAllowedTools } from './sdk/permissions.js';
 import { LearningQueue, detectLearningTriggers, type LearningReviewJob } from './learning/queue.js';
 import { applyMemoryCandidateAction } from './learning/memory-applier.js';
@@ -1027,6 +1033,10 @@ export class Gateway {
     return this.configAuditLog;
   }
 
+  private getHeadlessReviewRuntimeOptions(): HeadlessReviewRuntimeConfig {
+    return headlessRuntimeOptionsFromConfig(this.globalConfig);
+  }
+
   /**
    * Lazily construct and return the credential store. Throws if
    * `ANTHROCLAW_MASTER_KEY` is not configured — callers that need credential
@@ -1856,6 +1866,7 @@ export class Gateway {
       registerTool: (pluginTool) => this.pluginRegistry.addToolFromPlugin(d.manifest.name, pluginTool),
       registerEngine: (name, engine) => this.pluginRegistry.addEngineFromPlugin(name, engine),
       registerCommand: (cmd) => this.pluginRegistry.addCommandFromPlugin(d.manifest.name, cmd),
+      runSubagent: (opts) => runPluginSubagent(withConfiguredHeadlessRuntime(opts, this.globalConfig)),
       getAgentConfig: (id: string) => this.agents.get(id)?.config,
       getGlobalConfig: () => this.globalConfig,
       getPeerPauseStore: () => this.peerPauseStore,
@@ -3063,6 +3074,7 @@ export class Gateway {
           prompt,
           model: agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6',
           cwd: agent.workspacePath,
+          ...this.getHeadlessReviewRuntimeOptions(),
           purpose: 'title generation',
           toolDenyMessage: 'Tools disabled for title generation.',
         });
@@ -3777,6 +3789,7 @@ export class Gateway {
       store: this.learningStore,
       decisionStore: this.decisionStore ?? undefined,
       defaultModel: this.globalConfig?.defaults.model,
+      headlessRuntime: this.getHeadlessReviewRuntimeOptions(),
     });
     for (const decision of result?.decisions ?? []) {
       await this.deliverDecisionPrompt(decision);
@@ -5971,6 +5984,7 @@ export class Gateway {
         prompt,
         model: agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6',
         cwd: agent.workspacePath,
+        ...this.getHeadlessReviewRuntimeOptions(),
         purpose: 'memory extraction',
         toolDenyMessage: 'Tools disabled for memory extraction.',
       });

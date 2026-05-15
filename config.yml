@@ -14,6 +14,11 @@ defaults:
   embedding_model: text-embedding-3-small
   debounce_ms: 1500
 
+# runtime:
+#   headless:
+#     # Experimental local smoke path only. Default is claude-agent-sdk.
+#     provider: pi
+
 # rate_limit:
 #   maxAttempts: 10
 #   windowMs: 60000

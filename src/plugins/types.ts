@@ -1,6 +1,10 @@
 // src/plugins/types.ts
 import type { z } from 'zod';
 import type { HookEvent } from '../hooks/emitter.js';
+import type {
+  HeadlessRuntimeResolverOptions,
+  HeadlessRuntimeSelection,
+} from '../runtime/headless-registry.js';
 
 /**
  * Manifest, как он лежит в plugins/{name}/.claude-plugin/plugin.json
@@ -212,6 +216,8 @@ export interface RunSubagentOpts {
   model?: string;                 // override agent's default
   timeoutMs?: number;             // default 60_000
   cwd?: string;
+  runtime?: HeadlessRuntimeSelection;
+  runtimeOptions?: HeadlessRuntimeResolverOptions;
 }
 
 export interface PluginLogger {
