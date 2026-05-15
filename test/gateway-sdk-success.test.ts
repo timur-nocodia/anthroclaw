@@ -695,6 +695,81 @@ sdk:
     await gw.stop();
   });
 
+  it('dispatch Pi RuntimeEvent path rewinds files through a Pi runtime handle', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-rewind-session-1',
+        text: 'Rewind ready',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-rewind-session-1',
+      },
+    ], 'pi-rewind-session-1');
+    (handle as any).rewindFiles = vi.fn(async () => ({
+      canRewind: true,
+      filesChanged: ['src/file.txt'],
+      insertions: 1,
+      deletions: 0,
+    }));
+    piRunHandleMock.mockResolvedValueOnce(handle);
+    const botDir = join(agentsDir, 'pi-rewind-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+sdk:
+  enableFileCheckpointing: true
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText() {
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    await expect(gw.rewindAgentSessionFiles('pi-rewind-bot', 'pi-rewind-session-1', {
+      userMessageId: 'user-msg-1',
+      dryRun: false,
+      confirm: true,
+    })).resolves.toEqual({
+      sessionId: 'pi-rewind-session-1',
+      userMessageId: 'user-msg-1',
+      canRewind: true,
+      filesChanged: ['src/file.txt'],
+      insertions: 1,
+      deletions: 0,
+    });
+    expect((handle as any).rewindFiles).toHaveBeenCalledWith('user-msg-1', { dryRun: false });
+
+    await gw.stop();
+  });
+
   it('dispatch Pi RuntimeEvent path routes tool approval through AnthroClaw broker', async () => {
     startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
     piRuntimeState.useRunHandle = true;

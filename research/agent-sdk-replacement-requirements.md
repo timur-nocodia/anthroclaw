@@ -346,7 +346,8 @@ What it provides:
 Local spike adapter status:
 
 - Draft PRs #45-#58 build Pi from optional headless prompt into an opt-in Gateway runtime path with streamed `RuntimeEvent` values, AnthroClaw permission broker integration, custom local tools, external MCP proxying, active-run interrupts, and checkpoint-control alias preservation.
-- Draft PR #60 adds Pi to the shared runtime acceptance contract. Current contract status is 9 pass, 1 partial, 0 fail: Pi passes every required scenario except true provider-backed checkpoint/file rewind, which remains explicit unsupported-runtime behavior.
+- Draft PR #60 adds Pi to the shared runtime acceptance contract.
+- Draft PR #61 adds Pi checkpoint/file rewind through AnthroClaw-owned workspace snapshots for explicit-cwd Gateway runs. Current contract status is 10 pass, 0 partial, 0 fail.
 
 Fit to AnthroClaw:
 
@@ -826,7 +827,7 @@ The Phase 0 boundary and both Pi/OpenCode spikes now have enough code-level evid
 
 Use this tie-breaker:
 
-- choose **Pi** if the AnthroClaw team wants maximum control and accepts closing the remaining checkpoint/file rewind gap;
+- choose **Pi** if the AnthroClaw team wants maximum control and accepts owning workspace snapshot rewind instead of inheriting a provider-specific checkpoint primitive;
 - choose **OpenCode** only if its Gateway benchmark can close AnthroClaw permission policy, custom tools, external MCP proxying, and active-run integration with less complexity than Pi rewind;
 - choose **Copilot SDK** only if GitHub subscription/runtime dependency is acceptable as a product bet;
 - choose **OpenAI Agents JS** if the strategic priority is a clean AnthroClaw-owned SDK architecture over fastest migration.

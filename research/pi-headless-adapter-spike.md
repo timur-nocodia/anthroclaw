@@ -206,7 +206,7 @@ The explicit Pi Gateway path now participates in AnthroClaw's active-run control
 - Channel dispatch registers Pi handles with `QueueManager`, so active Pi runs appear in `listActiveAgentRuns()` with run id, session key, and delivery target metadata.
 - `interruptAgentRun()` and queue conflict modes can interrupt the Pi handle through the same `SdkControlRegistry` used by the Claude path.
 - Pi runtime session ids are aliased back to AnthroClaw session keys as events arrive and after the run completes, so follow-up turns pass the prior Pi `sessionId` into the next run.
-- When `sdk.enableFileCheckpointing` is enabled, Pi runs register a checkpoint-control handle and alias the final Pi session id. Since the current Pi handle does not expose Claude-compatible `rewindFiles()`, the rewind endpoint now returns the explicit structured "runtime handle does not support file rewind" response instead of looking like a lost session/control handle.
+- When `sdk.enableFileCheckpointing` is enabled, Pi runs register a checkpoint-control handle and alias the final Pi session id. Pi handles now expose `rewindFiles()` through an AnthroClaw-owned workspace snapshot captured before the prompt mutates files. This is not a Pi session-tree primitive; it is a bounded explicit-cwd file restore fallback owned by AnthroClaw.
 
 This gives production-shaped continuation and interrupt behavior without pretending that Pi's tree/session model is the same as Claude SDK file checkpoints. A future Pi-specific rewind bridge should be built against Pi's session tree or a vetted workspace-history extension.
 
@@ -215,4 +215,4 @@ This gives production-shaped continuation and interrupt behavior without pretend
 Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
 - caching/reuse strategy for external MCP discovery and long-lived MCP sessions if needed for performance;
-- true Pi-native file rewind/checkpoint support, either through Pi's session tree APIs or an AnthroClaw-owned workspace snapshot extension.
+- end-to-end Pi smoke coverage for real workspace edits and snapshot limit behavior.
