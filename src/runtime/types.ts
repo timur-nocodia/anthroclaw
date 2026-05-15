@@ -16,6 +16,24 @@ export interface RuntimeRunInput<TOptions> {
   options: TOptions;
 }
 
+export interface RuntimeRewindFilesOptions {
+  dryRun?: boolean;
+}
+
+export interface RuntimeRewindFilesResult {
+  canRewind: boolean;
+  filesChanged?: string[];
+  insertions?: number;
+  deletions?: number;
+  error?: string;
+}
+
+export interface RuntimeRunHandle<TRawEvent = unknown> extends AsyncIterable<TRawEvent> {
+  interrupt(): Promise<void>;
+  close(): void;
+  rewindFiles?(userMessageId: string, options?: RuntimeRewindFilesOptions): Promise<RuntimeRewindFilesResult>;
+}
+
 export interface RuntimeStartupInput<TOptions> {
   options: TOptions;
 }
@@ -29,6 +47,7 @@ export interface RuntimeAdapter<TOptions, TQuery, TWarmQuery = unknown, TMcpServ
   id: RuntimeId;
   capabilities: RuntimeCapabilities;
   query(input: RuntimeRunInput<TOptions>): TQuery;
+  run?(input: RuntimeRunInput<TOptions>): RuntimeRunHandle;
   startup?(input: RuntimeStartupInput<TOptions>): Promise<TWarmQuery>;
   createMcpServer?(input: RuntimeMcpServerInput): TMcpServer;
 }
