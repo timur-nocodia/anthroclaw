@@ -6,6 +6,12 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-15
+
+### Changed
+- fix(reliability): break auto-compress retry loop + reviewer rubric schema mismatch (#38) (d66b5c2)
+
+
 ## [1.0.0] - 2026-05-14 — The Funeral Release
 
 This release marks the end of active AnthroClaw development.
