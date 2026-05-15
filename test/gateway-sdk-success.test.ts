@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 
 const { startupMock, queryMock, piRunMock, piRunHandleMock, piRuntimeState } = vi.hoisted(() => ({
   startupMock: vi.fn(),
@@ -678,6 +679,108 @@ mcp_tools:
       { peerId: 'peer-123', text: 'side-channel send', accountId: 'default' },
       { peerId: 'peer-123', text: 'Tool bridge done', accountId: 'default' },
     ]);
+    expect(handle.close).toHaveBeenCalledTimes(1);
+
+    await gw.stop();
+  });
+
+  it('dispatch Pi RuntimeEvent path exposes external MCP servers as custom tools', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-external-mcp-session-1',
+        text: 'External MCP bridge done',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-external-mcp-session-1',
+      },
+    ], 'pi-external-mcp-session-1');
+    const serverScript = join(tmpDir, 'toy-mcp-server.mjs');
+    const sdkDist = join(process.cwd(), 'node_modules/@modelcontextprotocol/sdk/dist/esm');
+    writeFileSync(serverScript, `
+import { Server } from '${pathToFileURL(join(sdkDist, 'server/index.js')).href}';
+import { StdioServerTransport } from '${pathToFileURL(join(sdkDist, 'server/stdio.js')).href}';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '${pathToFileURL(join(sdkDist, 'types.js')).href}';
+
+const server = new Server({ name: 'toy-mcp', version: '1.0.0' }, { capabilities: { tools: {} } });
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [{
+    name: 'lookup',
+    description: 'Lookup a value',
+    inputSchema: { type: 'object', properties: { q: { type: 'string' } } },
+  }],
+}));
+server.setRequestHandler(CallToolRequestSchema, async (request) => ({
+  content: [{ type: 'text', text: 'lookup:' + request.params.arguments.q }],
+}));
+await server.connect(new StdioServerTransport());
+`);
+    const botDir = join(agentsDir, 'pi-external-mcp-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+external_mcp_servers:
+  toy:
+    type: stdio
+    command: ${JSON.stringify(process.execPath)}
+    args:
+      - ${JSON.stringify(serverScript)}
+    allowed_tools:
+      - lookup
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return `msg-${sent.length}`;
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    piRunHandleMock.mockImplementationOnce(async (runInput: Record<string, unknown>) => {
+      const customTools = runInput.customTools as Array<{
+        name: string;
+        handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }> }>;
+      }>;
+      const externalTool = customTools.find((tool) => tool.name === 'mcp__toy__lookup');
+      const toolPolicy = runInput.toolPolicy as { tools: string[] };
+
+      expect(externalTool).toBeTruthy();
+      expect(toolPolicy.tools).toContain('mcp__toy__lookup');
+      await expect(externalTool?.handler({ q: 'pi' })).resolves.toMatchObject({
+        content: [{ type: 'text', text: 'lookup:pi' }],
+      });
+
+      return handle;
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual(['External MCP bridge done']);
     expect(handle.close).toHaveBeenCalledTimes(1);
 
     await gw.stop();

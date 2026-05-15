@@ -181,7 +181,19 @@ Pi's SDK exposes `customTools` through `defineTool()`, and its docs require cust
 - Policy checks map Pi custom tool calls back to AnthroClaw MCP-style names before calling `createCanUseTool()`, so safety profiles, `allowed_mcp_tools`, public-tool peer guards, and approval routing stay owned by AnthroClaw.
 - The Pi adapter also rechecks policy inside a custom tool's `execute()` as a fail-closed fallback if a Pi `tool_call` extension event was not observed before execution. Tool-call decisions are cached by call id/shape so a normal Pi pre-execution event and `execute()` do not prompt the same approval twice.
 
-This is the first production-shaped proof that Pi can host AnthroClaw tools without importing Mastra/LangChain-style orchestration. External remote MCP servers are still not bridged directly to Pi; they need either a custom-tool proxy or Pi-native MCP support analysis.
+This is the first production-shaped proof that Pi can host AnthroClaw tools without importing Mastra/LangChain-style orchestration.
+
+## External MCP proxy bridge
+
+The explicit Pi Gateway path now exposes configured `external_mcp_servers` through AnthroClaw-owned custom tools instead of handing Pi a separate MCP config:
+
+- Gateway materializes `credential_ref` entries through the same `resolveExternalMcpHeaders()` helper used by the Claude SDK path.
+- AnthroClaw lists each configured external MCP server's tools through `@modelcontextprotocol/sdk` and exposes only names present in that server's `allowed_tools`.
+- Each exposed tool keeps the Claude-compatible name shape `mcp__<server>__<tool>`, so existing `buildAllowedTools()` and `createCanUseTool()` checks continue to govern visibility and execution.
+- Tool execution creates a short-lived MCP client, calls the upstream tool, and converts MCP content/structured output into `HeadlessCustomToolResult` for Pi's `customTools` path.
+- Stdio, Streamable HTTP, and legacy SSE transports are supported at the bridge layer. HTTP/SSE credential headers are resolved by AnthroClaw before the bridge is built.
+
+This keeps MCP credentials, allowed-tool filtering, audit semantics, and reauth lifecycle on the AnthroClaw side. Pi receives ordinary custom tools and does not become the owner of external integrations.
 
 ## System prompt bridge
 
@@ -192,5 +204,5 @@ Pi does not take a direct `systemPrompt` option in the SDK examples. It uses `De
 Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
 - production session continuation mapping from AnthroClaw session keys to Pi sessions;
-- external MCP server execution on Pi, either through a custom-tool proxy or Pi-native MCP support;
+- caching/reuse strategy for external MCP discovery and long-lived MCP sessions if needed for performance;
 - production-grade interrupt/checkpoint behavior for Pi-backed active sessions.
