@@ -138,7 +138,16 @@ export async function runPiGatewaySmoke(input: {
   try {
     await gateway.start(smokeConfig(), agentsDir, dataDir, pluginsDir);
     gateway._setChannel(CHANNEL_ID, channel);
+    const priorFailedRunIds = new Set(
+      gateway.listAgentRuns({ agentId: AGENT_ID, status: 'failed', limit: 1000 }).map((run) => run.runId),
+    );
     await withTimeout(gateway.dispatch(smokeMessage()), input.timeoutMs);
+    const failedRun = gateway
+      .listAgentRuns({ agentId: AGENT_ID, status: 'failed', limit: 10 })
+      .find((run) => !priorFailedRunIds.has(run.runId));
+    if (failedRun?.error) {
+      throw new Error(`Pi Gateway runtime failed: ${failedRun.error}`);
+    }
 
     const actual = readFileSync(smokePath, 'utf8');
     if (actual !== AFTER_TEXT) {

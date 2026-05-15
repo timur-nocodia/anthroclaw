@@ -139,6 +139,15 @@ describe('Pi Gateway smoke CLI', () => {
     });
   });
 
+  it('surfaces Gateway runtime failures before file verification symptoms', async () => {
+    piRunHandleMock.mockRejectedValueOnce(new Error('No API key found for the selected model.'));
+
+    await expect(runPiGatewaySmoke({
+      workspace: join(root, 'workspace'),
+      timeoutMs: 10_000,
+    })).rejects.toThrow(/No API key found for the selected model/);
+  });
+
   it('parses flags narrowly', () => {
     expect(parsePiGatewaySmokeArgs([
       '--',

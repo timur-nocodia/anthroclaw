@@ -13,16 +13,16 @@ Pi moved to the Earendil Works organization in May 2026. For new work, use:
 
 The older `@mariozechner/*` package names appear in older docs and examples, but the current package scope is `@earendil-works/*`.
 
-## Why this PR keeps Pi optional
+## Why Pi stays optional
 
-This spike deliberately does not add `@earendil-works/pi-coding-agent` to AnthroClaw dependencies yet.
+AnthroClaw now carries `@earendil-works/pi-coding-agent` as an `optionalDependency` pinned at `0.74.0`. The Pi runtime is still opt-in: default production traffic remains on the Claude Agent SDK path unless config or CLI flags explicitly select `runtime.headless.provider: pi`.
 
 Reasons:
 
 - keep production install unchanged while the Claude Agent SDK migration stack is under review;
-- prove the AnthroClaw-owned `HeadlessRuntime` contract before binding to Pi package types;
+- prove the AnthroClaw-owned `HeadlessRuntime` contract without importing Pi package types across production modules;
 - allow local experiments with injected Pi factories or a dynamic optional loader;
-- avoid candidate-specific package churn in the same PR as contract hardening.
+- make real smoke gates reproducible in a normal checkout while preserving a clear runtime opt-in boundary.
 
 ## Adapter shape
 
