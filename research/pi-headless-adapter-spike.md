@@ -104,10 +104,30 @@ The Pi headless adapter now has a narrow model/tool bridge:
 
 This proves the shape of the boundary and the Pi hook needed for blocked-tool feedback. It still does not run Pi tools through AnthroClaw's production permission broker.
 
+## Gateway event mapping proof
+
+Pi emits `AgentSession.subscribe()` events from `@earendil-works/pi-agent-core`:
+
+- `agent_start` / `agent_end`;
+- `message_update` with `assistantMessageEvent` values such as `text_delta`;
+- `message_end` with finalized assistant messages and Pi usage fields (`input`, `output`, `cacheRead`, `cacheWrite`, `cost.total`);
+- `tool_execution_start` / `tool_execution_update` / `tool_execution_end`.
+
+`src/runtime/pi-events.ts` now maps those Pi-specific shapes into AnthroClaw `RuntimeEvent` values:
+
+- `run.started` / `run.completed` / `run.failed`;
+- `text.delta`;
+- `message.completed`;
+- `usage.updated`;
+- `tool.call.started` / `tool.call.delta` / `tool.call.completed` / `tool.call.failed`;
+- `raw` for unsupported Pi session events.
+
+This is still a proof module, not a Gateway runtime switch. Gateway currently consumes Claude-shaped stream events directly, so the next production-facing step is to make Gateway consume `RuntimeEvent` for the existing Claude path first, then route Pi through the same shape.
+
 ## Next proof points
 
 Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
 - production session continuation mapping from AnthroClaw session keys to Pi sessions;
 - production permission-broker mapping for read/bash/edit/write approvals;
-- normalized event mapping for Gateway streaming UI.
+- Gateway consumption of `RuntimeEvent` instead of provider-specific stream events.
