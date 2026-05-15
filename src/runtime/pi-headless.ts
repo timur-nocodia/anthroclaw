@@ -4,6 +4,9 @@ import {
   type HeadlessRunResult,
   type HeadlessRuntime,
 } from './headless.js';
+import { normalizePiRuntimeEvents } from './pi-events.js';
+import type { RuntimeEvent } from './events.js';
+import type { RuntimeRunHandle } from './types.js';
 
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 
@@ -111,6 +114,12 @@ export interface PiHeadlessRuntimeOptions {
   timeoutMs?: number;
 }
 
+export interface PiRuntimeRunHandleContext {
+  runId: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
 export class PiHeadlessRuntime implements HeadlessRuntime {
   readonly id = 'pi';
 
@@ -177,6 +186,32 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
       text: result,
       sessionId: extractPiSessionId(sessionResult),
     };
+  }
+
+  async runHandle(
+    input: HeadlessRunInput,
+    context: PiRuntimeRunHandleContext,
+  ): Promise<PiRuntimeRunHandle> {
+    const timeoutMs = input.timeoutMs
+      ?? input.runtimeDefaults?.timeoutMs
+      ?? this.options.timeoutMs
+      ?? DEFAULT_HEADLESS_TIMEOUT_MS;
+    const sdk = await this.loadSdk();
+    const createAgentSession = this.options.createAgentSession ?? sdk.createAgentSession;
+    if (!createAgentSession) {
+      throw new Error('Pi runtime handle could not find createAgentSession().');
+    }
+
+    const sessionOptions = await this.buildCreateOptions(input, sdk);
+    const sessionResult = await createAgentSession(sessionOptions);
+    return new PiRuntimeRunHandle({
+      input,
+      session: sessionResult.session,
+      sessionId: extractPiSessionId(sessionResult) ?? context.sessionId,
+      runId: context.runId,
+      agentId: context.agentId,
+      timeoutMs,
+    });
   }
 
   private async loadSdk(): Promise<PiCodingAgentSdkModule> {
@@ -270,6 +305,135 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
 
 export function createPiHeadlessRuntime(options: PiHeadlessRuntimeOptions = {}): HeadlessRuntime {
   return new PiHeadlessRuntime(options);
+}
+
+interface PiRuntimeRunHandleParams {
+  input: HeadlessRunInput;
+  session: PiAgentSessionLike;
+  sessionId?: string;
+  runId: string;
+  agentId?: string;
+  timeoutMs: number;
+}
+
+export class PiRuntimeRunHandle implements RuntimeRunHandle<RuntimeEvent> {
+  private readonly queue = new RuntimeEventQueue();
+  private readonly unsubscribe: () => void;
+  private readonly promptPromise: Promise<void>;
+  private closed = false;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+
+  readonly sessionId?: string;
+
+  constructor(private readonly params: PiRuntimeRunHandleParams) {
+    this.sessionId = params.sessionId;
+    this.unsubscribe = params.session.subscribe((event) => {
+      try {
+        this.queue.pushMany(normalizePiRuntimeEvents(event, {
+          runId: params.runId,
+          sessionId: params.sessionId,
+          agentId: params.agentId,
+        }));
+      } catch (err) {
+        this.queue.fail(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+
+    this.timer = setTimeout(() => {
+      void this.interrupt().catch(() => undefined);
+      this.queue.fail(new Error(`${params.input.purpose ?? 'pi runtime'} timeout after ${params.timeoutMs}ms`));
+      this.close();
+    }, params.timeoutMs);
+
+    this.promptPromise = params.session.prompt(params.input.prompt)
+      .then(() => this.queue.close())
+      .catch((err) => this.queue.fail(err instanceof Error ? err : new Error(String(err))))
+      .finally(() => this.close());
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<RuntimeEvent> {
+    return this.queue[Symbol.asyncIterator]();
+  }
+
+  async interrupt(): Promise<void> {
+    await this.params.session.abort?.();
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    if (this.timer) clearTimeout(this.timer);
+    this.unsubscribe();
+    this.params.session.dispose?.();
+  }
+
+  completion(): Promise<void> {
+    return this.promptPromise;
+  }
+}
+
+class RuntimeEventQueue implements AsyncIterable<RuntimeEvent> {
+  private readonly values: RuntimeEvent[] = [];
+  private readonly waiters: Array<{
+    resolve: (result: IteratorResult<RuntimeEvent>) => void;
+    reject: (err: Error) => void;
+  }> = [];
+  private done = false;
+  private error: Error | undefined;
+
+  pushMany(events: RuntimeEvent[]): void {
+    for (const event of events) {
+      this.push(event);
+    }
+  }
+
+  fail(error: Error): void {
+    if (this.done) return;
+    this.error = error;
+    this.done = true;
+    while (this.waiters.length > 0) {
+      this.waiters.shift()?.reject(error);
+    }
+  }
+
+  close(): void {
+    if (this.done) return;
+    this.done = true;
+    while (this.waiters.length > 0) {
+      this.waiters.shift()?.resolve({ done: true, value: undefined });
+    }
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<RuntimeEvent> {
+    return {
+      next: () => this.next(),
+    };
+  }
+
+  private push(event: RuntimeEvent): void {
+    if (this.done) return;
+    const waiter = this.waiters.shift();
+    if (waiter) {
+      waiter.resolve({ done: false, value: event });
+      return;
+    }
+    this.values.push(event);
+  }
+
+  private next(): Promise<IteratorResult<RuntimeEvent>> {
+    if (this.values.length > 0) {
+      return Promise.resolve({ done: false, value: this.values.shift()! });
+    }
+    if (this.error) {
+      return Promise.reject(this.error);
+    }
+    if (this.done) {
+      return Promise.resolve({ done: true, value: undefined });
+    }
+    return new Promise((resolve, reject) => {
+      this.waiters.push({ resolve, reject });
+    });
+  }
 }
 
 export function parsePiModelRef(modelId: string): PiModelRef {

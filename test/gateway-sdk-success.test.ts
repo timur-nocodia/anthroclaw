@@ -3,10 +3,12 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const { startupMock, queryMock, piRunMock } = vi.hoisted(() => ({
+const { startupMock, queryMock, piRunMock, piRunHandleMock, piRuntimeState } = vi.hoisted(() => ({
   startupMock: vi.fn(),
   queryMock: vi.fn(),
   piRunMock: vi.fn(),
+  piRunHandleMock: vi.fn(),
+  piRuntimeState: { useRunHandle: false },
 }));
 
 function createSdkStream(events: Array<Record<string, unknown>>) {
@@ -166,11 +168,17 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
 });
 
 vi.mock('../src/runtime/pi-headless.js', () => ({
-  createPiHeadlessRuntime: () => ({
-    id: 'pi',
-    run: piRunMock,
-    runText: vi.fn(),
-  }),
+  createPiHeadlessRuntime: () => {
+    const runtime: Record<string, unknown> = {
+      id: 'pi',
+      run: piRunMock,
+      runText: vi.fn(),
+    };
+    if (piRuntimeState.useRunHandle) {
+      runtime.runHandle = piRunHandleMock;
+    }
+    return runtime;
+  },
 }));
 
 import { Gateway } from '../src/gateway.js';
@@ -196,6 +204,19 @@ function piGatewayConfig(): GlobalConfig {
       headless: {
         provider: 'pi',
       },
+    },
+  };
+}
+
+function createRuntimeEventHandle(events: Array<Record<string, unknown>>, sessionId?: string) {
+  return {
+    sessionId,
+    interrupt: vi.fn(async () => undefined),
+    close: vi.fn(),
+    async *[Symbol.asyncIterator]() {
+      for (const event of events) {
+        yield event;
+      }
     },
   };
 }
@@ -240,6 +261,8 @@ describe('Gateway SDK success path', () => {
     startupMock.mockReset();
     queryMock.mockReset();
     piRunMock.mockReset();
+    piRunHandleMock.mockReset();
+    piRuntimeState.useRunHandle = false;
     seenPrompts.length = 0;
 
     startupMock.mockImplementation(async (params?: { options?: unknown }) => {
@@ -398,6 +421,95 @@ pairing:
     await gw.stop();
   });
 
+  it('dispatch can consume explicit Pi RuntimeEvent handles', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-stream-session-1',
+        text: 'Pi channel',
+        source: 'partial',
+      },
+      {
+        type: 'usage.updated',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-stream-session-1',
+        inputTokens: 6,
+        outputTokens: 4,
+        cacheReadTokens: 1,
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-stream-session-1',
+      },
+    ], 'pi-stream-session-1');
+    piRunHandleMock.mockResolvedValueOnce(handle);
+    const botDir = join(agentsDir, 'pi-stream-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual(['Pi channel']);
+    expect(piRunMock).not.toHaveBeenCalled();
+    expect(piRunHandleMock).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('[Test User]: hello sdk'),
+      model: 'claude-sonnet-4-6',
+      cwd: botDir,
+      purpose: 'gateway agent query',
+    }), expect.objectContaining({
+      runId: expect.any(String),
+      agentId: 'pi-stream-bot',
+    }));
+    expect(handle.close).toHaveBeenCalledTimes(1);
+    expect(metrics.snapshot().tokens_24h).toMatchObject({
+      input: 6,
+      output: 4,
+      cache_read: 1,
+    });
+    expect((await gw.listAgentSessions('pi-stream-bot'))[0]).toMatchObject({
+      sessionId: 'pi-stream-session-1',
+      provenance: expect.objectContaining({
+        source: 'channel',
+        status: 'succeeded',
+      }),
+    });
+
+    await gw.stop();
+  });
+
   it('injects per-chat operator context and honors reply_to_mode', async () => {
     const botDir = join(agentsDir, 'context-bot');
     mkdirSync(botDir);
@@ -533,6 +645,113 @@ routes:
       purpose: 'gateway web query',
       toolDenyMessage: 'Tools disabled for Gateway Pi runtime spike.',
     }));
+
+    await gw.stop();
+  });
+
+  it('dispatchWebUI can stream explicit Pi RuntimeEvent handles', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-web-stream-session-1',
+        text: 'Pi ',
+        source: 'partial',
+      },
+      {
+        type: 'tool.call.started',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-web-stream-session-1',
+        toolCallId: 'tool-1',
+        toolName: 'read',
+        input: { filePath: 'README.md' },
+      },
+      {
+        type: 'tool.call.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-web-stream-session-1',
+        toolCallId: 'tool-1',
+        toolName: 'read',
+        output: { content: [{ type: 'text', text: 'ok' }] },
+      },
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-web-stream-session-1',
+        text: 'web',
+        source: 'partial',
+      },
+      {
+        type: 'usage.updated',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-web-stream-session-1',
+        inputTokens: 5,
+        outputTokens: 7,
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-web-stream-session-1',
+      },
+    ], 'pi-web-stream-session-1');
+    piRunHandleMock.mockResolvedValueOnce(handle);
+    const botDir = join(agentsDir, 'web-pi-stream-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const textParts: string[] = [];
+    const partialText: string[] = [];
+    const toolCalls: Array<{ name: string; input: Record<string, unknown> }> = [];
+    const toolResults: Array<{ name: string; output: string }> = [];
+    let doneSessionId = '';
+    let doneTokens = 0;
+
+    await gw.dispatchWebUI('web-pi-stream-bot', 'hello pi stream', undefined, {}, {
+      onText: (chunk) => textParts.push(chunk),
+      onPartialText: (chunk) => partialText.push(chunk),
+      onToolCall: (name, input) => toolCalls.push({ name, input }),
+      onToolResult: (name, output) => toolResults.push({ name, output }),
+      onDone: (sid, tokens) => {
+        doneSessionId = sid;
+        doneTokens = tokens;
+      },
+      onError: (err) => {
+        throw err;
+      },
+    });
+
+    expect(textParts).toEqual([]);
+    expect(partialText).toEqual(['Pi ', 'web']);
+    expect(toolCalls).toEqual([{ name: 'read', input: { filePath: 'README.md' } }]);
+    expect(toolResults).toEqual([{ name: 'read', output: JSON.stringify({ content: [{ type: 'text', text: 'ok' }] }) }]);
+    expect(doneSessionId).toBe('pi-web-stream-session-1');
+    expect(doneTokens).toBe(12);
+    expect(piRunMock).not.toHaveBeenCalled();
+    expect(piRunHandleMock).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('[web-user]: hello pi stream'),
+      model: 'claude-sonnet-4-6',
+      cwd: botDir,
+      purpose: 'gateway web query',
+    }), expect.objectContaining({
+      runId: expect.any(String),
+      agentId: 'web-pi-stream-bot',
+    }));
+    expect(handle.close).toHaveBeenCalledTimes(1);
 
     await gw.stop();
   });

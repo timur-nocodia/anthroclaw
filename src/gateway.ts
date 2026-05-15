@@ -161,6 +161,8 @@ import {
   type HeadlessReviewRuntimeConfig,
 } from './sdk/headless-runtime-config.js';
 import { resolveHeadlessRuntime } from './runtime/headless-registry.js';
+import type { HeadlessRunInput } from './runtime/headless.js';
+import type { RuntimeRunHandle } from './runtime/types.js';
 import { buildAllowedTools } from './sdk/permissions.js';
 import { LearningQueue, detectLearningTriggers, type LearningReviewJob } from './learning/queue.js';
 import { applyMemoryCandidateAction } from './learning/memory-applier.js';
@@ -1075,11 +1077,13 @@ export class Gateway {
   private async runPiGatewayRuntime(
     agent: Agent,
     input: {
+      runId: string;
       prompt: string;
       sessionId?: string;
       purpose: string;
+      onRuntimeEvent?: (event: RuntimeEvent) => void | Promise<void>;
     },
-  ): Promise<{ text: string; sessionId?: string }> {
+  ): Promise<{ text: string; sessionId?: string; usage?: StoredAgentRunUsage; totalTokens: number }> {
     const configured = this.getHeadlessReviewRuntimeOptions();
     if (configured.runtime !== 'pi') {
       throw new Error('Pi Gateway runtime was requested without runtime.headless.provider=pi');
@@ -1099,12 +1103,65 @@ export class Gateway {
       purpose: input.purpose,
       toolDenyMessage: 'Tools disabled for Gateway Pi runtime spike.',
     };
+    const runtimeWithHandle = runtime as {
+      runHandle?: (
+        input: HeadlessRunInput,
+        context: { runId: string; sessionId?: string; agentId?: string },
+      ) => Promise<RuntimeRunHandle<RuntimeEvent>>;
+    };
 
-    return runtime.run
+    if (runtimeWithHandle.runHandle) {
+      const handle = await runtimeWithHandle.runHandle(runInput, {
+        runId: input.runId,
+        sessionId: input.sessionId,
+        agentId: agent.id,
+      });
+      const partialTextParts: string[] = [];
+      const messageTextParts: string[] = [];
+      let sessionId = (handle as { sessionId?: string }).sessionId ?? input.sessionId;
+      let usage: StoredAgentRunUsage | undefined;
+
+      try {
+        for await (const event of handle) {
+          sessionId = event.sessionId ?? sessionId;
+          await input.onRuntimeEvent?.(event);
+          if (event.type === 'text.delta') {
+            if (event.source === 'message') {
+              messageTextParts.push(event.text);
+            } else {
+              partialTextParts.push(event.text);
+            }
+          } else if (event.type === 'usage.updated') {
+            usage = runtimeUsageToStored(event, 0);
+          } else if (event.type === 'run.failed') {
+            throw new Error('Pi Gateway runtime failed');
+          }
+        }
+      } finally {
+        handle.close();
+      }
+
+      const textParts = partialTextParts.length > 0 ? partialTextParts : messageTextParts;
+      const inputTokens = usage?.inputTokens ?? 0;
+      const outputTokens = usage?.outputTokens ?? 0;
+      return {
+        text: textParts.join('').trim(),
+        sessionId,
+        usage,
+        totalTokens: inputTokens + outputTokens,
+      };
+    }
+
+    const result = runtime.run
       ? runtime.run(runInput)
       : {
           text: await runtime.runText(runInput),
         };
+    const resolved = await result;
+    return {
+      ...resolved,
+      totalTokens: 0,
+    };
   }
 
   private async assembleGatewayPrompt(
@@ -3261,10 +3318,39 @@ export class Gateway {
           status: 'running',
           model,
         });
+        let streamedPartialText = false;
+        let deliveredText = false;
         const result = await this.runPiGatewayRuntime(agent, {
+          runId,
           prompt,
           sessionId: existingSessionId,
           purpose: 'gateway web query',
+          onRuntimeEvent: (event) => {
+            if (event.type === 'text.delta' && event.source === 'partial') {
+              streamedPartialText = true;
+              callbacks.onPartialText?.(event.text);
+            } else if (event.type === 'text.delta' && event.source === 'message' && !streamedPartialText) {
+              deliveredText = true;
+              callbacks.onText(event.text);
+            } else if (event.type === 'tool.call.started') {
+              metrics.increment('tool_calls');
+              metrics.recordToolEvent({
+                agentId,
+                sessionKey,
+                toolName: event.toolName,
+                status: 'started',
+              });
+              callbacks.onToolCall(event.toolName, asRecord(event.input));
+            } else if (event.type === 'tool.call.completed' || event.type === 'tool.call.failed') {
+              metrics.recordToolEvent({
+                agentId,
+                sessionKey,
+                toolName: event.toolName,
+                status: event.type === 'tool.call.failed' ? 'failed' : 'completed',
+              });
+              callbacks.onToolResult(event.toolName, runtimeToolOutputToString(event.output));
+            }
+          },
         });
         const text = result.text.trim();
         newSessionId = result.sessionId ?? existingSessionId ?? '';
@@ -3279,10 +3365,27 @@ export class Gateway {
             eventType: isNewSession ? 'created' : 'resumed',
           });
         }
-        if (text) callbacks.onText(text);
-        runUsage = { durationMs: Date.now() - queryStartMs };
+        if (text && !streamedPartialText && !deliveredText) callbacks.onText(text);
+        runUsage = result.usage ?? { durationMs: Date.now() - queryStartMs };
+        if (result.totalTokens > 0) {
+          const inputTokens = result.usage?.inputTokens ?? 0;
+          const outputTokens = result.usage?.outputTokens ?? 0;
+          metrics.recordTokens(model, inputTokens, outputTokens, result.usage?.cacheReadTokens ?? 0);
+          metrics.recordUsage({
+            sessionKey,
+            agentId,
+            platform: 'web',
+            timestamp: Date.now(),
+            inputTokens,
+            outputTokens,
+            cacheReadTokens: result.usage?.cacheReadTokens ?? 0,
+            toolCalls: {},
+            durationMs: Date.now() - queryStartMs,
+            model,
+          });
+        }
         finishRun('succeeded');
-        callbacks.onDone(newSessionId || sessionKey, 0);
+        callbacks.onDone(newSessionId || sessionKey, result.totalTokens);
         return;
       }
 
@@ -5233,9 +5336,38 @@ export class Gateway {
         });
 
         const result = await this.runPiGatewayRuntime(agent, {
+          runId,
           prompt,
           sessionId: existingSessionId,
           purpose: 'gateway agent query',
+          onRuntimeEvent: (event) => {
+            if (event.type === 'tool.call.started') {
+              toolCallsForLearning += 1;
+              if (isLearningRelevantToolName(event.toolName)) {
+                skillOrMemoryActivityForLearning = true;
+              }
+              metrics.increment('tool_calls');
+              metrics.recordToolEvent({
+                agentId: agent.id,
+                sessionKey,
+                toolName: event.toolName,
+                status: 'started',
+              });
+            } else if (event.type === 'tool.call.completed' || event.type === 'tool.call.failed') {
+              if (isLearningRelevantToolName(event.toolName)) {
+                skillOrMemoryActivityForLearning = true;
+              }
+              if (event.type === 'tool.call.failed') {
+                recoveredToolErrorsForLearning += 1;
+              }
+              metrics.recordToolEvent({
+                agentId: agent.id,
+                sessionKey,
+                toolName: event.toolName,
+                status: event.type === 'tool.call.failed' ? 'failed' : 'completed',
+              });
+            }
+          },
         });
         const responseText = result.text.trim();
         observedSessionId = result.sessionId ?? existingSessionId;
@@ -5249,7 +5381,27 @@ export class Gateway {
             eventType: isNewSession ? 'created' : 'resumed',
           });
         }
-        runUsage = { durationMs: Date.now() - queryStartMs };
+        runUsage = result.usage ?? { durationMs: Date.now() - queryStartMs };
+        if (result.totalTokens > 0) {
+          const inputTokens = result.usage?.inputTokens ?? 0;
+          const outputTokens = result.usage?.outputTokens ?? 0;
+          const cacheReadTokens = result.usage?.cacheReadTokens ?? 0;
+          metrics.recordTokens(model, inputTokens, outputTokens, cacheReadTokens);
+          const usageRecord = {
+            sessionKey,
+            agentId: agent.id,
+            platform: msg.channel,
+            timestamp: Date.now(),
+            inputTokens,
+            outputTokens,
+            cacheReadTokens,
+            toolCalls: {},
+            durationMs: Date.now() - queryStartMs,
+            model,
+          };
+          this.insightsEngine.record(usageRecord);
+          metrics.recordUsage(usageRecord);
+        }
 
         if (responseText.length > 0) {
           void this.extractPostRunMemoryCandidates(agent, {

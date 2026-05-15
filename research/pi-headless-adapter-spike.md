@@ -141,7 +141,20 @@ This bridge reuses the existing `HeadlessRuntime` resolver and preserves the def
 - returned Pi `sessionId` values are mapped back into AnthroClaw session keys;
 - channel and Web UI dispatch can return Pi text and record run/session metrics.
 
-It is intentionally not yet the production Pi agent loop. The bridge does not provide Gateway streaming, interrupts, checkpoint rewind, task/hook/prompt-suggestion events, tool progress bubbles, or production permission-broker execution for Pi tools. Those require a Pi `RuntimeRunHandle` implementation that exposes normalized `RuntimeEvent` values from `AgentSession.subscribe()`.
+It is intentionally not yet the production Pi agent loop. The first bridge did not provide Gateway streaming, interrupts, checkpoint rewind, task/hook/prompt-suggestion events, tool progress bubbles, or production permission-broker execution for Pi tools.
+
+## Gateway RuntimeRunHandle bridge
+
+Pi now has a `RuntimeRunHandle` implementation over `AgentSession.subscribe()`:
+
+- session events are normalized through `normalizePiRuntimeEvents()`;
+- the handle exposes async iteration, `interrupt()`, `close()`, timeout abort, and cleanup;
+- `message_end` assistant text is emitted as a `text.delta` fallback when Pi does not stream text deltas;
+- Gateway's explicit Pi path consumes the handle when available and falls back to the older headless `run()` path for tests/older injected runtimes;
+- Web UI receives Pi partial text, tool lifecycle callbacks, usage totals, and session ids from normalized events;
+- channel dispatch aggregates Pi text deltas, records usage/tool metrics, and maps returned session ids to AnthroClaw session keys.
+
+This proves the Gateway-facing stream shape. It still does not execute Pi tools through AnthroClaw's production permission broker or channel approval UI. The current Pi tool policy remains the explicit adapter-level allow/deny bridge.
 
 ## Next proof points
 
@@ -149,4 +162,4 @@ Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
 - production session continuation mapping from AnthroClaw session keys to Pi sessions;
 - production permission-broker mapping for read/bash/edit/write approvals;
-- explicit non-default Pi Gateway run handle selection using normalized `RuntimeEvent`.
+- production-grade interrupt/checkpoint behavior for Pi-backed active sessions.

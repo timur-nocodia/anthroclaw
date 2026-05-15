@@ -45,7 +45,15 @@ export function normalizePiRuntimeEvents(
     const message = isRecord(event.message) ? event.message : undefined;
     if (message?.role !== 'assistant') return [];
 
-    const normalized: RuntimeEvent[] = [{ ...common, type: 'message.completed' }];
+    const normalized: RuntimeEvent[] = [
+      ...extractPiAssistantMessageText(message).map((text): RuntimeEvent => ({
+        ...common,
+        type: 'text.delta',
+        text,
+        source: 'message',
+      })),
+      { ...common, type: 'message.completed' },
+    ];
     const usage = normalizePiUsage(message.usage);
     if (usage) {
       normalized.push({
@@ -119,6 +127,14 @@ function extractPiAssistantTextDelta(event: unknown): string | undefined {
     return event.content;
   }
   return undefined;
+}
+
+function extractPiAssistantMessageText(message: Record<string, unknown>): string[] {
+  if (!Array.isArray(message.content)) return [];
+  return message.content
+    .filter((part): part is { type: string; text: string } =>
+      isRecord(part) && part.type === 'text' && typeof part.text === 'string')
+    .map((part) => part.text);
 }
 
 function piAgentEndHasError(event: Record<string, unknown>): boolean {
