@@ -26,7 +26,7 @@ const ANTHROCLAW_VERSION = (() => {
   }
 })();
 import { createSdkMcpServer, query, startup } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Agent } from './agent/agent.js';
 import { AGENT_ID_MAX_LEN, AGENT_ID_RE } from './agent/sandbox/agent-workspace.js';
 import { createManageCronTool } from './agent/tools/manage-cron.js';
@@ -717,6 +717,19 @@ const ABSOLUTE_MAX_ASSEMBLED_LEN = 500_000; // ~125k tokens upper bound
  */
 const ASSEMBLE_TIMEOUT_MS = 5_000;
 const TIMEOUT_SENTINEL = Symbol('assemble-timeout');
+
+/**
+ * After this many consecutive auto-compress failures on the same session,
+ * give up trying to summarize and force a clean session reset. Without this
+ * the bot keeps re-trying the same failing summarization on every turn,
+ * dragging response time down (each retry replays the ever-growing transcript).
+ *
+ * Set conservatively — we want to give the SDK a couple of chances to recover
+ * from transient failures (rate limits, transient network) before destroying
+ * the conversation. `3` matches the pattern seen in prod where summary fails
+ * deterministically because of a bad jsonl entry / oversized resume.
+ */
+const COMPRESS_FAILURE_FORCE_RESET_AFTER = 3;
 
 /**
  * Attempt to delegate prompt assembly to a plugin's ContextEngine.
@@ -4753,6 +4766,7 @@ export class Gateway {
           if (!pluginHandledCompression) {
             const summarized = await this.summarizeAndSaveSession(agent, sessionKey);
             if (summarized) {
+              agent.resetCompressFailureCount(sessionKey);
               agent.clearSession(sessionKey);
               if (emitter) {
                 void emitter.emit('on_session_reset', { agentId: route.agentId, sessionKey, reason: 'auto_compress' });
@@ -4763,23 +4777,48 @@ export class Gateway {
                 });
               }
             } else {
-              // Auto-compress fired because the session crossed its
-              // threshold, but the summary failed. Keep the session
-              // intact — silently wiping it after telling the operator
-              // it was "compressed" was the v0.11/v0.12 bug we just
-              // observed in prod. The session will keep growing and
-              // re-trigger compression on the next turn; meanwhile the
-              // operator gets a visible signal that something's wrong.
-              logger.warn(
-                { agentId: route.agentId, sessionKey },
-                'Auto-compress: summary failed, keeping session intact',
-              );
-              if (channel) {
-                await channel.sendText(
-                  msg.peerId,
-                  '⚠️ Сжать контекст не удалось — сессия пока остаётся как есть. Если повторится, попробуй `/compact` вручную или `/newsession`.',
-                  { accountId: msg.accountId, threadId: msg.threadId },
+              // The summary call failed. v0.11/v0.12 silently wiped the
+              // session and lied to the operator that compression
+              // succeeded; v1.0 swung the other way and kept the session
+              // intact forever, which caused every subsequent turn to
+              // retry the same failing compression on an ever-growing
+              // transcript (root cause of the 2026-05-15 slowdown).
+              //
+              // New behavior: keep intact for the first failures, but if
+              // we keep failing in a row on the same session, do a
+              // forced reset so the operator's bot stops being slow on
+              // every turn. We tell the operator honestly that history
+              // was lost.
+              const failures = agent.incrementCompressFailureCount(sessionKey);
+              if (failures < COMPRESS_FAILURE_FORCE_RESET_AFTER) {
+                logger.warn(
+                  { agentId: route.agentId, sessionKey, failures },
+                  'Auto-compress: summary failed, keeping session intact',
                 );
+                if (channel) {
+                  await channel.sendText(
+                    msg.peerId,
+                    '⚠️ Сжать контекст не удалось — сессия пока остаётся как есть. Если повторится, попробуй `/compact` вручную или `/newsession`.',
+                    { accountId: msg.accountId, threadId: msg.threadId },
+                  );
+                }
+              } else {
+                logger.warn(
+                  { agentId: route.agentId, sessionKey, failures },
+                  'Auto-compress: summary failed too many times — forcing session reset',
+                );
+                agent.resetCompressFailureCount(sessionKey);
+                agent.clearSession(sessionKey);
+                if (emitter) {
+                  void emitter.emit('on_session_reset', { agentId: route.agentId, sessionKey, reason: 'auto_compress_failed_force_reset' });
+                }
+                if (channel) {
+                  await channel.sendText(
+                    msg.peerId,
+                    `⚠️ Сжать контекст не удалось ${failures} раза подряд — сессия сброшена принудительно, чтобы бот не тормозил на каждом ответе. История этого диалога не сохранена. Если нужен контекст — повтори ключевые детали.`,
+                    { accountId: msg.accountId, threadId: msg.threadId },
+                  );
+                }
               }
             }
           }
@@ -5941,22 +5980,44 @@ export class Gateway {
         trustedBypass: true,
         ...this.sdkSessionService?.getQueryOptions(),
       });
+      // Capture the SDK subprocess's stderr so when summary fails with
+      // "Claude Code process exited with code 1" we can see the actual
+      // crash reason (transcript parse error, OOM, etc.). Without this
+      // the gateway only sees the bare exit code.
+      const stderrLines: string[] = [];
+      (options as Options).stderr = (data: string): void => {
+        for (const line of data.split('\n')) {
+          const trimmed = line.trim();
+          if (trimmed.length > 0) stderrLines.push(trimmed);
+        }
+      };
       const result = query({
         prompt: summaryPrompt,
         options: options as any,
       });
 
-      for await (const event of result) {
-        const evt = event as Record<string, unknown>;
-        if (evt.type === 'result') {
-          break;
+      try {
+        for await (const event of result) {
+          const evt = event as Record<string, unknown>;
+          if (evt.type === 'result') {
+            break;
+          }
         }
+      } catch (err) {
+        // Re-throw with the captured stderr tail attached so the outer
+        // catch block logs it next to the original error.
+        const tail = stderrLines.slice(-20).join(' | ');
+        if (tail) {
+          (err as Error & { sdkStderrTail?: string }).sdkStderrTail = tail;
+        }
+        throw err;
       }
 
       logger.info({ agentId: agent.id, sessionKey }, 'Session summary saved');
       return true;
     } catch (err) {
-      logger.warn({ err, agentId: agent.id, sessionKey }, 'Session summary failed');
+      const sdkStderrTail = (err as Error & { sdkStderrTail?: string }).sdkStderrTail;
+      logger.warn({ err, sdkStderrTail, agentId: agent.id, sessionKey }, 'Session summary failed');
       return false;
     }
   }
