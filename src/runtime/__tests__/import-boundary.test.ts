@@ -21,6 +21,7 @@ describe('runtime import boundary', () => {
       'src/sdk/checkpoints.ts',
       'src/routing/queue-manager.ts',
       'src/runtime/headless.ts',
+      'src/runtime/headless-registry.ts',
       'src/runtime/pi-headless.ts',
     ];
 
