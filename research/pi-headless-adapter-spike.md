@@ -199,10 +199,20 @@ This keeps MCP credentials, allowed-tool filtering, audit semantics, and reauth 
 
 Pi does not take a direct `systemPrompt` option in the SDK examples. It uses `DefaultResourceLoader({ systemPromptOverride })`. The adapter now uses that mechanism when `HeadlessRunInput.systemPrompt` is present and no preconfigured resource loader blocks the override.
 
+## Session control and checkpoint boundary
+
+The explicit Pi Gateway path now participates in AnthroClaw's active-run control plane when the Pi adapter returns a `RuntimeRunHandle`:
+
+- Channel dispatch registers Pi handles with `QueueManager`, so active Pi runs appear in `listActiveAgentRuns()` with run id, session key, and delivery target metadata.
+- `interruptAgentRun()` and queue conflict modes can interrupt the Pi handle through the same `SdkControlRegistry` used by the Claude path.
+- Pi runtime session ids are aliased back to AnthroClaw session keys as events arrive and after the run completes, so follow-up turns pass the prior Pi `sessionId` into the next run.
+- When `sdk.enableFileCheckpointing` is enabled, Pi runs register a checkpoint-control handle and alias the final Pi session id. Since the current Pi handle does not expose Claude-compatible `rewindFiles()`, the rewind endpoint now returns the explicit structured "runtime handle does not support file rewind" response instead of looking like a lost session/control handle.
+
+This gives production-shaped continuation and interrupt behavior without pretending that Pi's tree/session model is the same as Claude SDK file checkpoints. A future Pi-specific rewind bridge should be built against Pi's session tree or a vetted workspace-history extension.
+
 ## Next proof points
 
 Before Pi can be considered beyond headless smoke tests, the spike still needs:
 
-- production session continuation mapping from AnthroClaw session keys to Pi sessions;
 - caching/reuse strategy for external MCP discovery and long-lived MCP sessions if needed for performance;
-- production-grade interrupt/checkpoint behavior for Pi-backed active sessions.
+- true Pi-native file rewind/checkpoint support, either through Pi's session tree APIs or an AnthroClaw-owned workspace snapshot extension.
