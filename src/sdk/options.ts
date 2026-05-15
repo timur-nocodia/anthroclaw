@@ -138,7 +138,20 @@ export function buildSdkOptions(params: BuildSdkOptionsParams): Options {
 
   if (trustedBypass) {
     options.permissionMode = 'bypassPermissions';
-    options.allowDangerouslySkipPermissions = true;
+    // The Claude CLI refuses to honor `--allow-dangerously-skip-permissions`
+    // when the process runs as root and exits with code 1 before any
+    // model call:
+    //   "--dangerously-skip-permissions cannot be used with root/sudo
+    //    privileges for security reasons"
+    // Our production Docker runtime runs as uid 0 (required for bubblewrap
+    // user namespaces in tool sandboxing), so passing this flag broke every
+    // trustedBypass call (auto-compress, /compact, monthly memory rollup).
+    // On root we rely on permissionMode='bypassPermissions' alone — the SDK
+    // process still skips approval prompts under that mode, and the parent
+    // container already constrains what the subprocess can reach.
+    if (process.getuid?.() !== 0) {
+      options.allowDangerouslySkipPermissions = true;
+    }
     // Capability cutoff applies even on trustedBypass: capability ≠ permission.
     // A trusted agent still must not reach another tenant's MCP-exposed
     // resources (e.g. another operator's Google Calendar). The cutoff layer
