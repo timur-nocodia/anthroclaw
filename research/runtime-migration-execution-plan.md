@@ -111,6 +111,24 @@ Decision gate:
 - choose OpenCode only if its server boundary is cleaner than rebuilding missing Pi features;
 - otherwise keep OpenCode as a parity and UX reference.
 
+### PR 6: Runtime contract acceptance harness
+
+Status: draft PR #60 formalizes the runtime contract and adds shared acceptance tests for Pi and OpenCode adapters.
+
+Goal:
+
+- turn the migration decision into a scenario matrix rather than a vague runtime preference;
+- keep a machine-readable source of truth for candidate pass/partial/fail status;
+- add reusable acceptance coverage for text, session continuation, normalized event streaming, interrupt, timeout abort, and rewind capability shape;
+- document exactly which gaps block production migration.
+
+Definition of done:
+
+- `src/runtime/contract.ts` lists every production-required scenario and every candidate status;
+- the matrix covers Claude Agent SDK, Pi, and OpenCode for the same scenarios;
+- Pi and OpenCode pass the shared acceptance harness for the runtime behaviors they currently expose;
+- research docs show the current score and blockers without implying OpenCode is production-ready.
+
 ## Rules for the migration
 
 - Do not replace Claude SDK behavior and introduce a new candidate in the same PR.
@@ -121,4 +139,4 @@ Decision gate:
 
 ## Near-term next action
 
-Continue the stacked migration from the smallest safe seam outward: with model loading, event text, session metadata, explicit tool policy, model-visible denial feedback, Pi event normalization, Claude-path Gateway `RuntimeEvent` consumption, a non-default Pi Gateway bridge, streamed Pi `RuntimeRunHandle` consumption, built-in Pi tool approval routed through AnthroClaw's permission broker, Pi-hosted custom AnthroClaw tools, external MCP proxying, active-run/session/checkpoint-control registry parity, and an OpenCode headless benchmark adapter covered, the next useful proof is either true Pi-native file rewind or an OpenCode Gateway benchmark path with permission/event parity tests.
+Continue the stacked migration from the smallest safe seam outward: with model loading, event text, session metadata, explicit tool policy, model-visible denial feedback, Pi event normalization, Claude-path Gateway `RuntimeEvent` consumption, a non-default Pi Gateway bridge, streamed Pi `RuntimeRunHandle` consumption, built-in Pi tool approval routed through AnthroClaw's permission broker, Pi-hosted custom AnthroClaw tools, external MCP proxying, active-run/session/checkpoint-control registry parity, an OpenCode headless benchmark adapter, and a shared runtime acceptance contract covered, the next useful proof is true Pi-native file rewind. An OpenCode Gateway benchmark path should come next only if we need hard evidence that its server boundary can carry AnthroClaw permission/event/tool parity more cheaply than closing Pi rewind.
