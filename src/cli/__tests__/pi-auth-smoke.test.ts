@@ -167,12 +167,14 @@ describe('Pi auth smoke CLI', () => {
   it('passes configured auth and model storage paths into Pi SDK storage', async () => {
     const authStorage = {};
     const authCreate = vi.fn(() => authStorage);
+    const model = { provider: 'anthropic', id: 'claude-sonnet-4-6', name: 'Test Model' };
+    const hasConfiguredAuth = vi.fn(async (candidate: typeof model) => candidate.provider === 'anthropic');
     const registryCreate = vi.fn(() => ({
-      find: (provider: string, modelId: string) => ({ provider, id: modelId, name: 'Test Model' }),
+      find: () => model,
       getAvailable: async () => [
-        { provider: 'anthropic', id: 'claude-sonnet-4-6', name: 'Test Model' },
+        model,
       ],
-      hasConfiguredAuth: async () => true,
+      hasConfiguredAuth,
     }));
 
     const result = await runPiAuthSmoke(
@@ -192,6 +194,28 @@ describe('Pi auth smoke CLI', () => {
     expect(result.status).toBe('passed');
     expect(authCreate).toHaveBeenCalledWith('/secure/pi-auth.json');
     expect(registryCreate).toHaveBeenCalledWith(authStorage, '/secure/pi-models.json');
+    expect(hasConfiguredAuth).toHaveBeenCalledWith(model);
+  });
+
+  it('checks configured auth against the resolved model, not only provider id text', async () => {
+    const model = { provider: 'anthropic', id: 'claude-sonnet-4-6', name: 'Test Model' };
+    const hasConfiguredAuth = vi.fn((candidate: typeof model) => candidate === model);
+
+    const result = await runPiAuthSmoke('anthropic/claude-sonnet-4-6', undefined, {
+      VERSION: '0.74.0-test',
+      AuthStorage: { create: () => ({}) },
+      ModelRegistry: {
+        create: () => ({
+          find: () => model,
+          getAvailable: async () => [model],
+          hasConfiguredAuth,
+          getProviderAuthStatus: async () => ({ configured: false }),
+        }),
+      },
+    });
+
+    expect(result.status).toBe('passed');
+    expect(hasConfiguredAuth).toHaveBeenCalledWith(model);
   });
 
   it('parses flags narrowly', () => {
@@ -230,7 +254,8 @@ function fakeSdk(input: {
         find: (provider: string, modelId: string) =>
           input.models.find((model) => model.provider === provider && model.id === modelId),
         getAvailable: async () => input.available,
-        hasConfiguredAuth: async (provider: string) => input.configuredProviders.includes(provider),
+        hasConfiguredAuth: async (model: { provider?: string }) =>
+          Boolean(model.provider && input.configuredProviders.includes(model.provider)),
         getProviderAuthStatus: async (provider: string) => ({
           configured: (input.statusConfiguredProviders ?? input.configuredProviders).includes(provider),
           key: 'must-not-leak',

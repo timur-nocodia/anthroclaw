@@ -39,6 +39,8 @@ The production canary window runbook is `docs/pi-production-canary-runbook.md`.
 
 Repository-hosted full evidence is available through the manual GitHub Actions workflow **Pi Runtime v1 decision**, which uploads `pi-runtime-v1-decision`.
 
+Local evidence captured on 2026-05-16: full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed all ten scenarios with existing local Pi auth storage. The generated decision package remained `BLOCKED` only because the PR-stack and production-canary operational gates were intentionally unset. This is useful supporting evidence, but the baseline rollout record still needs the durable workflow artifact from the target branch.
+
 ## Canary Scenarios
 
 ### 1. `pi.auth-model-preflight`
@@ -303,6 +305,6 @@ Pi cannot become the global default until:
 
 The next useful code PR should close the remaining evidence and rollout gaps:
 
-1. capture full real-auth smoke evidence;
-2. generate the Runtime v1 decision package from the full canary JSON;
+1. capture the durable Runtime v1 decision workflow artifact from the target branch;
+2. attach the local 2026-05-16 real-auth full canary output as supporting evidence only;
 3. execute the first production canary window runbook and attach the redacted evidence.

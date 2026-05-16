@@ -33,7 +33,7 @@ interface PiAuthStorageLike {}
 interface PiModelRegistryLike {
   find(provider: string, modelId: string): PiModelLike | undefined;
   getAvailable(): Promise<PiModelLike[]>;
-  hasConfiguredAuth(provider: string): boolean | Promise<boolean>;
+  hasConfiguredAuth(model: PiModelLike): boolean | Promise<boolean>;
   getProviderAuthStatus?(provider: string): unknown | Promise<unknown>;
 }
 
@@ -145,7 +145,7 @@ export async function runPiAuthSmoke(
   const providerStatus = await modelRegistry.getProviderAuthStatus?.(ref.provider);
   const sanitizedProviderStatus = sanitizeProviderStatus(providerStatus);
   const providerAuthConfigured = Boolean(
-    await modelRegistry.hasConfiguredAuth(ref.provider)
+    (model ? await modelRegistry.hasConfiguredAuth(model) : false)
     || isProviderStatusConfigured(sanitizedProviderStatus),
   );
   const modelAvailable = available.some((candidate) =>

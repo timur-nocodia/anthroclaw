@@ -6,9 +6,9 @@ This is the human-readable phase checklist for replacing the Claude Agent SDK-ce
 
 ## Current Snapshot
 
-Overall state: implementation canaries are mostly in place; default-runtime readiness is still blocked by real-auth smoke evidence, merged PR-stack evidence, and the first production canary window.
+Overall state: implementation canaries are mostly in place; local real-auth Runtime v1 canary evidence is green, but default-runtime readiness is still blocked by a durable workflow artifact, merged PR-stack evidence, and the first production canary window.
 
-Approximate progress to a default-runtime decision: 80%.
+Approximate progress to a default-runtime decision: 85%.
 
 What is done:
 
@@ -18,10 +18,11 @@ What is done:
 - Production canary runbook exists at `docs/pi-production-canary-runbook.md`.
 - Manual Runtime v1 decision workflow exists at `.github/workflows/pi-runtime-v1-decision.yml`.
 - Stacked PRs are open for rollback, scheduled Buildroom, and dashboard/operator coverage.
+- Local full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed on 2026-05-16 with existing local Pi auth storage; the generated decision package is blocked only by PR-stack and production-canary operational gates.
 
 What is not done:
 
-- Full real-auth smoke evidence has not been captured as the final decision artifact in this branch.
+- Durable GitHub Actions Runtime v1 decision artifact has not been captured from the target branch.
 - Final migration decision record generation is in progress; default-runtime flip is not started.
 
 ## Phase Checklist
@@ -31,7 +32,7 @@ What is not done:
 | 0. Frame migration | Done | Stop treating the provider SDK as product contract. | Runtime replacement is framed as a harness contract, not a provider swap. |
 | 1. Freeze Runtime v1 contract | Mostly done | Capture 100% feature surfaces that a replacement must preserve. | `src/runtime/contract.ts` covers runtime, Gateway, tools, sessions, memory, plugins, dashboard, Buildroom, config, and ops. |
 | 2. Candidate harness research | Done enough for canary work | Compare Pi/OpenAI/OpenCode/opencode-like options against the contract. | Candidate notes identify Pi as primary near-term harness and keep alternatives visible. |
-| 3. Build Pi adapter and smoke gates | In progress | Prove Pi can run the critical runtime paths without breaking AnthroClaw-owned policy. | Auth, workspace, Gateway, and aggregate Pi smoke commands pass with real auth. |
+| 3. Build Pi adapter and smoke gates | Mostly done | Prove Pi can run the critical runtime paths without breaking AnthroClaw-owned policy. | Auth, workspace, Gateway, and aggregate Pi smoke commands pass with real auth; durable artifact still pending. |
 | 4. Cover deep product surfaces | Mostly done | Prove non-obvious product features survive runtime replacement. | Scripted canaries pass for sessions/memory/learning, plugins/context/tools, external MCP, scheduled Buildroom, and rollback. |
 | 5. Dashboard/operator evidence | In progress | Prove the operator API contracts expose the same state under Pi-shaped runs. | `/api/gateway/status`, agents, sessions, runs, learning, plugins, MCP, channels, and diagnostics are captured without secrets; browser UX evidence is optional. |
 | 6. Rollout decision package | In progress | Produce the final go/no-go artifact. | `pnpm runtime:pi-decision` or the manual **Pi Runtime v1 decision** workflow emits Markdown/JSON gates from the full canary JSON; all residual blockers have owners. |
@@ -41,10 +42,10 @@ What is not done:
 
 | Scenario | Evidence Level | Status | Command or Evidence |
 | --- | --- | --- | --- |
-| `pi.auth-model-preflight` | smoke | Implemented, needs real-auth evidence | `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` |
-| `pi.workspace-tools-rewind` | smoke | Implemented, needs real-auth evidence | `pnpm smoke:pi-workspace -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.gateway-channel-approval` | smoke | Implemented, needs real-auth evidence | `pnpm smoke:pi-gateway -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.aggregate-real-auth` | smoke | Implemented, needs final artifact | `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
+| `pi.auth-model-preflight` | smoke | Local real-auth pass, durable artifact pending | `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` |
+| `pi.workspace-tools-rewind` | smoke | Local real-auth pass, durable artifact pending | `pnpm smoke:pi-workspace -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
+| `pi.gateway-channel-approval` | smoke | Local real-auth pass, durable artifact pending | `pnpm smoke:pi-gateway -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
+| `pi.aggregate-real-auth` | smoke | Local real-auth pass, durable artifact pending | `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
 | `pi.plugins-context-tools` | scripted canary | Implemented | `pnpm smoke:pi-plugins-context -- --json` |
 | `pi.external-mcp-proxy` | scripted canary | Implemented | `pnpm smoke:pi-external-mcp -- --json` |
 | `pi.sessions-memory-learning` | scripted canary | Implemented | `pnpm smoke:pi-sessions-memory -- --json` |
@@ -54,14 +55,14 @@ What is not done:
 
 ## Current Blockers
 
-1. Real-auth smoke evidence still needs to be captured in the final decision environment.
+1. Durable Runtime v1 decision artifact still needs to be captured from the target branch.
 2. The PR stack must merge before the status can be treated as baseline.
 3. The first real Pi production canary window has not been recorded.
 
 ## Next Five Tasks
 
-1. Run the full `pnpm smoke:pi-v1-canary -- --json ...` matrix in the real-auth environment, preferably via **Pi Runtime v1 decision**.
-2. Generate or download the Runtime v1 decision package.
+1. Capture the durable Runtime v1 decision artifact via **Pi Runtime v1 decision** from the target branch.
+2. Attach the local 2026-05-16 full canary decision output only as supporting evidence, not the baseline artifact.
 3. Execute `docs/pi-production-canary-runbook.md` for one low-risk real agent.
 4. Decide whether a browser screenshot pass is required as non-blocking operator UX evidence.
 5. Merge the PR stack and rerun the canary map from the target branch.
