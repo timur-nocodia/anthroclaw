@@ -95,8 +95,8 @@ Goal: turn the current v0 contract into the actual migration contract that block
 
 Tasks:
 
-- Review `src/runtime/contract.ts` and `research/runtime-contract-v0.md`.
-- Promote required scenarios from v0 to v1.
+- Review `src/runtime/contract.ts`, `research/runtime-contract-v0.md`, and `research/runtime-contract-v1.md`.
+- Promote required scenarios from v0 into the v1 feature-contract atlas.
 - Add any missing production scenarios:
   - channel dispatch text streaming;
   - tool progress events;
@@ -449,7 +449,7 @@ Exit criteria:
 ## Immediate next 5 steps
 
 1. Finish review/merge readiness for PRs #67-#72.
-2. Promote `runtime-contract-v0` into a stricter v1 contract with evidence labels.
+2. Keep `runtime-contract-v1` current as the feature-contract atlas and attach evidence labels as smoke/canary proof lands.
 3. Run manual GitHub Actions Pi smoke with real repository secrets and attach artifact link to the migration docs.
 4. Add operator-visible runtime status for per-agent Pi canary.
 5. Pick one low-risk real agent and execute the Phase 5 canary script.
