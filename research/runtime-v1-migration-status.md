@@ -48,6 +48,7 @@ What is done:
 - Post-pull live verification passed: `pnpm install --frozen-lockfile`, config parsing resolved `provider=pi`, TypeScript passed, `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` passed, and `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` returned workspace text `SMOKE_OK` plus Gateway text `SMOKE_GATEWAY_OK`.
 - Safe no-channel live Gateway Web UI turn against `example` replied exactly `PI_LIVE_WEB_OK` through Pi with no tool calls, a present session id, and `15` total tokens.
 - First monitoring slice after the live pull showed zero failed runs in the last hour; diagnostic event types were limited to `run.sdk_started` and `run.completed`.
+- Operator monitoring CLI exists as `pnpm runtime:pi-monitor`; it reads `metrics.sqlite`, reports run/diagnostic/tool summaries, and can exit non-zero with `--fail-on-alert` when stop-condition alerts appear.
 
 What is not done:
 
@@ -88,10 +89,10 @@ No Runtime v1 decision blockers remain. The remaining work is rollout execution,
 
 ## Next Five Tasks
 
-1. Continue the first live monitoring window for failed turns, provider auth errors, policy denials, interrupt failures, session continuation, diagnostics redaction, and learning queue errors.
+1. Continue the first live monitoring window with `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`.
 2. Keep the rollback path ready by setting `runtime.headless.provider=claude-agent-sdk` if any stop condition appears.
-3. Add a small operator-facing monitoring note or checklist for the next live window.
-4. Decide whether to run a live channel turn or keep the current Claude baseline/live-channel waiver.
+3. Decide whether to run a live channel turn or keep the current Claude baseline/live-channel waiver.
+4. Add an extended monitoring evidence entry after the live window has enough elapsed time.
 5. Keep rollout ring expansion separate from the default flip; do not expand to higher-risk agents until extended post-flip monitoring is green.
 
 ## Default Runtime Gate
