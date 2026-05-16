@@ -19,6 +19,7 @@ pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-
 pnpm smoke:pi-v1-canary -- --json --include-gateway-scripted --allow-skip --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
 pnpm smoke:pi-sessions-memory -- --json
 pnpm smoke:pi-sessions-memory -- --json --gateway --allow-skip --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
+pnpm smoke:pi-external-mcp -- --json
 ```
 
 `--smoke-only` runs only the automated smoke scenarios that exist today. Full mode intentionally returns `incomplete` until the scripted/manual canaries in this document are implemented. Gateway-backed scripted checks are opt-in through `--include-gateway-scripted` because they can use real Pi auth/tokens.
@@ -184,7 +185,7 @@ Required checks:
 
 ### 7. `pi.external-mcp-proxy`
 
-Status: planned scripted canary.
+Status: scripted canary runner available for deterministic credential/proxy/Pi custom-tool bridge coverage.
 
 Proves:
 
@@ -196,11 +197,16 @@ Proves:
 
 Required checks:
 
-- fake MCP server with API-key or OAuth-style auth;
-- probe/connect/finalize through AnthroClaw onboarding APIs;
-- Pi turn calls the proxied tool;
-- header resolution from credential store;
-- blocked proxied tool returns denial feedback without execution.
+- current: `pnpm smoke:pi-external-mcp -- --json`;
+- current: external MCP server config is parsed through `AgentYmlSchema` before proxy construction;
+- current: API-key credential resolves from a credential store into an Authorization header without mutating raw agent config;
+- current: only `allowed_tools` are exposed as Claude-compatible `mcp__server__tool` custom tools;
+- current: injected Pi runtime receives the proxied MCP tool through `customTools` / `defineTool`;
+- current: allowed Pi custom-tool execution calls the AnthroClaw-owned MCP proxy and forwards normalized content;
+- current: denied Pi custom-tool execution returns model-visible denial without calling upstream MCP;
+- current: canary JSON artifacts redact credential material;
+- note: this runner is deterministic and does not use `--gateway`, `--auth-path`, or `--models-path`; the aggregate runner intentionally does not forward those flags to this scenario;
+- remaining: full probe/connect/finalize API flow against a fake MCP server with persisted pending rows.
 
 ### 8. `pi.dashboard-operator`
 

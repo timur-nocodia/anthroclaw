@@ -700,13 +700,17 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
       'observability.hooks-webhooks',
     ],
     [
-      'Start a fake MCP server with API-key or OAuth-style auth in a temporary environment.',
-      'Run probe/connect/finalize through AnthroClaw onboarding APIs.',
-      'Dispatch a Pi canary turn that calls the proxied MCP tool.',
+      'Validate the external MCP server block through AgentYmlSchema before proxy construction.',
+      'Resolve API-key credential_ref entries from a credential store into external MCP headers.',
+      'Expose only allowed external MCP tools as Claude-compatible custom tool names.',
+      'Dispatch an injected Pi canary turn that receives and executes the proxied MCP custom tool.',
       'Verify headers are resolved from the credential store and redacted from logs/artifacts.',
       'Verify denial behavior remains model-visible when policy blocks the proxied tool.',
     ],
-    { evidenceArtifact: 'future pi-v1-canary external-mcp JSON section' },
+    {
+      evidenceCommand: 'pnpm smoke:pi-external-mcp -- --json',
+      evidenceArtifact: 'pi-v1-canary external-mcp JSON section',
+    },
   ),
   canary(
     'pi.sessions-memory-learning',
