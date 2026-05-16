@@ -319,6 +319,44 @@ describe('AgentYmlSchema', () => {
     expect(() => AgentYmlSchema.parse({ routes: [] })).toThrow();
   });
 
+  it('accepts per-agent Pi runtime opt-in with optional storage paths', () => {
+    const result = AgentYmlSchema.parse({
+      safety_profile: 'trusted',
+      routes: [{ channel: 'telegram' }],
+      runtime: {
+        headless: {
+          provider: 'pi',
+          pi: {
+            auth_path: '/secure/pi-auth.json',
+            models_path: '/secure/pi-models.json',
+          },
+        },
+      },
+    });
+
+    expect(result.runtime).toEqual({
+      headless: {
+        provider: 'pi',
+        pi: {
+          auth_path: '/secure/pi-auth.json',
+          models_path: '/secure/pi-models.json',
+        },
+      },
+    });
+  });
+
+  it('rejects unsupported per-agent Gateway runtime providers', () => {
+    expect(() => AgentYmlSchema.parse({
+      safety_profile: 'trusted',
+      routes: [{ channel: 'telegram' }],
+      runtime: {
+        headless: {
+          provider: 'opencode',
+        },
+      },
+    })).toThrow();
+  });
+
   it('accepts a full agent with all fields', () => {
     const input = {
       safety_profile: 'trusted' as const,

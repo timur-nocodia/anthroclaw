@@ -69,6 +69,18 @@ const RuntimeConfigSchema = z.object({
   },
 });
 
+const AgentRuntimeConfigSchema = z.object({
+  headless: z.object({
+    provider: z.enum(['claude-agent-sdk', 'pi']).default('claude-agent-sdk'),
+    pi: z.object({
+      auth_path: z.string().min(1).optional(),
+      models_path: z.string().min(1).optional(),
+    }).optional(),
+  }).default({
+    provider: 'claude-agent-sdk',
+  }),
+}).optional();
+
 // ─── GlobalConfigSchema ────────────────────────────────────────────
 
 export const GlobalConfigSchema = z.object({
@@ -506,6 +518,7 @@ export const NotificationsSchema = z.object({
 
 export const AgentYmlSchema = z.object({
   model: z.string().optional(),
+  runtime: AgentRuntimeConfigSchema,
   thinking: ThinkingConfigSchema.optional(),
   effort: EffortLevelSchema.optional(),
   maxTurns: z.number().int().min(1).optional().describe('Maximum conversation turns per query'),

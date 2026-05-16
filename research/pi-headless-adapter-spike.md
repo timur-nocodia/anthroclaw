@@ -71,6 +71,18 @@ runtime:
 
 `auth_path` and `models_path` are optional. They point at Pi-owned storage files and do not move credential material into AnthroClaw config; the default remains Pi's own storage location when these fields are omitted.
 
+Gateway agents can also select the headless runtime in `agents/<id>/agent.yml`:
+
+```yaml
+runtime:
+  headless:
+    provider: pi
+    pi:
+      models_path: /secure/agent-pi-models.json
+```
+
+This enables canary rollout without changing the global default. If global config already selects Pi, an agent can opt back to the Claude Agent SDK path with `runtime.headless.provider: claude-agent-sdk`. Per-agent Pi storage paths are merged over global Pi storage paths, so an agent can inherit a global `auth_path` while overriding only `models_path`.
+
 The same path is available through the probe CLI:
 
 ```bash

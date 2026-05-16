@@ -9,7 +9,10 @@ const { startupMock, queryMock, piRunMock, piRunHandleMock, piRuntimeState } = v
   queryMock: vi.fn(),
   piRunMock: vi.fn(),
   piRunHandleMock: vi.fn(),
-  piRuntimeState: { useRunHandle: false },
+  piRuntimeState: {
+    useRunHandle: false,
+    createdOptions: [] as unknown[],
+  },
 }));
 
 function createSdkStream(events: Array<Record<string, unknown>>) {
@@ -169,7 +172,8 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
 });
 
 vi.mock('../src/runtime/pi-headless.js', () => ({
-  createPiHeadlessRuntime: () => {
+  createPiHeadlessRuntime: (options?: unknown) => {
+    piRuntimeState.createdOptions.push(options);
     const runtime: Record<string, unknown> = {
       id: 'pi',
       run: piRunMock,
@@ -295,6 +299,7 @@ describe('Gateway SDK success path', () => {
     piRunMock.mockReset();
     piRunHandleMock.mockReset();
     piRuntimeState.useRunHandle = false;
+    piRuntimeState.createdOptions = [];
     seenPrompts.length = 0;
 
     startupMock.mockImplementation(async (params?: { options?: unknown }) => {
@@ -460,6 +465,163 @@ pairing:
       sessionId: 'pi-session-1',
     });
     expect(sent).toEqual(['Pi says hi', 'Pi continues']);
+
+    await gw.stop();
+  });
+
+  it('dispatch can opt a single agent into Pi Gateway runtime without changing the global default', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRunMock.mockResolvedValueOnce({
+      text: 'Pi agent override says hi',
+      sessionId: 'pi-agent-override-session-1',
+    });
+    const botDir = join(agentsDir, 'pi-agent-override-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+runtime:
+  headless:
+    provider: pi
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual(['Pi agent override says hi']);
+    expect(piRunMock).toHaveBeenCalledWith(expect.objectContaining({
+      cwd: botDir,
+      purpose: 'gateway agent query',
+    }));
+
+    await gw.stop();
+  });
+
+  it('dispatch merges global Pi storage paths with per-agent Pi overrides', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRunMock.mockResolvedValueOnce({
+      text: 'Pi merged storage says hi',
+      sessionId: 'pi-agent-storage-session-1',
+    });
+    const botDir = join(agentsDir, 'pi-agent-storage-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+runtime:
+  headless:
+    provider: pi
+    pi:
+      models_path: /agent/pi-models.json
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start({
+      ...minimalConfig(),
+      runtime: {
+        headless: {
+          provider: 'pi',
+          pi: {
+            auth_path: '/global/pi-auth.json',
+            models_path: '/global/pi-models.json',
+          },
+        },
+      },
+    }, agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual(['Pi merged storage says hi']);
+    expect(piRuntimeState.createdOptions[0]).toMatchObject({
+      authStoragePath: '/global/pi-auth.json',
+      modelsPath: '/agent/pi-models.json',
+    });
+
+    await gw.stop();
+  });
+
+  it('dispatch can opt a single agent out of a global Pi Gateway runtime', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    const botDir = join(agentsDir, 'claude-agent-override-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+runtime:
+  headless:
+    provider: claude-agent-sdk
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual(['Agent claude-agent-override-bot received: hello sdk']);
+    expect(piRunMock).not.toHaveBeenCalled();
+    expect(piRunHandleMock).not.toHaveBeenCalled();
 
     await gw.stop();
   });
