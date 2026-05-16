@@ -281,6 +281,60 @@ Post-scenario monitor passed:
 
 Ring 3.3 is closed. Remaining Ring 3 surfaces are external MCP onboarding and scheduled Buildroom; keep them separate.
 
+## Ring 3.4 External MCP Scope
+
+The fourth Ring 3 expanded surface is external MCP proxy/onboarding compatibility. It uses a synthetic canary MCP server and in-memory credential store, not production external MCP credentials.
+
+Allowed:
+
+- agent.yml schema validation for `external_mcp_servers`;
+- credential reference resolution into request headers;
+- credential-store audit reason check;
+- custom tool generation for allowed MCP tools;
+- disallowed upstream tool suppression;
+- Pi custom tool definition/execution;
+- Pi policy denial path;
+- credential redaction check;
+- post-scenario monitor.
+
+Excluded:
+
+- real production MCP credentials;
+- real network-backed MCP calls;
+- production agent external MCP configs;
+- live channel delivery;
+- plugin actions beyond the MCP proxy bridge;
+- Buildroom and scheduled automation.
+
+## Ring 3.4 External MCP Evidence
+
+Ring 3.4 external MCP canary was executed on 2026-05-17:
+
+- command: `pnpm smoke:pi-external-mcp -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000`;
+- status: passed;
+- scenario: `pi.external-mcp-proxy`;
+- duration: `3` ms;
+- credential headers resolved: true;
+- credential store reads: `1`;
+- exposed tools: `mcp__canary_mcp__lookup`;
+- disallowed tool hidden: true;
+- Pi custom tool defined: true;
+- Pi custom tool executed: true;
+- Pi policy denied path: true;
+- upstream calls: `1`;
+- redaction: true;
+- agent schema validated: true.
+
+Post-scenario monitor passed:
+
+- runs: `6` total, `6` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- diagnostic event types: `run.completed`, `run.sdk_started`;
+- auth/model alerts: `0`;
+- alerts: none;
+- warnings: none.
+
+Ring 3.4 is closed. The remaining Ring 3 surface is scheduled Buildroom; keep it separate from high-risk live cron/proactive delivery.
+
 ## Stop Conditions
 
 Stop rollout and rollback or hold the current ring when any of these occur:
