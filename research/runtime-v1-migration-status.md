@@ -6,7 +6,7 @@ This is the human-readable phase checklist for replacing the Claude Agent SDK-ce
 
 ## Current Snapshot
 
-Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. Default-runtime readiness is no longer blocked by Runtime v1 evidence. The default-runtime flip itself has not started.
+Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. Default-runtime readiness is no longer blocked by Runtime v1 evidence. The default-runtime flip is now staged as a focused PR with the global Pi provider change and one smoke-harness newline normalization found during `pi-all` verification.
 
 Approximate progress to a default-runtime decision: 100%.
 
@@ -40,12 +40,13 @@ What is done:
 - Limited `example` Web UI production canary passed on 2026-05-17 local time: five Pi turns covered text, same-session follow-up, harmless workspace read, small workspace edit, and denied protected-path read; exact rollback restored `example/agent.yml` to hash `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`, and the real dev repo returned clean.
 - Local final `pnpm runtime:pi-decision -- --production-canary passed --pr-stack merged --browser-ux not-required --fail-on-blocked` produced `READY` with no blocking failures.
 - Durable **Pi Runtime v1 decision** workflow run `25970623984` on `main` commit `72766ff850a3dfff757a25e7b232c9002b7fcdac` passed build, Pi storage preparation, the full ten-scenario canary map, final `READY` decision generation with `production_canary=passed`, and artifact upload.
+- Default-runtime flip PR verification passed locally with `runtime.headless.provider=pi`: targeted runtime/config tests, TypeScript, config parsing, `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6`, and `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000`.
 
 What is not done:
 
 - A true Claude baseline turn has not been sent in the live channel; this is now a written waiver for the first Pi-only window, not an unresolved startup blocker.
-- The default-runtime flip is not started.
-- Post-flip monitoring and rollback instructions still need to be attached to the default-runtime flip PR.
+- The default-runtime flip has not been deployed.
+- Post-flip monitoring has not started.
 
 ## Phase Checklist
 
@@ -58,7 +59,7 @@ What is not done:
 | 4. Cover deep product surfaces | Mostly done | Prove non-obvious product features survive runtime replacement. | Scripted canaries pass for sessions/memory/learning, plugins/context/tools, external MCP, scheduled Buildroom, and rollback. |
 | 5. Dashboard/operator evidence | Done enough for default flip PR | Prove the operator API contracts expose the same state under Pi-shaped runs. | `/api/gateway/status`, agents, sessions, runs, learning, plugins, MCP, channels, and diagnostics are covered by scripted canary and limited production evidence; browser UX evidence is optional. |
 | 6. Rollout decision package | Done | Produce the final go/no-go artifact. | Local and durable GitHub Actions decision packages emit `READY` with production canary passed and PR stack merged. |
-| 7. Default-runtime rollout | Not started | Flip runtime default safely. | Prepare the smallest default-runtime flip PR with rollback instructions and post-flip monitoring. |
+| 7. Default-runtime rollout | In progress | Flip runtime default safely. | Focused default flip is staged with rollback instructions and post-flip monitoring in `docs/pi-default-runtime-rollout.md`; local default-flip smoke verification is green. |
 
 ## Canary Scenario Checklist
 
@@ -81,11 +82,11 @@ No Runtime v1 decision blockers remain. The remaining work is rollout execution,
 
 ## Next Five Tasks
 
-1. Open a small default-runtime flip PR that changes the global headless provider to Pi without touching agent-specific overrides.
-2. Attach the final durable decision run `25970623984`, limited production canary evidence, and rollback command to the PR.
-3. Add a post-flip smoke checklist that includes `pi-auth`, `pi-all`, Gateway startup, one Web UI text turn, and exact rollback to `claude-agent-sdk`.
-4. Define the first monitoring window: failed turns, provider auth errors, policy denials, interrupt failures, session continuation, diagnostics redaction, and learning queue errors.
-5. Keep rollout ring expansion separate from the default flip PR; do not expand to higher-risk agents until post-flip monitoring is green.
+1. Merge the focused default-runtime flip PR.
+2. Run post-flip `pi-auth`, `pi-all`, Gateway startup, and one safe Web UI turn.
+3. Monitor failed turns, provider auth errors, policy denials, interrupt failures, session continuation, diagnostics redaction, and learning queue errors.
+4. Keep the rollback path ready by setting `runtime.headless.provider=claude-agent-sdk` if any stop condition appears.
+5. Keep rollout ring expansion separate from the default flip; do not expand to higher-risk agents until post-flip monitoring is green.
 
 ## Default Runtime Gate
 

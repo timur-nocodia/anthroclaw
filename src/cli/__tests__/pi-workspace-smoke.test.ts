@@ -78,6 +78,26 @@ describe('Pi workspace smoke CLI', () => {
     expect(result.text).toBe('SMOKE_OK');
   });
 
+  it('accepts the requested smoke file content with or without a final newline', async () => {
+    const runtime = createSmokeRuntime(
+      [smokeTextEvent('SMOKE_OK', 'partial')],
+      'after AnthroClaw Pi smoke',
+    );
+    const workspace = join(root, 'workspace');
+
+    const result = await runPiWorkspaceSmoke({
+      runtime,
+      workspace,
+      model: 'test/model',
+      timeoutMs: 1000,
+    });
+
+    expect(result.status).toBe('passed');
+    expect(result.text).toBe('SMOKE_OK');
+    expect(readFileSync(join(workspace, 'anthroclaw-pi-smoke.txt'), 'utf8'))
+      .toBe('before AnthroClaw Pi smoke\n');
+  });
+
   it('fails when the Pi workspace smoke reply is not exact', async () => {
     const runtime = createSmokeRuntime([
       smokeTextEvent('SMOKE_OKSMOKE_OK', 'partial'),
@@ -173,6 +193,7 @@ describe('Pi workspace smoke CLI', () => {
 
 function createSmokeRuntime(
   textEvents: RuntimeEvent[] = [smokeTextEvent('SMOKE_OK', 'partial')],
+  editedText = 'after AnthroClaw Pi smoke\n',
 ): HeadlessRuntime & { seenInput?: HeadlessRunInput } {
   return {
     id: 'pi',
@@ -182,7 +203,7 @@ function createSmokeRuntime(
     async runHandle(input: HeadlessRunInput): Promise<RuntimeRunHandle<RuntimeEvent>> {
       const runtime = this as HeadlessRuntime & { seenInput?: HeadlessRunInput };
       runtime.seenInput = input;
-      return createSmokeHandle(input.cwd!, textEvents);
+      return createSmokeHandle(input.cwd!, textEvents, editedText);
     },
   } as HeadlessRuntime & { seenInput?: HeadlessRunInput };
 }
@@ -190,6 +211,7 @@ function createSmokeRuntime(
 function createSmokeHandle(
   workspace: string,
   textEvents: RuntimeEvent[],
+  editedText: string,
 ): RuntimeRunHandle<RuntimeEvent> & { sessionId: string } {
   const smokePath = join(workspace, 'anthroclaw-pi-smoke.txt');
   return {
@@ -198,7 +220,7 @@ function createSmokeHandle(
     close: vi.fn(),
     async rewindFiles(_messageId, options) {
       const current = readFileSync(smokePath, 'utf8');
-      if (current !== 'after AnthroClaw Pi smoke\n') {
+      if (normalizeSmokeText(current) !== normalizeSmokeText('after AnthroClaw Pi smoke\n')) {
         return { canRewind: false, error: 'unexpected smoke file content' };
       }
       if (!options?.dryRun) {
@@ -212,7 +234,7 @@ function createSmokeHandle(
       };
     },
     async *[Symbol.asyncIterator]() {
-      writeFileSync(smokePath, 'after AnthroClaw Pi smoke\n', 'utf8');
+      writeFileSync(smokePath, editedText, 'utf8');
       for (const event of textEvents) yield event;
       yield {
         type: 'run.completed',
@@ -223,6 +245,10 @@ function createSmokeHandle(
       };
     },
   };
+}
+
+function normalizeSmokeText(value: string): string {
+  return value.endsWith('\n') ? value : `${value}\n`;
 }
 
 function smokeTextEvent(
