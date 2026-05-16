@@ -73,8 +73,8 @@ Reasoning:
 - [x] Local `pnpm test` passed on PR #95.
 - [x] Local full Runtime v1 canary passed on PR #95.
 - [x] Local decision package generated and blocked only on operational gates.
+- [x] PR #95 is marked ready for review or merge.
 - [ ] Reviewer accepts the large integration PR shape.
-- [ ] PR #95 is marked ready for review or merge.
 - [ ] Durable **Pi Runtime v1 decision** workflow artifact is captured from the chosen target branch.
 - [ ] First production canary window is completed for one low-risk real agent.
 - [ ] Default runtime decision is recorded after the durable artifact and production canary pass.
@@ -82,7 +82,7 @@ Reasoning:
 ## Immediate Next Steps
 
 1. Review PR #95 as the integration vehicle.
-2. If accepted, mark PR #95 ready and merge it into `main`.
+2. If accepted, merge PR #95 into `main`.
 3. Run **Pi Runtime v1 decision** from the merged target branch with `production_canary=pending`, `pr_stack=merged`, and `fail_on_blocked=false`.
 4. Attach the durable workflow artifact to the migration status.
 5. Execute `docs/pi-production-canary-runbook.md` for one low-risk real agent.

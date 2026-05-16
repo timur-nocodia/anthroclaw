@@ -21,6 +21,7 @@ What is done:
 - Local full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed on 2026-05-16 with existing local Pi auth storage; the generated decision package is blocked only by PR-stack and production-canary operational gates.
 - Rebased integration candidate PR #95 is mergeable over current `main`; `pnpm build`, `pnpm test`, and the full local Runtime v1 canary pass on that branch.
 - Integration strategy memo recommends using PR #95 as the merge vehicle unless repository policy requires restacking the older draft chain.
+- PR #95 is marked ready for review.
 
 What is not done:
 
@@ -63,7 +64,7 @@ What is not done:
 
 ## Next Five Tasks
 
-1. Review PR #95 as the cumulative integration candidate and decide whether to merge it directly or use it to restack the original PR chain.
+1. Review ready-for-review PR #95 as the cumulative integration candidate and decide whether to merge it directly or use it to restack the original PR chain.
 2. Capture the durable Runtime v1 decision artifact via **Pi Runtime v1 decision** from the chosen target branch.
 3. Execute `docs/pi-production-canary-runbook.md` for one low-risk real agent.
 4. Decide whether a browser screenshot pass is required as non-blocking operator UX evidence.
