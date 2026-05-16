@@ -50,6 +50,19 @@ Config-only rehearsal evidence from 2026-05-16:
 
 This rehearsal proves the local config mutation/restore mechanics only. It does not satisfy the production canary window gate because it did not run real channel turns.
 
+Gateway hot-reload rehearsal evidence from 2026-05-16:
+
+- Gateway started from the current Runtime v1 worktree using real local `config.yml`, `agents`, `data`, and `plugins` paths from `/Users/tyess/dev/openclaw-agents-sdk-clone`;
+- Telegram polling started for the configured bot account;
+- guarded `example` enable wrote `runtime.headless.provider=pi` while Gateway was running;
+- ConfigWatcher detected `example/agent.yml` and completed hot reload after the Pi write;
+- exact backup restore returned `example` to `claude-agent-sdk` while Gateway was still running;
+- ConfigWatcher detected the restore and completed a second hot reload;
+- final `agent.yml` hash again matched `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`;
+- generated rehearsal backups were removed after verification.
+
+Observed blocker: Gateway startup from this worktree logs `Claude Code native binary not found` for Claude SDK warm prewarm. That does not invalidate the Pi adapter evidence, but it blocks a clean Claude baseline turn unless the native binary path is fixed or that baseline is explicitly waived for the first Pi-only canary window.
+
 Minimum window:
 
 - baseline one Claude text turn before the override;
