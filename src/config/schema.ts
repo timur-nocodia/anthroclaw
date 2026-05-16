@@ -515,15 +515,40 @@ export const AgentYmlSchema = z.object({
     enabled: z.boolean().default(true),
     threshold_messages: z.number().int().min(5).default(30),
   }).optional(),
-  iteration_budget: z.object({
-    max_tool_calls: z.number().int().min(1).default(30),
-    // Inactivity timeout. 5 min default — see budget.ts for the reasoning
-    // (adaptive thinking on Opus 4.7 can pause emit-events for ~4 min on
-    // complex tasks). Bump per-agent for known thinky workloads.
-    timeout_ms: z.number().int().min(5000).default(300_000),
-    absolute_timeout_ms: z.number().int().min(5000).optional(),
-    grace_message: z.boolean().default(true),
-  }).optional(),
+  // Applied to every agent by default. Without an enforcement floor, a
+  // hung SDK subprocess (e.g. external MCP server stuck in handshake)
+  // would block the session forever — `await iterator.next()` has no
+  // intrinsic timeout. Defaults below are conservative enough not to cut
+  // off legitimate long turns; bump per-agent only when a workload
+  // genuinely needs more (heavy planners, thinky Opus tasks).
+  //
+  // Note: Zod's `.default()` accepts the literal as-is without
+  // re-validating through the inner schema, so nested `.default()` calls
+  // on the fields below do NOT kick in when the outer value is
+  // undefined. We use `z.preprocess(v => v ?? {})` to force a parse
+  // through the inner schema so its field-level defaults apply.
+  iteration_budget: z.preprocess(
+    (v) => v ?? {},
+    z.object({
+      // Bumped 30 -> 100 because the old ceiling was tight for any
+      // agent doing serious tool work (file-transfer round-trips,
+      // multi-step skill flows). The point of the cap is to catch
+      // runaways, not to throttle normal usage.
+      max_tool_calls: z.number().int().min(1).default(100),
+      // Inactivity timeout. 5 min default — see budget.ts for the
+      // reasoning (adaptive thinking on Opus 4.7 can pause emit-events
+      // for ~4 min on complex tasks). Bump per-agent for known thinky
+      // workloads.
+      timeout_ms: z.number().int().min(5000).default(300_000),
+      // Wall-clock cap. 20 min default — catches the catastrophic case
+      // (cold-spawn hang in external MCP init, infinite tool loop,
+      // etc.) without interrupting normal long turns. Operators who
+      // deliberately run unbounded can override to a very large value
+      // per agent, but the floor matters in production.
+      absolute_timeout_ms: z.number().int().min(5000).default(1_200_000),
+      grace_message: z.boolean().default(true),
+    }),
+  ),
   quick_commands: z.record(z.string(), z.object({
     command: z.string(),
     timeout: z.number().int().min(1).default(30),
