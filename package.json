@@ -26,6 +26,7 @@
     "smoke:pi-workspace": "tsx src/cli/pi-workspace-smoke.ts",
     "smoke:pi-gateway": "tsx src/cli/pi-gateway-smoke.ts",
     "smoke:pi-all": "tsx src/cli/pi-smoke-suite.ts",
+    "smoke:pi-v1-canary": "tsx src/cli/pi-v1-canary.ts",
     "buildroom": "tsx src/cli/buildroom.ts",
     "plugins": "tsx src/cli/plugins.ts",
     "migrate:safety-profile": "tsx scripts/migrate-safety-profile.ts",

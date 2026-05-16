@@ -10,6 +10,16 @@ The compact Pi smoke suite is necessary but not sufficient. It proves auth, work
 
 The machine-readable source is `RUNTIME_CANARY_SCENARIOS` in `src/runtime/contract.ts`. Runtime contract tests assert that every default-runtime blocking feature contract is covered by at least one canary scenario.
 
+The current CLI entrypoint is:
+
+```bash
+pnpm smoke:pi-v1-canary -- --list --json
+pnpm smoke:pi-v1-canary -- --smoke-only --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
+pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
+```
+
+`--smoke-only` runs only the automated smoke scenarios that exist today. Full mode intentionally returns `incomplete` until the scripted/manual canaries in this document are implemented.
+
 ## Evidence Levels
 
 - `smoke`: automated command or CI workflow, usually with real Pi auth.
@@ -242,7 +252,7 @@ Pi cannot become the global default until:
 
 ## Next Implementation Slice
 
-The next useful code PR should implement a `smoke:pi-v1-canary` command that wraps the planned scripted checks incrementally:
+The next useful code PR should expand `smoke:pi-v1-canary` beyond the current smoke-only runners and add the planned scripted checks incrementally:
 
 1. start with sessions/memory/learning because it is the highest migration risk;
 2. add plugin/context checks;
