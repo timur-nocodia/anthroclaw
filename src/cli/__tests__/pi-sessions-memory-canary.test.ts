@@ -55,6 +55,18 @@ describe('Pi sessions/memory canary CLI', () => {
       title: 'Pi Runtime Memory Migration',
       learningActions: 1,
       reviewStatus: 'completed',
+      artifacts: {
+        manifestFiles: 1,
+        manifestSnippets: 1,
+        rows: 3,
+        redacted: true,
+      },
+      learningQueue: {
+        drainedActiveJobs: 1,
+        pendingAfterStop: 0,
+        activeAfterStop: 0,
+        droppedPendingWrites: 1,
+      },
     });
     expect(body.assertions.memoryEntryPath).toContain('memory/learning/pi-canary-run-1/');
     expect(body.assertions.memoryHits).toBeGreaterThanOrEqual(1);
