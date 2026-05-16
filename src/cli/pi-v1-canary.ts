@@ -8,6 +8,7 @@ import { runPiAuthSmokeCli } from './pi-auth-smoke.js';
 import { runPiExternalMcpCanaryCli } from './pi-external-mcp-canary.js';
 import { runPiGatewaySmokeCli } from './pi-gateway-smoke.js';
 import { runPiPluginsContextCanaryCli } from './pi-plugins-context-canary.js';
+import { runPiRollbackMixedRuntimeCanaryCli } from './pi-rollback-mixed-runtime-canary.js';
 import { runPiSessionsMemoryCanaryCli } from './pi-sessions-memory-canary.js';
 import { runPiSmokeSuiteCli } from './pi-smoke-suite.js';
 import { runPiWorkspaceSmokeCli } from './pi-workspace-smoke.js';
@@ -38,6 +39,7 @@ interface PiV1CanaryDeps {
   runSessionsMemoryCli?: CanaryCliRunner;
   runPluginsContextCli?: CanaryCliRunner;
   runExternalMcpCli?: CanaryCliRunner;
+  runRollbackMixedRuntimeCli?: CanaryCliRunner;
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
   stderr?: Pick<NodeJS.WriteStream, 'write'>;
 }
@@ -93,6 +95,10 @@ const CANARY_RUNNERS: Record<string, {
   'pi.external-mcp-proxy': {
     runner: (deps) => deps.runExternalMcpCli ?? runPiExternalMcpCanaryCli,
     args: buildDeterministicScriptedProbeArgs,
+  },
+  'pi.rollback-mixed-runtime': {
+    runner: (deps) => deps.runRollbackMixedRuntimeCli ?? runPiRollbackMixedRuntimeCanaryCli,
+    args: buildRollbackMixedRuntimeProbeArgs,
   },
 };
 
@@ -318,6 +324,16 @@ function buildScriptedProbeArgs(args: PiV1CanaryArgs): string[] {
 
 function buildDeterministicScriptedProbeArgs(args: PiV1CanaryArgs): string[] {
   const out = ['--json'];
+  if (args.timeoutMs) out.push('--timeout-ms', String(args.timeoutMs));
+  if (args.allowSkip) out.push('--allow-skip');
+  if (args.keepWorkspace) out.push('--keep-workspace');
+  return out;
+}
+
+function buildRollbackMixedRuntimeProbeArgs(args: PiV1CanaryArgs): string[] {
+  const out = ['--json', '--model', args.model ?? DEFAULT_PI_MODEL_ID];
+  if (args.authPath) out.push('--auth-path', args.authPath);
+  if (args.modelsPath) out.push('--models-path', args.modelsPath);
   if (args.timeoutMs) out.push('--timeout-ms', String(args.timeoutMs));
   if (args.allowSkip) out.push('--allow-skip');
   if (args.keepWorkspace) out.push('--keep-workspace');
