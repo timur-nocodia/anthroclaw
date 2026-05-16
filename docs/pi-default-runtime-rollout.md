@@ -109,6 +109,17 @@ Extended monitoring snapshot at 2026-05-17 01:04 Asia/Almaty:
 - diagnostic event types: `run.sdk_started`, `run.completed`;
 - warnings: one failed `read` tool event from the expected denied-path canary.
 
+Ring 1 immediate live channel evidence at 2026-05-17 01:12 Asia/Almaty:
+
+- command path: controlled `Gateway.dispatch` with real `TelegramChannel.sendText`;
+- agent/channel: `example` on Telegram DM;
+- prompt: `Reply exactly PI_LIVE_CHANNEL_OK. Do not use tools.`;
+- result: exactly `PI_LIVE_CHANNEL_OK`;
+- post-turn monitor: `passed`;
+- runs after turn: `8` total, `8` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- tool events in the 15-minute Ring 1 slice: none;
+- Ring 1 exit remains pending until 30-minute post-turn monitoring stays green.
+
 ## Monitoring Command
 
 Use the operator monitor during the first live window and before any ring expansion:
