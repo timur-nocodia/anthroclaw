@@ -31,6 +31,15 @@ runtime:
     provider: pi
 ```
 
+Use the guarded CLI rather than editing YAML directly:
+
+```bash
+pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --enable-pi --json
+pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --enable-pi --apply --json
+```
+
+Observed dry-run before any live change: `example` currently resolves to `claude-agent-sdk`; enabling Pi would change the provider and would not write until `--apply` is present.
+
 Minimum window:
 
 - baseline one Claude text turn before the override;
@@ -66,6 +75,12 @@ runtime:
 ```
 
 After rollback, verify the operator API/dashboard resolves the agent back to `claude-agent-sdk`, a text prompt succeeds, the session remains visible, and there are no active Pi runs left open.
+
+Guarded rollback command:
+
+```bash
+pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --rollback --apply --json
+```
 
 ## Final Decision Step
 
