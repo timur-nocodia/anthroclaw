@@ -6,7 +6,7 @@ This is the human-readable phase checklist for replacing the Claude Agent SDK-ce
 
 ## Current Snapshot
 
-Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. PR #110 merged the default-runtime flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`. Post-merge local verification and durable decision run `25971022679` are green. The remaining rollout work is deploying/pulling the new `main` into the runtime environment and running the first live monitoring window.
+Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. PR #110 merged the default-runtime flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`. Post-merge local verification and durable decision run `25971022679` are green. The live runtime checkout was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e`; post-pull `pi-auth`, `pi-all`, safe Web UI, and the first monitoring slice are green.
 
 Approximate progress to a default-runtime decision: 100%.
 
@@ -44,12 +44,15 @@ What is done:
 - PR #110 merged the default-runtime flip into `main` on 2026-05-17 local time as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`.
 - Post-merge local verification on `d0f2438` passed: config parsing resolved `provider=pi`, targeted runtime/config tests passed, TypeScript passed, `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` passed, and `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` returned workspace text `SMOKE_OK` plus Gateway text `SMOKE_GATEWAY_OK`.
 - Post-merge durable **Pi Runtime v1 decision** workflow run `25971022679` on `main` commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8` passed build, Pi storage preparation, the full canary map, final decision generation, and artifact upload.
+- Live runtime checkout `/Users/tyess/dev/openclaw-agents-sdk-clone` was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e` on 2026-05-17 local time.
+- Post-pull live verification passed: `pnpm install --frozen-lockfile`, config parsing resolved `provider=pi`, TypeScript passed, `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` passed, and `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` returned workspace text `SMOKE_OK` plus Gateway text `SMOKE_GATEWAY_OK`.
+- Safe no-channel live Gateway Web UI turn against `example` replied exactly `PI_LIVE_WEB_OK` through Pi with no tool calls, a present session id, and `15` total tokens.
+- First monitoring slice after the live pull showed zero failed runs in the last hour; diagnostic event types were limited to `run.sdk_started` and `run.completed`.
 
 What is not done:
 
 - A true Claude baseline turn has not been sent in the live channel; this is now a written waiver for the first Pi-only window, not an unresolved startup blocker.
-- The merged default-runtime flip has not yet been pulled/deployed into the live runtime environment.
-- Post-flip monitoring has not started.
+- Extended post-flip monitoring is still in progress.
 
 ## Phase Checklist
 
@@ -62,7 +65,7 @@ What is not done:
 | 4. Cover deep product surfaces | Mostly done | Prove non-obvious product features survive runtime replacement. | Scripted canaries pass for sessions/memory/learning, plugins/context/tools, external MCP, scheduled Buildroom, and rollback. |
 | 5. Dashboard/operator evidence | Done enough for default flip PR | Prove the operator API contracts expose the same state under Pi-shaped runs. | `/api/gateway/status`, agents, sessions, runs, learning, plugins, MCP, channels, and diagnostics are covered by scripted canary and limited production evidence; browser UX evidence is optional. |
 | 6. Rollout decision package | Done | Produce the final go/no-go artifact. | Local and durable GitHub Actions decision packages emit `READY` with production canary passed and PR stack merged. |
-| 7. Default-runtime rollout | In progress | Flip runtime default safely. | Default flip is merged into `main`; post-merge local and durable evidence is green; live runtime pull/deploy and first monitoring window remain. |
+| 7. Default-runtime rollout | In progress | Flip runtime default safely. | Default flip is merged into `main`; post-merge local, durable, live pull, safe Web UI, and first monitoring-slice evidence are green; extended monitoring and ring expansion remain. |
 
 ## Canary Scenario Checklist
 
@@ -85,14 +88,14 @@ No Runtime v1 decision blockers remain. The remaining work is rollout execution,
 
 ## Next Five Tasks
 
-1. Pull/deploy merged `main` commit `d0f2438` into the live runtime environment.
-2. Run post-deploy `pi-auth`, `pi-all`, Gateway startup, and one safe Web UI turn.
-3. Monitor failed turns, provider auth errors, policy denials, interrupt failures, session continuation, diagnostics redaction, and learning queue errors.
-4. Keep the rollback path ready by setting `runtime.headless.provider=claude-agent-sdk` if any stop condition appears.
-5. Keep rollout ring expansion separate from the default flip; do not expand to higher-risk agents until post-flip monitoring is green.
+1. Continue the first live monitoring window for failed turns, provider auth errors, policy denials, interrupt failures, session continuation, diagnostics redaction, and learning queue errors.
+2. Keep the rollback path ready by setting `runtime.headless.provider=claude-agent-sdk` if any stop condition appears.
+3. Add a small operator-facing monitoring note or checklist for the next live window.
+4. Decide whether to run a live channel turn or keep the current Claude baseline/live-channel waiver.
+5. Keep rollout ring expansion separate from the default flip; do not expand to higher-risk agents until extended post-flip monitoring is green.
 
 ## Default Runtime Gate
 
 The evidence gate for making Pi the tracked global default is satisfied and the flip is merged. Durable run `25970623984` established the pre-flip `READY` decision, PR #110 carried rollout/rollback instructions, and durable run `25971022679` revalidated the decision package after the default flip landed on `main`.
 
-The remaining gate is operational: pull/deploy `main`, run the post-deploy smoke and safe Web UI checks, then monitor the first live window before any ring expansion.
+The remaining gate is operational monitoring: keep the first live window under observation before any ring expansion.
