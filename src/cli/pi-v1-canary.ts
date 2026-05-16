@@ -6,12 +6,13 @@ import {
 import { DEFAULT_PI_MODEL_ID } from '../runtime/pi-headless.js';
 import { runPiAuthSmokeCli } from './pi-auth-smoke.js';
 import { runPiGatewaySmokeCli } from './pi-gateway-smoke.js';
+import { runPiSessionsMemoryCanaryCli } from './pi-sessions-memory-canary.js';
 import { runPiSmokeSuiteCli } from './pi-smoke-suite.js';
 import { runPiWorkspaceSmokeCli } from './pi-workspace-smoke.js';
 
 type CanaryStatus = 'passed' | 'failed' | 'skipped' | 'incomplete';
-type SmokeCliDeps = { stdout?: Pick<NodeJS.WriteStream, 'write'>; stderr?: Pick<NodeJS.WriteStream, 'write'> };
-type SmokeCliRunner = (argv: string[], deps?: SmokeCliDeps) => Promise<number>;
+type CanaryCliDeps = { stdout?: Pick<NodeJS.WriteStream, 'write'>; stderr?: Pick<NodeJS.WriteStream, 'write'> };
+type CanaryCliRunner = (argv: string[], deps?: CanaryCliDeps) => Promise<number>;
 
 interface PiV1CanaryArgs {
   model?: string;
@@ -27,10 +28,11 @@ interface PiV1CanaryArgs {
 }
 
 interface PiV1CanaryDeps {
-  runAuthCli?: SmokeCliRunner;
-  runWorkspaceCli?: SmokeCliRunner;
-  runGatewayCli?: SmokeCliRunner;
-  runAggregateCli?: SmokeCliRunner;
+  runAuthCli?: CanaryCliRunner;
+  runWorkspaceCli?: CanaryCliRunner;
+  runGatewayCli?: CanaryCliRunner;
+  runAggregateCli?: CanaryCliRunner;
+  runSessionsMemoryCli?: CanaryCliRunner;
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
   stderr?: Pick<NodeJS.WriteStream, 'write'>;
 }
@@ -55,8 +57,8 @@ interface PiV1CanaryResult {
   scenarios: CanaryScenarioRun[];
 }
 
-const SMOKE_RUNNERS: Record<string, {
-  runner: (deps: PiV1CanaryDeps) => SmokeCliRunner;
+const CANARY_RUNNERS: Record<string, {
+  runner: (deps: PiV1CanaryDeps) => CanaryCliRunner;
   args: (args: PiV1CanaryArgs) => string[];
 }> = {
   'pi.auth-model-preflight': {
@@ -74,6 +76,10 @@ const SMOKE_RUNNERS: Record<string, {
   'pi.aggregate-real-auth': {
     runner: (deps) => deps.runAggregateCli ?? runPiSmokeSuiteCli,
     args: buildAggregateProbeArgs,
+  },
+  'pi.sessions-memory-learning': {
+    runner: (deps) => deps.runSessionsMemoryCli ?? runPiSessionsMemoryCanaryCli,
+    args: buildScriptedProbeArgs,
   },
 };
 
@@ -117,8 +123,8 @@ export async function runPiV1CanaryCli(
   const runs: CanaryScenarioRun[] = [];
 
   for (const scenario of selected) {
-    const smoke = SMOKE_RUNNERS[scenario.id];
-    if (!smoke) {
+    const runner = CANARY_RUNNERS[scenario.id];
+    if (!runner) {
       runs.push(scenarioToRun(
         scenario,
         'incomplete',
@@ -126,7 +132,7 @@ export async function runPiV1CanaryCli(
       ));
       continue;
     }
-    runs.push(await runSmokeScenario(scenario, smoke.runner(deps), smoke.args(args)));
+    runs.push(await runCanaryScenario(scenario, runner.runner(deps), runner.args(args)));
   }
 
   const result: PiV1CanaryResult = {
@@ -195,9 +201,9 @@ export function parsePiV1CanaryArgs(argv: string[]): PiV1CanaryArgs {
   return args;
 }
 
-async function runSmokeScenario(
+async function runCanaryScenario(
   scenario: RuntimeCanaryScenario,
-  runner: SmokeCliRunner,
+  runner: CanaryCliRunner,
   argv: string[],
 ): Promise<CanaryScenarioRun> {
   const stdout = createWriter();
@@ -279,6 +285,12 @@ function buildRuntimeProbeArgs(args: PiV1CanaryArgs): string[] {
 
 function buildAggregateProbeArgs(args: PiV1CanaryArgs): string[] {
   return buildRuntimeProbeArgs(args);
+}
+
+function buildScriptedProbeArgs(args: PiV1CanaryArgs): string[] {
+  const out = ['--json'];
+  if (args.keepWorkspace) out.push('--keep-workspace');
+  return out;
 }
 
 function parseProbeJson(text: string): Record<string, unknown> | undefined {

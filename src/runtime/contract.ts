@@ -723,7 +723,10 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
       'Trigger a learning review and verify actions/artifacts are visible and redacted.',
       'Verify learning queue drains before Gateway shutdown.',
     ],
-    { evidenceArtifact: 'future pi-v1-canary sessions/memory/learning JSON section' },
+    {
+      evidenceCommand: 'pnpm smoke:pi-sessions-memory -- --json',
+      evidenceArtifact: 'pi-v1-canary sessions/memory/learning JSON section',
+    },
   ),
   canary(
     'pi.dashboard-operator',

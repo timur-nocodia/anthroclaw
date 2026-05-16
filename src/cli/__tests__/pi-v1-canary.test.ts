@@ -96,22 +96,30 @@ describe('Pi v1 canary CLI', () => {
   it('reports full mode incomplete until planned scripted/manual canaries exist', async () => {
     const stdout = createWriter();
     const stderr = createWriter();
+    const sessionsMemory = createProbe('passed');
 
     const code = await runPiV1CanaryCli(['--json'], {
       runAuthCli: createProbe('passed'),
       runWorkspaceCli: createProbe('passed'),
       runGatewayCli: createProbe('passed'),
       runAggregateCli: createProbe('passed'),
+      runSessionsMemoryCli: sessionsMemory,
       stdout,
       stderr,
     });
 
     expect(code).toBe(1);
+    expect(sessionsMemory).toHaveBeenCalledTimes(1);
+    expect(sessionsMemory.mock.calls[0]?.[0]).toEqual(['--json']);
     expect(stdout.text()).toBe('');
     const body = JSON.parse(stderr.text());
     expect(body.status).toBe('incomplete');
     expect(body.mode).toBe('full');
     expect(body.scenarios).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'pi.sessions-memory-learning',
+        status: 'passed',
+      }),
       expect.objectContaining({
         id: 'pi.plugins-context-tools',
         status: 'incomplete',
@@ -121,6 +129,32 @@ describe('Pi v1 canary CLI', () => {
         status: 'incomplete',
       }),
     ]));
+  });
+
+  it('forwards keep-workspace to scripted canaries without runtime smoke flags', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+    const sessionsMemory = createProbe('passed');
+
+    const code = await runPiV1CanaryCli([
+      '--json',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--keep-workspace',
+    ], {
+      runAuthCli: createProbe('passed'),
+      runWorkspaceCli: createProbe('passed'),
+      runGatewayCli: createProbe('passed'),
+      runAggregateCli: createProbe('passed'),
+      runSessionsMemoryCli: sessionsMemory,
+      stdout,
+      stderr,
+    });
+
+    expect(code).toBe(1);
+    expect(sessionsMemory.mock.calls[0]?.[0]).toEqual(['--json', '--keep-workspace']);
   });
 
   it('returns failed when an automated smoke scenario fails', async () => {
