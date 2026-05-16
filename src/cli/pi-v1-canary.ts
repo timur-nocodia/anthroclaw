@@ -9,6 +9,7 @@ import { runPiExternalMcpCanaryCli } from './pi-external-mcp-canary.js';
 import { runPiGatewaySmokeCli } from './pi-gateway-smoke.js';
 import { runPiPluginsContextCanaryCli } from './pi-plugins-context-canary.js';
 import { runPiRollbackMixedRuntimeCanaryCli } from './pi-rollback-mixed-runtime-canary.js';
+import { runPiScheduledBuildroomCanaryCli } from './pi-scheduled-buildroom-canary.js';
 import { runPiSessionsMemoryCanaryCli } from './pi-sessions-memory-canary.js';
 import { runPiSmokeSuiteCli } from './pi-smoke-suite.js';
 import { runPiWorkspaceSmokeCli } from './pi-workspace-smoke.js';
@@ -39,6 +40,7 @@ interface PiV1CanaryDeps {
   runSessionsMemoryCli?: CanaryCliRunner;
   runPluginsContextCli?: CanaryCliRunner;
   runExternalMcpCli?: CanaryCliRunner;
+  runScheduledBuildroomCli?: CanaryCliRunner;
   runRollbackMixedRuntimeCli?: CanaryCliRunner;
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
   stderr?: Pick<NodeJS.WriteStream, 'write'>;
@@ -94,6 +96,10 @@ const CANARY_RUNNERS: Record<string, {
   },
   'pi.external-mcp-proxy': {
     runner: (deps) => deps.runExternalMcpCli ?? runPiExternalMcpCanaryCli,
+    args: buildDeterministicScriptedProbeArgs,
+  },
+  'pi.scheduled-buildroom': {
+    runner: (deps) => deps.runScheduledBuildroomCli ?? runPiScheduledBuildroomCanaryCli,
     args: buildDeterministicScriptedProbeArgs,
   },
   'pi.rollback-mixed-runtime': {

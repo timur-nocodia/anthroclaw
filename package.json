@@ -30,6 +30,7 @@
     "smoke:pi-sessions-memory": "tsx src/cli/pi-sessions-memory-canary.ts",
     "smoke:pi-plugins-context": "tsx src/cli/pi-plugins-context-canary.ts",
     "smoke:pi-external-mcp": "tsx src/cli/pi-external-mcp-canary.ts",
+    "smoke:pi-scheduled-buildroom": "tsx src/cli/pi-scheduled-buildroom-canary.ts",
     "smoke:pi-rollback-runtime": "tsx src/cli/pi-rollback-mixed-runtime-canary.ts",
     "buildroom": "tsx src/cli/buildroom.ts",
     "plugins": "tsx src/cli/plugins.ts",

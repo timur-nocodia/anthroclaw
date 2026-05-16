@@ -99,6 +99,7 @@ describe('Pi v1 canary CLI', () => {
     const sessionsMemory = createProbe('passed');
     const pluginsContext = createProbe('passed');
     const externalMcp = createProbe('passed');
+    const scheduledBuildroom = createProbe('passed');
     const rollbackMixedRuntime = createProbe('passed');
 
     const code = await runPiV1CanaryCli(['--json'], {
@@ -109,6 +110,7 @@ describe('Pi v1 canary CLI', () => {
       runSessionsMemoryCli: sessionsMemory,
       runPluginsContextCli: pluginsContext,
       runExternalMcpCli: externalMcp,
+      runScheduledBuildroomCli: scheduledBuildroom,
       runRollbackMixedRuntimeCli: rollbackMixedRuntime,
       stdout,
       stderr,
@@ -121,6 +123,8 @@ describe('Pi v1 canary CLI', () => {
     expect(pluginsContext.mock.calls[0]?.[0]).toEqual(['--json']);
     expect(externalMcp).toHaveBeenCalledTimes(1);
     expect(externalMcp.mock.calls[0]?.[0]).toEqual(['--json']);
+    expect(scheduledBuildroom).toHaveBeenCalledTimes(1);
+    expect(scheduledBuildroom.mock.calls[0]?.[0]).toEqual(['--json']);
     expect(rollbackMixedRuntime).toHaveBeenCalledTimes(1);
     expect(rollbackMixedRuntime.mock.calls[0]?.[0]).toEqual([
       '--json',
@@ -144,6 +148,10 @@ describe('Pi v1 canary CLI', () => {
         status: 'passed',
       }),
       expect.objectContaining({
+        id: 'pi.scheduled-buildroom',
+        status: 'passed',
+      }),
+      expect.objectContaining({
         id: 'pi.rollback-mixed-runtime',
         status: 'passed',
       }),
@@ -160,6 +168,7 @@ describe('Pi v1 canary CLI', () => {
     const sessionsMemory = createProbe('passed');
     const pluginsContext = createProbe('passed');
     const externalMcp = createProbe('passed');
+    const scheduledBuildroom = createProbe('passed');
     const rollbackMixedRuntime = createProbe('passed');
 
     const code = await runPiV1CanaryCli([
@@ -177,6 +186,7 @@ describe('Pi v1 canary CLI', () => {
       runSessionsMemoryCli: sessionsMemory,
       runPluginsContextCli: pluginsContext,
       runExternalMcpCli: externalMcp,
+      runScheduledBuildroomCli: scheduledBuildroom,
       runRollbackMixedRuntimeCli: rollbackMixedRuntime,
       stdout,
       stderr,
@@ -196,6 +206,7 @@ describe('Pi v1 canary CLI', () => {
       '--timeout-ms', '1000',
       '--keep-workspace',
     ]);
+    expect(scheduledBuildroom.mock.calls[0]?.[0]).toEqual(externalMcp.mock.calls[0]?.[0]);
     expect(rollbackMixedRuntime.mock.calls[0]?.[0]).toEqual([
       '--json',
       '--model', 'test/model',
@@ -212,6 +223,7 @@ describe('Pi v1 canary CLI', () => {
     const sessionsMemory = createProbe('passed');
     const pluginsContext = createProbe('passed');
     const externalMcp = createProbe('passed');
+    const scheduledBuildroom = createProbe('passed');
     const rollbackMixedRuntime = createProbe('passed');
 
     const code = await runPiV1CanaryCli([
@@ -231,6 +243,7 @@ describe('Pi v1 canary CLI', () => {
       runSessionsMemoryCli: sessionsMemory,
       runPluginsContextCli: pluginsContext,
       runExternalMcpCli: externalMcp,
+      runScheduledBuildroomCli: scheduledBuildroom,
       runRollbackMixedRuntimeCli: rollbackMixedRuntime,
       stdout,
       stderr,
@@ -254,6 +267,7 @@ describe('Pi v1 canary CLI', () => {
       '--allow-skip',
       '--keep-workspace',
     ]);
+    expect(scheduledBuildroom.mock.calls[0]?.[0]).toEqual(externalMcp.mock.calls[0]?.[0]);
     expect(rollbackMixedRuntime.mock.calls[0]?.[0]).toEqual([
       '--json',
       '--model', 'test/model',
