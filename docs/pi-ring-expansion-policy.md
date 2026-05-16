@@ -29,7 +29,7 @@ The remaining risk is not the default provider selection itself. The remaining r
 | Ring | Scope | Entry Gate | Exit Gate |
 | --- | --- | --- | --- |
 | 0. Default runtime baseline | Global default Pi, no-channel/Web UI verification, monitoring only | `main` has Pi default and `runtime:pi-monitor -- --fail-on-alert` passes | Completed. Keep monitoring active. |
-| 1. Low-risk live channel turn | One controlled `example` live channel turn in an operator-owned peer | Ring 0 still green; operator confirms target peer and message text | One exact-answer live channel turn succeeds; monitor remains green for at least 30 minutes after the turn. |
+| 1. Low-risk live channel turn | One controlled `example` live channel turn in an operator-owned peer | Ring 0 still green; operator confirms target peer and message text | Completed by operator acceptance after exact-answer live channel turn plus green immediate/manual monitor checks. |
 | 2. Low-risk normal operation | Low-risk agents/channels without send-message fanout, cron delivery, or broad plugin actions | Ring 1 exits cleanly, no stop conditions | Monitoring remains green through a normal usage window. |
 | 3. Expanded product surfaces | Agents with plugins, learning review, memory-heavy workflows, external MCP, or scheduled Buildroom | Ring 2 exits cleanly; explicit owner approves each surface | Targeted scenario evidence plus monitoring remains green. |
 | 4. High-risk automation | Agents with cron delivery, proactive notifications, broad `send_message`, or business-critical workflows | Ring 3 exits cleanly; rollback owner is present | Production monitoring confirms no stop conditions for the agreed window. |
@@ -73,7 +73,14 @@ Ring 1 live channel turn was executed on 2026-05-17 at 01:12 Asia/Almaty:
 - auth/model alerts: `0`;
 - tool events in the 15-minute Ring 1 slice: none.
 
-Ring 1 is not fully closed until the post-turn monitoring window remains green for at least 30 minutes.
+Manual operator monitor at approximately 01:21 Asia/Almaty also passed for the 60-minute window:
+
+- runs: `3` total, `3` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- auth/model alerts: `0`;
+- alerts: none;
+- warnings: none.
+
+Ring 1 is closed by operator acceptance. The original 30-minute post-turn monitoring timer is waived for this checkpoint; the operator will escalate if later monitoring detects a stop condition.
 
 ## Stop Conditions
 
