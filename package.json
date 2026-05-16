@@ -20,6 +20,7 @@
     "release:minor": "node scripts/release.mjs minor",
     "release:major": "node scripts/release.mjs major",
     "runtime:pi-decision": "node scripts/runtime-v1-decision-package.mjs",
+    "runtime:pi-canary-agent": "tsx src/cli/pi-production-canary-agent.ts",
     "reset-password": "tsx src/cli/reset-password.ts",
     "learning": "tsx src/cli/learning.ts",
     "headless:runtime": "tsx src/cli/headless-runtime.ts",

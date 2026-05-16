@@ -57,6 +57,15 @@ runtime:
     provider: pi
 ```
 
+Preferred operator command:
+
+```bash
+pnpm runtime:pi-canary-agent -- --agents-dir /path/to/agents --agent <agent-id> --enable-pi --json
+pnpm runtime:pi-canary-agent -- --agents-dir /path/to/agents --agent <agent-id> --enable-pi --apply --json
+```
+
+The first command is a dry-run and must report `applied: false`. The second command writes only that agent's `runtime` section, validates `agent.yml`, and creates an `agent.yml.bak-*` backup before the atomic write.
+
 If staging must use isolated Pi storage paths, configure them through runtime config that is not committed with secrets:
 
 ```yaml
@@ -133,6 +142,15 @@ runtime:
   headless:
     provider: claude-agent-sdk
 ```
+
+Preferred rollback command:
+
+```bash
+pnpm runtime:pi-canary-agent -- --agents-dir /path/to/agents --agent <agent-id> --rollback --json
+pnpm runtime:pi-canary-agent -- --agents-dir /path/to/agents --agent <agent-id> --rollback --apply --json
+```
+
+The dry-run should show `desiredProvider: "claude-agent-sdk"` before the applied command is used.
 
 Then verify:
 
