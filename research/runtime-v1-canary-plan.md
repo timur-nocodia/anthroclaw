@@ -16,6 +16,7 @@ The current CLI entrypoint is:
 pnpm smoke:pi-v1-canary -- --list --json
 pnpm smoke:pi-v1-canary -- --smoke-only --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
 pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
+pnpm smoke:pi-sessions-memory -- --json
 ```
 
 `--smoke-only` runs only the automated smoke scenarios that exist today. Full mode intentionally returns `incomplete` until the scripted/manual canaries in this document are implemented.
@@ -142,23 +143,28 @@ Required checks:
 
 ### 6. `pi.sessions-memory-learning`
 
-Status: planned scripted canary.
+Status: scripted canary runner available for the storage/protocol path; Gateway real-turn and operator artifact checks remain planned.
 
 Proves:
 
-- two Pi turns continue the same product session;
-- session details, labels, title, export, and search are visible;
+- session transcript storage remains searchable through transcript recall;
+- title generation still runs through the runtime-neutral title adapter contract;
 - memory search/write/review remains AnthroClaw-owned;
-- learning review creates redacted artifacts and decisions;
-- learning queue drains before Gateway shutdown.
+- learning review parsing/persistence produces memory candidate actions;
+- applied learning memory preserves run/session provenance.
 
 Required checks:
 
-- session list/details/export;
-- memory influence event;
-- learning review/action/artifact rows;
-- artifact redaction;
-- no post-shutdown learning store write.
+- current: `pnpm smoke:pi-sessions-memory -- --json`;
+- current: session store append, transcript index search, recall summary;
+- current: title normalization through injected query function;
+- current: learning review/action persistence;
+- current: high-confidence private memory candidate apply and memory search;
+- remaining: real Pi two-turn continuation through Gateway;
+- remaining: session list/details/export labels;
+- remaining: memory influence event;
+- remaining: learning artifact redaction;
+- remaining: no post-shutdown learning store write.
 
 ### 7. `pi.external-mcp-proxy`
 
