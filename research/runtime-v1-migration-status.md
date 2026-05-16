@@ -26,10 +26,12 @@ What is done:
 - The guarded switch CLI supports exact rollback with `--restore-backup <agent.yml.bak-...>` so the canary agent can return to its original config, not merely an explicit Claude provider override.
 - Latest **Pi Runtime v1 decision** workflow run `25969043105` on `main` after the exact rollback restore merge passed all ten scenarios and remains `BLOCKED` only by `production-canary-window=pending`.
 - Config-only rehearsal against local real `example` agent config completed on 2026-05-16 with no Gateway running: guarded enable wrote Pi override, exact backup restore returned `agent.yml` to its original hash `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`, and generated rehearsal backups were removed afterward.
+- Gateway hot-reload rehearsal completed on 2026-05-16 against the real local config/agents/data paths: Gateway started on current Runtime v1 code with Telegram polling, `example` was switched to Pi and restored while Gateway was running, ConfigWatcher hot-reloaded after both writes, and `agent.yml` again returned to the original hash. No test messages were sent.
 
 What is not done:
 
 - The first production canary window has not been recorded.
+- A true Claude baseline turn from this worktree is blocked until the Claude Code native binary path is fixed; startup logs report the binary missing under this worktree's `node_modules`.
 - Final `READY` migration decision record has not been generated because production evidence is still pending; default-runtime flip is not started.
 
 ## Phase Checklist
@@ -67,7 +69,7 @@ What is not done:
 
 ## Next Five Tasks
 
-1. Start the actual Gateway/channel environment and confirm an operator owner for the preferred first canary candidate.
+1. Fix or point `pathToClaudeCodeExecutable` at a valid Claude Code native binary for the current worktree, or explicitly waive the Claude baseline turn for this Pi-first window.
 2. Attach the redacted production canary evidence to the migration record.
 3. Decide whether a browser screenshot pass is required as non-blocking operator UX evidence.
 4. Rerun **Pi Runtime v1 decision** on `main` with `production_canary=passed`, `pr_stack=merged`, and `fail_on_blocked=true`.
