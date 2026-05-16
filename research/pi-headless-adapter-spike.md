@@ -120,7 +120,7 @@ It checks that the optional Pi SDK package imports, the requested model exists i
 
 The Pi runtime now uses Pi's default `AuthStorage` and `ModelRegistry` when a model id is present and no explicit registry was injected. AnthroClaw's legacy Claude model ids are normalized for this path, so `claude-sonnet-4-6` resolves as `anthropic/claude-sonnet-4-6`. Other bare model names still need explicit `provider/model` form. For isolated staging/CI runs, pass `--auth-path /secure/pi-auth.json --models-path /secure/pi-models.json` to `smoke:pi-auth`, `smoke:pi-workspace`, `smoke:pi-gateway`, or `smoke:pi-all`; the same values flow into Pi's default `AuthStorage.create()` and `ModelRegistry.create()`.
 
-The repository also has a manual GitHub Actions gate, **Pi smoke**, for the same aggregate proof. It is `workflow_dispatch` only and expects `PI_AUTH_JSON_B64` plus optional `PI_MODELS_JSON_B64` repository secrets. The workflow decodes those secrets into runner-local temporary files and runs `pnpm smoke:pi-all` with `--auth-path` / `--models-path`. See `docs/pi-smoke-gate.md`.
+The repository also has a manual GitHub Actions gate, **Pi smoke**, for the same aggregate proof. It is `workflow_dispatch` only and expects `PI_AUTH_JSON_B64` plus optional `PI_MODELS_JSON_B64` repository secrets. The workflow decodes those secrets into runner-local temporary files and runs `pnpm smoke:pi-all` with `--auth-path` / `--models-path`. It writes a Markdown run summary and uploads the raw log plus normalized JSON result as a `pi-smoke-result` artifact. See `docs/pi-smoke-gate.md`.
 
 ## Headless session metadata
 

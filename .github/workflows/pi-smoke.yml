@@ -76,6 +76,10 @@ jobs:
         run: |
           set -euo pipefail
 
+          log_path="${RUNNER_TEMP}/pi-smoke.log"
+          result_json="${RUNNER_TEMP}/pi-smoke-result.json"
+          summary_md="${RUNNER_TEMP}/pi-smoke-summary.md"
+
           args=(
             --json
             --model "${{ inputs.model }}"
@@ -91,4 +95,27 @@ jobs:
             args+=(--allow-skip)
           fi
 
-          pnpm smoke:pi-all -- "${args[@]}"
+          set +e
+          pnpm smoke:pi-all -- "${args[@]}" 2>&1 | tee "${log_path}"
+          code="${PIPESTATUS[0]}"
+          set -e
+
+          node scripts/pi-smoke-summary.mjs \
+            --log "${log_path}" \
+            --summary "${summary_md}" \
+            --json "${result_json}" \
+            --exit-code "${code}"
+
+          cat "${summary_md}" >> "${GITHUB_STEP_SUMMARY}"
+          exit "${code}"
+
+      - name: Upload Pi smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-smoke-result
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/pi-smoke.log
+            ${{ runner.temp }}/pi-smoke-result.json
+            ${{ runner.temp }}/pi-smoke-summary.md

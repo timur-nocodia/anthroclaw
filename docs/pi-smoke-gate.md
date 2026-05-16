@@ -42,3 +42,13 @@ pnpm smoke:pi-all -- --json --model <model> --timeout-ms <timeout> --auth-path <
 ```
 
 A passing run proves the Pi package imports, the selected provider/model has auth, the workspace edit + rewind smoke passes, and the Gateway channel dispatch + approval smoke passes in one runner.
+
+## Output
+
+Each run writes a compact Markdown summary to the GitHub Actions step summary and uploads a `pi-smoke-result` artifact with:
+
+- `pi-smoke.log`: raw command output.
+- `pi-smoke-result.json`: the structured aggregate smoke result.
+- `pi-smoke-summary.md`: the same Markdown summary shown in the workflow run.
+
+Use `pi-smoke-result.json` as the decision record when comparing real Pi runs across branches.
