@@ -155,6 +155,16 @@ Ring 3.2 session continuity surface at 2026-05-17 local time:
 - excluded surfaces stayed excluded: no Telegram/WhatsApp delivery, no `memory_write`, no learning apply, no plugin tool calls, no external MCP, no Buildroom, no cron/proactive notification, no `send_message` fanout;
 - post-scenario monitor passed with `8` total runs, `8` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`.
 
+Ring 3.3 plugin context surface at 2026-05-17 local time:
+
+- command: `pnpm smoke:pi-plugins-context -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000`;
+- status: passed in an isolated temporary Gateway workspace;
+- covered: plugin registry enablement, plugin MCP tool registration, disabled-agent tool exclusion, read-only/policy plugin tools, hook/context-engine assembly/compression, session attribution, and Pi plugin subagent runner with tools disabled;
+- bundled plugins covered: `file-transfer`, `lcm`, `operator-console`;
+- safety checks covered: file-transfer outside-root denial and operator-console delegate denial;
+- excluded surfaces stayed excluded: no real production plugin action against live channels, no real external MCP credentials, no Buildroom execution, no cron/proactive notification delivery, no production `send_message` fanout;
+- post-scenario monitor passed with `8` total runs, `8` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`.
+
 ## Monitoring Command
 
 Use the operator monitor during the first live window and before any ring expansion:

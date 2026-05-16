@@ -222,6 +222,65 @@ Post-scenario monitor passed:
 
 Ring 3.2 is closed. The next Ring 3 surface should move to plugin tool context, external MCP onboarding, or scheduled Buildroom, still one surface at a time.
 
+## Ring 3.3 Plugin Context Scope
+
+The third Ring 3 expanded surface is plugin tool/context compatibility. It uses the scripted `pi.plugins-context-tools` canary in an isolated temporary workspace rather than production agents with real external MCP credentials.
+
+Allowed:
+
+- temporary Gateway workspace;
+- synthetic plugin enablement;
+- plugin MCP tool registration and policy-gate checks;
+- plugin hooks/context engine assembly/compression checks;
+- Pi plugin subagent runner with tools disabled;
+- bundled plugin checks for `file-transfer`, `lcm`, and `operator-console`;
+- file-transfer safe-root and outside-root denial checks;
+- post-scenario monitor.
+
+Excluded:
+
+- real production plugin actions against live channels;
+- real external MCP credentials or network-backed MCP tools;
+- Buildroom execution;
+- cron/proactive notification delivery;
+- production `send_message` fanout;
+- private transcript/provider-log capture in docs.
+
+## Ring 3.3 Plugin Context Evidence
+
+Ring 3.3 plugin context canary was executed on 2026-05-17:
+
+- command: `pnpm smoke:pi-plugins-context -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000`;
+- status: passed;
+- scenario: `pi.plugins-context-tools`;
+- duration: `1832` ms;
+- temporary Gateway plugin loaded: `1`;
+- plugin tools exposed to enabled agent: `2`;
+- disabled agent plugin tools: `0`;
+- tool names: `pi-canary-plugin_inspect`, `pi-canary-plugin_policy_gate`;
+- read-only tool check: passed;
+- policy tool check: passed;
+- hooks observed: `1`;
+- context engine: `pi-canary-plugin`;
+- assemble messages: `2`;
+- compress messages: `1`;
+- session attribution: true;
+- Pi plugin subagent: runtime `pi-canary-headless`, purpose `runSubagent`, tools disabled, model `anthropic/claude-sonnet-4-6`;
+- bundled plugins loaded: `file-transfer`, `lcm`, `operator-console`;
+- LCM checks: `6` tools, mirror hook true, grep hits `1`, status messages `2`, assemble messages `2`, compression triggered;
+- operator-console checks: `5` tools, peer summary authorized, delegate dispatched, delegate denied, escalation true;
+- file-transfer checks: `4` tools, directory list entries `1`, file fetch true, file write true, outside denied true.
+
+Post-scenario monitor passed:
+
+- runs: `8` total, `8` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- diagnostic event types: `run.completed`, `run.sdk_started`;
+- auth/model alerts: `0`;
+- alerts: none;
+- warnings: none.
+
+Ring 3.3 is closed. Remaining Ring 3 surfaces are external MCP onboarding and scheduled Buildroom; keep them separate.
+
 ## Stop Conditions
 
 Stop rollout and rollback or hold the current ring when any of these occur:
