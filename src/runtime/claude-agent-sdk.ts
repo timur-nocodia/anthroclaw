@@ -42,6 +42,16 @@ export type ClaudeRuntimeUserMessage = SDKUserMessage;
 export type ClaudeWarmQuery = WarmQuery;
 export type ClaudeBuildOptionsParams = BuildSdkOptionsParams;
 
+const CLAUDE_AUTH_FAILURE_PATTERNS = [
+  /failed to authenticate/i,
+  /authentication_error/i,
+  /invalid authentication credentials/i,
+];
+
+function looksLikeClaudeAuthFailure(text: string): boolean {
+  return CLAUDE_AUTH_FAILURE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 export function buildClaudeRuntimeOptions(params: BuildSdkOptionsParams): Options {
   return buildSdkOptions(params);
 }
@@ -126,6 +136,9 @@ export async function runClaudeHeadlessText(input: HeadlessRunInput): Promise<st
 
       if (e.type === 'result' && typeof e.result === 'string') {
         result = e.result.trim();
+        if (looksLikeClaudeAuthFailure(result)) {
+          throw new Error(`${purpose} LLM authentication error: ${result}`);
+        }
         resultFound = true;
         break;
       }

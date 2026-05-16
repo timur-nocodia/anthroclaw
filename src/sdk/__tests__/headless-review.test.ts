@@ -189,6 +189,22 @@ describe('runHeadlessReview', () => {
       .rejects.toThrow(/learning review LLM error.*error_during_execution.*auth_failed/);
   });
 
+  it('treats text-shaped Claude auth failures as runtime errors', async () => {
+    const events = (async function* () {
+      yield {
+        type: 'result',
+        result: 'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}',
+      };
+    })();
+    mockedQuery.mockReturnValue({
+      [Symbol.asyncIterator]: () => events,
+      close: vi.fn(),
+    });
+
+    await expect(runHeadlessReview({ prompt: 'p', purpose: 'baseline smoke' }))
+      .rejects.toThrow(/baseline smoke LLM authentication error.*Invalid authentication credentials/);
+  });
+
   it('does not treat a successful SDK result marker as an error', async () => {
     const events = (async function* () {
       yield {
