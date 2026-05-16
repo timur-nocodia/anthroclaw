@@ -780,7 +780,7 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
       'Exercise Buildroom handoff/session-summary tools with source session binding.',
       'Verify artifacts, locks, path policy, and notifications remain inspectable.',
     ],
-    { evidenceArtifact: 'future pi-v1-canary scheduled/buildroom JSON section' },
+    { evidenceCommand: 'pnpm smoke:pi-scheduled-buildroom -- --json' },
   ),
   canary(
     'pi.rollback-mixed-runtime',

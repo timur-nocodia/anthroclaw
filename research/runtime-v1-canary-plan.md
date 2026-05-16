@@ -6,7 +6,7 @@ Date: 2026-05-16
 
 `runtime-contract-v1` defines the full AnthroClaw feature atlas. This document defines how we prove that atlas before Pi becomes the default runtime.
 
-The compact Pi smoke suite is necessary but not sufficient. It proves auth, workspace mutation, approval routing, Gateway dispatch, and cleanup. It does not yet prove dashboard/operator state, plugin context engines, session transcript visibility, learning artifacts, Buildroom, scheduled work, or rollback. This plan closes that gap.
+The compact Pi smoke suite is necessary but not sufficient. It proves auth, workspace mutation, approval routing, Gateway dispatch, and cleanup. It does not yet prove dashboard/operator state; scripted canaries now cover plugin context engines, session transcript visibility, learning artifacts, external MCP, Buildroom, scheduled work, and rollback. This plan closes the remaining gap.
 
 The machine-readable source is `RUNTIME_CANARY_SCENARIOS` in `src/runtime/contract.ts`. Runtime contract tests assert that every default-runtime blocking feature contract is covered by at least one canary scenario.
 
@@ -233,7 +233,7 @@ Required checks:
 
 ### 9. `pi.scheduled-buildroom`
 
-Status: planned scripted canary.
+Status: scripted canary implemented.
 
 Proves:
 
@@ -249,6 +249,10 @@ Required checks:
 - Buildroom init/status/pause/resume/kill-switch;
 - Buildroom tool call with source session context;
 - artifact and notification evidence.
+
+Evidence command:
+
+- `pnpm smoke:pi-scheduled-buildroom -- --json`
 
 ### 10. `pi.rollback-mixed-runtime`
 
@@ -277,15 +281,14 @@ Evidence command:
 Pi cannot become the global default until:
 
 - all four smoke scenarios pass in a real-auth environment;
-- planned scripted canaries are either implemented and passing or explicitly waived with a written risk owner;
+- scripted canaries are implemented and passing in CI or explicitly waived with a written risk owner;
 - the dashboard operator check is completed;
 - rollback is exercised;
 - `runtime-contract-v1.md` and this plan are updated with evidence links.
 
 ## Next Implementation Slice
 
-The next useful code PR should close the remaining non-automated canary gaps:
+The next useful code PR should close the remaining non-automated canary gap:
 
-1. add scheduled/Buildroom checks;
-2. complete the dashboard/operator manual evidence loop;
-3. keep `smoke:pi-v1-canary` emitting a single JSON artifact keyed by `RUNTIME_CANARY_SCENARIOS` ids.
+1. complete the dashboard/operator manual evidence loop;
+2. keep `smoke:pi-v1-canary` emitting a single JSON artifact keyed by `RUNTIME_CANARY_SCENARIOS` ids.
