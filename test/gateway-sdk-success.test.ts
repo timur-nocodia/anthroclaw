@@ -172,13 +172,17 @@ function makeMsg(overrides: Partial<InboundMessage> = {}): InboundMessage {
   };
 }
 
-async function waitForPendingMemory(gw: Gateway, agentId: string) {
+async function waitForCandidateMemory(
+  gw: Gateway,
+  agentId: string,
+  reviewStatus: 'pending' | 'approved',
+) {
   for (let i = 0; i < 20; i++) {
-    const entries = gw.listAgentMemoryEntries(agentId, { reviewStatus: 'pending' });
+    const entries = gw.listAgentMemoryEntries(agentId, { reviewStatus });
     if (entries.length > 0) return entries;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  return gw.listAgentMemoryEntries(agentId, { reviewStatus: 'pending' });
+  return gw.listAgentMemoryEntries(agentId, { reviewStatus });
 }
 
 describe('Gateway SDK success path', () => {
@@ -377,7 +381,7 @@ routes:
     await gw.stop();
   });
 
-  it('proposes post-run memory candidates for review without making them searchable before approval', async () => {
+  it('auto-approves high-confidence post-run candidates so they surface in search immediately (v1.1.7)', async () => {
     const botDir = join(agentsDir, 'memory-bot');
     mkdirSync(botDir);
     writeAgentYml(botDir, `
@@ -415,14 +419,17 @@ memory_extraction:
     await gw.dispatch(makeMsg({ text: 'remember that we chose SDK-native memory review' }));
 
     expect(sent).toEqual(['SDK says hi']);
-    const pending = await waitForPendingMemory(gw, 'memory-bot');
-    expect(pending).toHaveLength(1);
-    expect(pending[0]).toMatchObject({
+    // v1.1.7: confidence 0.91 >= default threshold (0.6) → stored as approved
+    // (not pending). Old behaviour stored everything as pending, which made
+    // the textSearch filter (review_status='approved') hide them forever.
+    const approved = await waitForCandidateMemory(gw, 'memory-bot', 'approved');
+    expect(approved).toHaveLength(1);
+    expect(approved[0]).toMatchObject({
       source: 'post_run_candidate',
-      reviewStatus: 'pending',
+      reviewStatus: 'approved',
       provenance: {
         source: 'post_run_candidate',
-        reviewStatus: 'pending',
+        reviewStatus: 'approved',
         runId: expect.any(String),
         sessionKey: 'memory-bot:telegram:dm:peer-123',
         agentId: 'memory-bot',
@@ -436,15 +443,59 @@ memory_extraction:
         },
       },
     });
-    expect(pending[0].path).toContain('memory/candidates/');
+    expect(approved[0].path).toContain('memory/candidates/');
     expect(metrics.snapshot().counters.memory_candidates_proposed).toBe(1);
 
+    // The candidate is searchable immediately — no manual approval step needed.
     const store = gw.getAgent('memory-bot')!.memoryStore;
+    expect(store.textSearch('review', 10).map((r) => r.path)).toEqual([approved[0].path]);
+    expect(gw.listAgentMemoryEntries('memory-bot', { reviewStatus: 'pending' })).toEqual([]);
+
+    await gw.stop();
+  });
+
+  it('require_review=true preserves legacy pending-queue behaviour for ops that want manual gating', async () => {
+    const botDir = join(agentsDir, 'review-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+memory_extraction:
+  enabled: true
+  max_candidates: 2
+  max_input_chars: 2000
+  require_review: true
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText() { return 'msg1'; },
+      async editText() {},
+      async sendMedia() { return 'media1'; },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg({ text: 'remember that we chose SDK-native memory review' }));
+
+    const pending = await waitForCandidateMemory(gw, 'review-bot', 'pending');
+    expect(pending).toHaveLength(1);
+    expect(pending[0].reviewStatus).toBe('pending');
+
+    const store = gw.getAgent('review-bot')!.memoryStore;
     expect(store.textSearch('review', 10)).toEqual([]);
 
-    const updated = gw.updateAgentMemoryEntryReview('memory-bot', pending[0].id, 'approved');
+    const updated = gw.updateAgentMemoryEntryReview('review-bot', pending[0].id, 'approved');
     expect(updated.updated).toBe(true);
-    expect(store.textSearch('review', 10).map((result) => result.path)).toEqual([pending[0].path]);
+    expect(store.textSearch('review', 10).map((r) => r.path)).toEqual([pending[0].path]);
 
     await gw.stop();
   });

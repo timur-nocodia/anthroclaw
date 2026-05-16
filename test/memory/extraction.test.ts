@@ -64,7 +64,7 @@ describe('post-run memory extraction', () => {
     }]);
   });
 
-  it('stores proposed candidates as pending post-run entries', () => {
+  it('stores high-confidence candidates as approved post-run entries (v1.1.7 contract)', () => {
     const provider = makeProvider();
     const result = storePostRunMemoryCandidates(provider, {
       agentId: 'agent-1',
@@ -90,7 +90,10 @@ describe('post-run memory extraction', () => {
       expect.stringContaining('The project codename is Phoenix.'),
       expect.objectContaining({
         source: 'post_run_candidate',
-        reviewStatus: 'pending',
+        // v1.1.7: above default threshold (0.6) → approved (searchable).
+        // The legacy `pending` default was an architectural bug — entries
+        // piled up forever and textSearch filtered them out.
+        reviewStatus: 'approved',
         runId: 'run-1',
         sessionKey: 'session-1',
         agentId: 'agent-1',

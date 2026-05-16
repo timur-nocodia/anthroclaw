@@ -318,15 +318,21 @@ const SubagentPolicySchema = z.object({
   roles: z.record(z.string(), SubagentRolePolicySchema).optional(),
 }).optional();
 
-const MemoryExtractionSchema = z.object({
-  enabled: z.boolean().default(true),
-  max_candidates: z.number().int().min(1).max(10).default(5),
-  max_input_chars: z.number().int().min(500).max(20_000).default(6000),
-}).default({
-  enabled: true,
-  max_candidates: 5,
-  max_input_chars: 6000,
-});
+const MemoryExtractionSchema = z.preprocess(
+  (v) => v ?? {},
+  z.object({
+    enabled: z.boolean().default(true),
+    max_candidates: z.number().int().min(1).max(10).default(5),
+    max_input_chars: z.number().int().min(500).max(20_000).default(6000),
+    // Confidence-gated auto-approve for post-run candidates.
+    // Above threshold → stored as `approved` (searchable immediately).
+    // Below threshold → dropped (do not persist). Avoids the "pending purgatory"
+    // bug where extracted memories accumulate forever and never reach search.
+    // Set min_confidence to 0 + require_review=true to restore legacy review-queue behaviour.
+    min_confidence: z.number().min(0).max(1).default(0.6),
+    require_review: z.boolean().default(false),
+  }),
+);
 
 const DecisionKindSchema = z.enum([
   'learning_memory',

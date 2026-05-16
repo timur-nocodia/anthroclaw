@@ -411,6 +411,8 @@ describe('AgentYmlSchema', () => {
       enabled: true,
       max_candidates: 5,
       max_input_chars: 6000,
+      min_confidence: 0.6,
+      require_review: false,
     });
   });
 
