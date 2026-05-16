@@ -135,6 +135,71 @@ describe('pi production canary agent CLI', () => {
     expect(readFileSync(join(agentsDir, 'example', 'agent.yml'), 'utf-8')).toContain('provider: claude-agent-sdk');
   });
 
+  it('restores the exact pre-canary backup without leaving a runtime override', async () => {
+    const enableStdout = createWriter();
+    await runPiProductionCanaryAgentCli([
+      '--agents-dir', agentsDir,
+      '--agent', 'example',
+      '--enable-pi',
+      '--apply',
+      '--json',
+    ], { stdout: enableStdout, stderr: createWriter() });
+    const enableResult = JSON.parse(enableStdout.text());
+    const backupPath = enableResult.backupPath as string;
+
+    const dryRunStdout = createWriter();
+    const dryRunCode = await runPiProductionCanaryAgentCli([
+      '--agents-dir', agentsDir,
+      '--agent', 'example',
+      '--restore-backup', backupPath,
+      '--json',
+    ], { stdout: dryRunStdout, stderr: createWriter() });
+
+    expect(dryRunCode).toBe(0);
+    expect(JSON.parse(dryRunStdout.text())).toMatchObject({
+      currentProvider: 'pi',
+      desiredProvider: 'claude-agent-sdk',
+      applied: false,
+      changed: true,
+      restoredFromBackupPath: backupPath,
+    });
+    expect(readFileSync(join(agentsDir, 'example', 'agent.yml'), 'utf-8')).toContain('provider: pi');
+
+    const restoreStdout = createWriter();
+    const restoreCode = await runPiProductionCanaryAgentCli([
+      '--agents-dir', agentsDir,
+      '--agent', 'example',
+      '--restore-backup', backupPath,
+      '--apply',
+      '--json',
+    ], { stdout: restoreStdout, stderr: createWriter() });
+
+    expect(restoreCode).toBe(0);
+    const restoreResult = JSON.parse(restoreStdout.text());
+    expect(restoreResult).toMatchObject({
+      currentProvider: 'pi',
+      desiredProvider: 'claude-agent-sdk',
+      applied: true,
+      changed: true,
+      restoredFromBackupPath: backupPath,
+    });
+    expect(restoreResult.backupPath).toContain('agent.yml.bak-restore-');
+    expect(readFileSync(join(agentsDir, 'example', 'agent.yml'), 'utf-8')).toBe(SEED_YAML);
+  });
+
+  it('rejects restore backups outside the target agent directory', async () => {
+    const stderr = createWriter();
+    const code = await runPiProductionCanaryAgentCli([
+      '--agents-dir', agentsDir,
+      '--agent', 'example',
+      '--restore-backup', join(root, 'agent.yml.bak-outside'),
+      '--apply',
+    ], { stdout: createWriter(), stderr });
+
+    expect(code).toBe(1);
+    expect(stderr.text()).toContain('inside the target agent directory');
+  });
+
   it('rejects unknown providers and missing agents', async () => {
     expect(() => parsePiProductionCanaryAgentArgs(['--provider', 'other']))
       .toThrow(/Unknown provider/);

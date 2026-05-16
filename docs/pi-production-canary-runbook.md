@@ -65,6 +65,7 @@ pnpm runtime:pi-canary-agent -- --agents-dir /path/to/agents --agent <agent-id> 
 ```
 
 The first command is a dry-run and must report `applied: false`. The second command writes only that agent's `runtime` section, validates `agent.yml`, and creates an `agent.yml.bak-*` backup before the atomic write.
+Keep the `backupPath` from the applied command. It is the preferred exact rollback input.
 
 If staging must use isolated Pi storage paths, configure them through runtime config that is not committed with secrets:
 
@@ -135,7 +136,16 @@ Stop the canary and roll back immediately if any of these occur:
 
 Rollback is required evidence, not only an emergency action.
 
-For the canary agent, either remove the per-agent runtime override or explicitly set:
+For the canary agent, restore the exact `agent.yml` backup emitted by the enablement command:
+
+```bash
+pnpm runtime:pi-canary-agent -- --agents-dir /path/to/agents --agent <agent-id> --restore-backup /path/to/agents/<agent-id>/agent.yml.bak-... --json
+pnpm runtime:pi-canary-agent -- --agents-dir /path/to/agents --agent <agent-id> --restore-backup /path/to/agents/<agent-id>/agent.yml.bak-... --apply --json
+```
+
+The first command is a dry-run and must report `applied: false`. The second command validates the backup, backs up the current Pi config, and restores the original file atomically.
+
+If the original backup is unavailable, either remove the per-agent runtime override manually or explicitly set:
 
 ```yaml
 runtime:
@@ -150,7 +160,7 @@ pnpm runtime:pi-canary-agent -- --agents-dir /path/to/agents --agent <agent-id> 
 pnpm runtime:pi-canary-agent -- --agents-dir /path/to/agents --agent <agent-id> --rollback --apply --json
 ```
 
-The dry-run should show `desiredProvider: "claude-agent-sdk"` before the applied command is used.
+The fallback dry-run should show `desiredProvider: "claude-agent-sdk"` before the applied command is used. Prefer exact backup restore when possible because it returns comment/order/runtime fields to their original state.
 
 Then verify:
 
