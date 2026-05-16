@@ -25,7 +25,7 @@ The first canary agent must satisfy all of these:
 - limited tool surface;
 - no irreversible external side effects;
 - active human owner available for rollback;
-- current Claude Agent SDK baseline verified before switching to Pi.
+- current Claude Agent SDK baseline verified before switching to Pi, or an explicit written baseline waiver with owner, reason, and scope.
 
 Do not use a public, sales, billing, notification, deployment, or Buildroom-heavy agent for the first canary window.
 
@@ -91,7 +91,7 @@ Run these prompts through the real channel or Web UI used by the target agent. R
 
 | Step | Prompt or Action | Expected Evidence |
 | --- | --- | --- |
-| Baseline | Send a simple text-only prompt before enabling Pi. | Claude baseline response, session key, run id. |
+| Baseline | Send a simple text-only prompt before enabling Pi, or link the written Claude baseline waiver. | Claude baseline response/session key/run id, or waiver owner/reason/scope. |
 | Text | Send a simple text-only prompt after enabling Pi. | Pi run succeeds, final response delivered, runtime visible. |
 | Session | Send a follow-up that depends on the prior turn. | Same AnthroClaw session continues; provider session mapping is visible. |
 | Read | Ask the agent to read a harmless workspace file. | Read is policy-allowed and visible in tool/runtime evidence. |
@@ -187,6 +187,8 @@ Window end:
 Total Pi turns:
 Failed Pi turns:
 Rollback verified: yes/no
+Claude baseline: passed/waived
+Claude baseline waiver owner/reason/scope:
 
 Artifacts:
 - Runtime v1 canary JSON:
