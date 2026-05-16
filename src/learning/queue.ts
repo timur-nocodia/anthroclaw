@@ -54,6 +54,11 @@ export interface LearningQueueOptions {
   now?: () => number;
 }
 
+export interface LearningQueueStopOptions {
+  drainActive?: boolean;
+  timeoutMs?: number;
+}
+
 export type LearningQueueEnqueueResult =
   | { status: 'started'; job: LearningReviewJob }
   | { status: 'coalesced'; job: LearningReviewJob };
@@ -64,6 +69,8 @@ export class LearningQueue {
   private readonly now: () => number;
   private readonly active = new Map<string, LearningReviewJob>();
   private readonly pending = new Map<string, LearningReviewJob>();
+  private readonly activePromises = new Set<Promise<void>>();
+  private stopped = false;
 
   constructor(options: LearningQueueOptions) {
     this.runner = options.runner;
@@ -93,16 +100,23 @@ export class LearningQueue {
     return [...this.pending.values()].map(cloneJob);
   }
 
-  stop(): void {
+  async stop(options: LearningQueueStopOptions = {}): Promise<void> {
+    this.stopped = true;
     this.pending.clear();
+    if (options.drainActive && this.activePromises.size > 0) {
+      await waitForPromises(this.activePromises, options.timeoutMs);
+    }
     this.active.clear();
+    this.stopped = false;
   }
 
   private start(key: string, job: LearningReviewJob): void {
+    if (this.stopped) return;
     this.pending.delete(key);
     this.active.set(key, job);
     metrics.increment('learning_reviews_started');
-    void Promise.resolve()
+    let runPromise!: Promise<void>;
+    runPromise = Promise.resolve()
       .then(() => this.runner(cloneJob(job)))
       .catch((err) => {
         metrics.increment('learning_reviews_failed');
@@ -116,13 +130,30 @@ export class LearningQueue {
         }, 'Learning review failed');
       })
       .finally(() => {
+        this.activePromises.delete(runPromise);
         this.active.delete(key);
+        if (this.stopped) return;
         const next = this.pending.get(key);
         if (next) {
           this.start(key, next);
         }
       });
+    this.activePromises.add(runPromise);
   }
+}
+
+async function waitForPromises(promises: Set<Promise<void>>, timeoutMs?: number): Promise<void> {
+  const waitAll = Promise.allSettled([...promises]).then(() => undefined);
+  if (!timeoutMs || timeoutMs <= 0) {
+    await waitAll;
+    return;
+  }
+  await Promise.race([
+    waitAll,
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, timeoutMs);
+    }),
+  ]);
 }
 
 export function detectLearningTriggers(input: LearningTriggerInput): LearningTriggerType[] {

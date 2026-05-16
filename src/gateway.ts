@@ -1980,8 +1980,10 @@ export class Gateway {
     }
     this.profileRateLimiters.clear();
     this.queueManager.stop();
-    this.learningQueue?.stop();
-    this.learningQueue = null;
+    if (this.learningQueue) {
+      await this.learningQueue.stop({ drainActive: true, timeoutMs: 30_000 });
+      this.learningQueue = null;
+    }
     this.learningStore?.close();
     this.learningStore = null;
     this.decisionStore?.close();
@@ -2349,6 +2351,10 @@ export class Gateway {
 
   private async prewarmAgent(agent: Agent): Promise<void> {
     if (!this.sdkReady) return;
+    if (this.shouldUsePiGatewayRuntime(agent)) {
+      this.warmQueries.discard(agent.id);
+      return;
+    }
     // History: commit 9e650cf ("fix(cron): bypass warm queries for
     // scheduled task tools") force-discarded warm pools for any agent
     // with manage_cron. The intent was to avoid stale session context
