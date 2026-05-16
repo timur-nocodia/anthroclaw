@@ -67,6 +67,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates tini curl \
     bubblewrap socat \
     python3 python3-pip python3-venv \
+    unzip p7zip-full \
     && rm -rf /var/lib/apt/lists/*
 
 # Common Python deps used by agent helper scripts (Google APIs, HTTP, sheets).
