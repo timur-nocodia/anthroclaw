@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   RUNTIME_CONTRACT_MATRIX,
   RUNTIME_CONTRACT_SCENARIOS,
+  DEFAULT_RUNTIME_BLOCKING_FEATURE_CONTRACTS,
   RUNTIME_FEATURE_CONTRACTS,
+  RUNTIME_CANARY_SCENARIOS,
+  listRuntimeCanaryScenarios,
   listRuntimeFeatureContracts,
   listRuntimeContractMatrix,
   runtimeContractBlockingGaps,
@@ -102,6 +105,32 @@ describe('runtime contract matrix', () => {
   it('covers every v1 feature contract domain', () => {
     for (const domain of featureDomains) {
       expect(listRuntimeFeatureContracts(domain).length, domain).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps runtime canary scenarios tied to known feature contracts', () => {
+    const featureIds = new Set(RUNTIME_FEATURE_CONTRACTS.map((contract) => contract.id));
+    const canaryIds = RUNTIME_CANARY_SCENARIOS.map((scenario) => scenario.id);
+
+    expect(new Set(canaryIds).size).toBe(canaryIds.length);
+    expect(RUNTIME_CANARY_SCENARIOS.length).toBeGreaterThanOrEqual(8);
+    for (const scenario of RUNTIME_CANARY_SCENARIOS) {
+      expect(scenario.coversFeatureContracts.length, scenario.id).toBeGreaterThan(0);
+      expect(scenario.steps.length, scenario.id).toBeGreaterThan(0);
+      for (const featureId of scenario.coversFeatureContracts) {
+        expect(featureIds.has(featureId), `${scenario.id}: ${featureId}`).toBe(true);
+      }
+    }
+  });
+
+  it('covers every default-runtime blocking feature contract with a canary scenario', () => {
+    const covered = new Set(
+      listRuntimeCanaryScenarios()
+        .flatMap((scenario) => scenario.coversFeatureContracts),
+    );
+
+    for (const featureId of DEFAULT_RUNTIME_BLOCKING_FEATURE_CONTRACTS) {
+      expect(covered.has(featureId), featureId).toBe(true);
     }
   });
 });

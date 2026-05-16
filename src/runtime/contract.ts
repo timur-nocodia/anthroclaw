@@ -66,6 +66,23 @@ export interface RuntimeFeatureContract {
   runtimeImpact: string;
 }
 
+export type RuntimeCanaryScenarioKind =
+  | 'smoke'
+  | 'scripted_canary'
+  | 'manual_operator_check';
+
+export interface RuntimeCanaryScenario {
+  id: string;
+  kind: RuntimeCanaryScenarioKind;
+  title: string;
+  objective: string;
+  coversFeatureContracts: string[];
+  evidenceCommand?: string;
+  evidenceArtifact?: string;
+  steps: string[];
+  blockingForDefaultRuntime: boolean;
+}
+
 export const RUNTIME_CONTRACT_SCENARIOS: RuntimeContractScenario[] = [
   {
     id: 'headless_text_response',
@@ -502,6 +519,278 @@ export const RUNTIME_FEATURE_CONTRACTS: RuntimeFeatureContract[] = [
   ),
 ];
 
+export const DEFAULT_RUNTIME_BLOCKING_FEATURE_CONTRACTS = [
+  'runtime.headless-text',
+  'runtime.event-normalization',
+  'runtime.run-handle',
+  'runtime.model-auth-storage',
+  'gateway.runtime-selection',
+  'gateway.dispatch-streaming',
+  'gateway.active-control',
+  'gateway.shutdown-cleanup',
+  'routing.session-key',
+  'routing.channels',
+  'routing.cron-heartbeat',
+  'tools.builtin-tool-policy',
+  'tools.dynamic-dispatch-tools',
+  'tools.external-mcp-proxy',
+  'tools.file-ownership',
+  'tools.decisions-approvals',
+  'sessions.provider-store',
+  'sessions.context-assembly',
+  'sessions.budget-recall-title',
+  'memory.search-write-review',
+  'learning.review-actions',
+  'learning.lcm-honcho',
+  'plugins.registry-lifecycle',
+  'plugins.subagent-runner',
+  'plugins.operator-console',
+  'plugins.file-transfer',
+  'dashboard.agent-admin',
+  'dashboard.mcp-onboarding',
+  'dashboard.fleet-settings',
+  'dashboard.channels-ops',
+  'observability.metrics-runs',
+  'observability.hooks-webhooks',
+  'buildroom.workflow',
+  'buildroom.agent-tools',
+  'config.schema-auth',
+  'ops.smoke-ci',
+] as const;
+
+export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
+  canary(
+    'pi.auth-model-preflight',
+    'smoke',
+    'Pi auth and model registry preflight',
+    'Prove the optional Pi package imports, the target model resolves, provider auth is configured through redacted storage, and staging paths work.',
+    ['runtime.model-auth-storage', 'config.schema-auth', 'ops.smoke-ci'],
+    [
+      'Run the auth smoke with the same model and storage paths intended for staging.',
+      'Verify the result is passed, not skipped.',
+      'Verify stdout/stderr and artifacts do not contain provider credential values.',
+    ],
+    {
+      evidenceCommand: 'pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6',
+      evidenceArtifact: 'pi-auth-smoke JSON result',
+    },
+  ),
+  canary(
+    'pi.workspace-tools-rewind',
+    'smoke',
+    'Pi workspace edit, approval, and rewind smoke',
+    'Prove Pi can mutate an explicit workspace through AnthroClaw policy, produce a checkpoint candidate, dry-run rewind, and restore files.',
+    [
+      'runtime.run-handle',
+      'runtime.event-normalization',
+      'gateway.active-control',
+      'tools.builtin-tool-policy',
+      'tools.file-ownership',
+      'observability.metrics-runs',
+      'ops.smoke-ci',
+    ],
+    [
+      'Run the workspace smoke in a Pi-authenticated environment.',
+      'Verify edit/write policy is observed.',
+      'Verify dry-run rewind reports a reversible file change.',
+      'Verify restore returns the file to the before state.',
+    ],
+    {
+      evidenceCommand: 'pnpm smoke:pi-workspace -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000',
+      evidenceArtifact: 'pi-workspace-smoke JSON result',
+    },
+  ),
+  canary(
+    'pi.gateway-channel-approval',
+    'smoke',
+    'Pi Gateway channel dispatch and approval smoke',
+    'Prove Pi runs through Gateway dispatch with channel context, session mapping, approval routing, workspace mutation, metrics, and clean shutdown.',
+    [
+      'gateway.runtime-selection',
+      'gateway.dispatch-streaming',
+      'gateway.active-control',
+      'gateway.shutdown-cleanup',
+      'routing.session-key',
+      'routing.channels',
+      'tools.builtin-tool-policy',
+      'tools.dynamic-dispatch-tools',
+      'tools.decisions-approvals',
+      'sessions.provider-store',
+      'observability.metrics-runs',
+      'ops.smoke-ci',
+    ],
+    [
+      'Run the Gateway smoke with global or per-agent Pi runtime enabled.',
+      'Verify a channel-shaped inbound message dispatches through Gateway.',
+      'Verify the approval broker observes at least one request and sender-authenticated approval resolves it.',
+      'Verify the workspace file changed, a session id was recorded, and no shutdown cleanup error appears.',
+    ],
+    {
+      evidenceCommand: 'pnpm smoke:pi-gateway -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000',
+      evidenceArtifact: 'pi-gateway-smoke JSON result',
+    },
+  ),
+  canary(
+    'pi.aggregate-real-auth',
+    'smoke',
+    'Pi aggregate real-auth smoke gate',
+    'Prove auth, workspace, and Gateway runtime probes pass together and produce a single redacted decision artifact.',
+    [
+      'runtime.headless-text',
+      'runtime.event-normalization',
+      'runtime.run-handle',
+      'runtime.model-auth-storage',
+      'gateway.runtime-selection',
+      'gateway.dispatch-streaming',
+      'gateway.shutdown-cleanup',
+      'tools.builtin-tool-policy',
+      'tools.decisions-approvals',
+      'observability.metrics-runs',
+      'config.schema-auth',
+      'ops.smoke-ci',
+    ],
+    [
+      'Run aggregate smoke locally without allow-skip.',
+      'Run the manual GitHub Actions Pi smoke workflow with repository secrets.',
+      'Attach the workflow summary and normalized JSON artifact to the migration decision record.',
+    ],
+    {
+      evidenceCommand: 'pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000',
+      evidenceArtifact: 'Pi smoke workflow pi-smoke-result artifact',
+    },
+  ),
+  canary(
+    'pi.plugins-context-tools',
+    'scripted_canary',
+    'Plugin tools and context-engine canary',
+    'Prove Pi Gateway dispatch preserves plugin lifecycle, plugin MCP tools, plugin subagent runner, and context-engine assemble/compress semantics.',
+    [
+      'sessions.context-assembly',
+      'learning.lcm-honcho',
+      'plugins.registry-lifecycle',
+      'plugins.subagent-runner',
+      'plugins.operator-console',
+      'plugins.file-transfer',
+      'observability.hooks-webhooks',
+    ],
+    [
+      'Start a temporary Gateway with bundled plugins enabled for a Pi canary agent.',
+      'Exercise one read-only plugin MCP tool and one policy-sensitive plugin MCP tool.',
+      'Run a context-engine assemble/compress trigger with LCM enabled.',
+      'Run a plugin subagent prompt through the configured runtime with tools disabled.',
+      'Verify plugin hook payloads keep agentId/sessionKey and plugin shutdown is clean.',
+    ],
+    { evidenceArtifact: 'future pi-v1-canary plugin/context JSON section' },
+  ),
+  canary(
+    'pi.external-mcp-proxy',
+    'scripted_canary',
+    'External MCP onboarding and proxy canary',
+    'Prove MCP onboarding, credential resolution, external MCP proxy tools, and provider-visible custom-tool execution stay AnthroClaw-owned under Pi.',
+    [
+      'tools.external-mcp-proxy',
+      'dashboard.mcp-onboarding',
+      'tools.dynamic-dispatch-tools',
+      'config.schema-auth',
+      'observability.hooks-webhooks',
+    ],
+    [
+      'Start a fake MCP server with API-key or OAuth-style auth in a temporary environment.',
+      'Run probe/connect/finalize through AnthroClaw onboarding APIs.',
+      'Dispatch a Pi canary turn that calls the proxied MCP tool.',
+      'Verify headers are resolved from the credential store and redacted from logs/artifacts.',
+      'Verify denial behavior remains model-visible when policy blocks the proxied tool.',
+    ],
+    { evidenceArtifact: 'future pi-v1-canary external-mcp JSON section' },
+  ),
+  canary(
+    'pi.sessions-memory-learning',
+    'scripted_canary',
+    'Sessions, memory, learning, and recall canary',
+    'Prove Pi-backed runs preserve session transcript visibility, recall/title/budget behavior, memory influence, learning reviews, redacted artifacts, and operator decisions.',
+    [
+      'sessions.provider-store',
+      'sessions.budget-recall-title',
+      'memory.search-write-review',
+      'learning.review-actions',
+      'observability.metrics-runs',
+      'observability.hooks-webhooks',
+    ],
+    [
+      'Run two Pi turns in the same product session and verify continuation.',
+      'List session details, labels, title, export, and transcript-derived search evidence.',
+      'Write/search/review memory and record memory influence.',
+      'Trigger a learning review and verify actions/artifacts are visible and redacted.',
+      'Verify learning queue drains before Gateway shutdown.',
+    ],
+    { evidenceArtifact: 'future pi-v1-canary sessions/memory/learning JSON section' },
+  ),
+  canary(
+    'pi.dashboard-operator',
+    'manual_operator_check',
+    'Dashboard and operator API canary',
+    'Prove operator-facing APIs and dashboard panels show the effective runtime, sessions, runs, interrupts, learning, plugins, MCP, channels, metrics, and diagnostics after Pi runs.',
+    [
+      'dashboard.agent-admin',
+      'dashboard.mcp-onboarding',
+      'dashboard.fleet-settings',
+      'dashboard.channels-ops',
+      'observability.metrics-runs',
+      'config.schema-auth',
+    ],
+    [
+      'Open the dashboard against a Pi canary Gateway.',
+      'Verify agent config shows effective runtime and redacted Pi storage paths.',
+      'Verify sessions/runs/interrupts/learning/memory/plugin panels reflect the Pi run.',
+      'Verify MCP onboarding/status and channel route-test surfaces still work.',
+      'Export diagnostics and confirm runtime status appears without secrets.',
+    ],
+    { evidenceArtifact: 'manual canary checklist with screenshots or diagnostics export' },
+  ),
+  canary(
+    'pi.scheduled-buildroom',
+    'scripted_canary',
+    'Scheduled work and Buildroom canary',
+    'Prove scheduled agent work, Buildroom workflow state, Buildroom tools, artifacts, path policy, and notifications remain compatible with Pi runtime rollout.',
+    [
+      'routing.cron-heartbeat',
+      'buildroom.workflow',
+      'buildroom.agent-tools',
+      'tools.dynamic-dispatch-tools',
+      'observability.metrics-runs',
+    ],
+    [
+      'Run a temporary manage_cron job against a Pi canary agent.',
+      'Run a heartbeat-style scheduled prompt and verify session continuity.',
+      'Run Buildroom init/status/pause/resume/kill-switch API checks.',
+      'Exercise Buildroom handoff/session-summary tools with source session binding.',
+      'Verify artifacts, locks, path policy, and notifications remain inspectable.',
+    ],
+    { evidenceArtifact: 'future pi-v1-canary scheduled/buildroom JSON section' },
+  ),
+  canary(
+    'pi.rollback-mixed-runtime',
+    'scripted_canary',
+    'Per-agent rollback and mixed-runtime canary',
+    'Prove global/per-agent runtime selection supports Pi canary, Claude fallback opt-out, bad-auth behavior, and rollback without corrupting session state.',
+    [
+      'gateway.runtime-selection',
+      'runtime.model-auth-storage',
+      'config.schema-auth',
+      'sessions.provider-store',
+      'dashboard.agent-admin',
+      'ops.smoke-ci',
+    ],
+    [
+      'Run one agent with per-agent Pi while global default remains Claude.',
+      'Run a second agent explicitly pinned to Claude while global Pi config is present.',
+      'Verify bad Pi auth on an explicitly Pi-enabled agent fails loudly instead of silently falling back.',
+      'Roll the Pi canary agent back to Claude and verify the same product session remains inspectable.',
+    ],
+    { evidenceArtifact: 'future pi-v1-canary rollback JSON section' },
+  ),
+];
+
 export const RUNTIME_CONTRACT_MATRIX: RuntimeContractCandidateStatus[] = [
   claude('headless_text_response', 'pass', 'Existing Claude Agent SDK headless adapter is the production baseline.'),
   claude('session_continuation', 'pass', 'Existing session plumbing is preserved behind HeadlessRunInput.sessionId.'),
@@ -549,6 +838,14 @@ export function listRuntimeFeatureContracts(domain?: RuntimeFeatureContractDomai
       sourceFiles: [...entry.sourceFiles],
       evidence: [...entry.evidence],
     }));
+}
+
+export function listRuntimeCanaryScenarios(): RuntimeCanaryScenario[] {
+  return RUNTIME_CANARY_SCENARIOS.map((entry) => ({
+    ...entry,
+    coversFeatureContracts: [...entry.coversFeatureContracts],
+    steps: [...entry.steps],
+  }));
 }
 
 export function listRuntimeContractMatrix(candidate?: RuntimeContractCandidateId): RuntimeContractCandidateStatus[] {
@@ -629,6 +926,27 @@ function feature(
   runtimeImpact: string,
 ): RuntimeFeatureContract {
   return { id, domain, surface, sourceFiles, requirement, acceptance, evidence, runtimeImpact };
+}
+
+function canary(
+  id: string,
+  kind: RuntimeCanaryScenarioKind,
+  title: string,
+  objective: string,
+  coversFeatureContracts: string[],
+  steps: string[],
+  evidence?: Pick<RuntimeCanaryScenario, 'evidenceCommand' | 'evidenceArtifact'>,
+): RuntimeCanaryScenario {
+  return {
+    id,
+    kind,
+    title,
+    objective,
+    coversFeatureContracts,
+    steps,
+    blockingForDefaultRuntime: true,
+    ...evidence,
+  };
 }
 
 function statusWeight(status: RuntimeContractStatus): number {
