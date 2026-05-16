@@ -6,7 +6,7 @@ This is the human-readable phase checklist for replacing the Claude Agent SDK-ce
 
 ## Current Snapshot
 
-Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. PR #110 merged the default-runtime flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`. Post-merge local verification and durable decision run `25971022679` are green. The live runtime checkout was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e`; post-pull `pi-auth`, `pi-all`, safe Web UI, first monitoring slice, and extended 60-minute monitoring snapshot are green. Ring 1 live channel turn returned exactly `PI_LIVE_CHANNEL_OK`; the immediate post-turn monitor and follow-up manual monitor are green. Ring 1 is closed by operator acceptance, with later monitor alerts treated as escalation triggers. Ring 2 is closed after green scope/preflight, Web UI plus allowlisted Telegram DM usage window, and post-window monitor.
+Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. PR #110 merged the default-runtime flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`. Post-merge local verification and durable decision run `25971022679` are green. The live runtime checkout was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e`; post-pull `pi-auth`, `pi-all`, safe Web UI, first monitoring slice, and extended 60-minute monitoring snapshot are green. Ring 1 live channel turn returned exactly `PI_LIVE_CHANNEL_OK`; the immediate post-turn monitor and follow-up manual monitor are green. Ring 1 is closed by operator acceptance, with later monitor alerts treated as escalation triggers. Ring 2 is closed after green scope/preflight, Web UI plus allowlisted Telegram DM usage window, and post-window monitor. Ring 3.1 learning review is closed after propose-only action inspection, a rejected `none` action transition, no apply, and green monitor.
 
 Approximate progress to a default-runtime decision: 100%.
 
@@ -59,11 +59,14 @@ What is done:
 - Ring 2 low-risk usage window passed on 2026-05-17: Web UI returned exactly `PI_RING2_WEB_OK` with session id present, `16` total tokens, and zero tool calls; Telegram DM returned exactly `PI_RING2_TELEGRAM_OK` to allowlisted operator peer `48705953` with one sent message and message id present.
 - Ring 2 post-window monitor passed with six succeeded runs, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, zero auth/model alerts, no alerts, and no warnings.
 - Ring 2 is closed. Ring 3 should target one expanded product surface at a time.
+- Ring 3.1 learning review scope is defined and executed: `example` learning review in propose-only mode, operator list/transition only, no approve/apply, no memory/skill writes, no plugin/MCP/Buildroom/cron expansion.
+- Ring 3.1 learning review evidence passed on 2026-05-17: `example` had two completed reviews and two proposed `none` actions; one `none` action was rejected with reason `ring3-learning-review-closed-no-action`; target action became `rejected`, reason was present, `applied_at` stayed null, and action counts became one proposed `none` plus one rejected `none`.
+- Ring 3.1 post-check monitor passed with six succeeded runs, zero failed/interrupted/stale runs, zero auth/model alerts, no alerts, and no warnings.
 
 What is not done:
 
 - A true Claude baseline turn has not been sent in the live channel; this remains a written waiver for the first Pi-only window, not an unresolved startup blocker.
-- Ring 3 expanded product-surface canary has not started.
+- Remaining Ring 3 expanded product surfaces have not started: memory-heavy continuity, plugin tool context, external MCP onboarding, scheduled Buildroom, and broader plugin/MCP/cron combinations.
 
 ## Phase Checklist
 
@@ -76,7 +79,7 @@ What is not done:
 | 4. Cover deep product surfaces | Mostly done | Prove non-obvious product features survive runtime replacement. | Scripted canaries pass for sessions/memory/learning, plugins/context/tools, external MCP, scheduled Buildroom, and rollback. |
 | 5. Dashboard/operator evidence | Done enough for default flip PR | Prove the operator API contracts expose the same state under Pi-shaped runs. | `/api/gateway/status`, agents, sessions, runs, learning, plugins, MCP, channels, and diagnostics are covered by scripted canary and limited production evidence; browser UX evidence is optional. |
 | 6. Rollout decision package | Done | Produce the final go/no-go artifact. | Local and durable GitHub Actions decision packages emit `READY` with production canary passed and PR stack merged. |
-| 7. Default-runtime rollout | In progress | Flip runtime default safely. | Default flip is merged into `main`; post-merge local, durable, live pull, safe Web UI, extended monitoring, Ring 1, and Ring 2 are green; Ring 3+ expansion remains. |
+| 7. Default-runtime rollout | In progress | Flip runtime default safely. | Default flip is merged into `main`; post-merge local, durable, live pull, safe Web UI, extended monitoring, Ring 1, Ring 2, and Ring 3.1 learning review are green; remaining Ring 3+ expansion remains. |
 
 ## Canary Scenario Checklist
 
@@ -99,14 +102,14 @@ No Runtime v1 decision blockers remain. The remaining work is rollout execution,
 
 ## Next Five Tasks
 
-1. Choose the first Ring 3 expanded product surface: learning review, memory-heavy session continuity, plugin tool context, external MCP onboarding, or scheduled Buildroom.
-2. Define Ring 3 scope narrowly with explicit excluded surfaces and rollback owner.
-3. Run pre-Ring-3 `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`.
-4. Execute one targeted Ring 3 scenario and record redacted evidence.
+1. Choose the next Ring 3 surface: memory-heavy session continuity, plugin tool context, external MCP onboarding, or scheduled Buildroom.
+2. Define that Ring 3 scope narrowly with explicit excluded surfaces and rollback owner.
+3. Run pre-surface `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`.
+4. Execute one targeted scenario and record redacted evidence.
 5. Keep the config-only rollback path ready by setting `runtime.headless.provider=claude-agent-sdk` if any stop condition appears.
 
 ## Default Runtime Gate
 
 The evidence gate for making Pi the tracked global default is satisfied and the flip is merged. Durable run `25970623984` established the pre-flip `READY` decision, PR #110 carried rollout/rollback instructions, and durable run `25971022679` revalidated the decision package after the default flip landed on `main`.
 
-Ring 1 is closed by operator acceptance after green live-channel and monitor evidence. Ring 2 is closed after the low-risk normal-operation window and post-window monitor. Default Pi is no longer evidence-blocked; the next gate is Ring 3 expanded product-surface evidence.
+Ring 1 is closed by operator acceptance after green live-channel and monitor evidence. Ring 2 is closed after the low-risk normal-operation window and post-window monitor. Ring 3.1 learning review is closed after propose-only review evidence. Default Pi is no longer evidence-blocked; the next gate is another targeted Ring 3 expanded product surface.
