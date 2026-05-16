@@ -721,8 +721,9 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
       'Optionally run two Pi Gateway turns in the same product session and verify continuation.',
       'List session details, title, route decisions, runs, and transcript-derived search evidence.',
       'Write/search/review memory and record memory influence in opt-in Gateway mode.',
-      'Trigger a learning review and verify actions are visible.',
-      'Verify learning queue drains before Gateway shutdown.',
+      'Trigger a learning review and verify actions and artifact rows are visible.',
+      'Verify artifact file/snippet exports redact secret-like content.',
+      'Verify learning queue drains active work and drops pending writes before Gateway shutdown.',
     ],
     {
       evidenceCommand: 'pnpm smoke:pi-sessions-memory -- --json',

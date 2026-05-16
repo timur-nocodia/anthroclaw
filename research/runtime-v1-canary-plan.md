@@ -154,6 +154,8 @@ Proves:
 - memory search/write/review remains AnthroClaw-owned;
 - learning review parsing/persistence produces memory candidate actions;
 - applied learning memory preserves run/session provenance;
+- learning artifacts are exported, persisted, and redacted;
+- learning queue shutdown drains active work and drops pending writes;
 - opt-in Gateway mode preserves Pi session continuity and memory influence evidence across two dispatches.
 
 Required checks:
@@ -164,12 +166,13 @@ Required checks:
 - current: title normalization through injected query function;
 - current: learning review/action persistence;
 - current: high-confidence private memory candidate apply and memory search;
+- current: learning artifact file/snippet/manifest export with secret redaction;
+- current: learning artifact rows retain review/run/session linkage;
+- current: learning queue `stop({ drainActive: true })` drains active work and clears pending work;
 - current opt-in: real Pi two-turn continuation through Gateway session mapping;
 - current opt-in: `listAgentSessions`, `getAgentSessionDetails`, `listAgentRuns`, `listRouteDecisions`;
 - current opt-in: prefetch memory influence event for the continued session;
 - remaining: session label/export UI parity;
-- remaining: learning artifact redaction;
-- remaining: no post-shutdown learning store write.
 
 ### 7. `pi.external-mcp-proxy`
 

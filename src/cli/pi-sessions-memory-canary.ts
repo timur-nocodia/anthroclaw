@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChannelAdapter, InboundMessage, SendOptions, OutboundMedia } from '../channels/types.js';
@@ -12,6 +13,8 @@ import { MemoryStore } from '../memory/store.js';
 import { LearningStore } from '../learning/store.js';
 import { parseLearningReviewOutput, persistLearningReviewResult } from '../learning/reviewer.js';
 import { applyMemoryCandidateAction } from '../learning/memory-applier.js';
+import { exportLearningArtifacts } from '../learning/artifacts.js';
+import { LearningQueue } from '../learning/queue.js';
 import { logger } from '../logger.js';
 import { DEFAULT_PI_MODEL_ID } from '../runtime/pi-headless.js';
 
@@ -206,6 +209,22 @@ export async function runPiSessionsMemoryCanaryCli(
 
     const completedReview = learningStore.getReview(review.id);
     assert(completedReview?.status === 'completed', 'learning review was not completed');
+    const artifactAssertions = await runLearningArtifactCanary({
+      workspacePath,
+      dataDir: join(workspacePath, 'learning-data'),
+      store: learningStore,
+      reviewId: review.id,
+      agentId,
+      runId,
+      sessionKey,
+      sdkSessionId: sessionId,
+    });
+    const queueAssertions = await runLearningQueueDrainCanary({
+      agentId,
+      sessionKey,
+      runId,
+      sdkSessionId: sessionId,
+    });
     const gatewayWorkspacePath = workspacePath;
     assert(gatewayWorkspacePath, 'canary workspace was not initialized');
     const gatewayAssertions = args.gateway
@@ -231,6 +250,8 @@ export async function runPiSessionsMemoryCanaryCli(
         memoryEntryPath: applied.entry.path,
         memoryHits: memoryHits.length,
         reviewStatus: completedReview.status,
+        artifacts: artifactAssertions,
+        learningQueue: queueAssertions,
         ...(gatewayAssertions ? { gateway: gatewayAssertions } : {}),
       },
     };
@@ -413,6 +434,179 @@ async function runGatewaySessionCanary(input: {
   }
 }
 
+async function runLearningArtifactCanary(input: {
+  workspacePath: string;
+  dataDir: string;
+  store: LearningStore;
+  reviewId: string;
+  agentId: string;
+  runId: string;
+  sessionKey: string;
+  sdkSessionId: string;
+}): Promise<Record<string, unknown>> {
+  await mkdir(join(input.workspacePath, 'src'), { recursive: true });
+  await writeFile(
+    join(input.workspacePath, 'src', 'learning-note.md'),
+    [
+      '# Runtime migration note',
+      '',
+      'The Pi sessions/memory canary must preserve learning artifacts.',
+      'token=abcdefghijklmnopqrstuvwxyz1234567890 should be redacted from exported evidence.',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const exported = exportLearningArtifacts({
+    dataDir: input.dataDir,
+    workspacePath: input.workspacePath,
+    agentId: input.agentId,
+    runId: input.runId,
+    createdAt: Date.parse('2026-05-16T00:00:04.000Z'),
+    files: [{
+      path: 'src/learning-note.md',
+      reason: 'canary learning artifact file',
+    }],
+    snippets: [{
+      id: 'session-transcript',
+      title: 'Canary transcript',
+      text: [
+        'User asked to preserve Pi session recall.',
+        'secret=abcdefghijklmnopqrstuvwxyz1234567890 should be redacted from snippet evidence.',
+      ].join('\n'),
+      reason: 'canary transcript snippet',
+    }],
+  });
+
+  assert(exported.manifest.files.length === 1, 'learning artifact file was not exported');
+  assert(exported.manifest.snippets.length === 1, 'learning artifact snippet was not exported');
+
+  const exportedFile = await readFile(join(exported.outputDir, 'files', 'src', 'learning-note.md'), 'utf8');
+  const exportedSnippet = await readFile(join(exported.outputDir, 'snippets', 'session-transcript.txt'), 'utf8');
+  assert(!exportedFile.includes('abcdefghijklmnopqrstuvwxyz1234567890'), 'learning artifact file leaked a token value');
+  assert(!exportedSnippet.includes('abcdefghijklmnopqrstuvwxyz1234567890'), 'learning artifact snippet leaked a secret value');
+  assert(exportedFile.includes('****') && exportedSnippet.includes('****'), 'learning artifacts were not redacted');
+
+  const manifestBody = await readFile(exported.manifestPath, 'utf8');
+  input.store.addArtifact({
+    id: 'pi-canary-artifact-manifest',
+    reviewId: input.reviewId,
+    agentId: input.agentId,
+    runId: input.runId,
+    kind: 'manifest',
+    path: dataRelativePath(input.dataDir, exported.manifestPath),
+    contentHash: sha256(manifestBody),
+    sizeBytes: Buffer.byteLength(manifestBody),
+    reason: 'pi sessions/memory canary manifest',
+    metadata: {
+      runtime: 'pi',
+      scenario: SCENARIO_ID,
+      sessionKey: input.sessionKey,
+      sdkSessionId: input.sdkSessionId,
+    },
+    createdAt: Date.parse('2026-05-16T00:00:04.000Z'),
+  });
+  const file = exported.manifest.files[0]!;
+  input.store.addArtifact({
+    id: 'pi-canary-artifact-file',
+    reviewId: input.reviewId,
+    agentId: input.agentId,
+    runId: input.runId,
+    kind: 'file',
+    path: file.artifactPath,
+    contentHash: file.contentHash,
+    sizeBytes: file.sizeBytes,
+    reason: file.reason,
+    metadata: {
+      sourcePath: file.sourcePath,
+      sessionKey: input.sessionKey,
+      sdkSessionId: input.sdkSessionId,
+    },
+    createdAt: Date.parse('2026-05-16T00:00:04.000Z'),
+  });
+  const snippet = exported.manifest.snippets[0]!;
+  input.store.addArtifact({
+    id: 'pi-canary-artifact-snippet',
+    reviewId: input.reviewId,
+    agentId: input.agentId,
+    runId: input.runId,
+    kind: 'snippet',
+    path: snippet.artifactPath,
+    contentHash: snippet.contentHash,
+    sizeBytes: snippet.sizeBytes,
+    reason: snippet.reason,
+    metadata: {
+      title: snippet.title,
+      sessionKey: input.sessionKey,
+      sdkSessionId: input.sdkSessionId,
+    },
+    createdAt: Date.parse('2026-05-16T00:00:04.000Z'),
+  });
+
+  const rows = input.store.listArtifacts({ reviewId: input.reviewId });
+  assert(rows.length === 3, 'learning artifact rows were not persisted');
+  assert(rows.every((row) => row.runId === input.runId), 'learning artifact rows lost run linkage');
+  assert(rows.some((row) => row.metadata.sdkSessionId === input.sdkSessionId), 'learning artifact rows lost session metadata');
+
+  return {
+    manifestFiles: exported.manifest.files.length,
+    manifestSnippets: exported.manifest.snippets.length,
+    rows: rows.length,
+    redacted: true,
+  };
+}
+
+async function runLearningQueueDrainCanary(input: {
+  agentId: string;
+  sessionKey: string;
+  runId: string;
+  sdkSessionId: string;
+}): Promise<Record<string, unknown>> {
+  const writes: string[] = [];
+  let release!: () => void;
+  const blocker = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queue = new LearningQueue({
+    runner: async (job) => {
+      await blocker;
+      writes.push(job.id);
+    },
+  });
+
+  queue.enqueueAfterResponse({
+    agentId: input.agentId,
+    sessionKey: input.sessionKey,
+    runId: input.runId,
+    sdkSessionId: input.sdkSessionId,
+    trigger: 'user_correction',
+  });
+  queue.enqueueAfterResponse({
+    agentId: input.agentId,
+    sessionKey: input.sessionKey,
+    runId: `${input.runId}-pending`,
+    sdkSessionId: input.sdkSessionId,
+    trigger: 'skill_or_memory_activity',
+  });
+
+  await waitUntil(() => queue.listActive().length === 1 && queue.listPending().length === 1);
+  const stopped = queue.stop({ drainActive: true, timeoutMs: 5_000 });
+  await Promise.resolve();
+  assert(writes.length === 0, 'learning queue wrote before the active job was released');
+  release();
+  await stopped;
+
+  const drainedActiveJobs: number = writes.length;
+  assert(drainedActiveJobs === 1, 'learning queue did not drain exactly one active job');
+  assert(queue.listActive().length === 0, 'learning queue still has active jobs after stop');
+  assert(queue.listPending().length === 0, 'learning queue did not clear pending jobs on stop');
+  return {
+    drainedActiveJobs,
+    pendingAfterStop: queue.listPending().length,
+    activeAfterStop: queue.listActive().length,
+    droppedPendingWrites: 1,
+  };
+}
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
@@ -526,6 +720,27 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
 
 async function waitForSettledPrefetch(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 25));
+}
+
+async function waitUntil(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error('Timed out waiting for learning queue canary state.');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+function dataRelativePath(dataDir: string, path: string): string {
+  const relative = path.startsWith(dataDir)
+    ? path.slice(dataDir.length).replace(/^[/\\]+/, '')
+    : path;
+  return relative.split(/[\\/]+/).join('/');
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 function isSkippableGatewayError(message: string): boolean {
