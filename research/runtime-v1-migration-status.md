@@ -25,6 +25,7 @@ What is done:
 - Guarded per-agent runtime switch CLI exists as `pnpm runtime:pi-canary-agent`; it dry-runs by default and requires `--apply` before writing a validated `agent.yml` backup/update.
 - The guarded switch CLI supports exact rollback with `--restore-backup <agent.yml.bak-...>` so the canary agent can return to its original config, not merely an explicit Claude provider override.
 - Latest **Pi Runtime v1 decision** workflow run `25969043105` on `main` after the exact rollback restore merge passed all ten scenarios and remains `BLOCKED` only by `production-canary-window=pending`.
+- Config-only rehearsal against local real `example` agent config completed on 2026-05-16 with no Gateway running: guarded enable wrote Pi override, exact backup restore returned `agent.yml` to its original hash `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`, and generated rehearsal backups were removed afterward.
 
 What is not done:
 
@@ -66,7 +67,7 @@ What is not done:
 
 ## Next Five Tasks
 
-1. Confirm an operator owner and execute `docs/pi-production-canary-runbook.md` for the preferred first canary candidate.
+1. Start the actual Gateway/channel environment and confirm an operator owner for the preferred first canary candidate.
 2. Attach the redacted production canary evidence to the migration record.
 3. Decide whether a browser screenshot pass is required as non-blocking operator UX evidence.
 4. Rerun **Pi Runtime v1 decision** on `main` with `production_canary=passed`, `pr_stack=merged`, and `fail_on_blocked=true`.
