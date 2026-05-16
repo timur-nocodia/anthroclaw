@@ -1022,6 +1022,100 @@ pairing:
     await gw.stop();
   });
 
+  it('dispatch Pi RuntimeEvent path blocks filesystem tools outside the agent workspace', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-path-policy-session-1',
+        text: 'Path policy checked',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-path-policy-session-1',
+      },
+    ], 'pi-path-policy-session-1');
+    const botDir = join(agentsDir, 'pi-path-policy-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+safety_profile: chat_like_openclaw
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    const decisions: unknown[] = [];
+    piRunHandleMock.mockImplementationOnce(async (runInput: Record<string, unknown>) => {
+      const policy = runInput.toolPolicy as {
+        mode: 'allow-list';
+        canUseTool: (toolCall: Record<string, unknown>, input: Record<string, unknown>) => Promise<unknown>;
+      };
+      decisions.push(await policy.canUseTool({
+        toolName: 'read',
+        originalToolName: 'read',
+        toolCallId: 'pi-tool-1',
+        input: { path: '/etc/hosts' },
+      }, runInput));
+      decisions.push(await policy.canUseTool({
+        toolName: 'write',
+        originalToolName: 'write',
+        toolCallId: 'pi-tool-2',
+        input: { file_path: '../outside.txt', content: 'x' },
+      }, runInput));
+      decisions.push(await policy.canUseTool({
+        toolName: 'read',
+        originalToolName: 'read',
+        toolCallId: 'pi-tool-3',
+        input: { path: 'README.md' },
+      }, runInput));
+      return handle;
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(decisions[0]).toMatchObject({
+      behavior: 'deny',
+      reason: expect.stringContaining('inside the agent workspace'),
+    });
+    expect(decisions[1]).toMatchObject({
+      behavior: 'deny',
+      reason: expect.stringContaining('inside the agent workspace'),
+    });
+    expect(decisions[2]).toMatchObject({ behavior: 'allow' });
+    expect(sent).toEqual(['Path policy checked']);
+    expect(handle.close).toHaveBeenCalledTimes(1);
+
+    await gw.stop();
+  });
+
   it('dispatch Pi RuntimeEvent path exposes AnthroClaw per-dispatch custom tools', async () => {
     startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
     piRuntimeState.useRunHandle = true;

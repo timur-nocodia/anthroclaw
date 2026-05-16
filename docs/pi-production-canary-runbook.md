@@ -170,6 +170,39 @@ Then verify:
 - active runs are empty or intentionally closed;
 - no Pi-specific failures continue after rollback.
 
+## Canary Attempt Log
+
+### 2026-05-16: Web UI/Gateway canary on `example`
+
+Status: **initially blocked; post-fix focused verification passed; rolled back**.
+
+Scope:
+- Global runtime stayed on `claude-agent-sdk`.
+- Only `example` was temporarily switched to Pi through `pnpm runtime:pi-canary-agent --enable-pi --apply`.
+- The canary used `Gateway.dispatchWebUI()` with `channel=web`; no Telegram or WhatsApp messages were sent.
+
+Evidence:
+- Text response succeeded under Pi.
+- Workspace read of `CLAUDE.md` succeeded.
+- Small workspace write succeeded and the canary file was removed.
+- Rollback restored `example/agent.yml` to SHA-256 `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`.
+- The real dev repo was clean after backup removal.
+
+Blockers found:
+- Pi Web UI session continuation did not preserve conversational context when the returned Pi session id was reused.
+- Pi Gateway filesystem policy allowed an absolute read outside the agent workspace through the `chat_like_openclaw` path.
+- Pi streamed duplicated partial text chunks in the observed response.
+
+Fix verification:
+- Pi now returns Pi's session-file reference as the resumable Web UI session id.
+- Follow-up using that returned session reference replied exactly `PI_CANARY_TEXT_OK`.
+- The outside-workspace read check replied exactly `DENY_OK`.
+- Pi partial text no longer duplicated the final response in the focused Web UI canary.
+- Rollback again restored `example/agent.yml` to SHA-256 `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`.
+
+Remaining rollout requirement:
+- This focused evidence is enough for the Web UI/Gateway blocker fix. A full production canary window still requires the full runbook gates and duration/turn-count criteria below.
+
 ## Evidence Template
 
 Copy this template into the migration tracker or PR comment after the canary window. Keep the values redacted and link only safe artifacts.

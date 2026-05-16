@@ -517,6 +517,24 @@ describe('PiHeadlessRuntime', () => {
     });
   });
 
+  it('prefers Pi sessionFile as the resumable session reference', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'started' },
+    ]);
+    session.sessionId = 'pi-session-id-1';
+    session.sessionFile = '/tmp/pi-session-file.jsonl';
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession: vi.fn(async () => ({ session })),
+    });
+
+    await expect(runtime.run({
+      prompt: 'start',
+    })).resolves.toEqual({
+      text: 'started',
+      sessionId: '/tmp/pi-session-file.jsonl',
+    });
+  });
+
   it('passes sessionId into the next Pi session for continuation probes', async () => {
     const sessions = [
       createSession([{ type: 'assistant_text_delta', delta: 'first' }]),
@@ -542,6 +560,41 @@ describe('PiHeadlessRuntime', () => {
     }));
     expect(createAgentSession).toHaveBeenNthCalledWith(2, expect.objectContaining({
       sessionId: 'pi-session-1',
+    }));
+  });
+
+  it('opens an absolute Pi session file through SessionManager for continuation', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'continued' },
+    ]);
+    const sessionManager = { kind: 'opened-session-manager' };
+    const open = vi.fn(() => sessionManager);
+    const createAgentSession = vi.fn(async () => ({ session }));
+    const runtime = new PiHeadlessRuntime({
+      importPiCodingAgent: vi.fn(async () => ({
+        createAgentSession,
+        SessionManager: { open },
+      })),
+    });
+
+    await expect(runtime.run({
+      prompt: 'continue',
+      cwd: '/workspace',
+      sessionId: '/tmp/pi-session-file.jsonl',
+    })).resolves.toEqual({
+      text: 'continued',
+      sessionId: undefined,
+    });
+
+    expect(open).toHaveBeenCalledWith('/tmp/pi-session-file.jsonl', undefined, '/workspace');
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      cwd: '/workspace',
+      sessionManager,
+      noTools: 'all',
+      tools: [],
+    }));
+    expect(createAgentSession).toHaveBeenCalledWith(expect.not.objectContaining({
+      sessionId: expect.anything(),
     }));
   });
 

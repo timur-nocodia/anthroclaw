@@ -59,6 +59,27 @@ describe('normalizePiRuntimeEvents', () => {
     }]);
   });
 
+  it('does not stream Pi text_end content as a duplicate partial delta', () => {
+    expect(normalizePiRuntimeEvents({
+      type: 'message_update',
+      assistantMessageEvent: {
+        type: 'text_end',
+        contentIndex: 0,
+        content: 'hello',
+      },
+      message: { role: 'assistant' },
+    }, context)).toEqual([{
+      type: 'raw',
+      runtime: 'pi',
+      runId: 'run-1',
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      timestamp: 123,
+      raw: expect.objectContaining({ type: 'message_update' }),
+      event: expect.objectContaining({ type: 'message_update' }),
+    }]);
+  });
+
   it('maps assistant message completion and Pi usage into runtime events', () => {
     expect(normalizePiRuntimeEvents({
       type: 'message_end',

@@ -11,6 +11,7 @@ import {
   type HeadlessToolDecision,
   type HeadlessToolPolicy,
 } from './headless.js';
+import { isAbsolute } from 'node:path';
 import { normalizePiRuntimeEvents } from './pi-events.js';
 import type { RuntimeEvent } from './events.js';
 import type {
@@ -31,6 +32,7 @@ export const DEFAULT_PI_MODEL_ID = 'anthropic/claude-sonnet-4-6';
 export interface PiAgentSessionLike {
   id?: string;
   sessionId?: string;
+  sessionFile?: string;
   prompt(text: string, options?: unknown): Promise<void>;
   subscribe(listener: (event: unknown) => void): () => void;
   abort?(): Promise<void>;
@@ -53,6 +55,9 @@ export interface PiCodingAgentSdkModule {
   };
   ModelRegistry?: {
     create: (authStorage: unknown, modelsPath?: string) => PiModelRegistryLike;
+  };
+  SessionManager?: {
+    open: (path: string, sessionDir?: string, cwdOverride?: string) => unknown;
   };
   DefaultResourceLoader?: new (options: Record<string, unknown>) => PiResourceLoaderLike;
   getAgentDir?: () => string;
@@ -263,7 +268,11 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
     };
     const sessionId = input.sessionId ?? configured.sessionId;
     if (typeof sessionId === 'string' && sessionId) {
-      options.sessionId = sessionId;
+      if (sdk.SessionManager?.open && configured.sessionManager === undefined && isAbsolute(sessionId)) {
+        options.sessionManager = sdk.SessionManager.open(sessionId, undefined, String(cwd));
+      } else {
+        options.sessionId = sessionId;
+      }
     }
 
     const modelId = input.model ?? input.runtimeDefaults?.model;
@@ -639,6 +648,9 @@ function extractPiError(event: unknown): Error | undefined {
 }
 
 function extractPiSessionId(result: PiCreateAgentSessionResult): string | undefined {
+  if (typeof result.session.sessionFile === 'string' && result.session.sessionFile) {
+    return result.session.sessionFile;
+  }
   if (typeof result.sessionId === 'string' && result.sessionId) return result.sessionId;
   if (typeof result.id === 'string' && result.id) return result.id;
   if (typeof result.session.sessionId === 'string' && result.session.sessionId) {

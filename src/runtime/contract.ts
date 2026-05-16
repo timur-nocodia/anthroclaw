@@ -818,7 +818,7 @@ export const RUNTIME_CONTRACT_MATRIX: RuntimeContractCandidateStatus[] = [
   claude('gateway_active_run_control', 'pass', 'Production Gateway path remains Claude-backed while the runtime boundary is introduced.'),
 
   pi('headless_text_response', 'pass', 'PiHeadlessRuntime.run() is covered by injected-session tests.'),
-  pi('session_continuation', 'pass', 'PiHeadlessRuntime forwards HeadlessRunInput.sessionId into createAgentSession().'),
+  pi('session_continuation', 'pass', 'PiHeadlessRuntime returns Pi sessionFile as the resumable reference and opens absolute session-file refs through SessionManager.'),
   pi('runtime_event_stream', 'pass', 'PiRuntimeRunHandle normalizes AgentSession.subscribe() events into RuntimeEvent.'),
   pi('interrupt_active_run', 'pass', 'PiRuntimeRunHandle.interrupt() calls AgentSession.abort().'),
   pi('timeout_abort', 'pass', 'Pi headless timeout path calls AgentSession.abort(), unsubscribes, and disposes.'),
