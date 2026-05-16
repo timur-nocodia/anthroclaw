@@ -6,6 +6,12 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-05-16
+
+### Changed
+- fix(ui): auto-boot gateway on Next.js server startup via instrumentation (#82) (89b3026)
+
+
 ## [1.1.3] - 2026-05-16
 
 ### Changed
