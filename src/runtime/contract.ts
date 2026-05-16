@@ -674,13 +674,16 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
       'observability.hooks-webhooks',
     ],
     [
-      'Start a temporary Gateway with bundled plugins enabled for a Pi canary agent.',
-      'Exercise one read-only plugin MCP tool and one policy-sensitive plugin MCP tool.',
-      'Run a context-engine assemble/compress trigger with LCM enabled.',
+      'Start a temporary Gateway with a runtime-neutral plugin enabled for a Pi canary agent.',
+      'Exercise one read-only plugin MCP tool and one policy-sensitive plugin MCP tool with agent/session context.',
+      'Run a context-engine assemble/compress trigger.',
       'Run a plugin subagent prompt through the configured runtime with tools disabled.',
       'Verify plugin hook payloads keep agentId/sessionKey and plugin shutdown is clean.',
     ],
-    { evidenceArtifact: 'future pi-v1-canary plugin/context JSON section' },
+    {
+      evidenceCommand: 'pnpm smoke:pi-plugins-context -- --json',
+      evidenceArtifact: 'pi-v1-canary plugin/context JSON section',
+    },
   ),
   canary(
     'pi.external-mcp-proxy',

@@ -6,6 +6,7 @@ import {
 import { DEFAULT_PI_MODEL_ID } from '../runtime/pi-headless.js';
 import { runPiAuthSmokeCli } from './pi-auth-smoke.js';
 import { runPiGatewaySmokeCli } from './pi-gateway-smoke.js';
+import { runPiPluginsContextCanaryCli } from './pi-plugins-context-canary.js';
 import { runPiSessionsMemoryCanaryCli } from './pi-sessions-memory-canary.js';
 import { runPiSmokeSuiteCli } from './pi-smoke-suite.js';
 import { runPiWorkspaceSmokeCli } from './pi-workspace-smoke.js';
@@ -34,6 +35,7 @@ interface PiV1CanaryDeps {
   runGatewayCli?: CanaryCliRunner;
   runAggregateCli?: CanaryCliRunner;
   runSessionsMemoryCli?: CanaryCliRunner;
+  runPluginsContextCli?: CanaryCliRunner;
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
   stderr?: Pick<NodeJS.WriteStream, 'write'>;
 }
@@ -80,6 +82,10 @@ const CANARY_RUNNERS: Record<string, {
   },
   'pi.sessions-memory-learning': {
     runner: (deps) => deps.runSessionsMemoryCli ?? runPiSessionsMemoryCanaryCli,
+    args: buildScriptedProbeArgs,
+  },
+  'pi.plugins-context-tools': {
+    runner: (deps) => deps.runPluginsContextCli ?? runPiPluginsContextCanaryCli,
     args: buildScriptedProbeArgs,
   },
 };

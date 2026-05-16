@@ -97,6 +97,7 @@ describe('Pi v1 canary CLI', () => {
     const stdout = createWriter();
     const stderr = createWriter();
     const sessionsMemory = createProbe('passed');
+    const pluginsContext = createProbe('passed');
 
     const code = await runPiV1CanaryCli(['--json'], {
       runAuthCli: createProbe('passed'),
@@ -104,6 +105,7 @@ describe('Pi v1 canary CLI', () => {
       runGatewayCli: createProbe('passed'),
       runAggregateCli: createProbe('passed'),
       runSessionsMemoryCli: sessionsMemory,
+      runPluginsContextCli: pluginsContext,
       stdout,
       stderr,
     });
@@ -111,6 +113,8 @@ describe('Pi v1 canary CLI', () => {
     expect(code).toBe(1);
     expect(sessionsMemory).toHaveBeenCalledTimes(1);
     expect(sessionsMemory.mock.calls[0]?.[0]).toEqual(['--json']);
+    expect(pluginsContext).toHaveBeenCalledTimes(1);
+    expect(pluginsContext.mock.calls[0]?.[0]).toEqual(['--json']);
     expect(stdout.text()).toBe('');
     const body = JSON.parse(stderr.text());
     expect(body.status).toBe('incomplete');
@@ -122,7 +126,7 @@ describe('Pi v1 canary CLI', () => {
       }),
       expect.objectContaining({
         id: 'pi.plugins-context-tools',
-        status: 'incomplete',
+        status: 'passed',
       }),
       expect.objectContaining({
         id: 'pi.dashboard-operator',
@@ -135,6 +139,7 @@ describe('Pi v1 canary CLI', () => {
     const stdout = createWriter();
     const stderr = createWriter();
     const sessionsMemory = createProbe('passed');
+    const pluginsContext = createProbe('passed');
 
     const code = await runPiV1CanaryCli([
       '--json',
@@ -149,6 +154,7 @@ describe('Pi v1 canary CLI', () => {
       runGatewayCli: createProbe('passed'),
       runAggregateCli: createProbe('passed'),
       runSessionsMemoryCli: sessionsMemory,
+      runPluginsContextCli: pluginsContext,
       stdout,
       stderr,
     });
@@ -161,12 +167,14 @@ describe('Pi v1 canary CLI', () => {
       '--timeout-ms', '1000',
       '--keep-workspace',
     ]);
+    expect(pluginsContext.mock.calls[0]?.[0]).toEqual(sessionsMemory.mock.calls[0]?.[0]);
   });
 
   it('can opt scripted canaries into real Gateway checks explicitly', async () => {
     const stdout = createWriter();
     const stderr = createWriter();
     const sessionsMemory = createProbe('passed');
+    const pluginsContext = createProbe('passed');
 
     const code = await runPiV1CanaryCli([
       '--json',
@@ -183,6 +191,7 @@ describe('Pi v1 canary CLI', () => {
       runGatewayCli: createProbe('passed'),
       runAggregateCli: createProbe('passed'),
       runSessionsMemoryCli: sessionsMemory,
+      runPluginsContextCli: pluginsContext,
       stdout,
       stderr,
     });
@@ -198,6 +207,7 @@ describe('Pi v1 canary CLI', () => {
       '--allow-skip',
       '--keep-workspace',
     ]);
+    expect(pluginsContext.mock.calls[0]?.[0]).toEqual(sessionsMemory.mock.calls[0]?.[0]);
   });
 
   it('returns failed when an automated smoke scenario fails', async () => {

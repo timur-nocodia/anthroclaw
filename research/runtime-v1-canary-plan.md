@@ -125,23 +125,27 @@ Covers:
 
 ### 5. `pi.plugins-context-tools`
 
-Status: planned scripted canary.
+Status: scripted canary runner available for deterministic Gateway/plugin harness coverage.
 
 Proves:
 
 - plugin discovery/lifecycle remains runtime-neutral;
-- plugin MCP tools execute through the Pi custom-tool bridge;
+- plugin MCP tools remain agent-scoped through the Gateway plugin registry;
 - plugin subagent runner uses the selected runtime with tools disabled;
-- LCM context engine assemble/compress semantics remain intact;
+- context engine assemble/compress semantics remain intact;
 - plugin hook payloads preserve agent/session attribution.
 
 Required checks:
 
-- bundled plugin enablement;
-- one read-only plugin tool;
-- one policy-sensitive plugin tool;
-- LCM assemble/compress trigger;
-- plugin shutdown.
+- current: `pnpm smoke:pi-plugins-context -- --json`;
+- current: temporary Gateway loads and enables a runtime-neutral canary plugin for one agent;
+- current: disabled agent receives no plugin tools;
+- current: one read-only plugin tool preserves agent/session/input context;
+- current: one policy-sensitive plugin tool rejects wrong session and accepts allowed session;
+- current: context-engine assemble/compress trigger;
+- current: plugin hook payload attribution and shutdown;
+- current: plugin subagent runner path records selected model and tools-disabled contract;
+- remaining: bundled LCM/operator-console/file-transfer plugin-specific canary coverage through the same runner.
 
 ### 6. `pi.sessions-memory-learning`
 
