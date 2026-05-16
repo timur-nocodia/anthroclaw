@@ -384,6 +384,23 @@ describe('AgentYmlSchema', () => {
     expect(result.iteration_budget!.grace_message).toBe(false);
   });
 
+  it('applies a default iteration_budget when agent.yml omits it', () => {
+    // Every agent gets a budget by default — without it, a hung SDK
+    // subprocess (e.g. an external MCP server stuck in handshake) leaves
+    // `await iterator.next()` blocked forever. v1.1.6 turned this from
+    // opt-in into a floor. Defaults must catch runaways without cutting
+    // off normal long-running turns.
+    const result = AgentYmlSchema.parse({
+      safety_profile: 'trusted' as const,
+      routes: [{ channel: 'telegram' }],
+    });
+    expect(result.iteration_budget).toBeDefined();
+    expect(result.iteration_budget!.max_tool_calls).toBe(100);
+    expect(result.iteration_budget!.timeout_ms).toBe(300_000);
+    expect(result.iteration_budget!.absolute_timeout_ms).toBe(1_200_000);
+    expect(result.iteration_budget!.grace_message).toBe(true);
+  });
+
   it('accepts post-run memory extraction config with defaults', () => {
     const result = AgentYmlSchema.parse({
       safety_profile: 'trusted' as const,

@@ -2034,10 +2034,21 @@ export class Gateway {
 
   private async prewarmAgent(agent: Agent): Promise<void> {
     if (!this.sdkReady) return;
-    if (agent.config.mcp_tools?.includes('manage_cron')) {
-      this.warmQueries.discard(agent.id);
-      return;
-    }
+    // History: commit 9e650cf ("fix(cron): bypass warm queries for
+    // scheduled task tools") force-discarded warm pools for any agent
+    // with manage_cron. The intent was to avoid stale session context
+    // bleed from a pre-spawned warm process. That concern was already
+    // mooted by commit 117371b (default-deliver-to via
+    // AsyncLocalStorage) — warm subprocesses are session-agnostic and
+    // resolve peer/thread context per turn.
+    //
+    // The bypass had a hidden cost: cron-having agents that also use
+    // external MCP servers (Linear/Supabase HTTP MCP) paid a fresh
+    // handshake on every turn. On 2026-05-16 that surfaced as
+    // 8-minute hangs on project-manager queries — the SDK subprocess
+    // stalled inside HTTP MCP init and there was no first-event
+    // timeout to catch it. Removed; defense-in-depth (default
+    // iteration_budget for every agent) is in src/config/schema.ts.
     const options = await this.buildUserQueryOptions(agent);
     return this.warmQueries.prewarm(agent.id, options);
   }
@@ -2047,21 +2058,24 @@ export class Gateway {
     prompt: string | AsyncIterable<SDKUserMessage>,
     options: ReturnType<typeof buildSdkOptions>,
     resume?: string,
-    useWarmQuery = true,
   ): Query {
-    if (!useWarmQuery) {
-      this.warmQueries.discard(agent.id);
-      return query({ prompt, options: options as any }) as Query;
-    }
-
     const warm = resume ? undefined : this.warmQueries.take(agent.id);
+    const externalMcpCount = Object.keys(agent.config.external_mcp_servers ?? {}).length;
     if (!warm) {
+      logger.info(
+        { agentId: agent.id, warmUsed: false, externalMcpCount, reason: resume ? 'resume' : 'no-warm-available' },
+        'SDK query starting',
+      );
       return query({ prompt, options: options as any }) as Query;
     }
 
     try {
       const result = warm.query(prompt) as Query;
       void this.prewarmAgent(agent);
+      logger.info(
+        { agentId: agent.id, warmUsed: true, externalMcpCount },
+        'SDK query starting',
+      );
       return result;
     } catch (err) {
       logger.warn({ err, agentId: agent.id }, 'SDK warm query failed; falling back to regular query');
@@ -5099,8 +5113,10 @@ export class Gateway {
         prompt = assembledPrompt;
       }
 
-      const useWarmQuery = !(this.dynamicCronStore && agent.config.mcp_tools?.includes('manage_cron'));
-      const result = this.startQuery(agent, prompt, options, existingSessionId, useWarmQuery);
+      // Warm queries are always allowed now. The historical bypass for
+      // manage_cron agents was unjustified and caused prod hangs — see
+      // prewarmAgent() comment above for the full story.
+      const result = this.startQuery(agent, prompt, options, existingSessionId);
       this.queueManager.register(sessionKey, result, abort, {
         traceId: runId,
         channelDeliveryTarget: {
@@ -5116,15 +5132,18 @@ export class Gateway {
         abort,
       );
 
+      // iteration_budget is always populated by the schema default — every
+      // agent gets a 5-min idle / 20-min wall-clock / 100-tool-call cap
+      // unless they overrode it in agent.yml. This is the floor that
+      // catches hung SDK subprocesses (e.g. external MCP server stuck on
+      // init); without it, `await iterator.next()` is uninterruptible.
       const budgetConfig = agent.config.iteration_budget;
-      const budget = budgetConfig
-        ? new IterationBudget({
-            maxToolCalls: budgetConfig.max_tool_calls,
-            timeoutMs: budgetConfig.timeout_ms,
-            absoluteTimeoutMs: budgetConfig.absolute_timeout_ms,
-            graceMessage: budgetConfig.grace_message,
-          })
-        : null;
+      const budget = new IterationBudget({
+        maxToolCalls: budgetConfig.max_tool_calls,
+        timeoutMs: budgetConfig.timeout_ms,
+        absoluteTimeoutMs: budgetConfig.absolute_timeout_ms,
+        graceMessage: budgetConfig.grace_message,
+      });
       budget?.start();
       const markRunActivity = (eventType: string, taskId?: string) => {
         budget?.recordActivity(eventType);
@@ -5231,11 +5250,15 @@ export class Gateway {
         const textParts: string[] = [];
         let sessionId: string | undefined;
         const iterator = result[Symbol.asyncIterator]();
+        // Track time-to-first-event so a future regression that re-introduces
+        // a cold-spawn hang surfaces as observable telemetry instead of
+        // silent silence (the 2026-05-16 hang only got diagnosed because we
+        // happened to be tailing logs at the right moment).
+        const queryStartMs = Date.now();
+        let firstEventLogged = false;
 
         while (true) {
-          const next = budget
-            ? await nextWithTimeout(iterator, Math.max(1, budget.timeUntilInterruptMs))
-            : await iterator.next();
+          const next = await nextWithTimeout(iterator, Math.max(1, budget.timeUntilInterruptMs));
           if (!next) {
             budgetInterrupted = true;
             if (budget?.shouldInterrupt()) {
@@ -5244,6 +5267,15 @@ export class Gateway {
             break;
           }
           if (next.done) break;
+
+          if (!firstEventLogged) {
+            firstEventLogged = true;
+            const firstEventAfterMs = Date.now() - queryStartMs;
+            logger.info(
+              { agentId: agent.id, sessionKey, firstEventAfterMs },
+              'SDK first event received',
+            );
+          }
 
           const evt = next.value as Record<string, unknown>;
           const partialText = extractPartialText(evt);
