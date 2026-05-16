@@ -64,6 +64,7 @@ Run immediately after deployment or after pulling the merged `main` into the run
 ```bash
 pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6
 pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
+pnpm runtime:pi-monitor -- --json --fail-on-alert
 ```
 
 Then start Gateway and verify one safe Web UI turn against a low-risk agent. Record only redacted summaries:
@@ -92,3 +93,25 @@ Live pull/deploy checkpoint completed on 2026-05-17:
 - safe Web UI turn: `example` returned `PI_LIVE_WEB_OK`, no tools, session id present, total tokens `15`;
 - monitoring slice: failed runs in the last hour `0`;
 - checkout state after verification: clean.
+
+## Monitoring Command
+
+Use the operator monitor during the first live window and before any ring expansion:
+
+```bash
+pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert
+```
+
+The command reads `data/metrics.sqlite` by default and reports:
+
+- run totals by status;
+- failed/interrupted/stale running runs;
+- auth/model diagnostic alerts;
+- diagnostic event counts;
+- failed tool events as warnings.
+
+For live checkout verification from another worktree, point it at the live data directory:
+
+```bash
+pnpm runtime:pi-monitor -- --data-dir /Users/tyess/dev/openclaw-agents-sdk-clone/data --since-minutes 60 --json --fail-on-alert
+```
