@@ -56,6 +56,25 @@ Expected result:
 
 If a real live channel turn is deferred, keep the written waiver explicit in `research/runtime-v1-production-canary-preflight.md` and this policy remains at Ring 0.
 
+## Ring 1 Evidence
+
+Ring 1 live channel turn was executed on 2026-05-17 at 01:12 Asia/Almaty:
+
+- agent: `example`;
+- channel: Telegram DM;
+- target: allowlisted operator peer `48705953`;
+- prompt: `Reply exactly PI_LIVE_CHANNEL_OK. Do not use tools.`;
+- delivery path: `Gateway.dispatch` with real `TelegramChannel.sendText`, without Telegram long-polling;
+- result: exactly `PI_LIVE_CHANNEL_OK`;
+- sent messages: `1`;
+- message id: present;
+- immediate post-turn monitor: passed;
+- immediate post-turn runs: `8` total, `8` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- auth/model alerts: `0`;
+- tool events in the 15-minute Ring 1 slice: none.
+
+Ring 1 is not fully closed until the post-turn monitoring window remains green for at least 30 minutes.
+
 ## Stop Conditions
 
 Stop rollout and rollback or hold the current ring when any of these occur:
