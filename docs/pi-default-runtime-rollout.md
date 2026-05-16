@@ -121,6 +121,13 @@ Ring 1 immediate live channel evidence at 2026-05-17 01:12 Asia/Almaty:
 - follow-up manual monitor at approximately 2026-05-17 01:21 Asia/Almaty passed for the 60-minute window: `3` total runs, `3` succeeded, `0` failed/interrupted/stale, auth/model alerts `0`, alerts `[]`, warnings `[]`;
 - Ring 1 is closed by operator acceptance; later monitor alerts remain escalation triggers.
 
+Ring 2 preflight at 2026-05-17 local time:
+
+- scope: `example` on Web UI and allowlisted operator Telegram DM only;
+- excluded surfaces: cron delivery, scheduled Buildroom, proactive notifications, `send_message` fanout, `manage_cron`, `manage_skills`, external MCP onboarding, WhatsApp, and non-operator peers;
+- `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6`: passed with Pi package `0.74.0` and available `anthropic/claude-sonnet-4-6`;
+- `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`: passed with `3` succeeded runs, `0` failed/interrupted/stale runs, auth/model alerts `0`, alerts `[]`, warnings `[]`.
+
 ## Monitoring Command
 
 Use the operator monitor during the first live window and before any ring expansion:

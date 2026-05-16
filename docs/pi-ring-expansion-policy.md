@@ -82,6 +82,35 @@ Manual operator monitor at approximately 01:21 Asia/Almaty also passed for the 6
 
 Ring 1 is closed by operator acceptance. The original 30-minute post-turn monitoring timer is waived for this checkpoint; the operator will escalate if later monitoring detects a stop condition.
 
+## Ring 2 Scope
+
+Ring 2 is the first low-risk normal-operation window. It intentionally proves day-to-day routing without enabling the surfaces that can amplify a runtime defect.
+
+Allowed:
+
+- agent: `example`;
+- routes: Web UI and Telegram DM only;
+- Telegram peer: allowlisted operator peer `48705953`;
+- prompts: ordinary operator messages and exact-answer sanity prompts;
+- memory/learning: learning may remain `mode: propose`; no auto-apply;
+- tools: no forced broad tool exercise; incidental safe reads are acceptable only inside the agent workspace.
+
+Excluded:
+
+- cron delivery and scheduled Buildroom;
+- proactive notifications;
+- `send_message` fanout beyond the originating operator peer;
+- `manage_cron`, `manage_skills`, `connect_mcp`, external MCP onboarding, and Buildroom handoff tools;
+- WhatsApp and non-operator Telegram peers;
+- private transcript/provider-log capture in docs or PRs.
+
+Pre-Ring-2 checks passed on 2026-05-17:
+
+- `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6`: passed with Pi package `0.74.0` and available `anthropic/claude-sonnet-4-6`;
+- `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`: passed with `3` succeeded runs, `0` failed/interrupted/stale runs, auth/model alerts `0`, alerts none, warnings none.
+
+Ring 2 is ready to execute under the scope above. Its exit gate remains post-window monitoring with no stop-condition alerts.
+
 ## Stop Conditions
 
 Stop rollout and rollback or hold the current ring when any of these occur:

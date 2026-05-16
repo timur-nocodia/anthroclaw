@@ -6,7 +6,7 @@ This is the human-readable phase checklist for replacing the Claude Agent SDK-ce
 
 ## Current Snapshot
 
-Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. PR #110 merged the default-runtime flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`. Post-merge local verification and durable decision run `25971022679` are green. The live runtime checkout was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e`; post-pull `pi-auth`, `pi-all`, safe Web UI, first monitoring slice, and extended 60-minute monitoring snapshot are green. Ring 1 live channel turn returned exactly `PI_LIVE_CHANNEL_OK`; the immediate post-turn monitor and follow-up manual monitor are green. Ring 1 is closed by operator acceptance, with later monitor alerts treated as escalation triggers.
+Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. PR #110 merged the default-runtime flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`. Post-merge local verification and durable decision run `25971022679` are green. The live runtime checkout was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e`; post-pull `pi-auth`, `pi-all`, safe Web UI, first monitoring slice, and extended 60-minute monitoring snapshot are green. Ring 1 live channel turn returned exactly `PI_LIVE_CHANNEL_OK`; the immediate post-turn monitor and follow-up manual monitor are green. Ring 1 is closed by operator acceptance, with later monitor alerts treated as escalation triggers. Ring 2 scope is now defined for `example` on Web UI plus allowlisted operator Telegram DM only, and pre-Ring-2 `pi-auth` plus monitor checks are green.
 
 Approximate progress to a default-runtime decision: 100%.
 
@@ -54,11 +54,13 @@ What is done:
 - Ring 1 immediate live channel evidence passed on 2026-05-17 at 01:12 Asia/Almaty: controlled `Gateway.dispatch` sent a real Telegram DM response for `example`, the reply was exactly `PI_LIVE_CHANNEL_OK`, no tool events appeared in the 15-minute Ring 1 slice, and the immediate post-turn monitor showed eight succeeded runs with zero failed/interrupted/stale runs and zero auth/model alerts.
 - Ring 1 follow-up manual monitor at approximately 2026-05-17 01:21 Asia/Almaty passed for the 60-minute window: three succeeded runs, zero failed/interrupted/stale runs, zero auth/model alerts, no alerts, and no warnings.
 - Ring 1 is closed by operator acceptance. The original 30-minute timer is waived for this checkpoint; the operator will escalate if later monitoring detects a stop condition.
+- Ring 2 scope is defined: `example` only, Web UI plus allowlisted operator Telegram DM, ordinary operator prompts, learning propose-only, no cron delivery, no proactive notifications, no `send_message` fanout, no `manage_cron`/`manage_skills`/external MCP/Buildroom, no WhatsApp, and no non-operator peers.
+- Pre-Ring-2 checks passed on 2026-05-17: `pi-auth` passed with Pi package `0.74.0` and available `anthropic/claude-sonnet-4-6`; `runtime:pi-monitor` passed with three succeeded runs, zero failed/interrupted/stale runs, zero auth/model alerts, no alerts, and no warnings.
 
 What is not done:
 
 - A true Claude baseline turn has not been sent in the live channel; this remains a written waiver for the first Pi-only window, not an unresolved startup blocker.
-- Ring 2 low-risk normal operation has not started.
+- Ring 2 low-risk normal-operation window has not executed yet.
 
 ## Phase Checklist
 
@@ -71,7 +73,7 @@ What is not done:
 | 4. Cover deep product surfaces | Mostly done | Prove non-obvious product features survive runtime replacement. | Scripted canaries pass for sessions/memory/learning, plugins/context/tools, external MCP, scheduled Buildroom, and rollback. |
 | 5. Dashboard/operator evidence | Done enough for default flip PR | Prove the operator API contracts expose the same state under Pi-shaped runs. | `/api/gateway/status`, agents, sessions, runs, learning, plugins, MCP, channels, and diagnostics are covered by scripted canary and limited production evidence; browser UX evidence is optional. |
 | 6. Rollout decision package | Done | Produce the final go/no-go artifact. | Local and durable GitHub Actions decision packages emit `READY` with production canary passed and PR stack merged. |
-| 7. Default-runtime rollout | In progress | Flip runtime default safely. | Default flip is merged into `main`; post-merge local, durable, live pull, safe Web UI, extended monitoring, and Ring 1 live channel evidence are green; Ring 1 is closed by operator acceptance; Ring 2+ expansion remains. |
+| 7. Default-runtime rollout | In progress | Flip runtime default safely. | Default flip is merged into `main`; post-merge local, durable, live pull, safe Web UI, extended monitoring, and Ring 1 live channel evidence are green; Ring 1 is closed by operator acceptance; Ring 2 scope/preflight are green; Ring 2 execution remains. |
 
 ## Canary Scenario Checklist
 
@@ -94,14 +96,14 @@ No Runtime v1 decision blockers remain. The remaining work is rollout execution,
 
 ## Next Five Tasks
 
-1. Define the Ring 2 low-risk normal-operation scope: agents/channels allowed, excluded tools, excluded cron/fanout paths, and rollback owner.
-2. Run pre-Ring-2 checks: `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` and `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`.
-3. Execute the agreed Ring 2 low-risk usage window without broad plugin actions, scheduled delivery, or `send_message` fanout.
-4. Run and record post-Ring-2 monitor evidence with failed/interrupted/stale/auth/model counts.
+1. Execute the Ring 2 low-risk usage window under the documented scope.
+2. Run post-Ring-2 `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`.
+3. Record post-Ring-2 evidence with failed/interrupted/stale/auth/model counts.
+4. Decide whether Ring 3 can include one plugin/learning/memory-heavy surface, or whether Ring 2 needs a longer window.
 5. Keep the config-only rollback path ready by setting `runtime.headless.provider=claude-agent-sdk` if any stop condition appears.
 
 ## Default Runtime Gate
 
 The evidence gate for making Pi the tracked global default is satisfied and the flip is merged. Durable run `25970623984` established the pre-flip `READY` decision, PR #110 carried rollout/rollback instructions, and durable run `25971022679` revalidated the decision package after the default flip landed on `main`.
 
-Ring 1 is closed by operator acceptance after green live-channel and monitor evidence. The next gate is Ring 2 low-risk normal operation; default Pi is no longer evidence-blocked.
+Ring 1 is closed by operator acceptance after green live-channel and monitor evidence. Ring 2 scope and preflight are green; the next gate is executing the low-risk normal-operation window. Default Pi is no longer evidence-blocked.
