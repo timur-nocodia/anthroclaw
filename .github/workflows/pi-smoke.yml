@@ -1,0 +1,121 @@
+name: Pi smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Pi provider/model id to validate and run.
+        required: true
+        default: anthropic/claude-sonnet-4-6
+      timeout_ms:
+        description: Timeout forwarded to workspace and Gateway probes.
+        required: true
+        default: '120000'
+      allow_skip:
+        description: Return success for missing Pi setup/auth instead of failing.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  pi-smoke:
+    name: Pi smoke suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PI_AUTH_JSON_B64: ${{ secrets.PI_AUTH_JSON_B64 }}
+      PI_MODELS_JSON_B64: ${{ secrets.PI_MODELS_JSON_B64 }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare Pi storage files
+        id: pi-storage
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          auth_path="${RUNNER_TEMP}/pi-auth.json"
+          models_path="${RUNNER_TEMP}/pi-models.json"
+
+          if [[ -z "${PI_AUTH_JSON_B64:-}" ]]; then
+            echo "::error::Missing required secret PI_AUTH_JSON_B64."
+            exit 1
+          fi
+
+          printf '%s' "${PI_AUTH_JSON_B64}" | base64 --decode > "${auth_path}"
+          chmod 600 "${auth_path}"
+          echo "auth_path=${auth_path}" >> "${GITHUB_OUTPUT}"
+
+          if [[ -n "${PI_MODELS_JSON_B64:-}" ]]; then
+            printf '%s' "${PI_MODELS_JSON_B64}" | base64 --decode > "${models_path}"
+            chmod 600 "${models_path}"
+            echo "models_path=${models_path}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Run Pi aggregate smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log_path="${RUNNER_TEMP}/pi-smoke.log"
+          result_json="${RUNNER_TEMP}/pi-smoke-result.json"
+          summary_md="${RUNNER_TEMP}/pi-smoke-summary.md"
+
+          args=(
+            --json
+            --model "${{ inputs.model }}"
+            --timeout-ms "${{ inputs.timeout_ms }}"
+            --auth-path "${{ steps.pi-storage.outputs.auth_path }}"
+          )
+
+          if [[ -n "${{ steps.pi-storage.outputs.models_path }}" ]]; then
+            args+=(--models-path "${{ steps.pi-storage.outputs.models_path }}")
+          fi
+
+          if [[ "${{ inputs.allow_skip }}" == "true" ]]; then
+            args+=(--allow-skip)
+          fi
+
+          set +e
+          pnpm smoke:pi-all -- "${args[@]}" 2>&1 | tee "${log_path}"
+          code="${PIPESTATUS[0]}"
+          set -e
+
+          node scripts/pi-smoke-summary.mjs \
+            --log "${log_path}" \
+            --summary "${summary_md}" \
+            --json "${result_json}" \
+            --exit-code "${code}"
+
+          cat "${summary_md}" >> "${GITHUB_STEP_SUMMARY}"
+          exit "${code}"
+
+      - name: Upload Pi smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-smoke-result
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/pi-smoke.log
+            ${{ runner.temp }}/pi-smoke-result.json
+            ${{ runner.temp }}/pi-smoke-summary.md

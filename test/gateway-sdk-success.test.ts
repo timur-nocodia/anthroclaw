@@ -2,10 +2,17 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 
-const { startupMock, queryMock } = vi.hoisted(() => ({
+const { startupMock, queryMock, piRunMock, piRunHandleMock, piRuntimeState } = vi.hoisted(() => ({
   startupMock: vi.fn(),
   queryMock: vi.fn(),
+  piRunMock: vi.fn(),
+  piRunHandleMock: vi.fn(),
+  piRuntimeState: {
+    useRunHandle: false,
+    createdOptions: [] as unknown[],
+  },
 }));
 
 function createSdkStream(events: Array<Record<string, unknown>>) {
@@ -48,6 +55,35 @@ function createQueryForPrompt(prompt: unknown) {
         type: 'result',
         result: 'Useful Session Title',
         session_id: 'title-session',
+      },
+    ]);
+  }
+
+  if (text.includes('hello web runtime')) {
+    return createSdkStream([
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'Partial hello' },
+        },
+      },
+      {
+        type: 'tool_use',
+        id: 'tool-1',
+        name: 'Bash',
+        input: { command: 'pwd' },
+      },
+      {
+        type: 'tool_result',
+        tool_use_id: 'tool-1',
+        name: 'Bash',
+        output: 'ok',
+      },
+      {
+        type: 'result',
+        result: 'Partial hello',
+        session_id: 'web-runtime-session-1',
       },
     ]);
   }
@@ -135,6 +171,21 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
   };
 });
 
+vi.mock('../src/runtime/pi-headless.js', () => ({
+  createPiHeadlessRuntime: (options?: unknown) => {
+    piRuntimeState.createdOptions.push(options);
+    const runtime: Record<string, unknown> = {
+      id: 'pi',
+      run: piRunMock,
+      runText: vi.fn(),
+    };
+    if (piRuntimeState.useRunHandle) {
+      runtime.runHandle = piRunHandleMock;
+    }
+    return runtime;
+  },
+}));
+
 import { Gateway } from '../src/gateway.js';
 import { metrics } from '../src/metrics/collector.js';
 import type { GlobalConfig } from '../src/config/schema.js';
@@ -149,6 +200,57 @@ function minimalConfig(): GlobalConfig {
       debounce_ms: 0,
     },
   };
+}
+
+function piGatewayConfig(): GlobalConfig {
+  return {
+    ...minimalConfig(),
+    runtime: {
+      headless: {
+        provider: 'pi',
+      },
+    },
+  };
+}
+
+function createRuntimeEventHandle(events: Array<Record<string, unknown>>, sessionId?: string) {
+  return {
+    sessionId,
+    interrupt: vi.fn(async () => undefined),
+    close: vi.fn(),
+    async *[Symbol.asyncIterator]() {
+      for (const event of events) {
+        yield event;
+      }
+    },
+  };
+}
+
+function createBlockingRuntimeEventHandle(events: Array<Record<string, unknown>>, sessionId?: string) {
+  let release!: () => void;
+  let iteratorStarted!: () => void;
+  const releasePromise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const iteratorStartedPromise = new Promise<void>((resolve) => {
+    iteratorStarted = resolve;
+  });
+  const handle = {
+    sessionId,
+    interrupt: vi.fn(async () => {
+      release();
+    }),
+    close: vi.fn(),
+    waitForIterator: () => iteratorStartedPromise,
+    async *[Symbol.asyncIterator]() {
+      iteratorStarted();
+      await releasePromise;
+      for (const event of events) {
+        yield event;
+      }
+    },
+  };
+  return handle;
 }
 
 function writeAgentYml(dir: string, content: string): void {
@@ -194,6 +296,10 @@ describe('Gateway SDK success path', () => {
     metrics._reset();
     startupMock.mockReset();
     queryMock.mockReset();
+    piRunMock.mockReset();
+    piRunHandleMock.mockReset();
+    piRuntimeState.useRunHandle = false;
+    piRuntimeState.createdOptions = [];
     seenPrompts.length = 0;
 
     startupMock.mockImplementation(async (params?: { options?: unknown }) => {
@@ -291,6 +397,816 @@ pairing:
     await gw.stop();
   });
 
+  it('dispatch can use explicit Pi Gateway runtime without Claude SDK readiness', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRunMock.mockResolvedValueOnce({
+      text: 'Pi says hi',
+      sessionId: 'pi-session-1',
+    });
+    const botDir = join(agentsDir, 'pi-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual(['Pi says hi']);
+    expect(seenPrompts.some((prompt) =>
+      typeof prompt === 'string' && prompt.includes('[Test User]: hello sdk'),
+    )).toBe(false);
+    expect(piRunMock).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('[Test User]: hello sdk'),
+      model: 'claude-sonnet-4-6',
+      cwd: botDir,
+      purpose: 'gateway agent query',
+      toolDenyMessage: 'Tool denied by AnthroClaw policy.',
+    }));
+    expect(piRunMock.mock.calls[0]?.[0]).not.toHaveProperty('sessionId');
+    expect((await gw.listAgentSessions('pi-bot'))[0]).toMatchObject({
+      sessionId: 'pi-session-1',
+      provenance: expect.objectContaining({
+        source: 'channel',
+        status: 'succeeded',
+      }),
+    });
+
+    piRunMock.mockResolvedValueOnce({
+      text: 'Pi continues',
+      sessionId: 'pi-session-1',
+    });
+    await gw.dispatch(makeMsg({ text: 'continue please', messageId: 'mid-2' }));
+
+    expect(piRunMock.mock.calls[1]?.[0]).toMatchObject({
+      sessionId: 'pi-session-1',
+    });
+    expect(sent).toEqual(['Pi says hi', 'Pi continues']);
+
+    await gw.stop();
+  });
+
+  it('dispatch can opt a single agent into Pi Gateway runtime without changing the global default', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRunMock.mockResolvedValueOnce({
+      text: 'Pi agent override says hi',
+      sessionId: 'pi-agent-override-session-1',
+    });
+    const botDir = join(agentsDir, 'pi-agent-override-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+runtime:
+  headless:
+    provider: pi
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual(['Pi agent override says hi']);
+    expect(piRunMock).toHaveBeenCalledWith(expect.objectContaining({
+      cwd: botDir,
+      purpose: 'gateway agent query',
+    }));
+
+    await gw.stop();
+  });
+
+  it('dispatch merges global Pi storage paths with per-agent Pi overrides', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRunMock.mockResolvedValueOnce({
+      text: 'Pi merged storage says hi',
+      sessionId: 'pi-agent-storage-session-1',
+    });
+    const botDir = join(agentsDir, 'pi-agent-storage-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+runtime:
+  headless:
+    provider: pi
+    pi:
+      models_path: /agent/pi-models.json
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start({
+      ...minimalConfig(),
+      runtime: {
+        headless: {
+          provider: 'pi',
+          pi: {
+            auth_path: '/global/pi-auth.json',
+            models_path: '/global/pi-models.json',
+          },
+        },
+      },
+    }, agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual(['Pi merged storage says hi']);
+    expect(piRuntimeState.createdOptions[0]).toMatchObject({
+      authStoragePath: '/global/pi-auth.json',
+      modelsPath: '/agent/pi-models.json',
+    });
+
+    await gw.stop();
+  });
+
+  it('dispatch can opt a single agent out of a global Pi Gateway runtime', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    const botDir = join(agentsDir, 'claude-agent-override-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+runtime:
+  headless:
+    provider: claude-agent-sdk
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual(['Agent claude-agent-override-bot received: hello sdk']);
+    expect(piRunMock).not.toHaveBeenCalled();
+    expect(piRunHandleMock).not.toHaveBeenCalled();
+
+    await gw.stop();
+  });
+
+  it('dispatch can consume explicit Pi RuntimeEvent handles', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-stream-session-1',
+        text: 'Pi channel',
+        source: 'partial',
+      },
+      {
+        type: 'usage.updated',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-stream-session-1',
+        inputTokens: 6,
+        outputTokens: 4,
+        cacheReadTokens: 1,
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-stream-session-1',
+      },
+    ], 'pi-stream-session-1');
+    piRunHandleMock.mockResolvedValueOnce(handle);
+    const botDir = join(agentsDir, 'pi-stream-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual(['Pi channel']);
+    expect(piRunMock).not.toHaveBeenCalled();
+    expect(piRunHandleMock).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('[Test User]: hello sdk'),
+      model: 'claude-sonnet-4-6',
+      cwd: botDir,
+      purpose: 'gateway agent query',
+    }), expect.objectContaining({
+      runId: expect.any(String),
+      agentId: 'pi-stream-bot',
+    }));
+    expect(handle.close).toHaveBeenCalledTimes(1);
+    expect(metrics.snapshot().tokens_24h).toMatchObject({
+      input: 6,
+      output: 4,
+      cache_read: 1,
+    });
+    expect((await gw.listAgentSessions('pi-stream-bot'))[0]).toMatchObject({
+      sessionId: 'pi-stream-session-1',
+      provenance: expect.objectContaining({
+        source: 'channel',
+        status: 'succeeded',
+      }),
+    });
+
+    await gw.stop();
+  });
+
+  it('dispatch Pi RuntimeEvent path registers active control handles for interrupts', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createBlockingRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-interrupt-session-1',
+        text: 'Stopped cleanly',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-interrupt-session-1',
+      },
+    ], 'pi-interrupt-session-1');
+    piRunHandleMock.mockResolvedValueOnce(handle);
+    const botDir = join(agentsDir, 'pi-interrupt-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    const dispatchPromise = gw.dispatch(makeMsg());
+    await handle.waitForIterator();
+
+    const active = gw.listActiveAgentRuns('pi-interrupt-bot');
+    expect(active).toMatchObject([{
+      agentId: 'pi-interrupt-bot',
+      sessionKey: 'pi-interrupt-bot:telegram:dm:peer-123',
+      channelDeliveryTarget: {
+        channel: 'telegram',
+        peerId: 'peer-123',
+      },
+    }]);
+
+    const interrupt = await gw.interruptAgentRun('pi-interrupt-bot', active[0]!.runId!, 'test');
+    expect(interrupt).toMatchObject({
+      interrupted: true,
+      sessionKey: 'pi-interrupt-bot:telegram:dm:peer-123',
+    });
+    expect(handle.interrupt).toHaveBeenCalledTimes(1);
+
+    await dispatchPromise;
+    expect(sent).toEqual(['Stopped cleanly']);
+    expect(gw.listActiveAgentRuns('pi-interrupt-bot')).toEqual([]);
+
+    await gw.stop();
+  });
+
+  it('dispatch Pi RuntimeEvent path keeps checkpoint registry aliases with explicit unsupported rewind', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-checkpoint-session-1',
+        text: 'Checkpoint boundary',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-checkpoint-session-1',
+      },
+    ], 'pi-checkpoint-session-1');
+    piRunHandleMock.mockResolvedValueOnce(handle);
+    const botDir = join(agentsDir, 'pi-checkpoint-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+sdk:
+  enableFileCheckpointing: true
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText() {
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    await expect(gw.rewindAgentSessionFiles('pi-checkpoint-bot', 'pi-checkpoint-session-1', {
+      userMessageId: 'user-msg-1',
+      dryRun: true,
+    })).resolves.toMatchObject({
+      sessionId: 'pi-checkpoint-session-1',
+      userMessageId: 'user-msg-1',
+      canRewind: false,
+      error: 'The active runtime handle does not support file rewind.',
+    });
+
+    await gw.stop();
+  });
+
+  it('dispatch Pi RuntimeEvent path rewinds files through a Pi runtime handle', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-rewind-session-1',
+        text: 'Rewind ready',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-rewind-session-1',
+      },
+    ], 'pi-rewind-session-1');
+    (handle as any).rewindFiles = vi.fn(async () => ({
+      canRewind: true,
+      filesChanged: ['src/file.txt'],
+      insertions: 1,
+      deletions: 0,
+    }));
+    piRunHandleMock.mockResolvedValueOnce(handle);
+    const botDir = join(agentsDir, 'pi-rewind-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+sdk:
+  enableFileCheckpointing: true
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText() {
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    await gw.dispatch(makeMsg());
+
+    await expect(gw.rewindAgentSessionFiles('pi-rewind-bot', 'pi-rewind-session-1', {
+      userMessageId: 'user-msg-1',
+      dryRun: false,
+      confirm: true,
+    })).resolves.toEqual({
+      sessionId: 'pi-rewind-session-1',
+      userMessageId: 'user-msg-1',
+      canRewind: true,
+      filesChanged: ['src/file.txt'],
+      insertions: 1,
+      deletions: 0,
+    });
+    expect((handle as any).rewindFiles).toHaveBeenCalledWith('user-msg-1', { dryRun: false });
+
+    await gw.stop();
+  });
+
+  it('dispatch Pi RuntimeEvent path routes tool approval through AnthroClaw broker', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-approval-session-1',
+        text: 'Approved write',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-approval-session-1',
+      },
+    ], 'pi-approval-session-1');
+    const botDir = join(agentsDir, 'pi-approval-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    const promptForApproval = vi.fn(async () => undefined);
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      supportsApproval: true,
+      promptForApproval,
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return 'msg1';
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    let approvalDecision: unknown;
+    piRunHandleMock.mockImplementationOnce(async (runInput: Record<string, unknown>) => {
+      const policy = runInput.toolPolicy as {
+        mode: 'allow-list';
+        tools: string[];
+        canUseTool: (toolCall: Record<string, unknown>, input: Record<string, unknown>) => Promise<unknown>;
+      };
+      expect(policy.mode).toBe('allow-list');
+      expect(policy.tools).toContain('Write');
+
+      const decisionPromise = policy.canUseTool({
+        toolName: 'write',
+        originalToolName: 'write',
+        toolCallId: 'pi-tool-1',
+        input: { file_path: 'notes.txt', content: 'ok' },
+      }, runInput);
+
+      const approvalRequest = promptForApproval.mock.calls[0]?.[0] as { id: string; toolName: string; peerId: string };
+      expect(approvalRequest).toMatchObject({
+        toolName: 'Write',
+        peerId: 'peer-123',
+      });
+      await Promise.resolve();
+      expect(gw.handleApprovalCallback(`approve:${approvalRequest.id}`, 'sender-456')).toBe(true);
+      approvalDecision = await decisionPromise;
+      return handle;
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(approvalDecision).toMatchObject({ behavior: 'allow' });
+    expect(sent).toEqual(['Approved write']);
+    expect(promptForApproval).toHaveBeenCalledTimes(1);
+    expect(handle.close).toHaveBeenCalledTimes(1);
+
+    await gw.stop();
+  });
+
+  it('dispatch Pi RuntimeEvent path exposes AnthroClaw per-dispatch custom tools', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-custom-tool-session-1',
+        text: 'Tool bridge done',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-custom-tool-session-1',
+      },
+    ], 'pi-custom-tool-session-1');
+    const botDir = join(agentsDir, 'pi-tools-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+mcp_tools:
+  - send_message
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: Array<{ peerId: string; text: string; accountId?: string }> = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(peerId, text, opts) {
+        sent.push({ peerId, text, accountId: opts?.accountId });
+        return `msg-${sent.length}`;
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    piRunHandleMock.mockImplementationOnce(async (runInput: Record<string, unknown>) => {
+      const customTools = runInput.customTools as Array<{
+        name: string;
+        handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }> }>;
+      }>;
+      const toolPolicy = runInput.toolPolicy as { tools: string[] };
+      const sendMessage = customTools.find((tool) => tool.name === 'send_message');
+
+      expect(sendMessage).toBeTruthy();
+      expect(toolPolicy.tools).toContain('send_message');
+      await expect(sendMessage?.handler({
+        channel: 'telegram',
+        peer_id: 'peer-123',
+        text: 'side-channel send',
+      })).resolves.toEqual({
+        content: [{ type: 'text', text: 'Message sent. ID: msg-1' }],
+      });
+
+      return handle;
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual([
+      { peerId: 'peer-123', text: 'side-channel send', accountId: 'default' },
+      { peerId: 'peer-123', text: 'Tool bridge done', accountId: 'default' },
+    ]);
+    expect(handle.close).toHaveBeenCalledTimes(1);
+
+    await gw.stop();
+  });
+
+  it('dispatch Pi RuntimeEvent path exposes external MCP servers as custom tools', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-external-mcp-session-1',
+        text: 'External MCP bridge done',
+        source: 'partial',
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-external-mcp-session-1',
+      },
+    ], 'pi-external-mcp-session-1');
+    const serverScript = join(tmpDir, 'toy-mcp-server.mjs');
+    const sdkDist = join(process.cwd(), 'node_modules/@modelcontextprotocol/sdk/dist/esm');
+    writeFileSync(serverScript, `
+import { Server } from '${pathToFileURL(join(sdkDist, 'server/index.js')).href}';
+import { StdioServerTransport } from '${pathToFileURL(join(sdkDist, 'server/stdio.js')).href}';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '${pathToFileURL(join(sdkDist, 'types.js')).href}';
+
+const server = new Server({ name: 'toy-mcp', version: '1.0.0' }, { capabilities: { tools: {} } });
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [{
+    name: 'lookup',
+    description: 'Lookup a value',
+    inputSchema: { type: 'object', properties: { q: { type: 'string' } } },
+  }],
+}));
+server.setRequestHandler(CallToolRequestSchema, async (request) => ({
+  content: [{ type: 'text', text: 'lookup:' + request.params.arguments.q }],
+}));
+await server.connect(new StdioServerTransport());
+`);
+    const botDir = join(agentsDir, 'pi-external-mcp-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+external_mcp_servers:
+  toy:
+    type: stdio
+    command: ${JSON.stringify(process.execPath)}
+    args:
+      - ${JSON.stringify(serverScript)}
+    allowed_tools:
+      - lookup
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const sent: string[] = [];
+    gw._setChannel('telegram', {
+      id: 'telegram',
+      onMessage() {},
+      async start() {},
+      async stop() {},
+      async sendText(_peerId, text) {
+        sent.push(text);
+        return `msg-${sent.length}`;
+      },
+      async editText() {},
+      async sendMedia() {
+        return 'media1';
+      },
+      async sendTyping() {},
+    });
+
+    piRunHandleMock.mockImplementationOnce(async (runInput: Record<string, unknown>) => {
+      const customTools = runInput.customTools as Array<{
+        name: string;
+        handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }> }>;
+      }>;
+      const externalTool = customTools.find((tool) => tool.name === 'mcp__toy__lookup');
+      const toolPolicy = runInput.toolPolicy as { tools: string[] };
+
+      expect(externalTool).toBeTruthy();
+      expect(toolPolicy.tools).toContain('mcp__toy__lookup');
+      await expect(externalTool?.handler({ q: 'pi' })).resolves.toMatchObject({
+        content: [{ type: 'text', text: 'lookup:pi' }],
+      });
+
+      return handle;
+    });
+
+    await gw.dispatch(makeMsg());
+
+    expect(sent).toEqual(['External MCP bridge done']);
+    expect(handle.close).toHaveBeenCalledTimes(1);
+
+    await gw.stop();
+  });
+
   it('injects per-chat operator context and honors reply_to_mode', async () => {
     const botDir = join(agentsDir, 'context-bot');
     mkdirSync(botDir);
@@ -377,6 +1293,200 @@ routes:
 
     expect(textParts.join('')).toBe('Web SDK says hi');
     expect(doneSessionId).toBe('web-sdk-session-1');
+
+    await gw.stop();
+  });
+
+  it('dispatchWebUI can use explicit Pi Gateway runtime without Claude SDK readiness', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRunMock.mockResolvedValueOnce({
+      text: 'Pi web says hi',
+      sessionId: 'pi-web-session-1',
+    });
+    const botDir = join(agentsDir, 'web-pi-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const textParts: string[] = [];
+    let doneSessionId = '';
+
+    await gw.dispatchWebUI('web-pi-bot', 'hello pi web', undefined, {}, {
+      onText: (chunk) => textParts.push(chunk),
+      onToolCall: () => {},
+      onToolResult: () => {},
+      onDone: (sid, tokens) => {
+        doneSessionId = sid;
+        expect(tokens).toBe(0);
+      },
+      onError: (err) => {
+        throw err;
+      },
+    });
+
+    expect(textParts.join('')).toBe('Pi web says hi');
+    expect(doneSessionId).toBe('pi-web-session-1');
+    expect(seenPrompts.some((prompt) =>
+      typeof prompt === 'string' && prompt.includes('[web-user]: hello pi web'),
+    )).toBe(false);
+    expect(piRunMock).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('[web-user]: hello pi web'),
+      model: 'claude-sonnet-4-6',
+      cwd: botDir,
+      purpose: 'gateway web query',
+      toolDenyMessage: 'Tool denied by AnthroClaw policy.',
+    }));
+
+    await gw.stop();
+  });
+
+  it('dispatchWebUI can stream explicit Pi RuntimeEvent handles', async () => {
+    startupMock.mockRejectedValueOnce(new Error('Claude unavailable'));
+    piRuntimeState.useRunHandle = true;
+    const handle = createRuntimeEventHandle([
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-web-stream-session-1',
+        text: 'Pi ',
+        source: 'partial',
+      },
+      {
+        type: 'tool.call.started',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-web-stream-session-1',
+        toolCallId: 'tool-1',
+        toolName: 'read',
+        input: { filePath: 'README.md' },
+      },
+      {
+        type: 'tool.call.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-web-stream-session-1',
+        toolCallId: 'tool-1',
+        toolName: 'read',
+        output: { content: [{ type: 'text', text: 'ok' }] },
+      },
+      {
+        type: 'text.delta',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-web-stream-session-1',
+        text: 'web',
+        source: 'partial',
+      },
+      {
+        type: 'usage.updated',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-web-stream-session-1',
+        inputTokens: 5,
+        outputTokens: 7,
+      },
+      {
+        type: 'run.completed',
+        runtime: 'pi',
+        runId: 'run-1',
+        sessionId: 'pi-web-stream-session-1',
+      },
+    ], 'pi-web-stream-session-1');
+    piRunHandleMock.mockResolvedValueOnce(handle);
+    const botDir = join(agentsDir, 'web-pi-stream-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+`);
+
+    const gw = new Gateway();
+    await gw.start(piGatewayConfig(), agentsDir, dataDir);
+
+    const textParts: string[] = [];
+    const partialText: string[] = [];
+    const toolCalls: Array<{ name: string; input: Record<string, unknown> }> = [];
+    const toolResults: Array<{ name: string; output: string }> = [];
+    let doneSessionId = '';
+    let doneTokens = 0;
+
+    await gw.dispatchWebUI('web-pi-stream-bot', 'hello pi stream', undefined, {}, {
+      onText: (chunk) => textParts.push(chunk),
+      onPartialText: (chunk) => partialText.push(chunk),
+      onToolCall: (name, input) => toolCalls.push({ name, input }),
+      onToolResult: (name, output) => toolResults.push({ name, output }),
+      onDone: (sid, tokens) => {
+        doneSessionId = sid;
+        doneTokens = tokens;
+      },
+      onError: (err) => {
+        throw err;
+      },
+    });
+
+    expect(textParts).toEqual([]);
+    expect(partialText).toEqual(['Pi ', 'web']);
+    expect(toolCalls).toEqual([{ name: 'read', input: { filePath: 'README.md' } }]);
+    expect(toolResults).toEqual([{ name: 'read', output: JSON.stringify({ content: [{ type: 'text', text: 'ok' }] }) }]);
+    expect(doneSessionId).toBe('pi-web-stream-session-1');
+    expect(doneTokens).toBe(12);
+    expect(piRunMock).not.toHaveBeenCalled();
+    expect(piRunHandleMock).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('[web-user]: hello pi stream'),
+      model: 'claude-sonnet-4-6',
+      cwd: botDir,
+      purpose: 'gateway web query',
+    }), expect.objectContaining({
+      runId: expect.any(String),
+      agentId: 'web-pi-stream-bot',
+    }));
+    expect(handle.close).toHaveBeenCalledTimes(1);
+
+    await gw.stop();
+  });
+
+  it('dispatchWebUI consumes runtime-normalized partial text and tool events', async () => {
+    const botDir = join(agentsDir, 'web-runtime-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+`);
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    const partialText: string[] = [];
+    const toolCalls: Array<{ name: string; input: Record<string, unknown> }> = [];
+    const toolResults: Array<{ name: string; output: string }> = [];
+    let doneSessionId = '';
+
+    await gw.dispatchWebUI('web-runtime-bot', 'hello web runtime', undefined, {}, {
+      onText: () => {},
+      onPartialText: (chunk) => partialText.push(chunk),
+      onToolCall: (name, input) => toolCalls.push({ name, input }),
+      onToolResult: (name, output) => toolResults.push({ name, output }),
+      onDone: (sid) => {
+        doneSessionId = sid;
+      },
+      onError: (err) => {
+        throw err;
+      },
+    });
+
+    expect(partialText).toEqual(['Partial hello']);
+    expect(toolCalls).toEqual([{ name: 'Bash', input: { command: 'pwd' } }]);
+    expect(toolResults).toEqual([{ name: 'Bash', output: 'ok' }]);
+    expect(doneSessionId).toBe('web-runtime-session-1');
 
     await gw.stop();
   });

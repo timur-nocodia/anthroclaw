@@ -19,8 +19,21 @@
     "release:patch": "node scripts/release.mjs patch",
     "release:minor": "node scripts/release.mjs minor",
     "release:major": "node scripts/release.mjs major",
+    "runtime:pi-decision": "node scripts/runtime-v1-decision-package.mjs",
     "reset-password": "tsx src/cli/reset-password.ts",
     "learning": "tsx src/cli/learning.ts",
+    "headless:runtime": "tsx src/cli/headless-runtime.ts",
+    "smoke:pi-auth": "tsx src/cli/pi-auth-smoke.ts",
+    "smoke:pi-workspace": "tsx src/cli/pi-workspace-smoke.ts",
+    "smoke:pi-gateway": "tsx src/cli/pi-gateway-smoke.ts",
+    "smoke:pi-all": "tsx src/cli/pi-smoke-suite.ts",
+    "smoke:pi-v1-canary": "tsx src/cli/pi-v1-canary.ts",
+    "smoke:pi-sessions-memory": "tsx src/cli/pi-sessions-memory-canary.ts",
+    "smoke:pi-plugins-context": "tsx src/cli/pi-plugins-context-canary.ts",
+    "smoke:pi-external-mcp": "tsx src/cli/pi-external-mcp-canary.ts",
+    "smoke:pi-dashboard-operator": "tsx src/cli/pi-dashboard-operator-canary.ts",
+    "smoke:pi-scheduled-buildroom": "tsx src/cli/pi-scheduled-buildroom-canary.ts",
+    "smoke:pi-rollback-runtime": "tsx src/cli/pi-rollback-mixed-runtime-canary.ts",
     "buildroom": "tsx src/cli/buildroom.ts",
     "plugins": "tsx src/cli/plugins.ts",
     "migrate:safety-profile": "tsx scripts/migrate-safety-profile.ts",
@@ -66,5 +79,8 @@
       "esbuild",
       "ssh2"
     ]
+  },
+  "optionalDependencies": {
+    "@earendil-works/pi-coding-agent": "0.74.0"
   }
 }

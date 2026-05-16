@@ -6,6 +6,7 @@ import { logger } from '../logger.js';
 import { DecisionStore } from '../decisions/store.js';
 import type { DecisionChannel, DecisionRecord } from '../decisions/types.js';
 import { runHeadlessReview } from '../sdk/headless-review.js';
+import type { HeadlessReviewRuntimeConfig } from '../sdk/headless-runtime-config.js';
 import type { LearningReviewJob } from './queue.js';
 import { exportLearningArtifacts } from './artifacts.js';
 import { applyMemoryCandidateAction } from './memory-applier.js';
@@ -26,6 +27,7 @@ export interface RunLearningReviewParams {
   store: LearningStore;
   decisionStore?: DecisionStore;
   defaultModel?: string;
+  headlessRuntime?: HeadlessReviewRuntimeConfig;
 }
 
 export interface RunLearningReviewResult {
@@ -108,6 +110,7 @@ export async function runLearningReview(params: RunLearningReviewParams): Promis
       prompt,
       model: agent.config.model ?? params.defaultModel ?? 'claude-sonnet-4-6',
       cwd: agent.workspacePath,
+      ...params.headlessRuntime,
       runtimeDefaults: {
         model: agent.config.model ?? params.defaultModel,
         cwd: agent.workspacePath,

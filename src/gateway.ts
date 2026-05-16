@@ -10,6 +10,7 @@ import {
   PluginInstallStore,
   buildPluginStartupPlan,
   createPluginContext,
+  runSubagent as runPluginSubagent,
   PluginRegistry,
   startPluginsWatcher,
   type DiscoveredPlugin,
@@ -26,8 +27,25 @@ const ANTHROCLAW_VERSION = (() => {
     return '0.0.0';
   }
 })();
-import { createSdkMcpServer, query, startup } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentDefinition, AgentMcpServerSpec, ElicitationRequest, ElicitationResult, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import {
+  createClaudeSdkMcpServer,
+  initializeClaudeAgentRuntime,
+  runClaudeAgentQuery,
+  type ClaudeAgentDefinition as AgentDefinition,
+  type ClaudeAgentMcpServerSpec as AgentMcpServerSpec,
+  type ClaudeElicitationRequest as ElicitationRequest,
+  type ClaudeElicitationResult as ElicitationResult,
+  type ClaudeRuntimeOptions as Options,
+  type ClaudeRuntimeQuery as Query,
+  type ClaudeRuntimeUserMessage as SDKUserMessage,
+} from './runtime/claude-agent-sdk.js';
+import { normalizeClaudeRuntimeEvents } from './runtime/claude-events.js';
+import type {
+  RuntimeEvent,
+  RuntimeTextDeltaEvent,
+  RuntimeToolEvent,
+  RuntimeUsageUpdatedEvent,
+} from './runtime/events.js';
 import { Agent } from './agent/agent.js';
 import { AGENT_ID_MAX_LEN, AGENT_ID_RE } from './agent/sandbox/agent-workspace.js';
 import { createManageCronTool } from './agent/tools/manage-cron.js';
@@ -138,7 +156,17 @@ import {
 import { classifyIntegrationToolName } from './integrations/audit.js';
 import { buildSdkOptions } from './sdk/options.js';
 import { runHeadlessReview } from './sdk/headless-review.js';
-import { buildAllowedTools } from './sdk/permissions.js';
+import {
+  headlessRuntimeOptionsFromConfig,
+  withConfiguredHeadlessRuntime,
+  type HeadlessReviewRuntimeConfig,
+} from './sdk/headless-runtime-config.js';
+import { resolveHeadlessRuntime } from './runtime/headless-registry.js';
+import type { HeadlessCustomTool, HeadlessRunInput, HeadlessToolPolicy } from './runtime/headless.js';
+import type { RuntimeRunHandle } from './runtime/types.js';
+import { buildExternalMcpCustomTools } from './runtime/external-mcp-custom-tools.js';
+import { buildAllowedTools, createCanUseTool } from './sdk/permissions.js';
+import type { ToolDefinition } from './agent/tools/types.js';
 import { LearningQueue, detectLearningTriggers, type LearningReviewJob } from './learning/queue.js';
 import { applyMemoryCandidateAction } from './learning/memory-applier.js';
 import { runLearningReview } from './learning/runner.js';
@@ -426,6 +454,90 @@ function readResultUsage(event: Record<string, unknown>, durationMs: number): St
     durationApiMs: typeof event.duration_api_ms === 'number' ? event.duration_api_ms : undefined,
     numTurns: typeof event.num_turns === 'number' ? event.num_turns : undefined,
   }) as StoredAgentRunUsage;
+}
+
+function runtimeTextDeltas(
+  events: RuntimeEvent[],
+  source: RuntimeTextDeltaEvent['source'],
+): RuntimeTextDeltaEvent[] {
+  return events.filter((event): event is RuntimeTextDeltaEvent =>
+    event.type === 'text.delta' && event.source === source);
+}
+
+function runtimeUsageEvent(events: RuntimeEvent[]): RuntimeUsageUpdatedEvent | undefined {
+  return events.find((event): event is RuntimeUsageUpdatedEvent => event.type === 'usage.updated');
+}
+
+function runtimeToolEvent(
+  events: RuntimeEvent[],
+  type: RuntimeToolEvent['type'],
+): RuntimeToolEvent | undefined {
+  return events.find((event): event is RuntimeToolEvent => event.type === type);
+}
+
+function runtimeUsageToStored(
+  event: RuntimeUsageUpdatedEvent,
+  durationMs: number,
+): StoredAgentRunUsage {
+  return definedBudget({
+    inputTokens: event.inputTokens,
+    outputTokens: event.outputTokens,
+    cacheReadTokens: event.cacheReadTokens,
+    cacheWriteTokens: event.cacheWriteTokens,
+    totalCostUsd: event.costUsd,
+    durationMs: event.durationMs ?? durationMs,
+    durationApiMs: event.durationApiMs,
+    numTurns: event.numTurns,
+  }) as StoredAgentRunUsage;
+}
+
+function runtimeToolOutputToString(output: unknown): string {
+  return typeof output === 'string' ? output : JSON.stringify(output ?? '');
+}
+
+function piGatewayToolNameToAnthroClawName(
+  toolName: string,
+  originalToolName?: string,
+  localMcpServerName?: string,
+  customToolNames?: Set<string>,
+): string {
+  const normalized = toolName.trim().toLowerCase();
+  switch (normalized) {
+    case 'read':
+      return 'Read';
+    case 'write':
+      return 'Write';
+    case 'edit':
+      return 'Edit';
+    case 'bash':
+      return 'Bash';
+    case 'grep':
+      return 'Grep';
+    case 'find':
+      return 'Glob';
+    case 'ls':
+      return 'LS';
+    default:
+      const localName = originalToolName?.trim() || toolName;
+      if (localName.startsWith('mcp__')) return localName;
+      if (customToolNames?.has(localName) && localMcpServerName) {
+        return `mcp__${localMcpServerName}__${localName}`;
+      }
+      return localName;
+  }
+}
+
+function isPiGatewayCustomToolAllowed(
+  agent: Pick<Agent, 'mcpServer'>,
+  allowedTools: string[],
+  toolName: string,
+): boolean {
+  return allowedTools.includes(toolName)
+    || allowedTools.includes(`mcp__${agent.mcpServer.name}__${toolName}`);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
 }
 
 function routeCandidateFromEntry(entry: RouteEntry): StoredRouteDecisionCandidate {
@@ -1017,6 +1129,204 @@ export class Gateway {
     return this.configAuditLog;
   }
 
+  private getHeadlessReviewRuntimeOptions(agent?: Agent): HeadlessReviewRuntimeConfig {
+    const globalOptions = headlessRuntimeOptionsFromConfig(this.globalConfig);
+    if (!agent?.config.runtime) return globalOptions;
+
+    const agentOptions = headlessRuntimeOptionsFromConfig({ runtime: agent.config.runtime });
+    if (agentOptions.runtime !== 'pi') return agentOptions;
+
+    const mergedPiOptions = {
+      ...(globalOptions.runtimeOptions?.pi ?? {}),
+      ...(agentOptions.runtimeOptions?.pi ?? {}),
+    };
+    return Object.keys(mergedPiOptions).length > 0
+      ? { runtime: 'pi', runtimeOptions: { pi: mergedPiOptions } }
+      : { runtime: 'pi' };
+  }
+
+  private shouldUsePiGatewayRuntime(agent: Agent): boolean {
+    return this.getHeadlessReviewRuntimeOptions(agent).runtime === 'pi';
+  }
+
+  private async runPiGatewayRuntime(
+    agent: Agent,
+    input: {
+      runId: string;
+      prompt: string;
+      sessionId?: string;
+      purpose: string;
+      sessionKey?: string;
+      message?: InboundMessage;
+      channel?: ChannelAdapter;
+      sessionContext?: { channel?: string; peerId: string; senderId?: string; accountId?: string; threadId?: string };
+      onRuntimeEvent?: (event: RuntimeEvent) => void | Promise<void>;
+      onRunHandle?: (
+        handle: RuntimeRunHandle<RuntimeEvent>,
+        context: { runId: string; sessionId?: string; agentId: string },
+      ) => void;
+    },
+  ): Promise<{ text: string; sessionId?: string; usage?: StoredAgentRunUsage; totalTokens: number }> {
+    const configured = this.getHeadlessReviewRuntimeOptions(agent);
+    if (configured.runtime !== 'pi') {
+      throw new Error('Pi Gateway runtime was requested without runtime.headless.provider=pi');
+    }
+
+    const runtime = resolveHeadlessRuntime(configured.runtime, configured.runtimeOptions);
+    const model = agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6';
+    const allowedTools = buildAllowedTools(agent, false);
+    const externalMcpServers = await this.resolveAgentExternalMcpServers(agent);
+    const externalMcpCustomTools = (await buildExternalMcpCustomTools({
+      servers: externalMcpServers,
+      cwd: agent.workspacePath,
+      onError: (err, context) => logger.warn({
+        err,
+        agentId: agent.id,
+        ...context,
+      }, 'Pi Gateway external MCP custom tool bridge skipped or failed'),
+    })).filter((tool) => isPiGatewayCustomToolAllowed(agent, allowedTools, tool.name));
+    const dispatchTools = this.buildGatewayDispatchTools(agent, input.sessionKey, input.message);
+    const customTools = dispatchTools
+      .filter((tool) => isPiGatewayCustomToolAllowed(agent, allowedTools, tool.name))
+      .map((tool): HeadlessCustomTool => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        handler: (args) => tool.handler(args),
+      }))
+      .concat(externalMcpCustomTools);
+    const customToolNames = new Set(customTools.map((tool) => tool.name));
+    const toolGate = createCanUseTool({
+      agent,
+      approvalBroker: this.approvalBroker,
+      channel: input.channel,
+      sessionContext: input.sessionContext ?? { peerId: '__headless__' },
+    });
+    const toolPolicy: HeadlessToolPolicy = {
+      mode: 'allow-list',
+      tools: [
+        ...allowedTools,
+        ...customTools.map((tool) => tool.name),
+      ],
+      canUseTool: async (toolCall) => {
+        const toolName = piGatewayToolNameToAnthroClawName(
+          toolCall.toolName,
+          toolCall.originalToolName,
+          agent.mcpServer.name,
+          customToolNames,
+        );
+        return toolGate(toolName, toolCall.input, {
+          signal: new AbortController().signal,
+          toolUseID: toolCall.toolCallId ?? `${toolName}:${Date.now()}`,
+        } as any);
+      },
+      denyMessage: 'Tool denied by AnthroClaw policy.',
+    };
+    const runInput = {
+      prompt: input.prompt,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      model,
+      cwd: agent.workspacePath,
+      runtimeDefaults: {
+        model,
+        cwd: agent.workspacePath,
+      },
+      purpose: input.purpose,
+      toolDenyMessage: 'Tool denied by AnthroClaw policy.',
+      toolPolicy,
+      customTools,
+    };
+    const runtimeWithHandle = runtime as {
+      runHandle?: (
+        input: HeadlessRunInput,
+        context: { runId: string; sessionId?: string; agentId?: string },
+      ) => Promise<RuntimeRunHandle<RuntimeEvent>>;
+    };
+
+    if (runtimeWithHandle.runHandle) {
+      const handle = await runtimeWithHandle.runHandle(runInput, {
+        runId: input.runId,
+        sessionId: input.sessionId,
+        agentId: agent.id,
+      });
+      input.onRunHandle?.(handle, {
+        runId: input.runId,
+        sessionId: (handle as { sessionId?: string }).sessionId ?? input.sessionId,
+        agentId: agent.id,
+      });
+      const partialTextParts: string[] = [];
+      const messageTextParts: string[] = [];
+      let sessionId = (handle as { sessionId?: string }).sessionId ?? input.sessionId;
+      let usage: StoredAgentRunUsage | undefined;
+
+      try {
+        for await (const event of handle) {
+          sessionId = event.sessionId ?? sessionId;
+          await input.onRuntimeEvent?.(event);
+          if (event.type === 'text.delta') {
+            if (event.source === 'message') {
+              messageTextParts.push(event.text);
+            } else {
+              partialTextParts.push(event.text);
+            }
+          } else if (event.type === 'usage.updated') {
+            usage = runtimeUsageToStored(event, 0);
+          } else if (event.type === 'run.failed') {
+            throw new Error('Pi Gateway runtime failed');
+          }
+        }
+      } finally {
+        handle.close();
+      }
+
+      const textParts = partialTextParts.length > 0 ? partialTextParts : messageTextParts;
+      const inputTokens = usage?.inputTokens ?? 0;
+      const outputTokens = usage?.outputTokens ?? 0;
+      return {
+        text: textParts.join('').trim(),
+        sessionId,
+        usage,
+        totalTokens: inputTokens + outputTokens,
+      };
+    }
+
+    const result = runtime.run
+      ? runtime.run(runInput)
+      : {
+          text: await runtime.runText(runInput),
+        };
+    const resolved = await result;
+    return {
+      ...resolved,
+      totalTokens: 0,
+    };
+  }
+
+  private async assembleGatewayPrompt(
+    agent: Agent,
+    sessionKey: string,
+    prompt: string,
+    context: {
+      channel?: 'telegram' | 'whatsapp';
+      accountId?: string;
+      peerId?: string;
+      senderId?: string;
+      chatType?: 'dm' | 'group';
+      threadId?: string;
+    },
+  ): Promise<string> {
+    const assembleEntry = this.pluginRegistry.getContextEngine(agent.id);
+    const assembledPrompt = await tryPluginAssemble(
+      assembleEntry?.engine ?? null,
+      agent.id,
+      sessionKey,
+      prompt,
+      assembleEntry?.name ?? null,
+      context,
+    );
+    return assembledPrompt ?? prompt;
+  }
+
   /**
    * Lazily construct and return the credential store. Throws if
    * `ANTHROCLAW_MASTER_KEY` is not configured — callers that need credential
@@ -1298,7 +1608,7 @@ export class Gateway {
 
     // Initialize the SDK (handles OAuth, etc.)
     try {
-      const healthCheck = await startup();
+      const healthCheck = await initializeClaudeAgentRuntime();
       healthCheck.close();
       this.sdkReady = true;
       logger.info('Claude Agent SDK initialized');
@@ -1670,8 +1980,10 @@ export class Gateway {
     }
     this.profileRateLimiters.clear();
     this.queueManager.stop();
-    this.learningQueue?.stop();
-    this.learningQueue = null;
+    if (this.learningQueue) {
+      await this.learningQueue.stop({ drainActive: true, timeoutMs: 30_000 });
+      this.learningQueue = null;
+    }
     this.learningStore?.close();
     this.learningStore = null;
     this.decisionStore?.close();
@@ -1846,6 +2158,7 @@ export class Gateway {
       registerTool: (pluginTool) => this.pluginRegistry.addToolFromPlugin(d.manifest.name, pluginTool),
       registerEngine: (name, engine) => this.pluginRegistry.addEngineFromPlugin(name, engine),
       registerCommand: (cmd) => this.pluginRegistry.addCommandFromPlugin(d.manifest.name, cmd),
+      runSubagent: (opts) => runPluginSubagent(withConfiguredHeadlessRuntime(opts, this.globalConfig)),
       getAgentConfig: (id: string) => this.agents.get(id)?.config,
       getGlobalConfig: () => this.globalConfig,
       getPeerPauseStore: () => this.peerPauseStore,
@@ -1865,27 +2178,7 @@ export class Gateway {
     msg?: InboundMessage,
     channel?: ChannelAdapter,
   ) {
-    // Materialize any `credential_ref` entries in the agent's
-    // external_mcp_servers block before handing the spec to the SDK. Skipped
-    // entirely when no external MCP servers are configured so tests / agents
-    // that don't use credentials never construct the credential store (which
-    // would require `ANTHROCLAW_MASTER_KEY`).
-    let externalMcpServersOverride
-      = agent.config.external_mcp_servers as AgentYml['external_mcp_servers'];
-    if (hasExternalMcpServers(agent.config.external_mcp_servers)) {
-      try {
-        externalMcpServersOverride = await resolveExternalMcpHeaders(
-          agent.config.external_mcp_servers,
-          this.getCredentialStore(),
-          { agentId: agent.id },
-        );
-      } catch {
-        // ANTHROCLAW_MASTER_KEY missing or store fails — fall back to the raw
-        // spec. Entries with credential_ref will probe-fail at SDK init; the
-        // operator surfaces that via existing MCP preflight notifications.
-        externalMcpServersOverride = agent.config.external_mcp_servers;
-      }
-    }
+    const externalMcpServersOverride = await this.resolveAgentExternalMcpServers(agent);
 
     const options = buildSdkOptions({
       agent,
@@ -1934,97 +2227,11 @@ export class Gateway {
     });
 
     if (msg || sessionKey) {
-      const dispatchContext = msg
-        ? {
-            agentId: agent.id,
-            channel: msg.channel,
-            peerId: msg.peerId,
-            senderId: msg.senderId,
-            accountId: msg.accountId,
-            threadId: msg.threadId,
-          }
-        : undefined;
-      const buildroomSourceSessionId = sessionKey ?? (msg
-        ? buildSessionKey(
-            agent.id,
-            msg.channel,
-            msg.chatType,
-            msg.peerId,
-            msg.threadId,
-          )
-        : undefined);
-      const baseDispatchTools = agent.buildToolsForDispatch(sessionKey);
-      const buildroomToolBinding = buildroomSourceSessionId
-        ? {
-            projectRoot: this.dataDir ? resolve(this.dataDir, '..') : process.cwd(),
-            roomId: 'anthroclaw-core',
-            sourceAgentId: agent.id,
-            sourceSessionId: buildroomSourceSessionId,
-          }
-        : null;
-      const dispatchTools = (buildroomToolBinding
-        ? bindBuildroomSessionSummaryToolsForDispatch(
-            bindBuildroomHandoffToolsForDispatch(baseDispatchTools, buildroomToolBinding),
-            buildroomToolBinding,
-          )
-        : baseDispatchTools
-      ).map((tool) => {
-        if (tool.name === 'send_message') {
-          return createSendMessageTool((id) => this.channels.get(id), {
-            agentId: agent.id,
-            peerPauseStore: this.peerPauseStore ?? null,
-            notificationsEmitter: this.notificationsEmitter ?? null,
-            dispatchContext,
-          });
-        }
-        if (tool.name === 'send_media') {
-          return createSendMediaTool(agent.workspacePath, (id) => this.channels.get(id), {
-            dispatchContext,
-          });
-        }
-        if (tool.name === 'manage_cron' && this.dynamicCronStore) {
-          return createManageCronTool(
-            agent.id,
-            this.dynamicCronStore,
-            () => this.reloadDynamicCron(),
-            dispatchContext,
-          );
-        }
-        if (tool.name === 'connect_mcp' && msg) {
-          // Rebuild with per-dispatch context so the facade knows which
-          // chat the agent is acting in (DM-only guard) and which session
-          // should receive the eventual `[system] mcp_connected` event.
-          // In headless contexts (cron, startup prewarm) `msg` is undefined
-          // — return the default tool, which rejects connect ops via its
-          // own "no agent context" guard.
-          if (!msg) return tool;
-          const sessionKey = buildSessionKey(
-            agent.id,
-            msg.channel,
-            msg.chatType,
-            msg.peerId,
-            msg.threadId,
-          );
-          return createConnectMcpTool(
-            agent.id,
-            () => {
-              const facade = this.getMcpOnboarding();
-              if (!facade) throw new Error('mcp_onboarding_facade_unavailable');
-              return facade;
-            },
-            () => ({
-              agentSessionKey: sessionKey,
-              chatType: msg.chatType === 'dm' ? 'private' : 'group',
-            }),
-          );
-        }
-        return tool;
-      });
       options.mcpServers = {
         ...(options.mcpServers ?? {}),
-        [agent.mcpServer.name]: createSdkMcpServer({
+        [agent.mcpServer.name]: createClaudeSdkMcpServer({
           name: agent.mcpServer.name,
-          tools: dispatchTools as unknown as any[],
+          tools: this.buildGatewayDispatchTools(agent, sessionKey, msg) as unknown as any[],
         }),
       };
     }
@@ -2032,8 +2239,122 @@ export class Gateway {
     return options;
   }
 
+  private async resolveAgentExternalMcpServers(agent: Agent): Promise<AgentYml['external_mcp_servers']> {
+    // Materialize any `credential_ref` entries in the agent's
+    // external_mcp_servers block before handing the spec to a runtime. Skipped
+    // entirely when no external MCP servers are configured so tests / agents
+    // that don't use credentials never construct the credential store (which
+    // would require `ANTHROCLAW_MASTER_KEY`).
+    if (!hasExternalMcpServers(agent.config.external_mcp_servers)) {
+      return agent.config.external_mcp_servers;
+    }
+
+    try {
+      return await resolveExternalMcpHeaders(
+        agent.config.external_mcp_servers,
+        this.getCredentialStore(),
+        { agentId: agent.id },
+      );
+    } catch {
+      // ANTHROCLAW_MASTER_KEY missing or store fails — fall back to the raw
+      // spec. Entries with credential_ref will probe-fail at runtime; the
+      // operator surfaces that via existing MCP preflight notifications.
+      return agent.config.external_mcp_servers;
+    }
+  }
+
+  private buildGatewayDispatchTools(
+    agent: Agent,
+    sessionKey?: string,
+    msg?: InboundMessage,
+  ): ToolDefinition[] {
+    const dispatchContext = msg
+      ? {
+          agentId: agent.id,
+          channel: msg.channel,
+          peerId: msg.peerId,
+          senderId: msg.senderId,
+          accountId: msg.accountId,
+          threadId: msg.threadId,
+        }
+      : undefined;
+    const buildroomSourceSessionId = sessionKey ?? (msg
+      ? buildSessionKey(
+          agent.id,
+          msg.channel,
+          msg.chatType,
+          msg.peerId,
+          msg.threadId,
+        )
+      : undefined);
+    const baseDispatchTools = agent.buildToolsForDispatch(sessionKey);
+    const buildroomToolBinding = buildroomSourceSessionId
+      ? {
+          projectRoot: this.dataDir ? resolve(this.dataDir, '..') : process.cwd(),
+          roomId: 'anthroclaw-core',
+          sourceAgentId: agent.id,
+          sourceSessionId: buildroomSourceSessionId,
+        }
+      : null;
+    return (buildroomToolBinding
+      ? bindBuildroomSessionSummaryToolsForDispatch(
+          bindBuildroomHandoffToolsForDispatch(baseDispatchTools, buildroomToolBinding),
+          buildroomToolBinding,
+        )
+      : baseDispatchTools
+    ).map((tool) => {
+      if (tool.name === 'send_message') {
+        return createSendMessageTool((id) => this.channels.get(id), {
+          agentId: agent.id,
+          peerPauseStore: this.peerPauseStore ?? null,
+          notificationsEmitter: this.notificationsEmitter ?? null,
+          dispatchContext,
+        });
+      }
+      if (tool.name === 'send_media') {
+        return createSendMediaTool(agent.workspacePath, (id) => this.channels.get(id), {
+          dispatchContext,
+        });
+      }
+      if (tool.name === 'manage_cron' && this.dynamicCronStore) {
+        return createManageCronTool(
+          agent.id,
+          this.dynamicCronStore,
+          () => this.reloadDynamicCron(),
+          dispatchContext,
+        );
+      }
+      if (tool.name === 'connect_mcp' && msg) {
+        const sourceSessionKey = buildSessionKey(
+          agent.id,
+          msg.channel,
+          msg.chatType,
+          msg.peerId,
+          msg.threadId,
+        );
+        return createConnectMcpTool(
+          agent.id,
+          () => {
+            const facade = this.getMcpOnboarding();
+            if (!facade) throw new Error('mcp_onboarding_facade_unavailable');
+            return facade;
+          },
+          () => ({
+            agentSessionKey: sourceSessionKey,
+            chatType: msg.chatType === 'dm' ? 'private' : 'group',
+          }),
+        );
+      }
+      return tool;
+    });
+  }
+
   private async prewarmAgent(agent: Agent): Promise<void> {
     if (!this.sdkReady) return;
+    if (this.shouldUsePiGatewayRuntime(agent)) {
+      this.warmQueries.discard(agent.id);
+      return;
+    }
     // History: commit 9e650cf ("fix(cron): bypass warm queries for
     // scheduled task tools") force-discarded warm pools for any agent
     // with manage_cron. The intent was to avoid stale session context
@@ -2066,7 +2387,7 @@ export class Gateway {
         { agentId: agent.id, warmUsed: false, externalMcpCount, reason: resume ? 'resume' : 'no-warm-available' },
         'SDK query starting',
       );
-      return query({ prompt, options: options as any }) as Query;
+      return runClaudeAgentQuery({ prompt, options: options as any }) as Query;
     }
 
     try {
@@ -2080,7 +2401,7 @@ export class Gateway {
     } catch (err) {
       logger.warn({ err, agentId: agent.id }, 'SDK warm query failed; falling back to regular query');
       void this.prewarmAgent(agent);
-      return query({ prompt, options: options as any }) as Query;
+      return runClaudeAgentQuery({ prompt, options: options as any }) as Query;
     }
   }
 
@@ -3049,27 +3370,14 @@ export class Gateway {
 
     try {
       const title = await generateSessionTitle(userText, assistantText, async (prompt) => {
-        const options = buildSdkOptions({
-          agent,
-          includeMcpServer: false,
-        });
-        options.allowedTools = [];
-        options.disallowedTools = buildAllowedTools(agent, false);
-        options.canUseTool = async () => ({ behavior: 'deny', message: 'Tools disabled for title generation.' });
-
-        const result = query({
+        return runHeadlessReview({
           prompt,
-          options: options as any,
+          model: agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6',
+          cwd: agent.workspacePath,
+          ...this.getHeadlessReviewRuntimeOptions(),
+          purpose: 'title generation',
+          toolDenyMessage: 'Tools disabled for title generation.',
         });
-
-        for await (const event of result) {
-          const evt = event as Record<string, unknown>;
-          if (evt.type === 'result' && typeof evt.result === 'string') {
-            return evt.result;
-          }
-        }
-
-        return '';
       });
 
       await this.sdkSessionService.setAgentSessionTitle(agent, sessionId, title);
@@ -3107,7 +3415,8 @@ export class Gateway {
     metrics.increment('messages_received');
     metrics.recordMessage();
 
-    if (!this.sdkReady) {
+    const usePiGatewayRuntime = this.shouldUsePiGatewayRuntime(agent);
+    if (!this.sdkReady && !usePiGatewayRuntime) {
       const fallback = `Agent ${agentId} received: ${message}`;
       callbacks.onText(fallback);
       callbacks.onDone(sessionKey, 0);
@@ -3157,6 +3466,123 @@ export class Gateway {
     };
 
     try {
+      if (usePiGatewayRuntime) {
+        runId = randomUUID();
+        const model = agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6';
+        metrics.recordAgentRunStart({
+          runId,
+          agentId,
+          sessionKey,
+          sdkSessionId: existingSessionId,
+          source: 'web',
+          channel: context.channel ?? 'web',
+          peerId: 'web-user',
+          status: 'running',
+          model,
+        });
+        let streamedPartialText = false;
+        let deliveredText = false;
+        const abort = new AbortController();
+        const keepCheckpointHandle = Boolean(agent.config.sdk?.enableFileCheckpointing);
+        const result = await this.runPiGatewayRuntime(agent, {
+          runId,
+          prompt,
+          sessionId: existingSessionId,
+          purpose: 'gateway web query',
+          sessionKey,
+          sessionContext: { channel: context.channel ?? 'web', peerId: 'web-user', senderId: 'web-user' },
+          onRunHandle: (handle) => {
+            const registryHandle = runtimeRegistryHandle(handle);
+            this.controlRegistry.register(
+              [runId!, sessionKey, ...(existingSessionId ? [existingSessionId] : []), ...(sessionId ? [sessionId] : [])],
+              registryHandle,
+              abort,
+            );
+            if (keepCheckpointHandle) {
+              this.checkpointRegistry.register(
+                [sessionKey, ...(existingSessionId ? [existingSessionId] : []), ...(sessionId ? [sessionId] : [])],
+                registryHandle,
+              );
+            }
+          },
+          onRuntimeEvent: (event) => {
+            if (event.sessionId) {
+              this.controlRegistry.alias(event.sessionId, sessionKey);
+              this.controlRegistry.alias(`web:${agentId}:${event.sessionId}`, sessionKey);
+              if (keepCheckpointHandle) {
+                this.checkpointRegistry.alias(event.sessionId, sessionKey);
+                this.checkpointRegistry.alias(`web:${agentId}:${event.sessionId}`, sessionKey);
+              }
+            }
+            if (event.type === 'text.delta' && event.source === 'partial') {
+              streamedPartialText = true;
+              callbacks.onPartialText?.(event.text);
+            } else if (event.type === 'text.delta' && event.source === 'message' && !streamedPartialText) {
+              deliveredText = true;
+              callbacks.onText(event.text);
+            } else if (event.type === 'tool.call.started') {
+              metrics.increment('tool_calls');
+              metrics.recordToolEvent({
+                agentId,
+                sessionKey,
+                toolName: event.toolName,
+                status: 'started',
+              });
+              callbacks.onToolCall(event.toolName, asRecord(event.input));
+            } else if (event.type === 'tool.call.completed' || event.type === 'tool.call.failed') {
+              metrics.recordToolEvent({
+                agentId,
+                sessionKey,
+                toolName: event.toolName,
+                status: event.type === 'tool.call.failed' ? 'failed' : 'completed',
+              });
+              callbacks.onToolResult(event.toolName, runtimeToolOutputToString(event.output));
+            }
+          },
+        });
+        const text = result.text.trim();
+        newSessionId = result.sessionId ?? existingSessionId ?? '';
+        if (newSessionId) {
+          const isNewSession = !existingSessionId || existingSessionId !== newSessionId;
+          agent.setSessionId(sessionKey, newSessionId);
+          agent.setSessionId(`web:${agentId}:${newSessionId}`, newSessionId);
+          metrics.recordSessionEvent({
+            agentId,
+            sessionId: newSessionId,
+            sessionKey,
+            eventType: isNewSession ? 'created' : 'resumed',
+          });
+          this.controlRegistry.alias(newSessionId, sessionKey);
+          this.controlRegistry.alias(`web:${agentId}:${newSessionId}`, sessionKey);
+          if (keepCheckpointHandle) {
+            this.checkpointRegistry.alias(newSessionId, sessionKey);
+            this.checkpointRegistry.alias(`web:${agentId}:${newSessionId}`, sessionKey);
+          }
+        }
+        if (text && !streamedPartialText && !deliveredText) callbacks.onText(text);
+        runUsage = result.usage ?? { durationMs: Date.now() - queryStartMs };
+        if (result.totalTokens > 0) {
+          const inputTokens = result.usage?.inputTokens ?? 0;
+          const outputTokens = result.usage?.outputTokens ?? 0;
+          metrics.recordTokens(model, inputTokens, outputTokens, result.usage?.cacheReadTokens ?? 0);
+          metrics.recordUsage({
+            sessionKey,
+            agentId,
+            platform: 'web',
+            timestamp: Date.now(),
+            inputTokens,
+            outputTokens,
+            cacheReadTokens: result.usage?.cacheReadTokens ?? 0,
+            toolCalls: {},
+            durationMs: Date.now() - queryStartMs,
+            model,
+          });
+        }
+        finishRun('succeeded');
+        callbacks.onDone(newSessionId || sessionKey, result.totalTokens);
+        return;
+      }
+
       const options = await this.buildUserQueryOptions(
         agent,
         existingSessionId,
@@ -3219,13 +3645,20 @@ export class Gateway {
         if (next.done) break;
 
         const evt = next.value as Record<string, unknown>;
+        const runtimeEvents = normalizeClaudeRuntimeEvents(evt, {
+          runId: runId ?? 'web-query',
+          sessionId: newSessionId || existingSessionId,
+          agentId,
+          durationMs: Date.now() - queryStartMs,
+        });
 
         if (evt.session_id && typeof evt.session_id === 'string') {
           newSessionId = evt.session_id;
           this.controlRegistry.alias(newSessionId, sessionKey);
         }
 
-        const partialText = extractPartialText(evt);
+        const partialText = runtimeTextDeltas(runtimeEvents, 'partial')[0]?.text
+          ?? extractPartialText(evt);
         if (partialText) {
           streamedPartialText = true;
           callbacks.onPartialText?.(partialText);
@@ -3260,23 +3693,23 @@ export class Gateway {
           break;
         }
 
+        const messageTextDeltas = runtimeTextDeltas(runtimeEvents, 'message');
+        const resultTextDelta = runtimeTextDeltas(runtimeEvents, 'result')[0];
+        const usageEvent = runtimeUsageEvent(runtimeEvents);
+        const toolStartEvent = runtimeToolEvent(runtimeEvents, 'tool.call.started');
+        const toolCompletedEvent = runtimeToolEvent(runtimeEvents, 'tool.call.completed')
+          ?? runtimeToolEvent(runtimeEvents, 'tool.call.failed');
+
         if (evt.type === 'assistant') {
-          const message = evt.message as Record<string, unknown> | undefined;
-          if (message?.content && Array.isArray(message.content)) {
-            for (const block of message.content) {
-              if (block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string') {
-                assistantTextParts.push(block.text);
-                if (!streamedPartialText) {
-                  callbacks.onText(block.text);
-                }
-              }
+          for (const textEvent of messageTextDeltas) {
+            assistantTextParts.push(textEvent.text);
+            if (!streamedPartialText) {
+              callbacks.onText(textEvent.text);
             }
           }
-          // Token usage if present
-          if (message?.usage && typeof message.usage === 'object') {
-            const usage = message.usage as Record<string, unknown>;
-            if (typeof usage.input_tokens === 'number') inputTokens += usage.input_tokens;
-            if (typeof usage.output_tokens === 'number') outputTokens += usage.output_tokens;
+          if (usageEvent) {
+            if (typeof usageEvent.inputTokens === 'number') inputTokens += usageEvent.inputTokens;
+            if (typeof usageEvent.outputTokens === 'number') outputTokens += usageEvent.outputTokens;
             totalTokens = inputTokens + outputTokens;
           }
         } else if (evt.type === 'result') {
@@ -3284,40 +3717,43 @@ export class Gateway {
           if (evt.session_id && typeof evt.session_id === 'string') {
             newSessionId = evt.session_id;
           }
-          const resultUsage = readResultUsage(evt, Date.now() - queryStartMs);
+          const resultUsage = usageEvent
+            ? runtimeUsageToStored(usageEvent, Date.now() - queryStartMs)
+            : readResultUsage(evt, Date.now() - queryStartMs);
           if (Object.keys(resultUsage).length > 1) {
             runUsage = resultUsage;
             inputTokens = resultUsage.inputTokens ?? inputTokens;
             outputTokens = resultUsage.outputTokens ?? outputTokens;
             totalTokens = inputTokens + outputTokens;
           }
-          if (typeof evt.result === 'string' && evt.result.length > 0) {
+          if (resultTextDelta?.text) {
             assistantTextParts.length = 0;
-            assistantTextParts.push(evt.result);
+            assistantTextParts.push(resultTextDelta.text);
           }
           if (!shouldReadPromptSuggestion) {
             break;
           }
-        } else if (evt.type === 'tool_use') {
+        } else if (toolStartEvent) {
           metrics.increment('tool_calls');
-          const toolName = typeof evt.name === 'string' ? evt.name : 'unknown';
+          const toolName = toolStartEvent.toolName;
           metrics.recordToolEvent({
             agentId,
             sessionKey,
             toolName,
             status: 'started',
           });
-          const toolInput = (evt.input && typeof evt.input === 'object' ? evt.input : {}) as Record<string, unknown>;
+          const toolInput = asRecord(toolStartEvent.input);
           callbacks.onToolCall(toolName, toolInput);
-        } else if (evt.type === 'tool_result') {
-          const toolName = typeof evt.name === 'string' ? evt.name : 'unknown';
+        } else if (toolCompletedEvent) {
+          const toolName = toolCompletedEvent.toolName;
+          const toolStatus = toolCompletedEvent.type === 'tool.call.failed' ? 'failed' : 'completed';
           metrics.recordToolEvent({
             agentId,
             sessionKey,
             toolName,
-            status: 'completed',
+            status: toolStatus,
           });
-          const output = typeof evt.output === 'string' ? evt.output : JSON.stringify(evt.output ?? '');
+          const output = runtimeToolOutputToString(toolCompletedEvent.output);
           callbacks.onToolResult(toolName, output);
         }
 
@@ -3781,6 +4217,7 @@ export class Gateway {
       store: this.learningStore,
       decisionStore: this.decisionStore ?? undefined,
       defaultModel: this.globalConfig?.defaults.model,
+      headlessRuntime: this.getHeadlessReviewRuntimeOptions(),
     });
     for (const decision of result?.decisions ?? []) {
       await this.deliverDecisionPrompt(decision);
@@ -5009,7 +5446,8 @@ export class Gateway {
       }
     }
 
-    if (!this.sdkReady) {
+    const usePiGatewayRuntime = this.shouldUsePiGatewayRuntime(agent);
+    if (!this.sdkReady && !usePiGatewayRuntime) {
       // Fallback when SDK is not available
       return `Agent ${agent.id} received: ${msg.text}`;
     }
@@ -5052,6 +5490,183 @@ export class Gateway {
     const abort = new AbortController();
 
     try {
+      if (usePiGatewayRuntime) {
+        runId = randomUUID();
+        const model = agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6';
+        metrics.recordAgentRunStart({
+          runId,
+          agentId: agent.id,
+          sessionKey,
+          sdkSessionId: existingSessionId,
+          source,
+          channel: msg.channel,
+          accountId: msg.accountId,
+          peerId: msg.peerId,
+          threadId: msg.threadId,
+          messageId: msg.messageId,
+          routeDecisionId,
+          status: 'running',
+          model,
+        });
+        if (prefetchedForPrompt.length > 0) {
+          metrics.recordMemoryInfluenceEvent({
+            agentId: agent.id,
+            sessionKey,
+            runId,
+            sdkSessionId: existingSessionId,
+            source: 'prefetch',
+            query: prefetchKeywords.join(' '),
+            refs: memoryRefsFromSearchResults(prefetchedForPrompt),
+          });
+        }
+
+        prompt = await this.assembleGatewayPrompt(agent, sessionKey, prompt, {
+          channel: msg.channel,
+          accountId: msg.accountId,
+          peerId: msg.peerId,
+          senderId: msg.senderId,
+          chatType: msg.chatType,
+          threadId: msg.threadId,
+        });
+
+        const keepCheckpointHandle = Boolean(agent.config.sdk?.enableFileCheckpointing);
+        let registeredPiHandle = false;
+        let result: { text: string; sessionId?: string; usage?: StoredAgentRunUsage; totalTokens: number };
+        try {
+          result = await this.runPiGatewayRuntime(agent, {
+            runId,
+            prompt,
+            sessionId: existingSessionId,
+            purpose: 'gateway agent query',
+            sessionKey,
+            message: msg,
+            channel: this.channels.get(msg.channel),
+            sessionContext: { channel: msg.channel, peerId: msg.peerId, senderId: msg.senderId, accountId: msg.accountId, threadId: msg.threadId },
+            onRunHandle: (handle) => {
+              const registryHandle = runtimeRegistryHandle(handle);
+              registeredPiHandle = true;
+              this.queueManager.register(sessionKey, registryHandle, abort, {
+                traceId: runId,
+                channelDeliveryTarget: {
+                  channel: msg.channel,
+                  peerId: msg.peerId,
+                  accountId: msg.accountId,
+                  threadId: msg.threadId,
+                },
+              });
+              this.controlRegistry.register(
+                [runId!, sessionKey, ...(existingSessionId ? [existingSessionId] : [])],
+                registryHandle,
+                abort,
+              );
+              if (keepCheckpointHandle) {
+                this.checkpointRegistry.register(
+                  [sessionKey, ...(existingSessionId ? [existingSessionId] : [])],
+                  registryHandle,
+                );
+              }
+            },
+            onRuntimeEvent: (event) => {
+              if (event.sessionId) {
+                this.controlRegistry.alias(event.sessionId, sessionKey);
+                if (keepCheckpointHandle) {
+                  this.checkpointRegistry.alias(event.sessionId, sessionKey);
+                }
+              }
+              if (event.type === 'tool.call.started') {
+                toolCallsForLearning += 1;
+                if (isLearningRelevantToolName(event.toolName)) {
+                  skillOrMemoryActivityForLearning = true;
+                }
+                metrics.increment('tool_calls');
+                metrics.recordToolEvent({
+                  agentId: agent.id,
+                  sessionKey,
+                  toolName: event.toolName,
+                  status: 'started',
+                });
+                this.queueManager.markActivity(sessionKey, 'tool_call_started');
+              } else if (event.type === 'tool.call.completed' || event.type === 'tool.call.failed') {
+                if (isLearningRelevantToolName(event.toolName)) {
+                  skillOrMemoryActivityForLearning = true;
+                }
+                if (event.type === 'tool.call.failed') {
+                  recoveredToolErrorsForLearning += 1;
+                }
+                metrics.recordToolEvent({
+                  agentId: agent.id,
+                  sessionKey,
+                  toolName: event.toolName,
+                  status: event.type === 'tool.call.failed' ? 'failed' : 'completed',
+                });
+                this.queueManager.markActivity(sessionKey, event.type);
+              } else if (event.type === 'text.delta') {
+                this.queueManager.markActivity(sessionKey, 'text_delta');
+              }
+            },
+          });
+        } finally {
+          if (registeredPiHandle) {
+            this.queueManager.unregister(sessionKey);
+            this.controlRegistry.unregister(sessionKey);
+          }
+        }
+        const responseText = result.text.trim();
+        observedSessionId = result.sessionId ?? existingSessionId;
+        if (observedSessionId) {
+          const isNewSession = !existingSessionId || existingSessionId !== observedSessionId;
+          agent.setSessionId(sessionKey, observedSessionId);
+          this.controlRegistry.alias(observedSessionId, sessionKey);
+          if (keepCheckpointHandle) {
+            this.checkpointRegistry.alias(observedSessionId, sessionKey);
+          }
+          metrics.recordSessionEvent({
+            agentId: agent.id,
+            sessionId: observedSessionId,
+            sessionKey,
+            eventType: isNewSession ? 'created' : 'resumed',
+          });
+        }
+        runUsage = result.usage ?? { durationMs: Date.now() - queryStartMs };
+        if (result.totalTokens > 0) {
+          const inputTokens = result.usage?.inputTokens ?? 0;
+          const outputTokens = result.usage?.outputTokens ?? 0;
+          const cacheReadTokens = result.usage?.cacheReadTokens ?? 0;
+          metrics.recordTokens(model, inputTokens, outputTokens, cacheReadTokens);
+          const usageRecord = {
+            sessionKey,
+            agentId: agent.id,
+            platform: msg.channel,
+            timestamp: Date.now(),
+            inputTokens,
+            outputTokens,
+            cacheReadTokens,
+            toolCalls: {},
+            durationMs: Date.now() - queryStartMs,
+            model,
+          };
+          this.insightsEngine.record(usageRecord);
+          metrics.recordUsage(usageRecord);
+        }
+
+        if (responseText.length > 0) {
+          void this.extractPostRunMemoryCandidates(agent, {
+            runId,
+            sessionKey,
+            sdkSessionId: observedSessionId,
+            channel: msg.channel,
+            peerHash: hashIdentifier(msg.peerId),
+            userText: msg.text || msg.transcript || '[media]',
+            assistantText: responseText,
+          });
+          finishRun('succeeded');
+          return responseText;
+        }
+
+        finishRun('succeeded');
+        return '';
+      }
+
       const options = await this.buildUserQueryOptions(
         agent,
         existingSessionId,
@@ -5093,25 +5708,14 @@ export class Gateway {
       // prompt (e.g. LCM injects compressed history context), use the
       // transformed version. Otherwise pass the original prompt through
       // unchanged. Failures fall back to the original prompt silently.
-      const assembleEntry = this.pluginRegistry.getContextEngine(agent.id);
-      const assembledPrompt = await tryPluginAssemble(
-        assembleEntry?.engine ?? null,
-        agent.id,
-        sessionKey,
-        prompt,
-        assembleEntry?.name ?? null,
-        {
-          channel: msg.channel,
-          accountId: msg.accountId,
-          peerId: msg.peerId,
-          senderId: msg.senderId,
-          chatType: msg.chatType,
-          threadId: msg.threadId,
-        },
-      );
-      if (assembledPrompt !== null) {
-        prompt = assembledPrompt;
-      }
+      prompt = await this.assembleGatewayPrompt(agent, sessionKey, prompt, {
+        channel: msg.channel,
+        accountId: msg.accountId,
+        peerId: msg.peerId,
+        senderId: msg.senderId,
+        chatType: msg.chatType,
+        threadId: msg.threadId,
+      });
 
       // Warm queries are always allowed now. The historical bypass for
       // manage_cron agents was unjustified and caused prod hangs — see
@@ -5278,7 +5882,14 @@ export class Gateway {
           }
 
           const evt = next.value as Record<string, unknown>;
-          const partialText = extractPartialText(evt);
+          const runtimeEvents = normalizeClaudeRuntimeEvents(evt, {
+            runId: runId ?? 'agent-query',
+            sessionId: observedSessionId,
+            agentId: agent.id,
+            durationMs: Date.now() - queryStartMs,
+          });
+          const partialText = runtimeTextDeltas(runtimeEvents, 'partial')[0]?.text
+            ?? extractPartialText(evt);
           const taskProgress = extractTaskProgress(evt);
           const taskNotification = extractTaskNotification(evt);
           const taskLifecycle = extractTaskLifecycleEvent(evt);
@@ -5303,7 +5914,7 @@ export class Gateway {
           } else if (hookEvent) {
             markRunActivity(hookEvent.subtype);
           } else {
-            markRunActivity(typeof evt.type === 'string' ? evt.type : 'sdk_event');
+            markRunActivity(runtimeEvents[0]?.type ?? (typeof evt.type === 'string' ? evt.type : 'sdk_event'));
           }
 
           if (evt.session_id && typeof evt.session_id === 'string') {
@@ -5312,40 +5923,37 @@ export class Gateway {
             this.controlRegistry.alias(sessionId, sessionKey);
           }
 
+          const messageTextDeltas = runtimeTextDeltas(runtimeEvents, 'message');
+          const resultTextDelta = runtimeTextDeltas(runtimeEvents, 'result')[0];
+          const usageEvent = runtimeUsageEvent(runtimeEvents);
+          const toolStartEvent = runtimeToolEvent(runtimeEvents, 'tool.call.started');
+          const toolCompletedEvent = runtimeToolEvent(runtimeEvents, 'tool.call.completed')
+            ?? runtimeToolEvent(runtimeEvents, 'tool.call.failed');
+
           if (evt.type === 'assistant') {
-            const message = evt.message as Record<string, unknown> | undefined;
-            if (message?.content && Array.isArray(message.content)) {
-              for (const block of message.content) {
-                if (block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string') {
-                  textParts.push(block.text);
-                }
-              }
+            for (const textEvent of messageTextDeltas) {
+              textParts.push(textEvent.text);
             }
           } else if (evt.type === 'result') {
-            if (typeof evt.result === 'string' && evt.result.length > 0) {
+            if (resultTextDelta?.text) {
               textParts.length = 0;
-              textParts.push(evt.result);
+              textParts.push(resultTextDelta.text);
             }
             if (evt.session_id && typeof evt.session_id === 'string') {
               sessionId = evt.session_id;
               observedSessionId = sessionId;
             }
-            const usage = evt.usage as {
-              input_tokens?: number;
-              output_tokens?: number;
-              cache_read_input_tokens?: number;
-            } | undefined;
-            if (usage) {
+            if (usageEvent) {
               const model = (options.model as string) ?? 'unknown';
-              const cacheReadTokens = usage.cache_read_input_tokens ?? 0;
-              metrics.recordTokens(model, usage.input_tokens ?? 0, usage.output_tokens ?? 0, cacheReadTokens);
+              const cacheReadTokens = usageEvent.cacheReadTokens ?? 0;
+              metrics.recordTokens(model, usageEvent.inputTokens ?? 0, usageEvent.outputTokens ?? 0, cacheReadTokens);
               const usageRecord = {
                 sessionKey,
                 agentId: agent.id,
                 platform: msg.channel,
                 timestamp: Date.now(),
-                inputTokens: usage.input_tokens ?? 0,
-                outputTokens: usage.output_tokens ?? 0,
+                inputTokens: usageEvent.inputTokens ?? 0,
+                outputTokens: usageEvent.outputTokens ?? 0,
                 cacheReadTokens,
                 toolCalls: {},
                 durationMs: Date.now() - queryStartMs,
@@ -5354,10 +5962,12 @@ export class Gateway {
               this.insightsEngine.record(usageRecord);
               metrics.recordUsage(usageRecord);
             }
-            runUsage = readResultUsage(evt, Date.now() - queryStartMs);
+            runUsage = usageEvent
+              ? runtimeUsageToStored(usageEvent, Date.now() - queryStartMs)
+              : readResultUsage(evt, Date.now() - queryStartMs);
             break;
-          } else if (evt.type === 'tool_use') {
-            const toolName = typeof evt.name === 'string' ? evt.name : 'unknown';
+          } else if (toolStartEvent) {
+            const toolName = toolStartEvent.toolName;
             toolCallsForLearning += 1;
             if (isLearningRelevantToolName(toolName)) {
               skillOrMemoryActivityForLearning = true;
@@ -5390,12 +6000,12 @@ export class Gateway {
                 break;
               }
             }
-          } else if (evt.type === 'tool_result') {
-            const toolName = typeof evt.name === 'string' ? evt.name : 'unknown';
+          } else if (toolCompletedEvent) {
+            const toolName = toolCompletedEvent.toolName;
             if (isLearningRelevantToolName(toolName)) {
               skillOrMemoryActivityForLearning = true;
             }
-            if (evt.is_error === true || evt.status === 'error') {
+            if (toolCompletedEvent.type === 'tool.call.failed') {
               recoveredToolErrorsForLearning += 1;
               // Runtime 401 trap: when an external MCP tool returns an
               // auth-style error, mark the credential needs_reauth and
@@ -5908,7 +6518,7 @@ export class Gateway {
             trustedBypass: true,
             includeMcpServer: false,
           });
-          const result = query({
+          const result = runClaudeAgentQuery({
             prompt: summaryPrompt,
             options: options as any,
           });
@@ -5975,6 +6585,7 @@ export class Gateway {
         prompt,
         model: agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6',
         cwd: agent.workspacePath,
+        ...this.getHeadlessReviewRuntimeOptions(),
         purpose: 'memory extraction',
         toolDenyMessage: 'Tools disabled for memory extraction.',
       });
@@ -6045,7 +6656,7 @@ export class Gateway {
           if (trimmed.length > 0) stderrLines.push(trimmed);
         }
       };
-      const result = query({
+      const result = runClaudeAgentQuery({
         prompt: summaryPrompt,
         options: options as any,
       });
@@ -6532,6 +7143,17 @@ export class Gateway {
     this.profileRateLimiters.set(agentId, limiter);
     logger.debug({ agentId, floor }, 'Profile floor rate limiter registered');
   }
+}
+
+function runtimeRegistryHandle(handle: RuntimeRunHandle<RuntimeEvent>): RuntimeRunHandle<RuntimeEvent> {
+  return {
+    interrupt: () => handle.interrupt(),
+    close: () => undefined,
+    ...(handle.rewindFiles
+      ? { rewindFiles: (userMessageId, options) => handle.rewindFiles!(userMessageId, options) }
+      : {}),
+    [Symbol.asyncIterator]: () => handle[Symbol.asyncIterator](),
+  };
 }
 
 function memoryRefsFromSearchResults(results: SearchResult[]): StoredMemoryInfluenceRef[] {

@@ -1,4 +1,8 @@
-import { startup, type Options, type WarmQuery } from '@anthropic-ai/claude-agent-sdk';
+import {
+  startClaudeAgentRuntime,
+  type ClaudeRuntimeOptions as Options,
+  type ClaudeWarmQuery as WarmQuery,
+} from '../runtime/claude-agent-sdk.js';
 import { logger } from '../logger.js';
 
 export class WarmQueryPool {
@@ -8,7 +12,7 @@ export class WarmQueryPool {
   async prewarm(key: string, options: Options): Promise<void> {
     if (this.handles.has(key) || this.pending.has(key)) return;
 
-    const pending = startup({ options })
+    const pending = startClaudeAgentRuntime({ options })
       .then((handle) => {
         this.handles.set(key, handle);
         logger.debug({ key }, 'SDK warm query prepared');

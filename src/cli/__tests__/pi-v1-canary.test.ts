@@ -1,0 +1,398 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+  parsePiV1CanaryArgs,
+  runPiV1CanaryCli,
+} from '../pi-v1-canary.js';
+
+describe('Pi v1 canary CLI', () => {
+  it('lists canary scenarios without running probes', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+    const auth = createProbe('passed');
+
+    const code = await runPiV1CanaryCli(['--list', '--json'], {
+      runAuthCli: auth,
+      stdout,
+      stderr,
+    });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    expect(auth).not.toHaveBeenCalled();
+    const body = JSON.parse(stdout.text());
+    expect(body).toMatchObject({
+      status: 'passed',
+      mode: 'list',
+      runtime: 'pi',
+    });
+    expect(body.scenarios[0]).toMatchObject({
+      id: 'pi.auth-model-preflight',
+      status: 'incomplete',
+    });
+    expect(body.scenarios.length).toBeGreaterThan(4);
+  });
+
+  it('runs only automated smoke scenarios in smoke-only mode', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+    const auth = createProbe('passed');
+    const workspace = createProbe('passed');
+    const gateway = createProbe('passed');
+    const aggregate = createProbe('passed');
+
+    const code = await runPiV1CanaryCli([
+      '--smoke-only',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--keep-workspace',
+      '--json',
+    ], {
+      runAuthCli: auth,
+      runWorkspaceCli: workspace,
+      runGatewayCli: gateway,
+      runAggregateCli: aggregate,
+      stdout,
+      stderr,
+    });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    expect(auth).toHaveBeenCalledTimes(1);
+    expect(workspace).toHaveBeenCalledTimes(1);
+    expect(gateway).toHaveBeenCalledTimes(1);
+    expect(aggregate).toHaveBeenCalledTimes(1);
+    expect(auth.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+    ]);
+    expect(workspace.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--keep-workspace',
+    ]);
+    expect(gateway.mock.calls[0]?.[0]).toEqual(workspace.mock.calls[0]?.[0]);
+    expect(aggregate.mock.calls[0]?.[0]).toEqual(workspace.mock.calls[0]?.[0]);
+    const body = JSON.parse(stdout.text());
+    expect(body).toMatchObject({
+      status: 'passed',
+      mode: 'smoke-only',
+    });
+    expect(body.scenarios).toHaveLength(4);
+    expect(body.scenarios.map((scenario: { id: string }) => scenario.id)).toEqual([
+      'pi.auth-model-preflight',
+      'pi.workspace-tools-rewind',
+      'pi.gateway-channel-approval',
+      'pi.aggregate-real-auth',
+    ]);
+  });
+
+  it('runs full mode when all scripted and smoke canaries pass', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+    const sessionsMemory = createProbe('passed');
+    const pluginsContext = createProbe('passed');
+    const externalMcp = createProbe('passed');
+    const dashboardOperator = createProbe('passed');
+    const scheduledBuildroom = createProbe('passed');
+    const rollbackMixedRuntime = createProbe('passed');
+
+    const code = await runPiV1CanaryCli(['--json'], {
+      runAuthCli: createProbe('passed'),
+      runWorkspaceCli: createProbe('passed'),
+      runGatewayCli: createProbe('passed'),
+      runAggregateCli: createProbe('passed'),
+      runSessionsMemoryCli: sessionsMemory,
+      runPluginsContextCli: pluginsContext,
+      runExternalMcpCli: externalMcp,
+      runDashboardOperatorCli: dashboardOperator,
+      runScheduledBuildroomCli: scheduledBuildroom,
+      runRollbackMixedRuntimeCli: rollbackMixedRuntime,
+      stdout,
+      stderr,
+    });
+
+    expect(code).toBe(0);
+    expect(sessionsMemory).toHaveBeenCalledTimes(1);
+    expect(sessionsMemory.mock.calls[0]?.[0]).toEqual(['--json']);
+    expect(pluginsContext).toHaveBeenCalledTimes(1);
+    expect(pluginsContext.mock.calls[0]?.[0]).toEqual(['--json']);
+    expect(externalMcp).toHaveBeenCalledTimes(1);
+    expect(externalMcp.mock.calls[0]?.[0]).toEqual(['--json']);
+    expect(dashboardOperator).toHaveBeenCalledTimes(1);
+    expect(dashboardOperator.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'anthropic/claude-sonnet-4-6',
+    ]);
+    expect(scheduledBuildroom).toHaveBeenCalledTimes(1);
+    expect(scheduledBuildroom.mock.calls[0]?.[0]).toEqual(['--json']);
+    expect(rollbackMixedRuntime).toHaveBeenCalledTimes(1);
+    expect(rollbackMixedRuntime.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'anthropic/claude-sonnet-4-6',
+    ]);
+    expect(stderr.text()).toBe('');
+    const body = JSON.parse(stdout.text());
+    expect(body.status).toBe('passed');
+    expect(body.mode).toBe('full');
+    expect(body.scenarios).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'pi.sessions-memory-learning',
+        status: 'passed',
+      }),
+      expect.objectContaining({
+        id: 'pi.plugins-context-tools',
+        status: 'passed',
+      }),
+      expect.objectContaining({
+        id: 'pi.external-mcp-proxy',
+        status: 'passed',
+      }),
+      expect.objectContaining({
+        id: 'pi.dashboard-operator',
+        status: 'passed',
+      }),
+      expect.objectContaining({
+        id: 'pi.scheduled-buildroom',
+        status: 'passed',
+      }),
+      expect.objectContaining({
+        id: 'pi.rollback-mixed-runtime',
+        status: 'passed',
+      }),
+    ]));
+  });
+
+  it('forwards default scripted canaries without real Gateway usage flags', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+    const sessionsMemory = createProbe('passed');
+    const pluginsContext = createProbe('passed');
+    const externalMcp = createProbe('passed');
+    const dashboardOperator = createProbe('passed');
+    const scheduledBuildroom = createProbe('passed');
+    const rollbackMixedRuntime = createProbe('passed');
+
+    const code = await runPiV1CanaryCli([
+      '--json',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--keep-workspace',
+    ], {
+      runAuthCli: createProbe('passed'),
+      runWorkspaceCli: createProbe('passed'),
+      runGatewayCli: createProbe('passed'),
+      runAggregateCli: createProbe('passed'),
+      runSessionsMemoryCli: sessionsMemory,
+      runPluginsContextCli: pluginsContext,
+      runExternalMcpCli: externalMcp,
+      runDashboardOperatorCli: dashboardOperator,
+      runScheduledBuildroomCli: scheduledBuildroom,
+      runRollbackMixedRuntimeCli: rollbackMixedRuntime,
+      stdout,
+      stderr,
+    });
+
+    expect(code).toBe(0);
+    expect(sessionsMemory.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--keep-workspace',
+    ]);
+    expect(pluginsContext.mock.calls[0]?.[0]).toEqual(sessionsMemory.mock.calls[0]?.[0]);
+    expect(externalMcp.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--timeout-ms', '1000',
+      '--keep-workspace',
+    ]);
+    expect(dashboardOperator.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--keep-workspace',
+    ]);
+    expect(scheduledBuildroom.mock.calls[0]?.[0]).toEqual(externalMcp.mock.calls[0]?.[0]);
+    expect(rollbackMixedRuntime.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--keep-workspace',
+    ]);
+  });
+
+  it('can opt scripted canaries into real Gateway checks explicitly', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+    const sessionsMemory = createProbe('passed');
+    const pluginsContext = createProbe('passed');
+    const externalMcp = createProbe('passed');
+    const dashboardOperator = createProbe('passed');
+    const scheduledBuildroom = createProbe('passed');
+    const rollbackMixedRuntime = createProbe('passed');
+
+    const code = await runPiV1CanaryCli([
+      '--json',
+      '--include-gateway-scripted',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--allow-skip',
+      '--keep-workspace',
+    ], {
+      runAuthCli: createProbe('passed'),
+      runWorkspaceCli: createProbe('passed'),
+      runGatewayCli: createProbe('passed'),
+      runAggregateCli: createProbe('passed'),
+      runSessionsMemoryCli: sessionsMemory,
+      runPluginsContextCli: pluginsContext,
+      runExternalMcpCli: externalMcp,
+      runDashboardOperatorCli: dashboardOperator,
+      runScheduledBuildroomCli: scheduledBuildroom,
+      runRollbackMixedRuntimeCli: rollbackMixedRuntime,
+      stdout,
+      stderr,
+    });
+
+    expect(code).toBe(0);
+    expect(sessionsMemory.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--gateway',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--allow-skip',
+      '--keep-workspace',
+    ]);
+    expect(pluginsContext.mock.calls[0]?.[0]).toEqual(sessionsMemory.mock.calls[0]?.[0]);
+    expect(externalMcp.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--timeout-ms', '1000',
+      '--allow-skip',
+      '--keep-workspace',
+    ]);
+    expect(dashboardOperator.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--allow-skip',
+      '--keep-workspace',
+    ]);
+    expect(scheduledBuildroom.mock.calls[0]?.[0]).toEqual(externalMcp.mock.calls[0]?.[0]);
+    expect(rollbackMixedRuntime.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--allow-skip',
+      '--keep-workspace',
+    ]);
+  });
+
+  it('returns failed when an automated smoke scenario fails', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiV1CanaryCli(['--smoke-only', '--json'], {
+      runAuthCli: createProbe('passed'),
+      runWorkspaceCli: createProbe('failed', 1),
+      runGatewayCli: createProbe('passed'),
+      runAggregateCli: createProbe('passed'),
+      stdout,
+      stderr,
+    });
+
+    expect(code).toBe(1);
+    expect(stdout.text()).toBe('');
+    const body = JSON.parse(stderr.text());
+    expect(body).toMatchObject({
+      status: 'failed',
+    });
+    expect(body.scenarios[0]).toMatchObject({
+      id: 'pi.auth-model-preflight',
+      status: 'passed',
+    });
+    expect(body.scenarios[1]).toMatchObject({
+      id: 'pi.workspace-tools-rewind',
+      status: 'failed',
+      code: 1,
+      error: 'Canary scenario exited with code 1.',
+    });
+  });
+
+  it('parses flags narrowly', () => {
+    expect(parsePiV1CanaryArgs([
+      '--',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '500',
+      '--keep-workspace',
+      '--allow-skip',
+      '--include-gateway-scripted',
+      '--smoke-only',
+      '--list',
+      '--json',
+    ])).toMatchObject({
+      model: 'test/model',
+      authPath: '/secure/pi-auth.json',
+      modelsPath: '/secure/pi-models.json',
+      timeoutMs: 500,
+      keepWorkspace: true,
+      allowSkip: true,
+      includeGatewayScripted: true,
+      smokeOnly: true,
+      list: true,
+      json: true,
+    });
+    expect(() => parsePiV1CanaryArgs(['--runtime', 'pi'])).toThrow(/Unknown argument/);
+  });
+});
+
+function createProbe(status: 'passed' | 'failed' | 'skipped', code = status === 'failed' ? 1 : 0) {
+  return vi.fn(async (_argv: string[], deps?: { stdout?: Writer; stderr?: Writer }) => {
+    const stream = code === 0 ? deps?.stdout : deps?.stderr;
+    stream?.write(`${JSON.stringify({
+      status,
+      runtime: 'pi',
+      probe: status,
+      error: status === 'failed' ? 'probe failed' : undefined,
+    })}\n`);
+    return code;
+  });
+}
+
+interface Writer {
+  write(chunk: string): boolean;
+}
+
+function createWriter() {
+  const chunks: string[] = [];
+  return {
+    write(chunk: string) {
+      chunks.push(chunk);
+      return true;
+    },
+    text() {
+      return chunks.join('');
+    },
+  };
+}

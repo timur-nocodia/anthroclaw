@@ -1,7 +1,7 @@
-import type { Query } from '@anthropic-ai/claude-agent-sdk';
+import type { RuntimeRunHandle } from '../runtime/types.js';
 
 interface ControlEntry {
-  query: Query;
+  query: RuntimeRunHandle;
   abortController?: AbortController;
 }
 
@@ -14,7 +14,7 @@ export class SdkControlRegistry {
   private readonly handles = new Map<string, ControlEntry>();
   private readonly aliases = new Map<string, string>();
 
-  register(ids: string[], query: Query, abortController?: AbortController): void {
+  register(ids: string[], query: RuntimeRunHandle, abortController?: AbortController): void {
     const canonicalId = ids.find(Boolean);
     if (!canonicalId) return;
 

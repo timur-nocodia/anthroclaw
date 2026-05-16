@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { runHeadlessReview } from '../headless-review.js';
+import { runHeadlessReview, runHeadlessReviewResult } from '../headless-review.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -14,7 +14,7 @@ describe('runHeadlessReview', () => {
     mockedQuery.mockReset();
   });
 
-  it('calls SDK query() as a single-turn, tool-denied review', async () => {
+  it('calls the default Claude runtime as a single-turn, tool-denied review', async () => {
     const events = (async function* () {
       yield { type: 'result', result: 'review-json' };
     })();
@@ -56,6 +56,72 @@ describe('runHeadlessReview', () => {
       message: 'No tools here.',
     });
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('can run through an injected headless runtime without calling Claude SDK query()', async () => {
+    const runtime = {
+      id: 'test-headless',
+      runText: vi.fn(async () => 'runtime-output'),
+    };
+
+    await expect(runHeadlessReview({
+      prompt: 'review this',
+      purpose: 'test review',
+      runtime,
+    })).resolves.toBe('runtime-output');
+
+    expect(runtime.runText).toHaveBeenCalledWith({
+      prompt: 'review this',
+      purpose: 'test review',
+    });
+    expect(mockedQuery).not.toHaveBeenCalled();
+  });
+
+  it('can return headless runtime metadata without changing text callers', async () => {
+    const runtime = {
+      id: 'stateful-headless',
+      run: vi.fn(async () => ({ text: 'runtime-output', sessionId: 'session-1' })),
+      runText: vi.fn(async () => 'unused'),
+    };
+
+    await expect(runHeadlessReviewResult({
+      prompt: 'review this',
+      runtime,
+      sessionId: 'session-0',
+    })).resolves.toEqual({
+      text: 'runtime-output',
+      sessionId: 'session-1',
+    });
+
+    expect(runtime.run).toHaveBeenCalledWith({
+      prompt: 'review this',
+      sessionId: 'session-0',
+    });
+    expect(runtime.runText).not.toHaveBeenCalled();
+    expect(mockedQuery).not.toHaveBeenCalled();
+  });
+
+  it('can explicitly select the experimental Pi runtime with injected options', async () => {
+    const session = {
+      prompt: vi.fn(async () => undefined),
+      subscribe: vi.fn((listener: (event: unknown) => void) => {
+        listener({ type: 'assistant_text_delta', delta: 'pi-output' });
+        return vi.fn();
+      }),
+      dispose: vi.fn(),
+    };
+    const createAgentSession = vi.fn(async () => ({ session }));
+
+    await expect(runHeadlessReview({
+      prompt: 'review this',
+      runtime: 'pi',
+      runtimeOptions: {
+        pi: { createAgentSession },
+      },
+    })).resolves.toBe('pi-output');
+
+    expect(mockedQuery).not.toHaveBeenCalled();
+    expect(createAgentSession).toHaveBeenCalledTimes(1);
   });
 
   it('inherits safe runtime defaults but never inherits tool access', async () => {
