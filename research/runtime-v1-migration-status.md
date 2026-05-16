@@ -1,14 +1,14 @@
 # Runtime v1 migration status
 
-Date: 2026-05-16
+Date: 2026-05-17
 
 This is the human-readable phase checklist for replacing the Claude Agent SDK-centered harness with the Runtime v1 contract and Pi canary path. The machine-readable source remains `RUNTIME_CANARY_SCENARIOS` in `src/runtime/contract.ts`; the detailed evidence plan remains `research/runtime-v1-canary-plan.md`; the integration merge strategy memo is `research/runtime-v1-integration-strategy.md`; the first production canary preflight note is `research/runtime-v1-production-canary-preflight.md`.
 
 ## Current Snapshot
 
-Overall state: implementation canaries are merged into `main`; local real-auth Runtime v1 evidence is green; and the durable GitHub Actions decision artifact from `main` is captured. The local Gateway path now canonicalizes runtime directories for the Claude baseline path, and the focused Pi Web UI/Gateway blocker fix has merged. Default-runtime readiness is now blocked only by the first production canary window.
+Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. Default-runtime readiness is no longer blocked by Runtime v1 evidence. The default-runtime flip itself has not started.
 
-Approximate progress to a default-runtime decision: 96%.
+Approximate progress to a default-runtime decision: 100%.
 
 What is done:
 
@@ -34,12 +34,18 @@ What is done:
 - PR #106 merged on 2026-05-16 and closed the focused Pi Web UI/Gateway blockers found on the first `example` canary attempt: Pi Web UI now resumes through Pi's session-file reference, outside-workspace filesystem tool calls are denied before the chat-profile allow shortcut, and Pi `text_end` events no longer duplicate streamed partial text.
 - Focused local Web UI/Gateway verification after PR #106 passed on 2026-05-16: text replied exactly `PI_CANARY_TEXT_OK`, same-session follow-up replied exactly `PI_CANARY_TEXT_OK`, outside-workspace read check replied exactly `DENY_OK`, and exact rollback restored `example/agent.yml` to hash `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`.
 - Local full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed all ten scenarios again from `main` after PR #106. The regenerated decision package with `pr_stack=merged` is `BLOCKED` only by `production-canary-window=pending`.
+- PR #107 merged on 2026-05-16 and refreshed the post-PR #106 decision evidence docs.
+- PR #108 merged on 2026-05-16 and made `pi-workspace-smoke` require exact `SMOKE_OK`, closing the gap where duplicated `SMOKE_OKSMOKE_OK` could still appear in raw evidence while the smoke stayed green.
+- Local full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed all ten scenarios again from `main` after PR #107 and PR #108. Both standalone and aggregate workspace smoke replies were exactly `SMOKE_OK`.
+- Limited `example` Web UI production canary passed on 2026-05-17 local time: five Pi turns covered text, same-session follow-up, harmless workspace read, small workspace edit, and denied protected-path read; exact rollback restored `example/agent.yml` to hash `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`, and the real dev repo returned clean.
+- Local final `pnpm runtime:pi-decision -- --production-canary passed --pr-stack merged --browser-ux not-required --fail-on-blocked` produced `READY` with no blocking failures.
+- Durable **Pi Runtime v1 decision** workflow run `25970623984` on `main` commit `72766ff850a3dfff757a25e7b232c9002b7fcdac` passed build, Pi storage preparation, the full ten-scenario canary map, final `READY` decision generation with `production_canary=passed`, and artifact upload.
 
 What is not done:
 
-- The first production canary window has not been recorded.
 - A true Claude baseline turn has not been sent in the live channel; this is now a written waiver for the first Pi-only window, not an unresolved startup blocker.
-- Final `READY` migration decision record has not been generated because production evidence is still pending; default-runtime flip is not started.
+- The default-runtime flip is not started.
+- Post-flip monitoring and rollback instructions still need to be attached to the default-runtime flip PR.
 
 ## Phase Checklist
 
@@ -50,39 +56,40 @@ What is not done:
 | 2. Candidate harness research | Done enough for canary work | Compare Pi/OpenAI/OpenCode/opencode-like options against the contract. | Candidate notes identify Pi as primary near-term harness and keep alternatives visible. |
 | 3. Build Pi adapter and smoke gates | Done | Prove Pi can run the critical runtime paths without breaking AnthroClaw-owned policy. | Auth, workspace, Gateway, and aggregate Pi smoke commands pass with real auth locally and in the durable decision workflow. |
 | 4. Cover deep product surfaces | Mostly done | Prove non-obvious product features survive runtime replacement. | Scripted canaries pass for sessions/memory/learning, plugins/context/tools, external MCP, scheduled Buildroom, and rollback. |
-| 5. Dashboard/operator evidence | Mostly done | Prove the operator API contracts expose the same state under Pi-shaped runs. | `/api/gateway/status`, agents, sessions, runs, learning, plugins, MCP, channels, and diagnostics are covered by scripted canary evidence; browser UX evidence is optional. |
-| 6. Rollout decision package | Mostly done | Produce the final go/no-go artifact. | Local and durable GitHub Actions decision packages emit Markdown/JSON gates from the full canary JSON; final `READY` package still waits on production canary evidence. |
-| 7. Default-runtime rollout | Not started | Flip runtime default safely. | `docs/pi-production-canary-runbook.md` is completed for one real agent, rollback is verified, dashboard confirms state, and post-flip monitoring is defined. |
+| 5. Dashboard/operator evidence | Done enough for default flip PR | Prove the operator API contracts expose the same state under Pi-shaped runs. | `/api/gateway/status`, agents, sessions, runs, learning, plugins, MCP, channels, and diagnostics are covered by scripted canary and limited production evidence; browser UX evidence is optional. |
+| 6. Rollout decision package | Done | Produce the final go/no-go artifact. | Local and durable GitHub Actions decision packages emit `READY` with production canary passed and PR stack merged. |
+| 7. Default-runtime rollout | Not started | Flip runtime default safely. | Prepare the smallest default-runtime flip PR with rollback instructions and post-flip monitoring. |
 
 ## Canary Scenario Checklist
 
 | Scenario | Evidence Level | Status | Command or Evidence |
 | --- | --- | --- | --- |
-| `pi.auth-model-preflight` | smoke | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` |
-| `pi.workspace-tools-rewind` | smoke | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-workspace -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.gateway-channel-approval` | smoke | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-gateway -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.aggregate-real-auth` | smoke | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.plugins-context-tools` | scripted canary | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-plugins-context -- --json` |
-| `pi.external-mcp-proxy` | scripted canary | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-external-mcp -- --json` |
-| `pi.sessions-memory-learning` | scripted canary | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-sessions-memory -- --json` |
-| `pi.dashboard-operator` | scripted canary | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-dashboard-operator -- --json` |
-| `pi.scheduled-buildroom` | scripted canary | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-scheduled-buildroom -- --json` |
-| `pi.rollback-mixed-runtime` | scripted canary | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-rollback-runtime -- --json` |
+| `pi.auth-model-preflight` | smoke | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` |
+| `pi.workspace-tools-rewind` | smoke | Durable workflow pass on `main` in final run `25970623984`; local exact reply `SMOKE_OK` after PR #108 | `pnpm smoke:pi-workspace -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
+| `pi.gateway-channel-approval` | smoke | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-gateway -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
+| `pi.aggregate-real-auth` | smoke | Durable workflow pass on `main` in final run `25970623984`; local nested workspace exact reply `SMOKE_OK` after PR #108 | `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
+| `pi.plugins-context-tools` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-plugins-context -- --json` |
+| `pi.external-mcp-proxy` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-external-mcp -- --json` |
+| `pi.sessions-memory-learning` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-sessions-memory -- --json` |
+| `pi.dashboard-operator` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-dashboard-operator -- --json` |
+| `pi.scheduled-buildroom` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-scheduled-buildroom -- --json` |
+| `pi.rollback-mixed-runtime` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-rollback-runtime -- --json` |
 
 ## Current Blockers
 
-1. The first real Pi production canary window has not been recorded.
-2. A final durable Runtime v1 decision package still needs to be regenerated with `production_canary=passed` after that window completes.
+No Runtime v1 decision blockers remain. The remaining work is rollout execution, not evidence collection.
 
 ## Next Five Tasks
 
-1. Apply the guarded `example` Pi override for the first production canary window and capture one text turn plus one same-session follow-up.
-2. Exercise one harmless read, one small approved edit, one denied protected-path action, and rollback to the exact backup.
-3. Attach the redacted canary evidence plus Claude baseline waiver link to the migration record.
-4. Rerun **Pi Runtime v1 decision** on `main` with `production_canary=passed`, `pr_stack=merged`, and `fail_on_blocked=true`.
-5. If the final decision package is `READY`, prepare the smallest possible default-runtime flip PR with rollback instructions.
+1. Open a small default-runtime flip PR that changes the global headless provider to Pi without touching agent-specific overrides.
+2. Attach the final durable decision run `25970623984`, limited production canary evidence, and rollback command to the PR.
+3. Add a post-flip smoke checklist that includes `pi-auth`, `pi-all`, Gateway startup, one Web UI text turn, and exact rollback to `claude-agent-sdk`.
+4. Define the first monitoring window: failed turns, provider auth errors, policy denials, interrupt failures, session continuation, diagnostics redaction, and learning queue errors.
+5. Keep rollout ring expansion separate from the default flip PR; do not expand to higher-risk agents until post-flip monitoring is green.
 
 ## Default Runtime Gate
+
+The evidence gate for making Pi the global default is now satisfied by durable run `25970623984` plus the limited `example` production canary. The default-runtime flip PR still needs to carry these links and a rollback checklist.
 
 Pi must not become the global default until:
 
