@@ -6,6 +6,12 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-05-16
+
+### Changed
+- fix(cron+budget): warm queries for manage_cron + default iteration_budget floor (#88) (41ca088)
+
+
 ## [1.1.5] - 2026-05-16
 
 ### Changed
