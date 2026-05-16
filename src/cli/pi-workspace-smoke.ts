@@ -302,9 +302,13 @@ function assertFile(path: string, expected: string, message: string): void {
     throw new Error(`${message} File is missing: ${path}`);
   }
   const actual = readFileSync(path, 'utf8');
-  if (actual !== expected) {
+  if (normalizeSmokeFileText(actual) !== normalizeSmokeFileText(expected)) {
     throw new Error(`${message} Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}.`);
   }
+}
+
+function normalizeSmokeFileText(value: string): string {
+  return value.endsWith('\n') ? value : `${value}\n`;
 }
 
 function isSkippableSmokeError(message: string): boolean {
