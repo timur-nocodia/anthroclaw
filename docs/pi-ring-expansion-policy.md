@@ -31,7 +31,7 @@ The remaining risk is not the default provider selection itself. The remaining r
 | 0. Default runtime baseline | Global default Pi, no-channel/Web UI verification, monitoring only | `main` has Pi default and `runtime:pi-monitor -- --fail-on-alert` passes | Completed. Keep monitoring active. |
 | 1. Low-risk live channel turn | One controlled `example` live channel turn in an operator-owned peer | Ring 0 still green; operator confirms target peer and message text | Completed by operator acceptance after exact-answer live channel turn plus green immediate/manual monitor checks. |
 | 2. Low-risk normal operation | Low-risk agents/channels without send-message fanout, cron delivery, or broad plugin actions | Ring 1 exits cleanly, no stop conditions | Completed. Web UI plus Telegram DM usage window passed; post-window monitor remained green. |
-| 3. Expanded product surfaces | Agents with plugins, learning review, memory-heavy workflows, external MCP, or scheduled Buildroom | Ring 2 exits cleanly; explicit owner approves each surface | Targeted scenario evidence plus monitoring remains green. |
+| 3. Expanded product surfaces | Agents with plugins, learning review, memory-heavy workflows, external MCP, or scheduled Buildroom | Ring 2 exits cleanly; explicit owner approves each surface | Completed across Ring 3.1-3.5. Targeted scenario evidence and monitoring are green. |
 | 4. High-risk automation | Agents with cron delivery, proactive notifications, broad `send_message`, or business-critical workflows | Ring 3 exits cleanly; rollback owner is present | Production monitoring confirms no stop conditions for the agreed window. |
 
 Do not advance more than one ring per PR or operational checkpoint.
@@ -334,6 +334,58 @@ Post-scenario monitor passed:
 - warnings: none.
 
 Ring 3.4 is closed. The remaining Ring 3 surface is scheduled Buildroom; keep it separate from high-risk live cron/proactive delivery.
+
+## Ring 3.5 Scheduled Buildroom Scope
+
+The fifth Ring 3 expanded surface is scheduled Buildroom compatibility. It uses the scripted Buildroom/heartbeat/cron canary in an isolated temporary workspace, not live production cron delivery.
+
+Allowed:
+
+- dynamic cron store/tool lifecycle;
+- heartbeat scheduler and runner;
+- Buildroom init/status/pause/resume/kill-switch;
+- Buildroom handoff and session-summary tools;
+- trust notification formatting through a synthetic route;
+- artifact persistence/content hashes;
+- path policy and lock/idempotency checks;
+- post-scenario monitor.
+
+Excluded:
+
+- live production cron delivery;
+- live proactive notifications;
+- production channel delivery;
+- broad `send_message` fanout;
+- real external MCP calls;
+- production Buildroom rooms or worktrees.
+
+## Ring 3.5 Scheduled Buildroom Evidence
+
+Ring 3.5 scheduled Buildroom canary was executed on 2026-05-17:
+
+- command: `pnpm smoke:pi-scheduled-buildroom -- --json --timeout-ms 120000`;
+- status: passed;
+- scenario: `pi.scheduled-buildroom`;
+- duration: `86` ms;
+- manage-cron checks: created, listed, toggled, deliver-to bound, updates `2`;
+- heartbeat checks: completed, delivered, state recorded, scheduler triggered, request count `2`;
+- Buildroom checks: initialized, status OK, paused, resumed, kill-switch on/off, notification routes `1`;
+- Buildroom tools: session-summary artifacts `1`, handoff artifacts `1`, source session bound true;
+- notifications: delivered `1`, routes `1`, trust artifacts `1`, safety notice present;
+- artifacts: total `7`, content hashes verified;
+- artifact types: `coder_receipt`, `handoff_signal`, `handoff_signal`, `qa_report`, `session_summary`, `trust_report`, `verification_delta`;
+- path policy: allowed path accepted, blocked path rejected, escape rejected;
+- locks: acquired, duplicate rejected, released.
+
+Post-scenario monitor passed:
+
+- runs: `6` total, `6` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- diagnostic event types: `run.completed`, `run.sdk_started`;
+- auth/model alerts: `0`;
+- alerts: none;
+- warnings: none.
+
+Ring 3.5 is closed. Ring 3 expanded product-surface rollout is complete. The next ring is Ring 4 high-risk automation and must require explicit owner presence before live cron/proactive notification or broad fanout.
 
 ## Stop Conditions
 

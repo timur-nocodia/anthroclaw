@@ -173,6 +173,16 @@ Ring 3.4 external MCP surface at 2026-05-17 local time:
 - excluded surfaces stayed excluded: no real production MCP credentials, no real network-backed MCP calls, no production agent external MCP configs, no live channel delivery, no Buildroom, no scheduled automation;
 - post-scenario monitor passed with `6` total runs, `6` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`.
 
+Ring 3.5 scheduled Buildroom surface at 2026-05-17 local time:
+
+- command: `pnpm smoke:pi-scheduled-buildroom -- --json --timeout-ms 120000`;
+- status: passed in an isolated temporary workspace;
+- covered: dynamic cron tool lifecycle, heartbeat scheduler/runner, Buildroom init/status/pause/resume/kill-switch, handoff/session-summary tools, trust notification formatting, artifact persistence/content hashes, path policy, and lock/idempotency checks;
+- evidence: manage-cron updates `2`, heartbeat request count `2`, Buildroom notification routes `1`, session-summary artifacts `1`, handoff artifacts `1`, notifications delivered `1`, artifacts total `7`, content hashes verified, blocked/escape path checks rejected, duplicate lock rejected;
+- excluded surfaces stayed excluded: no live production cron delivery, no live proactive notifications, no production channel delivery, no broad `send_message` fanout, no real external MCP calls, no production Buildroom rooms/worktrees;
+- post-scenario monitor passed with `6` total runs, `6` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`;
+- Ring 3 expanded product-surface rollout is complete. Ring 4 remains high-risk live automation.
+
 ## Monitoring Command
 
 Use the operator monitor during the first live window and before any ring expansion:
