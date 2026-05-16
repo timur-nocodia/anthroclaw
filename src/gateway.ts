@@ -1,7 +1,7 @@
 import { readdirSync, existsSync, readFileSync, statSync, unlinkSync } from 'node:fs';
 import type { Dirent } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
-import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path';
+import { join, isAbsolute, resolve, dirname, join as joinPath, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
@@ -162,7 +162,7 @@ import {
   type HeadlessReviewRuntimeConfig,
 } from './sdk/headless-runtime-config.js';
 import { resolveHeadlessRuntime } from './runtime/headless-registry.js';
-import type { HeadlessCustomTool, HeadlessRunInput, HeadlessToolPolicy } from './runtime/headless.js';
+import type { HeadlessCustomTool, HeadlessRunInput, HeadlessToolDecision, HeadlessToolPolicy } from './runtime/headless.js';
 import type { RuntimeRunHandle } from './runtime/types.js';
 import { buildExternalMcpCustomTools } from './runtime/external-mcp-custom-tools.js';
 import { buildAllowedTools, createCanUseTool } from './sdk/permissions.js';
@@ -525,6 +525,42 @@ function piGatewayToolNameToAnthroClawName(
       }
       return localName;
   }
+}
+
+const PI_GATEWAY_FILESYSTEM_TOOLS = new Set(['Read', 'Write', 'Edit']);
+const PI_GATEWAY_PATH_INPUT_KEYS = ['path', 'file_path', 'filePath'];
+
+function isPathInsideWorkspace(workspacePath: string, candidatePath: string): boolean {
+  const rel = relative(workspacePath, candidatePath);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+function piGatewayWorkspacePathDecision(
+  agent: Pick<Agent, 'workspacePath'>,
+  toolName: string,
+  input: Record<string, unknown>,
+): HeadlessToolDecision {
+  if (!PI_GATEWAY_FILESYSTEM_TOOLS.has(toolName)) return undefined;
+
+  const workspacePath = resolve(agent.workspacePath);
+  for (const key of PI_GATEWAY_PATH_INPUT_KEYS) {
+    const value = input[key];
+    if (typeof value !== 'string' || value.trim().length === 0) continue;
+
+    const requestedPath = value.trim();
+    const resolvedPath = isAbsolute(requestedPath)
+      ? resolve(requestedPath)
+      : resolve(workspacePath, requestedPath);
+
+    if (!isPathInsideWorkspace(workspacePath, resolvedPath)) {
+      return {
+        behavior: 'deny',
+        reason: `Pi Gateway filesystem tool path must stay inside the agent workspace: ${requestedPath}`,
+      };
+    }
+  }
+
+  return undefined;
 }
 
 function isPiGatewayCustomToolAllowed(
@@ -1259,6 +1295,8 @@ export class Gateway {
           agent.mcpServer.name,
           customToolNames,
         );
+        const workspaceDecision = piGatewayWorkspacePathDecision(agent, toolName, toolCall.input);
+        if (workspaceDecision) return workspaceDecision;
         return toolGate(toolName, toolCall.input, {
           signal: new AbortController().signal,
           toolUseID: toolCall.toolCallId ?? `${toolName}:${Date.now()}`,

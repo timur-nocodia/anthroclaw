@@ -123,9 +123,6 @@ function extractPiAssistantTextDelta(event: unknown): string | undefined {
   if (event.type === 'text_delta' && typeof event.delta === 'string') {
     return event.delta;
   }
-  if (event.type === 'text_end' && typeof event.content === 'string') {
-    return event.content;
-  }
   return undefined;
 }
 
