@@ -136,6 +136,16 @@ Ring 2 low-risk usage window at 2026-05-17 local time:
 - post-window monitor passed with `6` total runs, `6` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`;
 - Ring 2 is closed. Ring 3 must target one expanded product surface at a time.
 
+Ring 3.1 learning review surface at 2026-05-17 local time:
+
+- scope: learning review in propose-only mode for `example`;
+- source evidence: Ring 2 Pi usage window generated inspectable learning review/action state;
+- before transition: `2` completed reviews and `2` proposed `none` actions for `example`;
+- operator transition: one `none` action was rejected with reason `ring3-learning-review-closed-no-action`;
+- after transition: target action status `rejected`, rejection reason present, `applied_at=null`, remaining actions `1` proposed `none` and `1` rejected `none`;
+- no learning action was approved or applied; no memory or skill write was performed;
+- post-check monitor passed with `6` total runs, `6` succeeded, `0` failed/interrupted/stale, auth/model alerts `0`, alerts `[]`, warnings `[]`.
+
 ## Monitoring Command
 
 Use the operator monitor during the first live window and before any ring expansion:
