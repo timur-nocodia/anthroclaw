@@ -4,6 +4,8 @@ Date: 2026-05-17
 
 This document records the first default-runtime flip from `claude-agent-sdk` to Pi. It is intentionally small: the tracked global `config.yml` selects Pi, while agent-specific runtime overrides remain untouched.
 
+Ring expansion after this default flip is controlled by `docs/pi-ring-expansion-policy.md`.
+
 ## Evidence
 
 - Runtime v1 production canary evidence is recorded in `docs/pi-production-canary-runbook.md`.
@@ -81,6 +83,8 @@ Then start Gateway and verify one safe Web UI turn against a low-risk agent. Rec
 - learning queue errors.
 
 Keep rollout ring expansion separate from this default flip. Do not expand to higher-risk agents until the first post-flip monitoring window is green.
+
+Use `docs/pi-ring-expansion-policy.md` for the next live channel turn, stop conditions, and ring advancement gates.
 
 ## Live Pull Evidence
 
