@@ -6,6 +6,12 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-05-16
+
+### Changed
+- fix(discovery): follow symlinks pointing to directories in agent discovery (#85) (eab3542)
+
+
 ## [1.1.4] - 2026-05-16
 
 ### Changed
