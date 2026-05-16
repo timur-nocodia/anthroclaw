@@ -40,6 +40,16 @@ pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sd
 
 Observed dry-run before any live change: `example` currently resolves to `claude-agent-sdk`; enabling Pi would change the provider and would not write until `--apply` is present.
 
+Config-only rehearsal evidence from 2026-05-16:
+
+- no AnthroClaw Gateway/channel process was running, so no live messages were dispatched;
+- `pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --enable-pi --apply --json` created a pre-canary backup and wrote the temporary Pi override;
+- `pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --restore-backup <backupPath> --apply --json` restored the exact original file;
+- final `agent.yml` hash matched the original hash `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`;
+- rehearsal backup artifacts were removed after verification to avoid accidentally committing local operational files.
+
+This rehearsal proves the local config mutation/restore mechanics only. It does not satisfy the production canary window gate because it did not run real channel turns.
+
 Minimum window:
 
 - baseline one Claude text turn before the override;
