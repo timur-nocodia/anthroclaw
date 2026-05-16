@@ -18,6 +18,7 @@ This document records the first default-runtime flip from `claude-agent-sdk` to 
 - The live runtime checkout `/Users/tyess/dev/openclaw-agents-sdk-clone` was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e` on 2026-05-17 local time.
 - Post-pull live verification passed: `pnpm install --frozen-lockfile`, config parsing resolved `provider=pi`, TypeScript passed, `pi-auth` passed, and `pi-all` returned workspace text `SMOKE_OK` plus Gateway text `SMOKE_GATEWAY_OK`.
 - A no-channel live Gateway Web UI turn against `example` replied exactly `PI_LIVE_WEB_OK` via Pi with no tool calls; the first monitoring slice showed zero failed runs in the last hour and only `run.sdk_started`/`run.completed` diagnostic event types.
+- Extended live monitoring snapshot at 2026-05-17 01:04 Asia/Almaty passed with `alerts=[]`: seven runs in the last 60 minutes, all succeeded; failed/interrupted/stale running runs were `0`; auth/model alerts were `0`; diagnostic types were only `run.sdk_started` and `run.completed`. The single failed `read` tool warning is the expected historical denied-path canary event, not a stop condition.
 
 ## Change
 
@@ -93,6 +94,16 @@ Live pull/deploy checkpoint completed on 2026-05-17:
 - safe Web UI turn: `example` returned `PI_LIVE_WEB_OK`, no tools, session id present, total tokens `15`;
 - monitoring slice: failed runs in the last hour `0`;
 - checkout state after verification: clean.
+
+Extended monitoring snapshot at 2026-05-17 01:04 Asia/Almaty:
+
+- command: `pnpm runtime:pi-monitor -- --json --fail-on-alert`;
+- status: `passed`;
+- window: 60 minutes;
+- runs: `7` total, `7` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- auth/model alerts: `0`;
+- diagnostic event types: `run.sdk_started`, `run.completed`;
+- warnings: one failed `read` tool event from the expected denied-path canary.
 
 ## Monitoring Command
 
