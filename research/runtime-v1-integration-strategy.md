@@ -4,7 +4,7 @@ Date: 2026-05-16
 
 ## Current State
 
-PR #95 is the cumulative Runtime v1 / Pi integration candidate rebased onto current `main`.
+PR #95 was the cumulative Runtime v1 / Pi integration candidate rebased onto current `main`. It merged into `main` on 2026-05-16 as `9b46102f74397b6eee25d8b8d60f7c85843f0ba4`.
 
 Local evidence on PR #95:
 
@@ -13,7 +13,7 @@ Local evidence on PR #95:
 - Full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed all ten scenarios with existing local Pi auth storage.
 - Local `pnpm runtime:pi-decision` generated `BLOCKED` only for the expected operational gates: `production-canary-window` and `pr-stack-merged`.
 
-The older draft stack remains open and useful as review history, but the bottom PR in that chain conflicted with current `main` before the PR #95 rebase work.
+The older draft stack remains useful as review history, but PR #95 is now the merged integration path.
 
 ## Options
 
@@ -74,17 +74,17 @@ Reasoning:
 - [x] Local full Runtime v1 canary passed on PR #95.
 - [x] Local decision package generated and blocked only on operational gates.
 - [x] PR #95 is marked ready for review or merge.
-- [ ] Reviewer accepts the large integration PR shape.
+- [x] PR #95 merged into `main`.
+- [x] Reviewer accepts the large integration PR shape.
 - [ ] Durable **Pi Runtime v1 decision** workflow artifact is captured from the chosen target branch.
 - [ ] First production canary window is completed for one low-risk real agent.
 - [ ] Default runtime decision is recorded after the durable artifact and production canary pass.
 
 ## Immediate Next Steps
 
-1. Review PR #95 as the integration vehicle.
-2. If accepted, merge PR #95 into `main`.
-3. Run **Pi Runtime v1 decision** from the merged target branch with `production_canary=pending`, `pr_stack=merged`, and `fail_on_blocked=false`.
-4. Attach the durable workflow artifact to the migration status.
-5. Execute `docs/pi-production-canary-runbook.md` for one low-risk real agent.
-6. Rerun **Pi Runtime v1 decision** with `production_canary=passed`.
-7. Only then decide whether to flip any default runtime setting.
+1. Configure repository secret `PI_AUTH_JSON_B64`; optionally configure `PI_MODELS_JSON_B64` when CI should use isolated model metadata.
+2. Rerun **Pi Runtime v1 decision** from `main` with `production_canary=pending`, `pr_stack=merged`, and `fail_on_blocked=false`.
+3. Attach the durable workflow artifact to the migration status.
+4. Execute `docs/pi-production-canary-runbook.md` for one low-risk real agent.
+5. Rerun **Pi Runtime v1 decision** with `production_canary=passed`.
+6. Only then decide whether to flip any default runtime setting.
