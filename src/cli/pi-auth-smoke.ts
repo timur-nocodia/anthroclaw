@@ -142,8 +142,12 @@ export async function runPiAuthSmoke(
   const modelRegistry = sdk.ModelRegistry.create(authStorage, options.modelsPath);
   const model = modelRegistry.find(ref.provider, ref.modelId);
   const available = await modelRegistry.getAvailable();
-  const providerAuthConfigured = await modelRegistry.hasConfiguredAuth(ref.provider);
   const providerStatus = await modelRegistry.getProviderAuthStatus?.(ref.provider);
+  const sanitizedProviderStatus = sanitizeProviderStatus(providerStatus);
+  const providerAuthConfigured = Boolean(
+    await modelRegistry.hasConfiguredAuth(ref.provider)
+    || isProviderStatusConfigured(sanitizedProviderStatus),
+  );
   const modelAvailable = available.some((candidate) =>
     candidate.provider === ref.provider && candidate.id === ref.modelId);
 
@@ -166,7 +170,7 @@ export async function runPiAuthSmoke(
     auth: {
       provider: ref.provider,
       configured: Boolean(providerAuthConfigured),
-      status: sanitizeProviderStatus(providerStatus),
+      status: sanitizedProviderStatus,
     },
     availableModelCount: available.length,
   };
@@ -262,6 +266,10 @@ function sanitizeProviderStatus(value: unknown): Record<string, unknown> | undef
     }
   }
   return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function isProviderStatusConfigured(value: Record<string, unknown> | undefined): boolean {
+  return value?.configured === true;
 }
 
 function setupNextAction(provider: string, model: string): string {

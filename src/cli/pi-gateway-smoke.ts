@@ -160,7 +160,7 @@ export async function runPiGatewaySmoke(input: {
     }
 
     const actual = readFileSync(smokePath, 'utf8');
-    if (actual !== AFTER_TEXT) {
+    if (normalizeSmokeFileText(actual) !== normalizeSmokeFileText(AFTER_TEXT)) {
       throw new Error(`Pi Gateway smoke file mismatch. Expected ${JSON.stringify(AFTER_TEXT)}, got ${JSON.stringify(actual)}.`);
     }
     if (approvals.length < 1) {
@@ -299,6 +299,10 @@ function smokeMessage(): InboundMessage {
     mentionedBot: true,
     raw: {},
   };
+}
+
+function normalizeSmokeFileText(value: string): string {
+  return value.endsWith('\n') ? value : `${value}\n`;
 }
 
 function createSmokeChannel(input: {

@@ -149,6 +149,22 @@ describe('Pi Gateway smoke CLI', () => {
     })).rejects.toThrow(/No API key found for the selected model/);
   });
 
+  it('accepts Pi smoke edits with no trailing final newline', async () => {
+    piRunHandleMock.mockImplementationOnce(async (input: HeadlessRunInput) => {
+      const handle = await createGatewaySmokeHandle(input);
+      writeFileSync(join(input.cwd!, 'gateway-pi-smoke.txt'), 'after AnthroClaw Pi Gateway smoke', 'utf8');
+      return handle;
+    });
+
+    await expect(runPiGatewaySmoke({
+      workspace: join(root, 'workspace'),
+      timeoutMs: 10_000,
+    })).resolves.toMatchObject({
+      status: 'passed',
+      approvals: 1,
+    });
+  });
+
   it('parses flags narrowly', () => {
     expect(parsePiGatewaySmokeArgs([
       '--',

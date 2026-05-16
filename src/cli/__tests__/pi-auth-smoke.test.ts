@@ -88,6 +88,30 @@ describe('Pi auth smoke CLI', () => {
     });
   });
 
+  it('passes when Pi provider status reports configured auth', async () => {
+    const result = await runPiAuthSmoke('anthropic/claude-sonnet-4-6', undefined, fakeSdk({
+      models: [
+        { provider: 'anthropic', id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+      ],
+      available: [
+        { provider: 'anthropic', id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+      ],
+      configuredProviders: [],
+      statusConfiguredProviders: ['anthropic'],
+    }));
+
+    expect(result).toMatchObject({
+      status: 'passed',
+      auth: {
+        provider: 'anthropic',
+        configured: true,
+        status: {
+          configured: true,
+        },
+      },
+    });
+  });
+
   it('can turn missing optional Pi setup into an explicit skip', async () => {
     const stdout = createWriter();
     const stderr = createWriter();
@@ -194,6 +218,7 @@ function fakeSdk(input: {
   models: Array<{ provider: string; id: string; name?: string }>;
   available: Array<{ provider: string; id: string; name?: string }>;
   configuredProviders: string[];
+  statusConfiguredProviders?: string[];
 }) {
   return {
     VERSION: '0.74.0-test',
@@ -207,7 +232,7 @@ function fakeSdk(input: {
         getAvailable: async () => input.available,
         hasConfiguredAuth: async (provider: string) => input.configuredProviders.includes(provider),
         getProviderAuthStatus: async (provider: string) => ({
-          configured: input.configuredProviders.includes(provider),
+          configured: (input.statusConfiguredProviders ?? input.configuredProviders).includes(provider),
           key: 'must-not-leak',
         }),
       }),
