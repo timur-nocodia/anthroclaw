@@ -5,6 +5,7 @@ import {
 } from '../runtime/contract.js';
 import { DEFAULT_PI_MODEL_ID } from '../runtime/pi-headless.js';
 import { runPiAuthSmokeCli } from './pi-auth-smoke.js';
+import { runPiDashboardOperatorCanaryCli } from './pi-dashboard-operator-canary.js';
 import { runPiExternalMcpCanaryCli } from './pi-external-mcp-canary.js';
 import { runPiGatewaySmokeCli } from './pi-gateway-smoke.js';
 import { runPiPluginsContextCanaryCli } from './pi-plugins-context-canary.js';
@@ -40,6 +41,7 @@ interface PiV1CanaryDeps {
   runSessionsMemoryCli?: CanaryCliRunner;
   runPluginsContextCli?: CanaryCliRunner;
   runExternalMcpCli?: CanaryCliRunner;
+  runDashboardOperatorCli?: CanaryCliRunner;
   runScheduledBuildroomCli?: CanaryCliRunner;
   runRollbackMixedRuntimeCli?: CanaryCliRunner;
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
@@ -97,6 +99,10 @@ const CANARY_RUNNERS: Record<string, {
   'pi.external-mcp-proxy': {
     runner: (deps) => deps.runExternalMcpCli ?? runPiExternalMcpCanaryCli,
     args: buildDeterministicScriptedProbeArgs,
+  },
+  'pi.dashboard-operator': {
+    runner: (deps) => deps.runDashboardOperatorCli ?? runPiDashboardOperatorCanaryCli,
+    args: buildDashboardOperatorProbeArgs,
   },
   'pi.scheduled-buildroom': {
     runner: (deps) => deps.runScheduledBuildroomCli ?? runPiScheduledBuildroomCanaryCli,
@@ -337,6 +343,16 @@ function buildDeterministicScriptedProbeArgs(args: PiV1CanaryArgs): string[] {
 }
 
 function buildRollbackMixedRuntimeProbeArgs(args: PiV1CanaryArgs): string[] {
+  const out = ['--json', '--model', args.model ?? DEFAULT_PI_MODEL_ID];
+  if (args.authPath) out.push('--auth-path', args.authPath);
+  if (args.modelsPath) out.push('--models-path', args.modelsPath);
+  if (args.timeoutMs) out.push('--timeout-ms', String(args.timeoutMs));
+  if (args.allowSkip) out.push('--allow-skip');
+  if (args.keepWorkspace) out.push('--keep-workspace');
+  return out;
+}
+
+function buildDashboardOperatorProbeArgs(args: PiV1CanaryArgs): string[] {
   const out = ['--json', '--model', args.model ?? DEFAULT_PI_MODEL_ID];
   if (args.authPath) out.push('--auth-path', args.authPath);
   if (args.modelsPath) out.push('--models-path', args.modelsPath);
