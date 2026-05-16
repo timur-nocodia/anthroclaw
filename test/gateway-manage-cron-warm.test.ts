@@ -15,6 +15,23 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 import { Gateway } from '../src/gateway.js';
 
 describe('Gateway manage_cron warm query handling', () => {
+  it('does not prewarm agents that use Pi Gateway runtime', async () => {
+    const gateway = new Gateway() as any;
+    gateway.sdkReady = true;
+    gateway.warmQueries = {
+      discard: vi.fn(),
+      prewarm: vi.fn(),
+    };
+
+    await gateway.prewarmAgent({
+      id: 'pi-agent',
+      config: { runtime: { headless: { provider: 'pi' } } },
+    });
+
+    expect(gateway.warmQueries.discard).toHaveBeenCalledWith('pi-agent');
+    expect(gateway.warmQueries.prewarm).not.toHaveBeenCalled();
+  });
+
   it('does not prewarm agents that expose manage_cron', async () => {
     const gateway = new Gateway() as any;
     gateway.sdkReady = true;

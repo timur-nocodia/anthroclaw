@@ -116,4 +116,42 @@ describe('LearningQueue', () => {
     });
     expect(queue.listActive()).toHaveLength(0);
   });
+
+  it('can drain active reviews before stopping', async () => {
+    let release!: () => void;
+    const blocker = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const finished = vi.fn();
+    const queue = new LearningQueue({
+      runner: vi.fn(async () => {
+        await blocker;
+        finished();
+      }),
+    });
+
+    queue.enqueueAfterResponse({
+      agentId: 'agent-a',
+      sessionKey: 's1',
+      runId: 'run-1',
+      trigger: 'user_correction',
+    });
+
+    await vi.waitFor(() => {
+      expect(queue.listActive()).toHaveLength(1);
+    });
+
+    let resolved = false;
+    const stopped = queue.stop({ drainActive: true }).then(() => {
+      resolved = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(resolved).toBe(false);
+    release();
+    await stopped;
+
+    expect(finished).toHaveBeenCalledOnce();
+    expect(queue.listActive()).toHaveLength(0);
+  });
 });

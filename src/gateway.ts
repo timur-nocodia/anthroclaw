@@ -1960,8 +1960,10 @@ export class Gateway {
     }
     this.profileRateLimiters.clear();
     this.queueManager.stop();
-    this.learningQueue?.stop();
-    this.learningQueue = null;
+    if (this.learningQueue) {
+      await this.learningQueue.stop({ drainActive: true, timeoutMs: 30_000 });
+      this.learningQueue = null;
+    }
     this.learningStore?.close();
     this.learningStore = null;
     this.decisionStore?.close();
@@ -2329,6 +2331,10 @@ export class Gateway {
 
   private async prewarmAgent(agent: Agent): Promise<void> {
     if (!this.sdkReady) return;
+    if (this.shouldUsePiGatewayRuntime(agent)) {
+      this.warmQueries.discard(agent.id);
+      return;
+    }
     if (agent.config.mcp_tools?.includes('manage_cron')) {
       this.warmQueries.discard(agent.id);
       return;
