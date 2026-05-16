@@ -357,6 +357,7 @@ Local spike adapter status:
 - Draft PR #68 adds optional Pi `auth_path` / `models_path` config and matching smoke CLI flags, so staging/CI can point AnthroClaw at isolated Pi-owned storage files without storing credential material in AnthroClaw config.
 - Draft PR #69 adds a manual GitHub Actions Pi smoke gate that decodes Pi-owned storage from repository secrets and runs `smoke:pi-all` as the repeatable real-auth decision check.
 - Draft PR #70 adds workflow summary/artifact capture for Pi smoke runs so the real-auth decision record has a Markdown summary, raw log, and normalized JSON result.
+- Draft PR #71 adds per-agent Gateway runtime selection, so individual agents can opt into Pi or opt back to Claude Agent SDK while the global default stays unchanged. Per-agent Pi storage paths inherit unspecified global Pi paths and override only the fields they set.
 
 Fit to AnthroClaw:
 

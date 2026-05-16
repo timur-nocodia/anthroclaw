@@ -1109,12 +1109,24 @@ export class Gateway {
     return this.configAuditLog;
   }
 
-  private getHeadlessReviewRuntimeOptions(): HeadlessReviewRuntimeConfig {
-    return headlessRuntimeOptionsFromConfig(this.globalConfig);
+  private getHeadlessReviewRuntimeOptions(agent?: Agent): HeadlessReviewRuntimeConfig {
+    const globalOptions = headlessRuntimeOptionsFromConfig(this.globalConfig);
+    if (!agent?.config.runtime) return globalOptions;
+
+    const agentOptions = headlessRuntimeOptionsFromConfig({ runtime: agent.config.runtime });
+    if (agentOptions.runtime !== 'pi') return agentOptions;
+
+    const mergedPiOptions = {
+      ...(globalOptions.runtimeOptions?.pi ?? {}),
+      ...(agentOptions.runtimeOptions?.pi ?? {}),
+    };
+    return Object.keys(mergedPiOptions).length > 0
+      ? { runtime: 'pi', runtimeOptions: { pi: mergedPiOptions } }
+      : { runtime: 'pi' };
   }
 
-  private shouldUsePiGatewayRuntime(): boolean {
-    return this.globalConfig?.runtime?.headless.provider === 'pi';
+  private shouldUsePiGatewayRuntime(agent: Agent): boolean {
+    return this.getHeadlessReviewRuntimeOptions(agent).runtime === 'pi';
   }
 
   private async runPiGatewayRuntime(
@@ -1135,7 +1147,7 @@ export class Gateway {
       ) => void;
     },
   ): Promise<{ text: string; sessionId?: string; usage?: StoredAgentRunUsage; totalTokens: number }> {
-    const configured = this.getHeadlessReviewRuntimeOptions();
+    const configured = this.getHeadlessReviewRuntimeOptions(agent);
     if (configured.runtime !== 'pi') {
       throw new Error('Pi Gateway runtime was requested without runtime.headless.provider=pi');
     }
@@ -3363,7 +3375,7 @@ export class Gateway {
     metrics.increment('messages_received');
     metrics.recordMessage();
 
-    const usePiGatewayRuntime = this.shouldUsePiGatewayRuntime();
+    const usePiGatewayRuntime = this.shouldUsePiGatewayRuntime(agent);
     if (!this.sdkReady && !usePiGatewayRuntime) {
       const fallback = `Agent ${agentId} received: ${message}`;
       callbacks.onText(fallback);
@@ -5394,7 +5406,7 @@ export class Gateway {
       }
     }
 
-    const usePiGatewayRuntime = this.shouldUsePiGatewayRuntime();
+    const usePiGatewayRuntime = this.shouldUsePiGatewayRuntime(agent);
     if (!this.sdkReady && !usePiGatewayRuntime) {
       // Fallback when SDK is not available
       return `Agent ${agent.id} received: ${msg.text}`;
