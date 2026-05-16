@@ -24,7 +24,7 @@ What is done:
 - Production canary preflight identified `example` as the preferred first canary candidate, subject to operator-owner confirmation before any live runtime override.
 - Guarded per-agent runtime switch CLI exists as `pnpm runtime:pi-canary-agent`; it dry-runs by default and requires `--apply` before writing a validated `agent.yml` backup/update.
 - The guarded switch CLI supports exact rollback with `--restore-backup <agent.yml.bak-...>` so the canary agent can return to its original config, not merely an explicit Claude provider override.
-- Latest **Pi Runtime v1 decision** workflow run `25966009746` on `main` after the guarded canary CLI merge passed all ten scenarios and remains `BLOCKED` only by `production-canary-window=pending`.
+- Latest **Pi Runtime v1 decision** workflow run `25969043105` on `main` after the exact rollback restore merge passed all ten scenarios and remains `BLOCKED` only by `production-canary-window=pending`.
 
 What is not done:
 
@@ -48,16 +48,16 @@ What is not done:
 
 | Scenario | Evidence Level | Status | Command or Evidence |
 | --- | --- | --- | --- |
-| `pi.auth-model-preflight` | smoke | Durable workflow pass on `main` in run `25966009746` | `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` |
-| `pi.workspace-tools-rewind` | smoke | Durable workflow pass on `main` in run `25966009746` | `pnpm smoke:pi-workspace -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.gateway-channel-approval` | smoke | Durable workflow pass on `main` in run `25966009746` | `pnpm smoke:pi-gateway -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.aggregate-real-auth` | smoke | Durable workflow pass on `main` in run `25966009746` | `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.plugins-context-tools` | scripted canary | Durable workflow pass on `main` in run `25966009746` | `pnpm smoke:pi-plugins-context -- --json` |
-| `pi.external-mcp-proxy` | scripted canary | Durable workflow pass on `main` in run `25966009746` | `pnpm smoke:pi-external-mcp -- --json` |
-| `pi.sessions-memory-learning` | scripted canary | Durable workflow pass on `main` in run `25966009746` | `pnpm smoke:pi-sessions-memory -- --json` |
-| `pi.dashboard-operator` | scripted canary | Durable workflow pass on `main` in run `25966009746` | `pnpm smoke:pi-dashboard-operator -- --json` |
-| `pi.scheduled-buildroom` | scripted canary | Durable workflow pass on `main` in run `25966009746` | `pnpm smoke:pi-scheduled-buildroom -- --json` |
-| `pi.rollback-mixed-runtime` | scripted canary | Durable workflow pass on `main` in run `25966009746` | `pnpm smoke:pi-rollback-runtime -- --json` |
+| `pi.auth-model-preflight` | smoke | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` |
+| `pi.workspace-tools-rewind` | smoke | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-workspace -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
+| `pi.gateway-channel-approval` | smoke | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-gateway -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
+| `pi.aggregate-real-auth` | smoke | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
+| `pi.plugins-context-tools` | scripted canary | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-plugins-context -- --json` |
+| `pi.external-mcp-proxy` | scripted canary | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-external-mcp -- --json` |
+| `pi.sessions-memory-learning` | scripted canary | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-sessions-memory -- --json` |
+| `pi.dashboard-operator` | scripted canary | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-dashboard-operator -- --json` |
+| `pi.scheduled-buildroom` | scripted canary | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-scheduled-buildroom -- --json` |
+| `pi.rollback-mixed-runtime` | scripted canary | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-rollback-runtime -- --json` |
 
 ## Current Blockers
 
