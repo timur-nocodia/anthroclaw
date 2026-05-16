@@ -99,6 +99,7 @@ describe('Pi v1 canary CLI', () => {
     const sessionsMemory = createProbe('passed');
     const pluginsContext = createProbe('passed');
     const externalMcp = createProbe('passed');
+    const rollbackMixedRuntime = createProbe('passed');
 
     const code = await runPiV1CanaryCli(['--json'], {
       runAuthCli: createProbe('passed'),
@@ -108,6 +109,7 @@ describe('Pi v1 canary CLI', () => {
       runSessionsMemoryCli: sessionsMemory,
       runPluginsContextCli: pluginsContext,
       runExternalMcpCli: externalMcp,
+      runRollbackMixedRuntimeCli: rollbackMixedRuntime,
       stdout,
       stderr,
     });
@@ -119,6 +121,11 @@ describe('Pi v1 canary CLI', () => {
     expect(pluginsContext.mock.calls[0]?.[0]).toEqual(['--json']);
     expect(externalMcp).toHaveBeenCalledTimes(1);
     expect(externalMcp.mock.calls[0]?.[0]).toEqual(['--json']);
+    expect(rollbackMixedRuntime).toHaveBeenCalledTimes(1);
+    expect(rollbackMixedRuntime.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'anthropic/claude-sonnet-4-6',
+    ]);
     expect(stdout.text()).toBe('');
     const body = JSON.parse(stderr.text());
     expect(body.status).toBe('incomplete');
@@ -137,6 +144,10 @@ describe('Pi v1 canary CLI', () => {
         status: 'passed',
       }),
       expect.objectContaining({
+        id: 'pi.rollback-mixed-runtime',
+        status: 'passed',
+      }),
+      expect.objectContaining({
         id: 'pi.dashboard-operator',
         status: 'incomplete',
       }),
@@ -149,6 +160,7 @@ describe('Pi v1 canary CLI', () => {
     const sessionsMemory = createProbe('passed');
     const pluginsContext = createProbe('passed');
     const externalMcp = createProbe('passed');
+    const rollbackMixedRuntime = createProbe('passed');
 
     const code = await runPiV1CanaryCli([
       '--json',
@@ -165,6 +177,7 @@ describe('Pi v1 canary CLI', () => {
       runSessionsMemoryCli: sessionsMemory,
       runPluginsContextCli: pluginsContext,
       runExternalMcpCli: externalMcp,
+      runRollbackMixedRuntimeCli: rollbackMixedRuntime,
       stdout,
       stderr,
     });
@@ -183,6 +196,14 @@ describe('Pi v1 canary CLI', () => {
       '--timeout-ms', '1000',
       '--keep-workspace',
     ]);
+    expect(rollbackMixedRuntime.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--keep-workspace',
+    ]);
   });
 
   it('can opt scripted canaries into real Gateway checks explicitly', async () => {
@@ -191,6 +212,7 @@ describe('Pi v1 canary CLI', () => {
     const sessionsMemory = createProbe('passed');
     const pluginsContext = createProbe('passed');
     const externalMcp = createProbe('passed');
+    const rollbackMixedRuntime = createProbe('passed');
 
     const code = await runPiV1CanaryCli([
       '--json',
@@ -209,6 +231,7 @@ describe('Pi v1 canary CLI', () => {
       runSessionsMemoryCli: sessionsMemory,
       runPluginsContextCli: pluginsContext,
       runExternalMcpCli: externalMcp,
+      runRollbackMixedRuntimeCli: rollbackMixedRuntime,
       stdout,
       stderr,
     });
@@ -227,6 +250,15 @@ describe('Pi v1 canary CLI', () => {
     expect(pluginsContext.mock.calls[0]?.[0]).toEqual(sessionsMemory.mock.calls[0]?.[0]);
     expect(externalMcp.mock.calls[0]?.[0]).toEqual([
       '--json',
+      '--timeout-ms', '1000',
+      '--allow-skip',
+      '--keep-workspace',
+    ]);
+    expect(rollbackMixedRuntime.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
       '--timeout-ms', '1000',
       '--allow-skip',
       '--keep-workspace',

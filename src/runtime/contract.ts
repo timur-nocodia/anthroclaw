@@ -801,7 +801,7 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
       'Verify bad Pi auth on an explicitly Pi-enabled agent fails loudly instead of silently falling back.',
       'Roll the Pi canary agent back to Claude and verify the same product session remains inspectable.',
     ],
-    { evidenceArtifact: 'future pi-v1-canary rollback JSON section' },
+    { evidenceCommand: 'pnpm smoke:pi-rollback-runtime -- --json' },
   ),
 ];
 

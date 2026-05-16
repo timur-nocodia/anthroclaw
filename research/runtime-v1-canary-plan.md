@@ -252,7 +252,7 @@ Required checks:
 
 ### 10. `pi.rollback-mixed-runtime`
 
-Status: planned scripted canary.
+Status: scripted canary implemented.
 
 Proves:
 
@@ -268,6 +268,10 @@ Required checks:
 - explicit bad-auth failure;
 - rollback and session inspection.
 
+Evidence command:
+
+- `pnpm smoke:pi-rollback-runtime -- --json`
+
 ## Default Runtime Gate
 
 Pi cannot become the global default until:
@@ -280,10 +284,8 @@ Pi cannot become the global default until:
 
 ## Next Implementation Slice
 
-The next useful code PR should expand `smoke:pi-v1-canary` beyond the current smoke-only runners and add the planned scripted checks incrementally:
+The next useful code PR should close the remaining non-automated canary gaps:
 
-1. start with sessions/memory/learning because it is the highest migration risk;
-2. add plugin/context checks;
-3. add scheduled/Buildroom checks;
-4. add rollback/mixed-runtime checks;
-5. emit a single JSON artifact keyed by `RUNTIME_CANARY_SCENARIOS` ids.
+1. add scheduled/Buildroom checks;
+2. complete the dashboard/operator manual evidence loop;
+3. keep `smoke:pi-v1-canary` emitting a single JSON artifact keyed by `RUNTIME_CANARY_SCENARIOS` ids.
