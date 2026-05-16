@@ -17,6 +17,7 @@ pnpm smoke:pi-v1-canary -- --list --json
 pnpm smoke:pi-v1-canary -- --smoke-only --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
 pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
 pnpm smoke:pi-v1-canary -- --json --include-gateway-scripted --allow-skip --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
+pnpm runtime:pi-decision -- --input <pi-v1-canary.log-or-json> --summary <decision.md> --json <decision.json>
 pnpm smoke:pi-sessions-memory -- --json
 pnpm smoke:pi-sessions-memory -- --json --gateway --allow-skip --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
 pnpm smoke:pi-external-mcp -- --json
@@ -31,6 +32,8 @@ pnpm smoke:pi-external-mcp -- --json
 - `manual_operator_check`: optional dashboard/browser review with artifact or screenshots.
 
 Default-runtime rollout requires all blocking scenarios to have either passing smoke evidence or a completed scripted/manual canary record.
+
+The decision package command turns the full canary JSON into the go/no-go artifact. It remains `BLOCKED` until the canary map passes, the PR stack is merged, and the first production canary window is recorded.
 
 ## Canary Scenarios
 
@@ -297,5 +300,5 @@ Pi cannot become the global default until:
 The next useful code PR should close the remaining evidence and rollout gaps:
 
 1. capture full real-auth smoke evidence;
-2. keep `smoke:pi-v1-canary` emitting a single JSON artifact keyed by `RUNTIME_CANARY_SCENARIOS` ids;
+2. generate the Runtime v1 decision package from the full canary JSON;
 3. prepare the default-runtime rollout and rollback package.
