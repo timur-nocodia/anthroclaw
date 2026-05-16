@@ -146,6 +146,15 @@ Ring 3.1 learning review surface at 2026-05-17 local time:
 - no learning action was approved or applied; no memory or skill write was performed;
 - post-check monitor passed with `6` total runs, `6` succeeded, `0` failed/interrupted/stale, auth/model alerts `0`, alerts `[]`, warnings `[]`.
 
+Ring 3.2 session continuity surface at 2026-05-17 local time:
+
+- scope: `example` via Web UI only, two turns in one continued session;
+- first turn returned exactly `PI_RING3_MEMORY_SEED_OK`, session id present, total tokens `19`, tool calls `0`;
+- second turn continued the same session and returned exactly `PI_RING3_MEMORY_CONTINUITY_OK`, total tokens `20`, tool calls `0`;
+- Gateway session list contained the continued session and reported `2` active session keys;
+- excluded surfaces stayed excluded: no Telegram/WhatsApp delivery, no `memory_write`, no learning apply, no plugin tool calls, no external MCP, no Buildroom, no cron/proactive notification, no `send_message` fanout;
+- post-scenario monitor passed with `8` total runs, `8` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`.
+
 ## Monitoring Command
 
 Use the operator monitor during the first live window and before any ring expansion:

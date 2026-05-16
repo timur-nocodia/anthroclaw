@@ -172,6 +172,56 @@ Ring 3.1 learning review was executed on 2026-05-17:
 
 Ring 3.1 is closed. Ring 3 remains open for the next expanded surface; do not jump directly to broad plugin/MCP/Buildroom or scheduled automation coverage.
 
+## Ring 3.2 Session Continuity Scope
+
+The second Ring 3 expanded surface is memory-heavy session continuity through the Gateway Web UI path. It validates that Pi can preserve conversational facts across a continued AnthroClaw session while the product session mapping remains visible to Gateway.
+
+Allowed:
+
+- agent: `example`;
+- route: Web UI only;
+- two-turn same-session continuation;
+- exact-answer prompts with several harmless session facts;
+- session visibility checks through Gateway session listing/details;
+- post-scenario monitor.
+
+Excluded:
+
+- Telegram/WhatsApp delivery;
+- `memory_write` and learning apply;
+- plugin tool calls;
+- external MCP;
+- Buildroom;
+- cron delivery and proactive notifications;
+- `send_message` fanout.
+
+## Ring 3.2 Session Continuity Evidence
+
+Ring 3.2 session continuity was executed on 2026-05-17:
+
+- first Web UI turn: exactly `PI_RING3_MEMORY_SEED_OK`;
+- first turn session id: present;
+- first turn total tokens: `19`;
+- first turn tool calls: `0`;
+- second Web UI turn continued the first session id;
+- second Web UI turn: exactly `PI_RING3_MEMORY_CONTINUITY_OK`;
+- second turn same session: true;
+- second turn total tokens: `20`;
+- second turn tool calls: `0`;
+- Gateway session list contained the continued session;
+- Gateway active session keys for the session: `2`;
+- no private transcript or provider log was recorded in docs.
+
+Post-scenario monitor passed:
+
+- runs: `8` total, `8` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- diagnostic event types: `run.completed`, `run.sdk_started`;
+- auth/model alerts: `0`;
+- alerts: none;
+- warnings: none.
+
+Ring 3.2 is closed. The next Ring 3 surface should move to plugin tool context, external MCP onboarding, or scheduled Buildroom, still one surface at a time.
+
 ## Stop Conditions
 
 Stop rollout and rollback or hold the current ring when any of these occur:
