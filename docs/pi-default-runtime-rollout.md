@@ -128,6 +128,14 @@ Ring 2 preflight at 2026-05-17 local time:
 - `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6`: passed with Pi package `0.74.0` and available `anthropic/claude-sonnet-4-6`;
 - `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`: passed with `3` succeeded runs, `0` failed/interrupted/stale runs, auth/model alerts `0`, alerts `[]`, warnings `[]`.
 
+Ring 2 low-risk usage window at 2026-05-17 local time:
+
+- Web UI/no-channel turn: `example` returned exactly `PI_RING2_WEB_OK`, session id present, total tokens `16`, tool calls `0`;
+- Telegram DM turn: `example` returned exactly `PI_RING2_TELEGRAM_OK` to allowlisted operator peer `48705953`, one sent message, message id present;
+- learning remained propose-only and produced action type `none`;
+- post-window monitor passed with `6` total runs, `6` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`;
+- Ring 2 is closed. Ring 3 must target one expanded product surface at a time.
+
 ## Monitoring Command
 
 Use the operator monitor during the first live window and before any ring expansion:

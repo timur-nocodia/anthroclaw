@@ -30,7 +30,7 @@ The remaining risk is not the default provider selection itself. The remaining r
 | --- | --- | --- | --- |
 | 0. Default runtime baseline | Global default Pi, no-channel/Web UI verification, monitoring only | `main` has Pi default and `runtime:pi-monitor -- --fail-on-alert` passes | Completed. Keep monitoring active. |
 | 1. Low-risk live channel turn | One controlled `example` live channel turn in an operator-owned peer | Ring 0 still green; operator confirms target peer and message text | Completed by operator acceptance after exact-answer live channel turn plus green immediate/manual monitor checks. |
-| 2. Low-risk normal operation | Low-risk agents/channels without send-message fanout, cron delivery, or broad plugin actions | Ring 1 exits cleanly, no stop conditions | Monitoring remains green through a normal usage window. |
+| 2. Low-risk normal operation | Low-risk agents/channels without send-message fanout, cron delivery, or broad plugin actions | Ring 1 exits cleanly, no stop conditions | Completed. Web UI plus Telegram DM usage window passed; post-window monitor remained green. |
 | 3. Expanded product surfaces | Agents with plugins, learning review, memory-heavy workflows, external MCP, or scheduled Buildroom | Ring 2 exits cleanly; explicit owner approves each surface | Targeted scenario evidence plus monitoring remains green. |
 | 4. High-risk automation | Agents with cron delivery, proactive notifications, broad `send_message`, or business-critical workflows | Ring 3 exits cleanly; rollback owner is present | Production monitoring confirms no stop conditions for the agreed window. |
 
@@ -109,7 +109,31 @@ Pre-Ring-2 checks passed on 2026-05-17:
 - `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6`: passed with Pi package `0.74.0` and available `anthropic/claude-sonnet-4-6`;
 - `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`: passed with `3` succeeded runs, `0` failed/interrupted/stale runs, auth/model alerts `0`, alerts none, warnings none.
 
-Ring 2 is ready to execute under the scope above. Its exit gate remains post-window monitoring with no stop-condition alerts.
+## Ring 2 Evidence
+
+Ring 2 low-risk usage window was executed on 2026-05-17:
+
+- agent: `example`;
+- Web UI result: exactly `PI_RING2_WEB_OK`;
+- Web UI session id: present;
+- Web UI total tokens: `16`;
+- Web UI tool calls: `0`;
+- Telegram result: exactly `PI_RING2_TELEGRAM_OK`;
+- Telegram channel: DM to allowlisted operator peer `48705953`;
+- Telegram sent messages: `1`;
+- Telegram message id: present;
+- learning side effect: propose-only review created with action type `none`;
+- excluded surfaces remained excluded: no cron delivery, no `send_message` fanout, no Buildroom, no external MCP, no WhatsApp.
+
+Post-window monitor passed:
+
+- runs: `6` total, `6` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- diagnostic event types: `run.completed`, `run.sdk_started`;
+- auth/model alerts: `0`;
+- alerts: none;
+- warnings: none.
+
+Ring 2 is closed. The next ring must choose one targeted expanded product surface instead of broadening all plugin, learning, memory, MCP, and scheduled paths at once.
 
 ## Stop Conditions
 
