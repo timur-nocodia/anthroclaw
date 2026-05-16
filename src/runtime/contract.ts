@@ -717,10 +717,11 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
       'observability.hooks-webhooks',
     ],
     [
-      'Run two Pi turns in the same product session and verify continuation.',
-      'List session details, labels, title, export, and transcript-derived search evidence.',
-      'Write/search/review memory and record memory influence.',
-      'Trigger a learning review and verify actions/artifacts are visible and redacted.',
+      'Run the storage/protocol canary without real Pi usage.',
+      'Optionally run two Pi Gateway turns in the same product session and verify continuation.',
+      'List session details, title, route decisions, runs, and transcript-derived search evidence.',
+      'Write/search/review memory and record memory influence in opt-in Gateway mode.',
+      'Trigger a learning review and verify actions are visible.',
       'Verify learning queue drains before Gateway shutdown.',
     ],
     {

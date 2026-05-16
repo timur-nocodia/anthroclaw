@@ -21,6 +21,7 @@ interface PiV1CanaryArgs {
   timeoutMs?: number;
   keepWorkspace: boolean;
   allowSkip: boolean;
+  includeGatewayScripted: boolean;
   smokeOnly: boolean;
   list: boolean;
   json: boolean;
@@ -151,6 +152,7 @@ export function parsePiV1CanaryArgs(argv: string[]): PiV1CanaryArgs {
     model: DEFAULT_PI_MODEL_ID,
     keepWorkspace: false,
     allowSkip: false,
+    includeGatewayScripted: false,
     smokeOnly: false,
     list: false,
     json: false,
@@ -183,6 +185,9 @@ export function parsePiV1CanaryArgs(argv: string[]): PiV1CanaryArgs {
         break;
       case '--allow-skip':
         args.allowSkip = true;
+        break;
+      case '--include-gateway-scripted':
+        args.includeGatewayScripted = true;
         break;
       case '--smoke-only':
         args.smokeOnly = true;
@@ -289,6 +294,12 @@ function buildAggregateProbeArgs(args: PiV1CanaryArgs): string[] {
 
 function buildScriptedProbeArgs(args: PiV1CanaryArgs): string[] {
   const out = ['--json'];
+  if (args.includeGatewayScripted) out.push('--gateway');
+  if (args.includeGatewayScripted) out.push('--model', args.model ?? DEFAULT_PI_MODEL_ID);
+  if (args.authPath) out.push('--auth-path', args.authPath);
+  if (args.modelsPath) out.push('--models-path', args.modelsPath);
+  if (args.timeoutMs) out.push('--timeout-ms', String(args.timeoutMs));
+  if (args.allowSkip) out.push('--allow-skip');
   if (args.keepWorkspace) out.push('--keep-workspace');
   return out;
 }
@@ -367,6 +378,7 @@ function usage(): string {
     '  --timeout-ms <ms>     positive integer timeout forwarded to runtime probes',
     '  --keep-workspace      keep temporary smoke workspaces for inspection',
     '  --allow-skip          exit 0 when probes report missing optional Pi runtime/auth setup',
+    '  --include-gateway-scripted run real Gateway-backed scripted checks when available',
     '  --smoke-only          run only scenarios with automated smoke runners',
     '  --list                list the canary map without running probes',
     '  --json                print structured result',
