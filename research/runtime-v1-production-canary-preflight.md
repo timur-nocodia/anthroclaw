@@ -61,7 +61,12 @@ Gateway hot-reload rehearsal evidence from 2026-05-16:
 - final `agent.yml` hash again matched `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`;
 - generated rehearsal backups were removed after verification.
 
-Observed blocker: Gateway startup from this worktree logs `Claude Code native binary not found` for Claude SDK warm prewarm. That does not invalidate the Pi adapter evidence, but it blocks a clean Claude baseline turn unless the native binary path is fixed or that baseline is explicitly waived for the first Pi-only canary window.
+Follow-up fix from 2026-05-16:
+
+- Gateway now installs canonical `OC_AGENTS_DIR` and `OC_DATA_DIR` values from its actual startup arguments while running, then restores the previous process env on stop.
+- The underlying issue was a worktree/dev-data mismatch: cutoff resolved the Claude SDK `cwd` from `process.cwd()/agents` when those env vars were unset, even though Gateway had been started with real dev `agentsDir` and `dataDir` arguments.
+- Real Gateway startup was rechecked with `OC_AGENTS_DIR`/`OC_DATA_DIR` unset and the same real dev config/agents/data/plugin paths; Gateway started, Telegram polling started, and the prior `Claude Code native binary not found` warning did not recur.
+- This clears the startup blocker for a Claude baseline turn. It does not itself satisfy the baseline-turn evidence because no channel message was sent during the verification.
 
 Minimum window:
 

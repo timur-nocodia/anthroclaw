@@ -1058,6 +1058,7 @@ export class Gateway {
   private configWatcher: ConfigWatcher | null = null;
   private agentsDir: string | null = null;
   private dataDir: string | null = null;
+  private runtimeDirEnvSnapshot: { agentsDir?: string; dataDir?: string } | null = null;
   private startedAt = Date.now();
   private sessionMirror = new SessionMirror();
   private insightsEngine = new InsightsEngine();
@@ -1127,6 +1128,49 @@ export class Gateway {
   /** Returns the per-agent JSONL audit log of config writes (null until start() runs). */
   getConfigAuditLog(): ConfigAuditLog | null {
     return this.configAuditLog;
+  }
+
+  private installRuntimeDirEnv(agentsDir: string, dataDir: string): void {
+    if (!this.runtimeDirEnvSnapshot) {
+      this.runtimeDirEnvSnapshot = {
+        agentsDir: process.env.OC_AGENTS_DIR,
+        dataDir: process.env.OC_DATA_DIR,
+      };
+    }
+
+    if (process.env.OC_AGENTS_DIR && resolve(process.env.OC_AGENTS_DIR) !== agentsDir) {
+      logger.warn(
+        { configured: process.env.OC_AGENTS_DIR, runtime: agentsDir },
+        'OC_AGENTS_DIR differs from Gateway agentsDir; using Gateway runtime path',
+      );
+    }
+    if (process.env.OC_DATA_DIR && resolve(process.env.OC_DATA_DIR) !== dataDir) {
+      logger.warn(
+        { configured: process.env.OC_DATA_DIR, runtime: dataDir },
+        'OC_DATA_DIR differs from Gateway dataDir; using Gateway runtime path',
+      );
+    }
+
+    process.env.OC_AGENTS_DIR = agentsDir;
+    process.env.OC_DATA_DIR = dataDir;
+  }
+
+  private restoreRuntimeDirEnv(): void {
+    if (!this.runtimeDirEnvSnapshot) return;
+
+    if (this.runtimeDirEnvSnapshot.agentsDir === undefined) {
+      delete process.env.OC_AGENTS_DIR;
+    } else {
+      process.env.OC_AGENTS_DIR = this.runtimeDirEnvSnapshot.agentsDir;
+    }
+
+    if (this.runtimeDirEnvSnapshot.dataDir === undefined) {
+      delete process.env.OC_DATA_DIR;
+    } else {
+      process.env.OC_DATA_DIR = this.runtimeDirEnvSnapshot.dataDir;
+    }
+
+    this.runtimeDirEnvSnapshot = null;
   }
 
   private getHeadlessReviewRuntimeOptions(agent?: Agent): HeadlessReviewRuntimeConfig {
@@ -1580,6 +1624,10 @@ export class Gateway {
   }
 
   async start(config: GlobalConfig, agentsDir: string, dataDir: string, pluginsDir?: string): Promise<void> {
+    agentsDir = resolve(agentsDir);
+    dataDir = resolve(dataDir);
+    this.installRuntimeDirEnv(agentsDir, dataDir);
+
     this.startedAt = Date.now();
     this.globalConfig = config;
     this.agentsDir = agentsDir;
@@ -2042,6 +2090,7 @@ export class Gateway {
     this.subagentRegistry.clear();
     this.routeTable = null;
     this.accessControl = null;
+    this.restoreRuntimeDirEnv();
   }
 
   /**

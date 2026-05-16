@@ -49,8 +49,15 @@ describe('Gateway public methods', () => {
   let tmpDir: string;
   let agentsDir: string;
   let dataDir: string;
+  let prevOcAgentsDir: string | undefined;
+  let prevOcDataDir: string | undefined;
 
   beforeEach(() => {
+    prevOcAgentsDir = process.env.OC_AGENTS_DIR;
+    prevOcDataDir = process.env.OC_DATA_DIR;
+    delete process.env.OC_AGENTS_DIR;
+    delete process.env.OC_DATA_DIR;
+
     tmpDir = mkdtempSync(join(tmpdir(), 'gw-web-test-'));
     agentsDir = join(tmpDir, 'agents');
     dataDir = join(tmpDir, 'data');
@@ -60,6 +67,10 @@ describe('Gateway public methods', () => {
 
   afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true });
+    if (prevOcAgentsDir === undefined) delete process.env.OC_AGENTS_DIR;
+    else process.env.OC_AGENTS_DIR = prevOcAgentsDir;
+    if (prevOcDataDir === undefined) delete process.env.OC_DATA_DIR;
+    else process.env.OC_DATA_DIR = prevOcDataDir;
   });
 
   // ─── getStatus ────────────────────────────────────────────────────
@@ -239,6 +250,35 @@ routes:
     expect(gw.getDataDir()).toBe(dataDir);
 
     await gw.stop();
+  });
+
+  it('sets canonical runtime directory env while running', async () => {
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    expect(process.env.OC_AGENTS_DIR).toBe(agentsDir);
+    expect(process.env.OC_DATA_DIR).toBe(dataDir);
+
+    await gw.stop();
+
+    expect(process.env.OC_AGENTS_DIR).toBeUndefined();
+    expect(process.env.OC_DATA_DIR).toBeUndefined();
+  });
+
+  it('restores pre-existing canonical runtime directory env on stop', async () => {
+    process.env.OC_AGENTS_DIR = join(tmpDir, 'other-agents');
+    process.env.OC_DATA_DIR = join(tmpDir, 'other-data');
+
+    const gw = new Gateway();
+    await gw.start(minimalConfig(), agentsDir, dataDir);
+
+    expect(process.env.OC_AGENTS_DIR).toBe(agentsDir);
+    expect(process.env.OC_DATA_DIR).toBe(dataDir);
+
+    await gw.stop();
+
+    expect(process.env.OC_AGENTS_DIR).toBe(join(tmpDir, 'other-agents'));
+    expect(process.env.OC_DATA_DIR).toBe(join(tmpDir, 'other-data'));
   });
 
   // ─── dispatchWebUI (fallback path — SDK not ready) ────────────────
