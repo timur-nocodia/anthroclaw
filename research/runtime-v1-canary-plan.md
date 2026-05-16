@@ -16,10 +16,12 @@ The current CLI entrypoint is:
 pnpm smoke:pi-v1-canary -- --list --json
 pnpm smoke:pi-v1-canary -- --smoke-only --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
 pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
+pnpm smoke:pi-v1-canary -- --json --include-gateway-scripted --allow-skip --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
 pnpm smoke:pi-sessions-memory -- --json
+pnpm smoke:pi-sessions-memory -- --json --gateway --allow-skip --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
 ```
 
-`--smoke-only` runs only the automated smoke scenarios that exist today. Full mode intentionally returns `incomplete` until the scripted/manual canaries in this document are implemented.
+`--smoke-only` runs only the automated smoke scenarios that exist today. Full mode intentionally returns `incomplete` until the scripted/manual canaries in this document are implemented. Gateway-backed scripted checks are opt-in through `--include-gateway-scripted` because they can use real Pi auth/tokens.
 
 ## Evidence Levels
 
@@ -143,7 +145,7 @@ Required checks:
 
 ### 6. `pi.sessions-memory-learning`
 
-Status: scripted canary runner available for the storage/protocol path; Gateway real-turn and operator artifact checks remain planned.
+Status: scripted canary runner available for the storage/protocol path, with opt-in Gateway two-turn continuation checks through `--gateway`.
 
 Proves:
 
@@ -151,18 +153,21 @@ Proves:
 - title generation still runs through the runtime-neutral title adapter contract;
 - memory search/write/review remains AnthroClaw-owned;
 - learning review parsing/persistence produces memory candidate actions;
-- applied learning memory preserves run/session provenance.
+- applied learning memory preserves run/session provenance;
+- opt-in Gateway mode preserves Pi session continuity and memory influence evidence across two dispatches.
 
 Required checks:
 
 - current: `pnpm smoke:pi-sessions-memory -- --json`;
+- current opt-in: `pnpm smoke:pi-sessions-memory -- --json --gateway --allow-skip --model anthropic/claude-sonnet-4-6 --timeout-ms 120000`;
 - current: session store append, transcript index search, recall summary;
 - current: title normalization through injected query function;
 - current: learning review/action persistence;
 - current: high-confidence private memory candidate apply and memory search;
-- remaining: real Pi two-turn continuation through Gateway;
-- remaining: session list/details/export labels;
-- remaining: memory influence event;
+- current opt-in: real Pi two-turn continuation through Gateway session mapping;
+- current opt-in: `listAgentSessions`, `getAgentSessionDetails`, `listAgentRuns`, `listRouteDecisions`;
+- current opt-in: prefetch memory influence event for the continued session;
+- remaining: session label/export UI parity;
 - remaining: learning artifact redaction;
 - remaining: no post-shutdown learning store write.
 

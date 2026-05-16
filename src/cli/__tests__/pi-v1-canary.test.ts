@@ -131,7 +131,7 @@ describe('Pi v1 canary CLI', () => {
     ]));
   });
 
-  it('forwards keep-workspace to scripted canaries without runtime smoke flags', async () => {
+  it('forwards default scripted canaries without real Gateway usage flags', async () => {
     const stdout = createWriter();
     const stderr = createWriter();
     const sessionsMemory = createProbe('passed');
@@ -154,7 +154,50 @@ describe('Pi v1 canary CLI', () => {
     });
 
     expect(code).toBe(1);
-    expect(sessionsMemory.mock.calls[0]?.[0]).toEqual(['--json', '--keep-workspace']);
+    expect(sessionsMemory.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--keep-workspace',
+    ]);
+  });
+
+  it('can opt scripted canaries into real Gateway checks explicitly', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+    const sessionsMemory = createProbe('passed');
+
+    const code = await runPiV1CanaryCli([
+      '--json',
+      '--include-gateway-scripted',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--allow-skip',
+      '--keep-workspace',
+    ], {
+      runAuthCli: createProbe('passed'),
+      runWorkspaceCli: createProbe('passed'),
+      runGatewayCli: createProbe('passed'),
+      runAggregateCli: createProbe('passed'),
+      runSessionsMemoryCli: sessionsMemory,
+      stdout,
+      stderr,
+    });
+
+    expect(code).toBe(1);
+    expect(sessionsMemory.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--gateway',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
+      '--timeout-ms', '1000',
+      '--allow-skip',
+      '--keep-workspace',
+    ]);
   });
 
   it('returns failed when an automated smoke scenario fails', async () => {
@@ -197,6 +240,7 @@ describe('Pi v1 canary CLI', () => {
       '--timeout-ms', '500',
       '--keep-workspace',
       '--allow-skip',
+      '--include-gateway-scripted',
       '--smoke-only',
       '--list',
       '--json',
@@ -207,6 +251,7 @@ describe('Pi v1 canary CLI', () => {
       timeoutMs: 500,
       keepWorkspace: true,
       allowSkip: true,
+      includeGatewayScripted: true,
       smokeOnly: true,
       list: true,
       json: true,
