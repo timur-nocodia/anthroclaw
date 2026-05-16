@@ -5987,6 +5987,8 @@ export class Gateway {
         ...input,
       }, candidates, {
         maxCandidates: config.max_candidates,
+        minConfidence: config.min_confidence,
+        requireReview: config.require_review,
       });
 
       metrics.increment('memory_candidates_proposed', stored.candidates.length);

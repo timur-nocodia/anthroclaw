@@ -39,11 +39,18 @@ export interface PostRunMemoryExtractionResult {
 export interface PostRunMemoryExtractionOptions {
   maxInputChars?: number;
   maxCandidates?: number;
+  // Drop candidates with confidence < minConfidence (do not persist).
+  // Candidates with confidence >= minConfidence are stored as `approved`
+  // (searchable) unless `requireReview` is set, in which case they are
+  // stored as `pending` for manual review.
+  minConfidence?: number;
+  requireReview?: boolean;
   now?: () => Date;
 }
 
 const DEFAULT_MAX_INPUT_CHARS = 6000;
 const DEFAULT_MAX_CANDIDATES = 5;
+const DEFAULT_MIN_CONFIDENCE = 0.6;
 
 export function buildPostRunMemoryExtractionPrompt(
   input: PostRunMemoryExtractionInput,
@@ -91,9 +98,18 @@ export function storePostRunMemoryCandidates(
   const now = options.now?.() ?? new Date();
   const stamp = now.toISOString().replace(/[:.]/g, '-');
   const maxCandidates = options.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
+  const minConfidence = options.minConfidence ?? DEFAULT_MIN_CONFIDENCE;
+  const requireReview = options.requireReview ?? false;
   const stored: StoredMemoryCandidate[] = [];
 
   for (const [index, candidate] of candidates.slice(0, maxCandidates).entries()) {
+    const confidence = candidate.confidence ?? 0;
+    // Drop below-threshold candidates entirely — do not persist as `pending`.
+    // The old behaviour piled up unreviewed pending entries that never
+    // surfaced in search (textSearch filters review_status='approved').
+    if (confidence < minConfidence) continue;
+
+    const reviewStatus = requireReview ? 'pending' : 'approved';
     const safeKind = candidate.kind;
     const path = `memory/candidates/${input.runId}/${stamp}-${index + 1}-${safeKind}.md`;
     const content = [
@@ -102,12 +118,12 @@ export function storePostRunMemoryCandidates(
       candidate.text,
       '',
       '---',
-      `confidence: ${candidate.confidence ?? 0}`,
+      `confidence: ${confidence}`,
       candidate.reason ? `reason: ${candidate.reason}` : undefined,
     ].filter(Boolean).join('\n');
     const provenance: MemoryProvenance = {
       source: 'post_run_candidate',
-      reviewStatus: 'pending',
+      reviewStatus,
       runId: input.runId,
       sessionKey: input.sessionKey,
       agentId: input.agentId,
@@ -116,7 +132,7 @@ export function storePostRunMemoryCandidates(
       sourcePeerHash: input.peerHash,
       metadata: {
         kind: safeKind,
-        confidence: candidate.confidence ?? 0,
+        confidence,
         reason: candidate.reason,
       },
     };

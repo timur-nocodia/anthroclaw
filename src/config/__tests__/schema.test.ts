@@ -70,6 +70,8 @@ describe('plugins config schema', () => {
         enabled: true,
         max_candidates: 5,
         max_input_chars: 6000,
+        min_confidence: 0.6,
+        require_review: false,
       });
       expect(result.data.learning).toMatchObject({
         enabled: true,

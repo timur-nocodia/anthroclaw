@@ -24,6 +24,7 @@
     "buildroom": "tsx src/cli/buildroom.ts",
     "plugins": "tsx src/cli/plugins.ts",
     "migrate:safety-profile": "tsx scripts/migrate-safety-profile.ts",
+    "migrate:memory-candidates": "tsx scripts/backfill-memory-candidates.ts",
     "ui": "cd ui && pnpm dev",
     "ui:build": "cd ui && pnpm build"
   },
