@@ -15,6 +15,9 @@ This document records the first default-runtime flip from `claude-agent-sdk` to 
 - PR #110 merged the default flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`.
 - Post-merge local verification on `d0f2438` passed: config parsing resolved `provider=pi`, targeted runtime/config tests passed, TypeScript passed, `pi-auth` passed, and `pi-all` returned workspace text `SMOKE_OK` plus Gateway text `SMOKE_GATEWAY_OK`.
 - Post-merge durable GitHub Actions **Pi Runtime v1 decision** run `25971022679` passed on `main` commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`.
+- The live runtime checkout `/Users/tyess/dev/openclaw-agents-sdk-clone` was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e` on 2026-05-17 local time.
+- Post-pull live verification passed: `pnpm install --frozen-lockfile`, config parsing resolved `provider=pi`, TypeScript passed, `pi-auth` passed, and `pi-all` returned workspace text `SMOKE_OK` plus Gateway text `SMOKE_GATEWAY_OK`.
+- A no-channel live Gateway Web UI turn against `example` replied exactly `PI_LIVE_WEB_OK` via Pi with no tool calls; the first monitoring slice showed zero failed runs in the last hour and only `run.sdk_started`/`run.completed` diagnostic event types.
 
 ## Change
 
@@ -76,3 +79,16 @@ Then start Gateway and verify one safe Web UI turn against a low-risk agent. Rec
 - learning queue errors.
 
 Keep rollout ring expansion separate from this default flip. Do not expand to higher-risk agents until the first post-flip monitoring window is green.
+
+## Live Pull Evidence
+
+Live pull/deploy checkpoint completed on 2026-05-17:
+
+- checkout: `/Users/tyess/dev/openclaw-agents-sdk-clone`;
+- commit: `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e`;
+- tracked global provider: `runtime.headless.provider=pi`;
+- `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6`: passed;
+- `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000`: passed;
+- safe Web UI turn: `example` returned `PI_LIVE_WEB_OK`, no tools, session id present, total tokens `15`;
+- monitoring slice: failed runs in the last hour `0`;
+- checkout state after verification: clean.
