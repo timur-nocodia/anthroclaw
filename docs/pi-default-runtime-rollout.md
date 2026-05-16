@@ -12,6 +12,9 @@ This document records the first default-runtime flip from `claude-agent-sdk` to 
 - The final decision package was `READY` with `production_canary=passed`, `pr_stack=merged`, and `browser_ux=not-required`.
 - The limited `example` Web UI production canary passed five Pi turns in one provider session, then exact rollback restored `example/agent.yml` to SHA-256 `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`.
 - Default-flip local verification passed with `runtime.headless.provider=pi`: targeted runtime/config tests, TypeScript, config parsing, `pi-auth`, and `pi-all`.
+- PR #110 merged the default flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`.
+- Post-merge local verification on `d0f2438` passed: config parsing resolved `provider=pi`, targeted runtime/config tests passed, TypeScript passed, `pi-auth` passed, and `pi-all` returned workspace text `SMOKE_OK` plus Gateway text `SMOKE_GATEWAY_OK`.
+- Post-merge durable GitHub Actions **Pi Runtime v1 decision** run `25971022679` passed on `main` commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`.
 
 ## Change
 
@@ -53,7 +56,7 @@ Expected rollback state:
 
 ## Post-Flip Checks
 
-Run immediately after deployment:
+Run immediately after deployment or after pulling the merged `main` into the runtime environment:
 
 ```bash
 pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6
