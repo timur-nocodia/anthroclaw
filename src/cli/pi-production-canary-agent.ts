@@ -1,5 +1,14 @@
 import 'dotenv/config';
-import { resolve } from 'node:path';
+import {
+  copyFileSync,
+  existsSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, join, relative, resolve, sep } from 'node:path';
+import { parseDocument } from 'yaml';
+import { AgentYmlSchema } from '../config/schema.js';
 import {
   AgentConfigNotFoundError,
   createAgentConfigWriter,
@@ -11,6 +20,7 @@ interface CanaryAgentCliArgs {
   agentsDir: string;
   agentId?: string;
   provider?: CanaryRuntimeProvider;
+  restoreBackupPath?: string;
   apply: boolean;
   json: boolean;
   help: boolean;
@@ -29,6 +39,7 @@ interface CanaryAgentResult {
   applied: boolean;
   changed: boolean;
   backupPath: string | null;
+  restoredFromBackupPath: string | null;
   message: string;
 }
 
@@ -99,6 +110,9 @@ export function parsePiProductionCanaryAgentArgs(argv: string[]): CanaryAgentCli
       case '--rollback':
         args.provider = 'claude-agent-sdk';
         break;
+      case '--restore-backup':
+        args.restoreBackupPath = resolve(requireValue(argv, ++i, '--restore-backup'));
+        break;
       case '--apply':
         args.apply = true;
         break;
@@ -115,10 +129,24 @@ export function parsePiProductionCanaryAgentArgs(argv: string[]): CanaryAgentCli
 
 async function runCanaryAgentRuntimeChange(args: CanaryAgentCliArgs): Promise<CanaryAgentResult> {
   if (!args.agentId) throw new Error('--agent requires a value.');
+  if (args.restoreBackupPath && args.provider) {
+    throw new Error('--restore-backup cannot be combined with --enable-pi, --rollback, or --provider.');
+  }
 
   const writer = createAgentConfigWriter({ agentsDir: args.agentsDir });
   const currentConfig = writer.readFullConfig(args.agentId);
   const currentProvider = providerFromConfig(currentConfig);
+
+  if (args.restoreBackupPath) {
+    return restoreBackup({
+      agentsDir: args.agentsDir,
+      agentId: args.agentId,
+      currentProvider,
+      backupPath: args.restoreBackupPath,
+      apply: args.apply,
+    });
+  }
+
   const desiredProvider = args.provider ?? null;
 
   if (!desiredProvider) {
@@ -130,6 +158,7 @@ async function runCanaryAgentRuntimeChange(args: CanaryAgentCliArgs): Promise<Ca
       applied: false,
       changed: false,
       backupPath: null,
+      restoredFromBackupPath: null,
       message: 'status only; no runtime provider change requested',
     };
   }
@@ -144,6 +173,7 @@ async function runCanaryAgentRuntimeChange(args: CanaryAgentCliArgs): Promise<Ca
       applied: false,
       changed: false,
       backupPath: null,
+      restoredFromBackupPath: null,
       message: `agent already resolves to ${desiredProvider}`,
     };
   }
@@ -157,6 +187,7 @@ async function runCanaryAgentRuntimeChange(args: CanaryAgentCliArgs): Promise<Ca
       applied: false,
       changed: true,
       backupPath: null,
+      restoredFromBackupPath: null,
       message: 'dry-run only; rerun with --apply to write agent.yml',
     };
   }
@@ -176,7 +207,76 @@ async function runCanaryAgentRuntimeChange(args: CanaryAgentCliArgs): Promise<Ca
     applied: true,
     changed: true,
     backupPath: writeResult.backupPath,
+    restoredFromBackupPath: null,
     message: `agent runtime provider set to ${desiredProvider}`,
+  };
+}
+
+function restoreBackup(opts: {
+  agentsDir: string;
+  agentId: string;
+  currentProvider: CanaryRuntimeProvider;
+  backupPath: string;
+  apply: boolean;
+}): CanaryAgentResult {
+  const agentDir = resolve(opts.agentsDir, opts.agentId);
+  const agentYmlPath = join(agentDir, 'agent.yml');
+  const backupPath = resolve(opts.backupPath);
+  assertBackupPath(agentDir, backupPath);
+  if (!existsSync(backupPath)) {
+    throw new Error(`restore backup not found: ${backupPath}`);
+  }
+
+  const currentRaw = readFileSync(agentYmlPath, 'utf-8');
+  const backupRaw = readFileSync(backupPath, 'utf-8');
+  validateAgentYml(backupRaw, backupPath);
+  const backupProvider = providerFromConfig(parseDocument(backupRaw).toJS());
+  const changed = currentRaw !== backupRaw;
+
+  if (!changed) {
+    return {
+      agentId: opts.agentId,
+      agentsDir: opts.agentsDir,
+      currentProvider: opts.currentProvider,
+      desiredProvider: backupProvider,
+      applied: false,
+      changed: false,
+      backupPath: null,
+      restoredFromBackupPath: backupPath,
+      message: 'current agent.yml already matches restore backup',
+    };
+  }
+
+  if (!opts.apply) {
+    return {
+      agentId: opts.agentId,
+      agentsDir: opts.agentsDir,
+      currentProvider: opts.currentProvider,
+      desiredProvider: backupProvider,
+      applied: false,
+      changed: true,
+      backupPath: null,
+      restoredFromBackupPath: backupPath,
+      message: 'dry-run only; rerun with --apply to restore backup',
+    };
+  }
+
+  const currentBackupPath = join(agentDir, `agent.yml.bak-restore-${timestampForBackup(new Date())}`);
+  copyFileSync(agentYmlPath, currentBackupPath);
+  const tmpPath = `${agentYmlPath}.tmp`;
+  writeFileSync(tmpPath, backupRaw, 'utf-8');
+  renameSync(tmpPath, agentYmlPath);
+
+  return {
+    agentId: opts.agentId,
+    agentsDir: opts.agentsDir,
+    currentProvider: opts.currentProvider,
+    desiredProvider: backupProvider,
+    applied: true,
+    changed: true,
+    backupPath: currentBackupPath,
+    restoredFromBackupPath: backupPath,
+    message: `agent.yml restored from ${basename(backupPath)}`,
   };
 }
 
@@ -209,8 +309,30 @@ function renderHuman(result: CanaryAgentResult): string {
   lines.push(`Applied: ${result.applied ? 'yes' : 'no'}`);
   lines.push(`Changed: ${result.changed ? 'yes' : 'no'}`);
   if (result.backupPath) lines.push(`Backup: ${result.backupPath}`);
+  if (result.restoredFromBackupPath) lines.push(`Restored from: ${result.restoredFromBackupPath}`);
   lines.push(result.message);
   return `${lines.join('\n')}\n`;
+}
+
+function assertBackupPath(agentDir: string, backupPath: string): void {
+  const rel = relative(agentDir, backupPath);
+  if (rel.startsWith('..') || rel === '' || rel.includes(`${sep}..${sep}`) || basename(backupPath).startsWith('agent.yml.bak-') === false) {
+    throw new Error('--restore-backup must point to an agent.yml.bak-* file inside the target agent directory.');
+  }
+}
+
+function validateAgentYml(raw: string, path: string): void {
+  const parsed = AgentYmlSchema.safeParse(parseDocument(raw).toJS());
+  if (!parsed.success) {
+    const summary = parsed.error.issues
+      .map((issue) => `${issue.path.map((p) => String(p)).join('.')}: ${issue.message}`)
+      .join('; ');
+    throw new Error(`restore backup is not a valid agent.yml (${path}): ${summary}`);
+  }
+}
+
+function timestampForBackup(date: Date): string {
+  return date.toISOString().replace(/[:.]/g, '-');
 }
 
 function parseProvider(value: string): CanaryRuntimeProvider {
@@ -240,6 +362,7 @@ function usage(): string {
     '  --enable-pi              set runtime.headless.provider=pi',
     '  --rollback               set runtime.headless.provider=claude-agent-sdk',
     '  --provider <provider>    explicit provider: claude-agent-sdk or pi',
+    '  --restore-backup <path>   restore exact agent.yml from an agent.yml.bak-* file',
     '  --apply                  write agent.yml and create a backup; omitted means dry-run',
     '  --json                   print machine-readable result',
   ].join('\n');

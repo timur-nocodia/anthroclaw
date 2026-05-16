@@ -23,6 +23,7 @@ What is done:
 - Post-merge **Pi Runtime v1 decision** workflow run `25965686443` on `main` passed build, Pi storage preparation, the full ten-scenario canary map, and artifact upload. The generated decision package is `BLOCKED` only by `production-canary-window=pending`.
 - Production canary preflight identified `example` as the preferred first canary candidate, subject to operator-owner confirmation before any live runtime override.
 - Guarded per-agent runtime switch CLI exists as `pnpm runtime:pi-canary-agent`; it dry-runs by default and requires `--apply` before writing a validated `agent.yml` backup/update.
+- The guarded switch CLI supports exact rollback with `--restore-backup <agent.yml.bak-...>` so the canary agent can return to its original config, not merely an explicit Claude provider override.
 - Latest **Pi Runtime v1 decision** workflow run `25966009746` on `main` after the guarded canary CLI merge passed all ten scenarios and remains `BLOCKED` only by `production-canary-window=pending`.
 
 What is not done:

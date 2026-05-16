@@ -79,8 +79,11 @@ After rollback, verify the operator API/dashboard resolves the agent back to `cl
 Guarded rollback command:
 
 ```bash
-pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --rollback --apply --json
+pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --restore-backup <backupPath-from-enable-pi> --json
+pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --restore-backup <backupPath-from-enable-pi> --apply --json
 ```
+
+Use `--rollback --apply` only as a fallback when the original `agent.yml.bak-*` path is unavailable; exact backup restore should be the first choice for the `example` canary because it currently has no explicit runtime override.
 
 ## Final Decision Step
 
