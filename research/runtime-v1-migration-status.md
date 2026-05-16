@@ -6,9 +6,9 @@ This is the human-readable phase checklist for replacing the Claude Agent SDK-ce
 
 ## Current Snapshot
 
-Overall state: implementation canaries are merged into `main`; local real-auth Runtime v1 evidence is green; and the durable GitHub Actions decision artifact from `main` is captured. The local Gateway path now canonicalizes runtime directories for the Claude baseline path. Default-runtime readiness is still blocked by the first production canary window.
+Overall state: implementation canaries are merged into `main`; local real-auth Runtime v1 evidence is green; and the durable GitHub Actions decision artifact from `main` is captured. The local Gateway path now canonicalizes runtime directories for the Claude baseline path, and the focused Pi Web UI/Gateway blocker fix has merged. Default-runtime readiness is now blocked only by the first production canary window.
 
-Approximate progress to a default-runtime decision: 94%.
+Approximate progress to a default-runtime decision: 96%.
 
 What is done:
 
@@ -31,6 +31,9 @@ What is done:
 - Real Gateway startup was rechecked on 2026-05-16 with `OC_AGENTS_DIR`/`OC_DATA_DIR` unset and real dev config/agents/data/plugin paths; Gateway started, Telegram polling started, and the prior `Claude Code native binary not found` warning did not recur. No test messages were sent.
 - A no-channel Claude headless baseline probe was attempted after the startup fix; it reached the provider path but returned `Invalid authentication credentials` from the configured local Claude auth. The headless runtime now treats that text-shaped auth failure as an error instead of a successful smoke result.
 - The pre-Pi Claude text baseline and post-rollback Claude text prompt are explicitly waived for the first `example` Pi-only production canary window in `research/runtime-v1-production-canary-preflight.md`; Pi live-turn, tool, rollback, diagnostics, and final decision evidence remain required.
+- PR #106 merged on 2026-05-16 and closed the focused Pi Web UI/Gateway blockers found on the first `example` canary attempt: Pi Web UI now resumes through Pi's session-file reference, outside-workspace filesystem tool calls are denied before the chat-profile allow shortcut, and Pi `text_end` events no longer duplicate streamed partial text.
+- Focused local Web UI/Gateway verification after PR #106 passed on 2026-05-16: text replied exactly `PI_CANARY_TEXT_OK`, same-session follow-up replied exactly `PI_CANARY_TEXT_OK`, outside-workspace read check replied exactly `DENY_OK`, and exact rollback restored `example/agent.yml` to hash `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`.
+- Local full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed all ten scenarios again from `main` after PR #106. The regenerated decision package with `pr_stack=merged` is `BLOCKED` only by `production-canary-window=pending`.
 
 What is not done:
 
@@ -55,16 +58,16 @@ What is not done:
 
 | Scenario | Evidence Level | Status | Command or Evidence |
 | --- | --- | --- | --- |
-| `pi.auth-model-preflight` | smoke | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` |
-| `pi.workspace-tools-rewind` | smoke | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-workspace -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.gateway-channel-approval` | smoke | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-gateway -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.aggregate-real-auth` | smoke | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.plugins-context-tools` | scripted canary | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-plugins-context -- --json` |
-| `pi.external-mcp-proxy` | scripted canary | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-external-mcp -- --json` |
-| `pi.sessions-memory-learning` | scripted canary | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-sessions-memory -- --json` |
-| `pi.dashboard-operator` | scripted canary | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-dashboard-operator -- --json` |
-| `pi.scheduled-buildroom` | scripted canary | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-scheduled-buildroom -- --json` |
-| `pi.rollback-mixed-runtime` | scripted canary | Durable workflow pass on `main` in run `25969043105` | `pnpm smoke:pi-rollback-runtime -- --json` |
+| `pi.auth-model-preflight` | smoke | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` |
+| `pi.workspace-tools-rewind` | smoke | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-workspace -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
+| `pi.gateway-channel-approval` | smoke | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-gateway -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
+| `pi.aggregate-real-auth` | smoke | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
+| `pi.plugins-context-tools` | scripted canary | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-plugins-context -- --json` |
+| `pi.external-mcp-proxy` | scripted canary | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-external-mcp -- --json` |
+| `pi.sessions-memory-learning` | scripted canary | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-sessions-memory -- --json` |
+| `pi.dashboard-operator` | scripted canary | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-dashboard-operator -- --json` |
+| `pi.scheduled-buildroom` | scripted canary | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-scheduled-buildroom -- --json` |
+| `pi.rollback-mixed-runtime` | scripted canary | Durable workflow pass on `main` in run `25969043105`; local pass after PR #106 | `pnpm smoke:pi-rollback-runtime -- --json` |
 
 ## Current Blockers
 

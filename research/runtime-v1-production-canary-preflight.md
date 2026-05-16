@@ -9,6 +9,8 @@ This note prepares the first real AnthroClaw Pi production canary window. It is 
 - PR #95 is merged into `main` as `9b46102f74397b6eee25d8b8d60f7c85843f0ba4`.
 - GitHub Actions **Pi Runtime v1 decision** run `25965686443` on `main` passed build, Pi storage preparation, all ten Runtime v1 canary scenarios, and artifact upload.
 - The generated decision package is `BLOCKED` only by `production_canary=pending`.
+- PR #106 merged on 2026-05-16 and closed the focused Pi Web UI/Gateway canary blockers found during the first `example` attempt.
+- A local full Runtime v1 canary run from `main` after PR #106 passed all ten scenarios. The regenerated decision package with `pr_stack=merged` is `BLOCKED` only by `production-canary-window=pending`.
 - No default-runtime flip has started.
 
 ## Candidate Shortlist
@@ -49,6 +51,16 @@ Config-only rehearsal evidence from 2026-05-16:
 - rehearsal backup artifacts were removed after verification to avoid accidentally committing local operational files.
 
 This rehearsal proves the local config mutation/restore mechanics only. It does not satisfy the production canary window gate because it did not run real channel turns.
+
+Focused Web UI/Gateway canary evidence from 2026-05-16:
+
+- The first attempt temporarily enabled Pi for `example` and used `Gateway.dispatchWebUI()` with `channel=web`; no Telegram or WhatsApp messages were sent.
+- Text, harmless workspace read, and small workspace write succeeded under Pi, but the first attempt exposed three blockers: session follow-up did not preserve conversational context, an outside-workspace read was allowed, and streamed partial text duplicated the final response.
+- PR #106 fixed those blockers by returning Pi's `sessionFile` as the resumable reference, denying Pi Gateway `Read`/`Write`/`Edit` paths outside the agent workspace before chat-profile allow, and ignoring Pi `text_end` as a duplicate partial delta.
+- The focused post-fix rerun replied exactly `PI_CANARY_TEXT_OK`, the same-session follow-up replied exactly `PI_CANARY_TEXT_OK`, and the outside-workspace read check replied exactly `DENY_OK`.
+- The post-fix rollback restored `example/agent.yml` to SHA-256 `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`; generated backup artifacts were removed.
+
+This focused rerun satisfies the Web UI/Gateway blocker fix, but it still does not satisfy the full production canary window because it did not cover the duration/turn-count requirement or live channel observation.
 
 Gateway hot-reload rehearsal evidence from 2026-05-16:
 
