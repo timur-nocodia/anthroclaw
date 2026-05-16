@@ -6,7 +6,21 @@ import { join, resolve } from 'node:path';
 import type { HeadlessRunInput, HeadlessRuntime } from '../runtime/headless.js';
 import { GlobalConfigSchema } from '../config/schema.js';
 import { Gateway } from '../gateway.js';
+import { createPluginContext } from '../plugins/context.js';
+import { loadPlugin } from '../plugins/loader.js';
+import { parsePluginManifest } from '../plugins/manifest-schema.js';
+import { PluginRegistry } from '../plugins/registry.js';
 import { runSubagent } from '../plugins/subagent-runner.js';
+import type {
+  HookEvent,
+  HookHandler,
+  PluginContext,
+  PluginInstance,
+  PluginMcpTool,
+  PluginLogger,
+  SearchAgentMemoryInput,
+  SyntheticInboundInput,
+} from '../plugins/types.js';
 import { DEFAULT_PI_MODEL_ID } from '../runtime/pi-headless.js';
 
 interface PiPluginsContextCanaryArgs {
@@ -42,6 +56,20 @@ const AGENT_ID = 'pi-plugin-canary-agent';
 const DISABLED_AGENT_ID = 'pi-plugin-disabled-agent';
 const PLUGIN_NAME = 'pi-canary-plugin';
 const SESSION_KEY = `${AGENT_ID}:telegram:dm:pi-plugin-peer`;
+const BUNDLED_LCM_AGENT_ID = 'pi-bundled-lcm-agent';
+const BUNDLED_OPERATOR_AGENT_ID = 'pi-bundled-operator-agent';
+const BUNDLED_FILE_AGENT_ID = 'pi-bundled-file-agent';
+const BUNDLED_MANAGED_AGENT_ID = 'pi-bundled-managed-agent';
+type PluginRegister = (ctx: PluginContext) => Promise<PluginInstance> | PluginInstance;
+interface LoadedBundledPlugin {
+  register: PluginRegister;
+  manifest: {
+    name: 'lcm' | 'operator-console' | 'file-transfer';
+    version: string;
+    description?: string;
+    entry: string;
+  };
+}
 
 export async function runPiPluginsContextCanaryCli(
   argv: string[],
@@ -79,6 +107,7 @@ export async function runPiPluginsContextCanaryCli(
       model: args.model ?? DEFAULT_PI_MODEL_ID,
       timeoutMs: args.timeoutMs,
     });
+    const bundledAssertions = await runBundledPluginsCanary({ workspacePath });
     const result: PiPluginsContextCanaryResult = {
       status: 'passed',
       runtime: 'pi',
@@ -88,6 +117,7 @@ export async function runPiPluginsContextCanaryCli(
       assertions: {
         ...gatewayAssertions,
         subagent: subagentAssertions,
+        bundled: bundledAssertions,
       },
     };
     writeResult(stdout, args.json, result);
@@ -111,6 +141,447 @@ export async function runPiPluginsContextCanaryCli(
       await rm(workspacePath, { recursive: true, force: true });
     }
   }
+}
+
+async function runBundledPluginsCanary(input: { workspacePath: string }): Promise<Record<string, unknown>> {
+  const workspacePath = resolve(input.workspacePath);
+  const dataDir = join(workspacePath, 'bundled-data');
+  const safeRoot = join(workspacePath, 'file-transfer-root');
+  const outsideRoot = join(workspacePath, 'outside-root');
+  await mkdir(safeRoot, { recursive: true });
+  await mkdir(outsideRoot, { recursive: true });
+  await writeFile(join(safeRoot, 'note.txt'), 'bundled file transfer marker', 'utf8');
+  await writeFile(join(outsideRoot, 'secret.txt'), 'outside marker', 'utf8');
+
+  const registry = new PluginRegistry();
+  const dispatched: SyntheticInboundInput[] = [];
+  const memorySearches: SearchAgentMemoryInput[] = [];
+  const escalations: unknown[] = [];
+
+  const getAgentConfig = (agentId: string): unknown => {
+    if (agentId === BUNDLED_LCM_AGENT_ID) {
+      return {
+        plugins: {
+          lcm: {
+            enabled: true,
+            triggers: {
+              compress_threshold_tokens: 16,
+              fresh_tail_count: 1,
+            },
+          },
+        },
+      };
+    }
+    if (agentId === BUNDLED_OPERATOR_AGENT_ID) {
+      return {
+        plugins: {
+          'operator-console': {
+            enabled: true,
+            manages: [BUNDLED_MANAGED_AGENT_ID],
+            capabilities: ['delegate', 'peer_summary', 'escalate'],
+          },
+        },
+      };
+    }
+    if (agentId === BUNDLED_FILE_AGENT_ID) {
+      return {
+        plugins: {
+          'file-transfer': {
+            enabled: true,
+            roots: [safeRoot],
+            allowWrite: true,
+            maxFileBytes: 4096,
+            maxEntries: 20,
+          },
+        },
+      };
+    }
+    return { plugins: {} };
+  };
+  const getGlobalConfig = (): unknown => ({
+    plugins: {
+      lcm: { defaults: {} },
+      'operator-console': {
+        enabled: true,
+        manages: '*',
+        capabilities: ['peer_pause', 'delegate', 'list_peers', 'peer_summary', 'escalate'],
+      },
+      'file-transfer': {},
+    },
+  });
+
+  await registerBundledPlugin(registry, {
+    pluginName: 'lcm',
+    dataDir: join(dataDir, 'lcm'),
+    getAgentConfig,
+    getGlobalConfig,
+    runSubagent: async () => 'bundled lcm canary subagent result',
+  });
+  await registerBundledPlugin(registry, {
+    pluginName: 'operator-console',
+    dataDir: join(dataDir, 'operator-console'),
+    getAgentConfig,
+    getGlobalConfig,
+    dispatchSyntheticInbound: async (dispatchInput) => {
+      dispatched.push(dispatchInput);
+      return {
+        messageId: 'bundled-delegation-message',
+        sessionKey: `${dispatchInput.targetAgentId}:${dispatchInput.channel}:dm:${dispatchInput.peerId}`,
+      };
+    },
+    searchAgentMemory: async (searchInput) => {
+      memorySearches.push(searchInput);
+      return {
+        results: [{
+          path: `${searchInput.targetAgentId}/memory.md`,
+          snippet: `bundled operator-console memory hit for ${searchInput.query}`,
+          score: 0.9,
+        }],
+      };
+    },
+    getNotificationsEmitter: () => ({
+      async emit(event: string, payload: unknown) {
+        escalations.push({ event, payload });
+      },
+    }),
+  });
+  await registerBundledPlugin(registry, {
+    pluginName: 'file-transfer',
+    dataDir: join(dataDir, 'file-transfer'),
+    getAgentConfig,
+    getGlobalConfig,
+  });
+
+  registry.enableForAgent(BUNDLED_LCM_AGENT_ID, 'lcm');
+  registry.enableForAgent(BUNDLED_OPERATOR_AGENT_ID, 'operator-console');
+  registry.enableForAgent(BUNDLED_FILE_AGENT_ID, 'file-transfer');
+
+  try {
+    const entries = registry.listPlugins();
+    const loaded = entries.map((entry) => entry.manifest.name).sort();
+    const manifestEntries = Object.fromEntries(entries
+      .map((entry) => [entry.manifest.name, entry.manifest.entry])
+      .sort(([left], [right]) => left.localeCompare(right)));
+    assert(loaded.includes('lcm'), 'bundled lcm plugin was not loaded');
+    assert(loaded.includes('operator-console'), 'bundled operator-console plugin was not loaded');
+    assert(loaded.includes('file-transfer'), 'bundled file-transfer plugin was not loaded');
+    assert(manifestEntries.lcm === 'dist/index.js', 'bundled lcm canary did not use compiled manifest entry');
+    assert(manifestEntries['operator-console'] === 'dist/index.js', 'bundled operator-console canary did not use compiled manifest entry');
+    assert(manifestEntries['file-transfer'] === 'dist/index.js', 'bundled file-transfer canary did not use compiled manifest entry');
+
+    const lcm = await runBundledLcmAssertions(registry);
+    const operatorConsole = await runBundledOperatorConsoleAssertions(registry, {
+      dispatched,
+      memorySearches,
+      escalations,
+    });
+    const fileTransfer = await runBundledFileTransferAssertions(registry, {
+      safeRoot,
+      outsideRoot,
+    });
+
+    return {
+      loadedPlugins: loaded,
+      manifestEntries,
+      lcm,
+      operatorConsole,
+      fileTransfer,
+    };
+  } finally {
+    for (const entry of registry.listPlugins()) {
+      await entry.instance.shutdown?.();
+    }
+  }
+}
+
+async function registerBundledPlugin(
+  registry: PluginRegistry,
+  input: {
+    pluginName: 'lcm' | 'operator-console' | 'file-transfer';
+    dataDir: string;
+    getAgentConfig(agentId: string): unknown;
+    getGlobalConfig(): unknown;
+    runSubagent?: PluginContext['runSubagent'];
+    getNotificationsEmitter?: () => unknown;
+    dispatchSyntheticInbound?: PluginContext['dispatchSyntheticInbound'];
+    searchAgentMemory?: PluginContext['searchAgentMemory'];
+  },
+): Promise<void> {
+  await mkdir(input.dataDir, { recursive: true });
+  const loaded = await loadBundledPlugin(input.pluginName);
+  const context = createPluginContext({
+    pluginName: input.pluginName,
+    pluginVersion: loaded.manifest.version,
+    dataDir: input.dataDir,
+    rootLogger: silentLogger,
+    registerHook(pluginName: string, event: HookEvent, handler: HookHandler): void {
+      registry.addHookFromPlugin(pluginName, event, handler);
+    },
+    registerTool(tool: PluginMcpTool): void {
+      registry.addToolFromPlugin(input.pluginName, tool);
+    },
+    registerEngine(pluginName: string, engine): void {
+      registry.addEngineFromPlugin(pluginName, engine);
+    },
+    registerCommand(cmd): void {
+      registry.addCommandFromPlugin(input.pluginName, cmd);
+    },
+    getAgentConfig: input.getAgentConfig,
+    getGlobalConfig: input.getGlobalConfig,
+    ...(input.runSubagent ? { runSubagent: input.runSubagent } : {}),
+    ...(input.getNotificationsEmitter ? { getNotificationsEmitter: input.getNotificationsEmitter } : {}),
+    ...(input.dispatchSyntheticInbound ? { dispatchSyntheticInbound: input.dispatchSyntheticInbound } : {}),
+    ...(input.searchAgentMemory ? { searchAgentMemory: input.searchAgentMemory } : {}),
+  });
+  const instance = await loaded.register(context);
+  registry.addPlugin(input.pluginName, {
+    manifest: loaded.manifest,
+    instance,
+  });
+}
+
+async function loadBundledPlugin(pluginName: 'lcm' | 'operator-console' | 'file-transfer'): Promise<LoadedBundledPlugin> {
+  const pluginDir = resolve('plugins', pluginName);
+  const manifestPath = join(pluginDir, '.claude-plugin', 'plugin.json');
+  const manifest = await parsePluginManifest(manifestPath);
+  assert(manifest.name === pluginName, `bundled plugin manifest name mismatch for ${pluginName}`);
+  assert(
+    existsSync(join(pluginDir, manifest.entry)),
+    `bundled plugin ${pluginName} compiled entry is missing at ${manifest.entry}; run pnpm build before this canary`,
+  );
+  const module = await loadPlugin({
+    manifest: manifest as never,
+    manifestPath,
+    pluginDir,
+  });
+  return {
+    register: module.register as PluginRegister,
+    manifest: manifest as LoadedBundledPlugin['manifest'],
+  };
+}
+
+const silentLogger: PluginLogger = {
+  info() {},
+  warn() {},
+  error() {},
+  debug() {},
+};
+
+async function runBundledLcmAssertions(registry: PluginRegistry): Promise<Record<string, unknown>> {
+  const sessionKey = `${BUNDLED_LCM_AGENT_ID}:telegram:dm:bundled-lcm-peer`;
+  const tools = registry.getMcpToolsForAgent(BUNDLED_LCM_AGENT_ID);
+  const toolNames = tools.map((tool) => tool.name).sort();
+  for (const name of ['lcm_describe', 'lcm_doctor', 'lcm_expand', 'lcm_expand_query', 'lcm_grep', 'lcm_status']) {
+    assert(toolNames.includes(name), `bundled lcm missing tool ${name}`);
+  }
+  const hook = registry
+    .listAllHooks()
+    .find((candidate) => candidate.pluginName === 'lcm' && candidate.event === 'on_after_query');
+  assert(hook, 'bundled lcm mirror hook was not registered');
+  await Promise.resolve(hook.handler({
+    agentId: BUNDLED_LCM_AGENT_ID,
+    sessionKey,
+    source: 'telegram',
+    newMessages: [
+      { role: 'user', content: 'BUNDLED-LCM-MARKER: remember the runtime plugin canary', ts: 1000 },
+      { role: 'assistant', content: 'The bundled LCM canary marker was mirrored.', ts: 1001 },
+    ],
+  }));
+
+  const grepTool = requireTool(tools, 'lcm_grep');
+  const grep = parseToolJson(await grepTool.handler({
+    query: 'BUNDLED-LCM-MARKER',
+    limit: 3,
+  }, {
+    agentId: BUNDLED_LCM_AGENT_ID,
+    sessionKey,
+  }));
+  assert(Array.isArray(grep.results) && grep.results.length >= 1, 'bundled lcm grep did not find mirrored message');
+
+  const statusTool = requireTool(tools, 'lcm_status');
+  const status = parseToolJson(await statusTool.handler({}, {
+    agentId: BUNDLED_LCM_AGENT_ID,
+    sessionKey,
+  }));
+  assert((status.store as { messages?: number } | undefined)?.messages === 2, 'bundled lcm status did not count mirrored messages');
+
+  const engineEntry = registry.getContextEngine(BUNDLED_LCM_AGENT_ID);
+  assert(engineEntry?.name === 'lcm', 'bundled lcm context engine was not active');
+  const assembleResult = await engineEntry.engine.assemble?.({
+    agentId: BUNDLED_LCM_AGENT_ID,
+    sessionKey,
+    messages: [{ role: 'user', content: 'assemble bundled lcm context' }],
+  });
+  assert(Array.isArray(assembleResult?.messages), 'bundled lcm assemble did not return messages');
+  const compressResult = await engineEntry.engine.compress?.({
+    agentId: BUNDLED_LCM_AGENT_ID,
+    sessionKey,
+    messages: [
+      { role: 'system', content: 'bundled lcm canary system prompt', ts: 1002 },
+      { role: 'user', content: 'compress bundled lcm context backlog alpha beta gamma delta', ts: 1003 },
+      { role: 'assistant', content: 'compress bundled lcm context backlog epsilon zeta eta theta', ts: 1004 },
+      { role: 'user', content: 'fresh bundled lcm tail message', ts: 1005 },
+    ],
+    currentTokens: 100_000,
+  });
+  assert(Array.isArray(compressResult?.messages), 'bundled lcm compress did not return compressed messages');
+
+  return {
+    tools: toolNames.length,
+    mirrorHook: true,
+    grepHits: (grep.results as unknown[]).length,
+    statusMessages: (status.store as { messages: number }).messages,
+    assembleMessages: assembleResult.messages.length,
+    compressTriggered: true,
+  };
+}
+
+async function runBundledOperatorConsoleAssertions(
+  registry: PluginRegistry,
+  spies: {
+    dispatched: SyntheticInboundInput[];
+    memorySearches: SearchAgentMemoryInput[];
+    escalations: unknown[];
+  },
+): Promise<Record<string, unknown>> {
+  const tools = registry.getMcpToolsForAgent(BUNDLED_OPERATOR_AGENT_ID);
+  const toolNames = tools.map((tool) => tool.name).sort();
+  for (const name of [
+    'operator-console_delegate_to_peer',
+    'operator-console_escalate',
+    'operator-console_peer_summary',
+  ]) {
+    assert(toolNames.includes(name), `bundled operator-console missing tool ${name}`);
+  }
+
+  const peerSummary = parseToolJson(await requireTool(tools, 'operator-console_peer_summary').handler({
+    target_agent_id: BUNDLED_MANAGED_AGENT_ID,
+    peer: {
+      channel: 'whatsapp',
+      peer_id: 'bundled-managed-peer',
+    },
+    query: 'runtime plugin canary',
+    max_results: 2,
+  }, {
+    agentId: BUNDLED_OPERATOR_AGENT_ID,
+  }));
+  assert(peerSummary.ok === true, 'bundled operator-console peer_summary did not authorize managed target');
+  assert(peerSummary.target_agent_id === BUNDLED_MANAGED_AGENT_ID, 'bundled operator-console peer_summary used wrong target');
+  assert(spies.memorySearches.length === 1, 'bundled operator-console peer_summary did not call memory search');
+
+  const delegated = parseToolJson(await requireTool(tools, 'operator-console_delegate_to_peer').handler({
+    target_agent_id: BUNDLED_MANAGED_AGENT_ID,
+    peer: {
+      channel: 'whatsapp',
+      peer_id: 'bundled-managed-peer',
+    },
+    instruction: 'exercise bundled operator-console dispatch',
+  }, {
+    agentId: BUNDLED_OPERATOR_AGENT_ID,
+  }));
+  assert(delegated.ok === true, 'bundled operator-console delegate did not dispatch authorized target');
+  assert(spies.dispatched.length === 1, 'bundled operator-console delegate did not call dispatch');
+  const dispatchPayload = spies.dispatched[0];
+  assert(dispatchPayload.targetAgentId === BUNDLED_MANAGED_AGENT_ID, 'bundled operator-console delegate used wrong target');
+  assert(dispatchPayload.channel === 'whatsapp', 'bundled operator-console delegate used wrong channel');
+  assert(dispatchPayload.peerId === 'bundled-managed-peer', 'bundled operator-console delegate used wrong peer');
+  assert(dispatchPayload.text.includes('exercise bundled operator-console dispatch'), 'bundled operator-console delegate lost instruction text');
+  assert(dispatchPayload.meta?.source === 'mcp:operator-console', 'bundled operator-console delegate lost source metadata');
+
+  const deniedDelegate = parseToolJson(await requireTool(tools, 'operator-console_delegate_to_peer').handler({
+    target_agent_id: 'unmanaged-agent',
+    peer: {
+      channel: 'telegram',
+      peer_id: 'unmanaged-peer',
+    },
+    instruction: 'this must not dispatch',
+  }, {
+    agentId: BUNDLED_OPERATOR_AGENT_ID,
+  }));
+  assert(String(deniedDelegate.error ?? '').includes('not authorized'), 'bundled operator-console delegate did not enforce manages policy');
+  assert(spies.dispatched.length === 1, 'bundled operator-console denied delegate still dispatched');
+
+  const escalation = parseToolJson(await requireTool(tools, 'operator-console_escalate').handler({
+    message: 'operator-console bundled canary escalation',
+    priority: 'high',
+  }, {
+    agentId: BUNDLED_OPERATOR_AGENT_ID,
+  }));
+  assert(escalation.ok === true, 'bundled operator-console escalate did not emit successfully');
+  assert(escalation.agentId === BUNDLED_OPERATOR_AGENT_ID, 'bundled operator-console escalate lost caller attribution');
+  assert(spies.escalations.length === 1, 'bundled operator-console escalate did not reach notifications emitter');
+  const emitted = spies.escalations[0] as { event?: unknown; payload?: Record<string, unknown> } | undefined;
+  assert(emitted?.event === 'escalation_needed', 'bundled operator-console emitted wrong escalation event');
+  assert(emitted.payload?.agentId === BUNDLED_OPERATOR_AGENT_ID, 'bundled operator-console escalation payload lost agent id');
+  assert(emitted.payload?.priority === 'high', 'bundled operator-console escalation payload lost priority');
+  assert(emitted.payload?.message === 'operator-console bundled canary escalation', 'bundled operator-console escalation payload lost message');
+
+  return {
+    tools: toolNames.length,
+    peerSummaryAuthorized: true,
+    delegateDispatched: true,
+    delegateDenied: true,
+    escalation: true,
+  };
+}
+
+async function runBundledFileTransferAssertions(
+  registry: PluginRegistry,
+  paths: { safeRoot: string; outsideRoot: string },
+): Promise<Record<string, unknown>> {
+  const tools = registry.getMcpToolsForAgent(BUNDLED_FILE_AGENT_ID);
+  const toolNames = tools.map((tool) => tool.name).sort();
+  for (const name of [
+    'file-transfer_dir_fetch',
+    'file-transfer_dir_list',
+    'file-transfer_file_fetch',
+    'file-transfer_file_write',
+  ]) {
+    assert(toolNames.includes(name), `bundled file-transfer missing tool ${name}`);
+  }
+
+  const dirList = parseToolJson(await requireTool(tools, 'file-transfer_dir_list').handler({
+    path: paths.safeRoot,
+  }, {
+    agentId: BUNDLED_FILE_AGENT_ID,
+  }));
+  const entries = dirList.entries as Array<{ name: string }>;
+  assert(entries.some((entry) => entry.name === 'note.txt'), 'bundled file-transfer dir_list missed safe file');
+
+  const fetched = parseToolJson(await requireTool(tools, 'file-transfer_file_fetch').handler({
+    path: join(paths.safeRoot, 'note.txt'),
+  }, {
+    agentId: BUNDLED_FILE_AGENT_ID,
+  }));
+  assert(fetched.text === 'bundled file transfer marker', 'bundled file-transfer file_fetch returned wrong text');
+
+  const writeResult = parseToolJson(await requireTool(tools, 'file-transfer_file_write').handler({
+    path: join(paths.safeRoot, 'out.txt'),
+    content: 'written by bundled file-transfer canary',
+  }, {
+    agentId: BUNDLED_FILE_AGENT_ID,
+  }));
+  assert(writeResult.sizeBytes === 'written by bundled file-transfer canary'.length, 'bundled file-transfer file_write returned wrong size');
+
+  let outsideDenied = false;
+  try {
+    await requireTool(tools, 'file-transfer_file_fetch').handler({
+      path: join(paths.outsideRoot, 'secret.txt'),
+    }, {
+      agentId: BUNDLED_FILE_AGENT_ID,
+    });
+  } catch (err) {
+    outsideDenied = /outside allowed roots/i.test(err instanceof Error ? err.message : String(err));
+  }
+  assert(outsideDenied, 'bundled file-transfer did not enforce path boundary');
+
+  return {
+    tools: toolNames.length,
+    dirListEntries: entries.length,
+    fileFetch: true,
+    fileWrite: true,
+    outsideDenied,
+  };
 }
 
 export function parsePiPluginsContextCanaryArgs(argv: string[]): PiPluginsContextCanaryArgs {
@@ -425,6 +896,19 @@ export async function register(ctx) {
 
 function firstText(result: { content: Array<{ type: 'text'; text: string }> }): string {
   return result.content[0]?.text ?? '';
+}
+
+function requireTool(tools: PluginMcpTool[], name: string): PluginMcpTool {
+  const tool = tools.find((candidate) => candidate.name === name);
+  assert(tool, `missing plugin tool ${name}`);
+  return tool;
+}
+
+function parseToolJson(result: { content: Array<{ type: 'text'; text: string }> }): Record<string, unknown> {
+  const text = firstText(result);
+  const parsed = JSON.parse(text) as unknown;
+  assert(parsed && typeof parsed === 'object' && !Array.isArray(parsed), 'plugin tool did not return a JSON object');
+  return parsed as Record<string, unknown>;
 }
 
 function assert(condition: unknown, message: string): asserts condition {

@@ -663,7 +663,7 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
     'pi.plugins-context-tools',
     'scripted_canary',
     'Plugin tools and context-engine canary',
-    'Prove Pi Gateway dispatch preserves plugin lifecycle, plugin MCP tools, plugin subagent runner, and context-engine assemble/compress semantics.',
+    'Prove Pi Gateway dispatch preserves plugin lifecycle, plugin MCP tools, plugin subagent runner, context-engine assemble/compress semantics, and bundled plugin API compatibility.',
     [
       'sessions.context-assembly',
       'learning.lcm-honcho',
@@ -679,6 +679,8 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
       'Run a context-engine assemble/compress trigger.',
       'Run a plugin subagent prompt through the configured runtime with tools disabled.',
       'Verify plugin hook payloads keep agentId/sessionKey and plugin shutdown is clean.',
+      'Load real bundled LCM, operator-console, and file-transfer compiled manifest entries through PluginRegistry/createPluginContext.',
+      'Exercise LCM mirror/search/status/context-engine, operator-console memory/delegate/escalate payload policy, and file-transfer path-boundary tools.',
     ],
     {
       evidenceCommand: 'pnpm smoke:pi-plugins-context -- --json',
