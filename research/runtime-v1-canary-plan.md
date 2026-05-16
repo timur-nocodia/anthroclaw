@@ -35,6 +35,8 @@ Default-runtime rollout requires all blocking scenarios to have either passing s
 
 The decision package command turns the full canary JSON into the go/no-go artifact. It remains `BLOCKED` until the canary map passes, the PR stack is merged, and the first production canary window is recorded.
 
+The production canary window runbook is `docs/pi-production-canary-runbook.md`.
+
 ## Canary Scenarios
 
 ### 1. `pi.auth-model-preflight`
@@ -301,4 +303,4 @@ The next useful code PR should close the remaining evidence and rollout gaps:
 
 1. capture full real-auth smoke evidence;
 2. generate the Runtime v1 decision package from the full canary JSON;
-3. prepare the default-runtime rollout and rollback package.
+3. execute the first production canary window runbook and attach the redacted evidence.

@@ -239,6 +239,8 @@ Exit criteria:
 
 Goal: run one low-risk real AnthroClaw agent on Pi without changing the global default.
 
+Runnable procedure: `docs/pi-production-canary-runbook.md`.
+
 Candidate agent requirements:
 
 - low traffic;

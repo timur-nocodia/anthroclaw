@@ -52,3 +52,12 @@ Each run writes a compact Markdown summary to the GitHub Actions step summary an
 - `pi-smoke-summary.md`: the same Markdown summary shown in the workflow run.
 
 Use `pi-smoke-result.json` as the decision record when comparing real Pi runs across branches.
+
+For Runtime v1 rollout, the aggregate smoke artifact is supporting evidence. The final go/no-go package should be generated from the full canary map:
+
+```bash
+pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000 > /tmp/pi-v1-canary.json
+pnpm runtime:pi-decision -- --input /tmp/pi-v1-canary.json --summary /tmp/runtime-v1-decision.md --json /tmp/runtime-v1-decision.json
+```
+
+The first real production canary window is documented in `docs/pi-production-canary-runbook.md`.

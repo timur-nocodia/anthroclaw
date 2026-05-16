@@ -15,6 +15,7 @@ What is done:
 - Runtime v1 feature atlas and canary map exist.
 - Pi auth/workspace/Gateway smoke entrypoints exist.
 - Scripted canaries exist for sessions/memory/learning, plugins/context/tools, external MCP, rollback/mixed runtime, and scheduled Buildroom.
+- Production canary runbook exists at `docs/pi-production-canary-runbook.md`.
 - Stacked PRs are open for rollback, scheduled Buildroom, and dashboard/operator coverage.
 
 What is not done:
@@ -33,7 +34,7 @@ What is not done:
 | 4. Cover deep product surfaces | Mostly done | Prove non-obvious product features survive runtime replacement. | Scripted canaries pass for sessions/memory/learning, plugins/context/tools, external MCP, scheduled Buildroom, and rollback. |
 | 5. Dashboard/operator evidence | In progress | Prove the operator API contracts expose the same state under Pi-shaped runs. | `/api/gateway/status`, agents, sessions, runs, learning, plugins, MCP, channels, and diagnostics are captured without secrets; browser UX evidence is optional. |
 | 6. Rollout decision package | In progress | Produce the final go/no-go artifact. | `pnpm runtime:pi-decision` emits Markdown/JSON gates from the full canary JSON; all residual blockers have owners. |
-| 7. Default-runtime rollout | Not started | Flip runtime default safely. | Canary agents pass, rollback path is rehearsed, dashboard confirms state, and post-flip monitoring is defined. |
+| 7. Default-runtime rollout | Not started | Flip runtime default safely. | `docs/pi-production-canary-runbook.md` is completed for one real agent, rollback is verified, dashboard confirms state, and post-flip monitoring is defined. |
 
 ## Canary Scenario Checklist
 
@@ -60,7 +61,7 @@ What is not done:
 
 1. Run the full `pnpm smoke:pi-v1-canary -- --json ...` matrix in the real-auth environment.
 2. Generate the Runtime v1 decision package with `pnpm runtime:pi-decision`.
-3. Update the canary plan and this status file with evidence links and residual risks.
+3. Execute `docs/pi-production-canary-runbook.md` for one low-risk real agent.
 4. Decide whether a browser screenshot pass is required as non-blocking operator UX evidence.
 5. Merge the PR stack and rerun the canary map from the target branch.
 
@@ -72,4 +73,5 @@ Pi must not become the global default until:
 - scripted canaries pass or have written waivers with owners;
 - dashboard/operator API evidence is complete;
 - rollback has been exercised;
+- the first production canary runbook is completed for one real agent;
 - the final decision package links evidence, risks, and rollout/rollback steps.
