@@ -17,7 +17,8 @@ Post-merge durable evidence on `main`:
 
 - Repository secret `PI_AUTH_JSON_B64` is configured for the manual Runtime v1 decision workflow without committing auth material.
 - **Pi Runtime v1 decision** workflow run `25965686443` passed build, Pi storage preparation, all ten Runtime v1 canary scenarios, and artifact upload.
-- The workflow decision package is `BLOCKED` only because `production_canary=pending`; `pr_stack=merged` passed.
+- Guarded per-agent canary switch tooling merged after that baseline; **Pi Runtime v1 decision** workflow run `25966009746` passed again on `main`.
+- The latest workflow decision package is `BLOCKED` only because `production_canary=pending`; `pr_stack=merged` passed.
 
 The older draft stack remains useful as review history, but PR #95 is now the merged integration path.
 
