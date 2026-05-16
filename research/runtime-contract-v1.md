@@ -12,6 +12,7 @@ This document is intentionally broader than `src/runtime/contract.ts` v0 scenari
 
 - `RUNTIME_CONTRACT_SCENARIOS`: compact candidate-comparison scenarios for Claude Agent SDK, Pi, and OpenCode.
 - `RUNTIME_FEATURE_CONTRACTS`: full v1 feature atlas covering Gateway, channels, tools, permissions, sessions, memory, learning, plugins, dashboard/API, observability, Buildroom, config/auth, and smoke/CI.
+- `RUNTIME_CANARY_SCENARIOS`: smoke/canary evidence plan that maps Pi rollout scenarios back to feature contracts.
 
 ## Contract principle
 
@@ -201,7 +202,7 @@ OpenCode remains a benchmark adapter until it can satisfy Gateway, tool policy, 
 3. OpenCode should not be upgraded beyond benchmark unless it gets Gateway-path evidence comparable to Pi smoke.
 4. Buildroom native-agent adapter must be explicitly audited before any global default flip.
 5. Session transcript ownership is the highest-risk area if a runtime cannot expose provider transcripts; AnthroClaw may need a provider-neutral transcript mirror for Pi default rollout.
-6. Current tests cover most control-plane surfaces in focused slices, but there is no single all-domain Pi canary that exercises runtime selection, channel routing, approvals, plugin tools/context engines, session transcript visibility, memory/learning, dashboard-visible state, metrics, and shutdown cleanup together.
+6. Current tests cover most control-plane surfaces in focused slices; `research/runtime-v1-canary-plan.md` defines the smoke/scripted/manual canary map needed to prove those slices under Pi before default rollout.
 7. Channel parity is intentionally uneven: Telegram supports interactive approvals while WhatsApp currently does not. V1 should treat this as a channel capability contract, not as an accidental runtime difference.
 
 ## Phase 1 Exit Criteria
@@ -211,4 +212,4 @@ OpenCode remains a benchmark adapter until it can satisfy Gateway, tool policy, 
 - This document names every domain and contract.
 - Follow-up work is filed against concrete feature ids rather than vague runtime parity.
 - No default-runtime flip proceeds until feature contracts move from documented coverage to smoke/canary evidence.
-- A follow-up canary plan exists for the all-domain Pi run that proves the feature atlas under one runtime candidate.
+- `RUNTIME_CANARY_SCENARIOS` covers every default-runtime blocking feature contract.
