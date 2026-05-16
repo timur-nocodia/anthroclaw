@@ -6,6 +6,12 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-05-16
+
+### Changed
+- fix(memory): confidence-gated auto-approve for post-run candidates (#93) (6f2bf0f)
+
+
 ## [1.1.6] - 2026-05-16
 
 ### Changed
