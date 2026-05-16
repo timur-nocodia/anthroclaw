@@ -134,6 +134,7 @@ Proves:
 - plugin subagent runner uses the selected runtime with tools disabled;
 - context engine assemble/compress semantics remain intact;
 - plugin hook payloads preserve agent/session attribution.
+- bundled LCM, operator-console, and file-transfer plugin APIs remain compatible with the registry/context contract.
 
 Required checks:
 
@@ -145,7 +146,10 @@ Required checks:
 - current: context-engine assemble/compress trigger;
 - current: plugin hook payload attribution and shutdown;
 - current: plugin subagent runner path records selected model and tools-disabled contract;
-- remaining: bundled LCM/operator-console/file-transfer plugin-specific canary coverage through the same runner.
+- current: real bundled LCM compiled manifest entry/register path, tool namespace, mirror hook, grep/status, and context engine assemble/compress through a deterministic registry/context harness;
+- current: real bundled operator-console compiled manifest entry/register path, tool namespace, peer-summary memory callback, authorized delegate dispatch payload, denied delegate policy, and escalation event payload;
+- current: real bundled file-transfer compiled manifest entry/register path, tool namespace, safe directory listing, file read/write, and outside-root denial;
+- remaining: deeper LCM `expand_query` semantic quality check and operator-console peer pause/list-peers Gateway-store integration.
 
 ### 6. `pi.sessions-memory-learning`
 

@@ -31,6 +31,34 @@ describe('Pi plugins/context canary CLI', () => {
           purpose: 'runSubagent',
           toolsDisabled: true,
         },
+        bundled: {
+          loadedPlugins: ['file-transfer', 'lcm', 'operator-console'],
+          manifestEntries: {
+            'file-transfer': 'dist/index.js',
+            lcm: 'dist/index.js',
+            'operator-console': 'dist/index.js',
+          },
+          lcm: {
+            tools: 6,
+            mirrorHook: true,
+            grepHits: 1,
+            statusMessages: 2,
+            compressTriggered: true,
+          },
+          operatorConsole: {
+            tools: 5,
+            peerSummaryAuthorized: true,
+            delegateDispatched: true,
+            delegateDenied: true,
+            escalation: true,
+          },
+          fileTransfer: {
+            tools: 4,
+            fileFetch: true,
+            fileWrite: true,
+            outsideDenied: true,
+          },
+        },
       },
     });
     expect(body.assertions.toolNames).toEqual([
