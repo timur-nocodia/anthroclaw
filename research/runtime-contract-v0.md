@@ -8,6 +8,8 @@ This document turns the Agent SDK replacement work into a concrete acceptance co
 
 The source of truth for the machine-readable version is `src/runtime/contract.ts`. The tests in `src/runtime/__tests__/runtime-acceptance.test.ts` are the reusable adapter exam.
 
+This v0 document is the compact candidate comparison. The broader product-surface atlas is `research/runtime-contract-v1.md` and the machine-readable `RUNTIME_FEATURE_CONTRACTS` export in `src/runtime/contract.ts`.
+
 ## Status semantics
 
 - `pass`: implemented and covered by focused tests or by the existing production baseline.
