@@ -37,6 +37,8 @@ The decision package command turns the full canary JSON into the go/no-go artifa
 
 The production canary window runbook is `docs/pi-production-canary-runbook.md`.
 
+Repository-hosted full evidence is available through the manual GitHub Actions workflow **Pi Runtime v1 decision**, which uploads `pi-runtime-v1-decision`.
+
 ## Canary Scenarios
 
 ### 1. `pi.auth-model-preflight`

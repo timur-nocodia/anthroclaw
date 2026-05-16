@@ -16,6 +16,7 @@ What is done:
 - Pi auth/workspace/Gateway smoke entrypoints exist.
 - Scripted canaries exist for sessions/memory/learning, plugins/context/tools, external MCP, rollback/mixed runtime, and scheduled Buildroom.
 - Production canary runbook exists at `docs/pi-production-canary-runbook.md`.
+- Manual Runtime v1 decision workflow exists at `.github/workflows/pi-runtime-v1-decision.yml`.
 - Stacked PRs are open for rollback, scheduled Buildroom, and dashboard/operator coverage.
 
 What is not done:
@@ -33,7 +34,7 @@ What is not done:
 | 3. Build Pi adapter and smoke gates | In progress | Prove Pi can run the critical runtime paths without breaking AnthroClaw-owned policy. | Auth, workspace, Gateway, and aggregate Pi smoke commands pass with real auth. |
 | 4. Cover deep product surfaces | Mostly done | Prove non-obvious product features survive runtime replacement. | Scripted canaries pass for sessions/memory/learning, plugins/context/tools, external MCP, scheduled Buildroom, and rollback. |
 | 5. Dashboard/operator evidence | In progress | Prove the operator API contracts expose the same state under Pi-shaped runs. | `/api/gateway/status`, agents, sessions, runs, learning, plugins, MCP, channels, and diagnostics are captured without secrets; browser UX evidence is optional. |
-| 6. Rollout decision package | In progress | Produce the final go/no-go artifact. | `pnpm runtime:pi-decision` emits Markdown/JSON gates from the full canary JSON; all residual blockers have owners. |
+| 6. Rollout decision package | In progress | Produce the final go/no-go artifact. | `pnpm runtime:pi-decision` or the manual **Pi Runtime v1 decision** workflow emits Markdown/JSON gates from the full canary JSON; all residual blockers have owners. |
 | 7. Default-runtime rollout | Not started | Flip runtime default safely. | `docs/pi-production-canary-runbook.md` is completed for one real agent, rollback is verified, dashboard confirms state, and post-flip monitoring is defined. |
 
 ## Canary Scenario Checklist
@@ -59,8 +60,8 @@ What is not done:
 
 ## Next Five Tasks
 
-1. Run the full `pnpm smoke:pi-v1-canary -- --json ...` matrix in the real-auth environment.
-2. Generate the Runtime v1 decision package with `pnpm runtime:pi-decision`.
+1. Run the full `pnpm smoke:pi-v1-canary -- --json ...` matrix in the real-auth environment, preferably via **Pi Runtime v1 decision**.
+2. Generate or download the Runtime v1 decision package.
 3. Execute `docs/pi-production-canary-runbook.md` for one low-risk real agent.
 4. Decide whether a browser screenshot pass is required as non-blocking operator UX evidence.
 5. Merge the PR stack and rerun the canary map from the target branch.
