@@ -61,3 +61,5 @@ pnpm runtime:pi-decision -- --input /tmp/pi-v1-canary.json --summary /tmp/runtim
 ```
 
 The first real production canary window is documented in `docs/pi-production-canary-runbook.md`.
+
+For repository-hosted Runtime v1 evidence, use **Actions -> Pi Runtime v1 decision -> Run workflow**. That workflow runs `pnpm smoke:pi-v1-canary`, generates the `runtime:pi-decision` package, and uploads the raw canary log plus Markdown/JSON decision artifacts as `pi-runtime-v1-decision`.

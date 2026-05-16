@@ -45,6 +45,8 @@ The decision package may remain `BLOCKED` before the production canary window, b
 
 If the GitHub Actions **Pi smoke** workflow is used, keep its `pi-smoke-result` artifact as supporting evidence. The workflow currently proves aggregate real-auth smoke; the full Runtime v1 decision package still comes from `smoke:pi-v1-canary`.
 
+Preferred repository-hosted evidence path: run **Actions -> Pi Runtime v1 decision -> Run workflow**. Keep `allow_skip` false for decision evidence. Set `production_canary` to `pending` before the first canary window and to `passed` only after this runbook is complete.
+
 ## Enable Pi For One Agent
 
 Keep global runtime config unchanged. Add or update only the canary agent config:
@@ -196,3 +198,5 @@ pnpm runtime:pi-decision -- \
 Use `--browser-ux passed` if a screenshot/browser pass was required and completed. Use `--browser-ux waived` only with an owner and written reason.
 
 Pi can move to the next rollout ring only when the generated decision package is `READY` or when every blocking failure has a named owner and an explicit written waiver.
+
+If using GitHub Actions, rerun **Pi Runtime v1 decision** with `production_canary=passed`, `pr_stack=merged`, and the correct `browser_ux` state instead of running the local command above.

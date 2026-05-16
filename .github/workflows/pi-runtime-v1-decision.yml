@@ -1,0 +1,180 @@
+name: Pi Runtime v1 decision
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Pi provider/model id to validate and run.
+        required: true
+        default: anthropic/claude-sonnet-4-6
+      timeout_ms:
+        description: Timeout forwarded to runtime probes.
+        required: true
+        default: '120000'
+      include_gateway_scripted:
+        description: Run scripted canaries that opt into real Gateway/Pi usage.
+        required: true
+        type: boolean
+        default: false
+      allow_skip:
+        description: Return success for missing optional Pi setup/auth instead of failing individual probes.
+        required: true
+        type: boolean
+        default: false
+      production_canary:
+        description: Whether the first real production canary window has passed.
+        required: true
+        type: choice
+        options:
+          - pending
+          - passed
+        default: pending
+      pr_stack:
+        description: Whether the Runtime v1 PR stack has merged into the target branch.
+        required: true
+        type: choice
+        options:
+          - pending
+          - merged
+        default: pending
+      browser_ux:
+        description: Optional browser UX evidence state.
+        required: true
+        type: choice
+        options:
+          - not-required
+          - pending
+          - passed
+          - waived
+        default: not-required
+      fail_on_blocked:
+        description: Fail the workflow when the generated decision package is BLOCKED.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-v1-decision:
+    name: Pi Runtime v1 decision
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PI_AUTH_JSON_B64: ${{ secrets.PI_AUTH_JSON_B64 }}
+      PI_MODELS_JSON_B64: ${{ secrets.PI_MODELS_JSON_B64 }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Prepare Pi storage files
+        id: pi-storage
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          auth_path="${RUNNER_TEMP}/pi-auth.json"
+          models_path="${RUNNER_TEMP}/pi-models.json"
+
+          if [[ -z "${PI_AUTH_JSON_B64:-}" ]]; then
+            echo "::error::Missing required secret PI_AUTH_JSON_B64."
+            exit 1
+          fi
+
+          printf '%s' "${PI_AUTH_JSON_B64}" | base64 --decode > "${auth_path}"
+          chmod 600 "${auth_path}"
+          echo "auth_path=${auth_path}" >> "${GITHUB_OUTPUT}"
+
+          if [[ -n "${PI_MODELS_JSON_B64:-}" ]]; then
+            printf '%s' "${PI_MODELS_JSON_B64}" | base64 --decode > "${models_path}"
+            chmod 600 "${models_path}"
+            echo "models_path=${models_path}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Run Runtime v1 canary and decision package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          log_path="${RUNNER_TEMP}/pi-runtime-v1-canary.log"
+          decision_md="${RUNNER_TEMP}/runtime-v1-decision.md"
+          decision_json="${RUNNER_TEMP}/runtime-v1-decision.json"
+
+          args=(
+            --json
+            --model "${{ inputs.model }}"
+            --timeout-ms "${{ inputs.timeout_ms }}"
+            --auth-path "${{ steps.pi-storage.outputs.auth_path }}"
+          )
+
+          if [[ -n "${{ steps.pi-storage.outputs.models_path }}" ]]; then
+            args+=(--models-path "${{ steps.pi-storage.outputs.models_path }}")
+          fi
+
+          if [[ "${{ inputs.include_gateway_scripted }}" == "true" ]]; then
+            args+=(--include-gateway-scripted)
+          fi
+
+          if [[ "${{ inputs.allow_skip }}" == "true" ]]; then
+            args+=(--allow-skip)
+          fi
+
+          set +e
+          pnpm smoke:pi-v1-canary -- "${args[@]}" 2>&1 | tee "${log_path}"
+          canary_code="${PIPESTATUS[0]}"
+          set -e
+
+          decision_args=(
+            --input "${log_path}"
+            --summary "${decision_md}"
+            --json "${decision_json}"
+            --production-canary "${{ inputs.production_canary }}"
+            --pr-stack "${{ inputs.pr_stack }}"
+            --browser-ux "${{ inputs.browser_ux }}"
+          )
+
+          if [[ "${{ inputs.fail_on_blocked }}" == "true" ]]; then
+            decision_args+=(--fail-on-blocked)
+          fi
+
+          set +e
+          pnpm runtime:pi-decision -- "${decision_args[@]}"
+          decision_code="$?"
+          set -e
+
+          cat "${decision_md}" >> "${GITHUB_STEP_SUMMARY}"
+
+          if [[ "${canary_code}" != "0" ]]; then
+            exit "${canary_code}"
+          fi
+          exit "${decision_code}"
+
+      - name: Upload Runtime v1 decision artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-runtime-v1-decision
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/pi-runtime-v1-canary.log
+            ${{ runner.temp }}/runtime-v1-decision.md
+            ${{ runner.temp }}/runtime-v1-decision.json
