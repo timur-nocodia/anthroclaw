@@ -22,13 +22,13 @@ pnpm smoke:pi-sessions-memory -- --json --gateway --allow-skip --model anthropic
 pnpm smoke:pi-external-mcp -- --json
 ```
 
-`--smoke-only` runs only the automated smoke scenarios that exist today. Full mode intentionally returns `incomplete` until the scripted/manual canaries in this document are implemented. Gateway-backed scripted checks are opt-in through `--include-gateway-scripted` because they can use real Pi auth/tokens.
+`--smoke-only` runs only the automated smoke scenarios that exist today. Full mode runs the smoke and scripted canary map. Gateway-backed scripted checks are opt-in through `--include-gateway-scripted` because they can use real Pi auth/tokens.
 
 ## Evidence Levels
 
 - `smoke`: automated command or CI workflow, usually with real Pi auth.
 - `scripted_canary`: deterministic temporary Gateway scenario, not necessarily all wired today.
-- `manual_operator_check`: dashboard/operator review with artifact or screenshots.
+- `manual_operator_check`: optional dashboard/browser review with artifact or screenshots.
 
 Default-runtime rollout requires all blocking scenarios to have either passing smoke evidence or a completed scripted/manual canary record.
 
@@ -210,12 +210,14 @@ Required checks:
 
 ### 8. `pi.dashboard-operator`
 
-Status: planned manual operator check.
+Status: scripted canary implemented for the operator API evidence path.
+
+Scope note: this is API/data-contract evidence against Pi-shaped Gateway state. A browser screenshot pass remains optional non-blocking UX evidence.
 
 Proves:
 
-- dashboard shows effective runtime, not hardcoded Claude-only copy;
-- agent admin, sessions, runs, interrupts, learning, memory, plugins, and files reflect Pi runs;
+- dashboard/API data shows effective runtime, not hardcoded Claude-only copy;
+- agent admin, sessions, runs, interrupts, learning, memory, plugins, and files expose Pi-shaped run state;
 - MCP onboarding/status remains credential-safe;
 - channel route-test and pause/notification surfaces remain accurate;
 - diagnostics export includes runtime state without secrets.
@@ -230,6 +232,10 @@ Required checks:
 - `/api/plugins`;
 - `/api/mcp/*`;
 - `/api/diagnostics/export`.
+
+Evidence command:
+
+- `pnpm smoke:pi-dashboard-operator -- --json`
 
 ### 9. `pi.scheduled-buildroom`
 
@@ -282,13 +288,14 @@ Pi cannot become the global default until:
 
 - all four smoke scenarios pass in a real-auth environment;
 - scripted canaries are implemented and passing in CI or explicitly waived with a written risk owner;
-- the dashboard operator check is completed;
+- the dashboard operator canary is completed;
 - rollback is exercised;
 - `runtime-contract-v1.md` and this plan are updated with evidence links.
 
 ## Next Implementation Slice
 
-The next useful code PR should close the remaining non-automated canary gap:
+The next useful code PR should close the remaining evidence and rollout gaps:
 
-1. complete the dashboard/operator manual evidence loop;
-2. keep `smoke:pi-v1-canary` emitting a single JSON artifact keyed by `RUNTIME_CANARY_SCENARIOS` ids.
+1. capture full real-auth smoke evidence;
+2. keep `smoke:pi-v1-canary` emitting a single JSON artifact keyed by `RUNTIME_CANARY_SCENARIOS` ids;
+3. prepare the default-runtime rollout and rollback package.

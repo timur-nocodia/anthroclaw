@@ -741,9 +741,9 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
   ),
   canary(
     'pi.dashboard-operator',
-    'manual_operator_check',
+    'scripted_canary',
     'Dashboard and operator API canary',
-    'Prove operator-facing APIs and dashboard panels show the effective runtime, sessions, runs, interrupts, learning, plugins, MCP, channels, metrics, and diagnostics after Pi runs.',
+    'Prove operator-facing API data contracts expose the effective runtime, sessions, runs, interrupts, learning, plugins, MCP, channels, metrics, and diagnostics after Pi-shaped runs.',
     [
       'dashboard.agent-admin',
       'dashboard.mcp-onboarding',
@@ -753,13 +753,13 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
       'config.schema-auth',
     ],
     [
-      'Open the dashboard against a Pi canary Gateway.',
+      'Run the deterministic dashboard/operator API canary against Pi-shaped Gateway state.',
       'Verify agent config shows effective runtime and redacted Pi storage paths.',
-      'Verify sessions/runs/interrupts/learning/memory/plugin panels reflect the Pi run.',
-      'Verify MCP onboarding/status and channel route-test surfaces still work.',
+      'Verify sessions/runs/interrupts/learning/memory/plugin API data reflects the Pi-shaped run.',
+      'Verify MCP onboarding/status and channel route-test data still works.',
       'Export diagnostics and confirm runtime status appears without secrets.',
     ],
-    { evidenceArtifact: 'manual canary checklist with screenshots or diagnostics export' },
+    { evidenceCommand: 'pnpm smoke:pi-dashboard-operator -- --json' },
   ),
   canary(
     'pi.scheduled-buildroom',

@@ -93,12 +93,13 @@ describe('Pi v1 canary CLI', () => {
     ]);
   });
 
-  it('reports full mode incomplete until planned scripted/manual canaries exist', async () => {
+  it('runs full mode when all scripted and smoke canaries pass', async () => {
     const stdout = createWriter();
     const stderr = createWriter();
     const sessionsMemory = createProbe('passed');
     const pluginsContext = createProbe('passed');
     const externalMcp = createProbe('passed');
+    const dashboardOperator = createProbe('passed');
     const scheduledBuildroom = createProbe('passed');
     const rollbackMixedRuntime = createProbe('passed');
 
@@ -110,19 +111,25 @@ describe('Pi v1 canary CLI', () => {
       runSessionsMemoryCli: sessionsMemory,
       runPluginsContextCli: pluginsContext,
       runExternalMcpCli: externalMcp,
+      runDashboardOperatorCli: dashboardOperator,
       runScheduledBuildroomCli: scheduledBuildroom,
       runRollbackMixedRuntimeCli: rollbackMixedRuntime,
       stdout,
       stderr,
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(0);
     expect(sessionsMemory).toHaveBeenCalledTimes(1);
     expect(sessionsMemory.mock.calls[0]?.[0]).toEqual(['--json']);
     expect(pluginsContext).toHaveBeenCalledTimes(1);
     expect(pluginsContext.mock.calls[0]?.[0]).toEqual(['--json']);
     expect(externalMcp).toHaveBeenCalledTimes(1);
     expect(externalMcp.mock.calls[0]?.[0]).toEqual(['--json']);
+    expect(dashboardOperator).toHaveBeenCalledTimes(1);
+    expect(dashboardOperator.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'anthropic/claude-sonnet-4-6',
+    ]);
     expect(scheduledBuildroom).toHaveBeenCalledTimes(1);
     expect(scheduledBuildroom.mock.calls[0]?.[0]).toEqual(['--json']);
     expect(rollbackMixedRuntime).toHaveBeenCalledTimes(1);
@@ -130,9 +137,9 @@ describe('Pi v1 canary CLI', () => {
       '--json',
       '--model', 'anthropic/claude-sonnet-4-6',
     ]);
-    expect(stdout.text()).toBe('');
-    const body = JSON.parse(stderr.text());
-    expect(body.status).toBe('incomplete');
+    expect(stderr.text()).toBe('');
+    const body = JSON.parse(stdout.text());
+    expect(body.status).toBe('passed');
     expect(body.mode).toBe('full');
     expect(body.scenarios).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -148,16 +155,16 @@ describe('Pi v1 canary CLI', () => {
         status: 'passed',
       }),
       expect.objectContaining({
+        id: 'pi.dashboard-operator',
+        status: 'passed',
+      }),
+      expect.objectContaining({
         id: 'pi.scheduled-buildroom',
         status: 'passed',
       }),
       expect.objectContaining({
         id: 'pi.rollback-mixed-runtime',
         status: 'passed',
-      }),
-      expect.objectContaining({
-        id: 'pi.dashboard-operator',
-        status: 'incomplete',
       }),
     ]));
   });
@@ -168,6 +175,7 @@ describe('Pi v1 canary CLI', () => {
     const sessionsMemory = createProbe('passed');
     const pluginsContext = createProbe('passed');
     const externalMcp = createProbe('passed');
+    const dashboardOperator = createProbe('passed');
     const scheduledBuildroom = createProbe('passed');
     const rollbackMixedRuntime = createProbe('passed');
 
@@ -186,13 +194,14 @@ describe('Pi v1 canary CLI', () => {
       runSessionsMemoryCli: sessionsMemory,
       runPluginsContextCli: pluginsContext,
       runExternalMcpCli: externalMcp,
+      runDashboardOperatorCli: dashboardOperator,
       runScheduledBuildroomCli: scheduledBuildroom,
       runRollbackMixedRuntimeCli: rollbackMixedRuntime,
       stdout,
       stderr,
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(0);
     expect(sessionsMemory.mock.calls[0]?.[0]).toEqual([
       '--json',
       '--auth-path', '/secure/pi-auth.json',
@@ -203,6 +212,14 @@ describe('Pi v1 canary CLI', () => {
     expect(pluginsContext.mock.calls[0]?.[0]).toEqual(sessionsMemory.mock.calls[0]?.[0]);
     expect(externalMcp.mock.calls[0]?.[0]).toEqual([
       '--json',
+      '--timeout-ms', '1000',
+      '--keep-workspace',
+    ]);
+    expect(dashboardOperator.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
       '--timeout-ms', '1000',
       '--keep-workspace',
     ]);
@@ -223,6 +240,7 @@ describe('Pi v1 canary CLI', () => {
     const sessionsMemory = createProbe('passed');
     const pluginsContext = createProbe('passed');
     const externalMcp = createProbe('passed');
+    const dashboardOperator = createProbe('passed');
     const scheduledBuildroom = createProbe('passed');
     const rollbackMixedRuntime = createProbe('passed');
 
@@ -243,13 +261,14 @@ describe('Pi v1 canary CLI', () => {
       runSessionsMemoryCli: sessionsMemory,
       runPluginsContextCli: pluginsContext,
       runExternalMcpCli: externalMcp,
+      runDashboardOperatorCli: dashboardOperator,
       runScheduledBuildroomCli: scheduledBuildroom,
       runRollbackMixedRuntimeCli: rollbackMixedRuntime,
       stdout,
       stderr,
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(0);
     expect(sessionsMemory.mock.calls[0]?.[0]).toEqual([
       '--json',
       '--gateway',
@@ -263,6 +282,15 @@ describe('Pi v1 canary CLI', () => {
     expect(pluginsContext.mock.calls[0]?.[0]).toEqual(sessionsMemory.mock.calls[0]?.[0]);
     expect(externalMcp.mock.calls[0]?.[0]).toEqual([
       '--json',
+      '--timeout-ms', '1000',
+      '--allow-skip',
+      '--keep-workspace',
+    ]);
+    expect(dashboardOperator.mock.calls[0]?.[0]).toEqual([
+      '--json',
+      '--model', 'test/model',
+      '--auth-path', '/secure/pi-auth.json',
+      '--models-path', '/secure/pi-models.json',
       '--timeout-ms', '1000',
       '--allow-skip',
       '--keep-workspace',
