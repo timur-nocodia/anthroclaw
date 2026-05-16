@@ -6,6 +6,12 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-05-16
+
+### Changed
+- fix(docker): install unzip + p7zip-full for agent archive unpacking (#80) (e07797d)
+
+
 ## [1.1.2] - 2026-05-15
 
 ### Changed
