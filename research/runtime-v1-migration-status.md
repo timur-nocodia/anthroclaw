@@ -2,7 +2,7 @@
 
 Date: 2026-05-16
 
-This is the human-readable phase checklist for replacing the Claude Agent SDK-centered harness with the Runtime v1 contract and Pi canary path. The machine-readable source remains `RUNTIME_CANARY_SCENARIOS` in `src/runtime/contract.ts`; the detailed evidence plan remains `research/runtime-v1-canary-plan.md`.
+This is the human-readable phase checklist for replacing the Claude Agent SDK-centered harness with the Runtime v1 contract and Pi canary path. The machine-readable source remains `RUNTIME_CANARY_SCENARIOS` in `src/runtime/contract.ts`; the detailed evidence plan remains `research/runtime-v1-canary-plan.md`; the integration merge strategy memo is `research/runtime-v1-integration-strategy.md`.
 
 ## Current Snapshot
 
@@ -20,6 +20,7 @@ What is done:
 - Stacked PRs are open for rollback, scheduled Buildroom, and dashboard/operator coverage.
 - Local full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed on 2026-05-16 with existing local Pi auth storage; the generated decision package is blocked only by PR-stack and production-canary operational gates.
 - Rebased integration candidate PR #95 is mergeable over current `main`; `pnpm build`, `pnpm test`, and the full local Runtime v1 canary pass on that branch.
+- Integration strategy memo recommends using PR #95 as the merge vehicle unless repository policy requires restacking the older draft chain.
 
 What is not done:
 
