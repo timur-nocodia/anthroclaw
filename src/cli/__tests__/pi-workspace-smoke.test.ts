@@ -61,6 +61,36 @@ describe('Pi workspace smoke CLI', () => {
     });
   });
 
+  it('prefers streamed partial text over duplicate final message text', async () => {
+    const runtime = createSmokeRuntime([
+      smokeTextEvent('SMOKE_OK', 'partial'),
+      smokeTextEvent('SMOKE_OK', 'message'),
+    ]);
+    const workspace = join(root, 'workspace');
+
+    const result = await runPiWorkspaceSmoke({
+      runtime,
+      workspace,
+      model: 'test/model',
+      timeoutMs: 1000,
+    });
+
+    expect(result.text).toBe('SMOKE_OK');
+  });
+
+  it('fails when the Pi workspace smoke reply is not exact', async () => {
+    const runtime = createSmokeRuntime([
+      smokeTextEvent('SMOKE_OKSMOKE_OK', 'partial'),
+    ]);
+
+    await expect(runPiWorkspaceSmoke({
+      runtime,
+      workspace: join(root, 'workspace'),
+      model: 'test/model',
+      timeoutMs: 1000,
+    })).rejects.toThrow(/expected reply "SMOKE_OK", got "SMOKE_OKSMOKE_OK"/);
+  });
+
   it('prints JSON from the CLI wrapper and removes temporary workspaces by default', async () => {
     const runtime = createSmokeRuntime();
     const workspace = join(root, 'workspace');
@@ -141,7 +171,9 @@ describe('Pi workspace smoke CLI', () => {
   });
 });
 
-function createSmokeRuntime(): HeadlessRuntime & { seenInput?: HeadlessRunInput } {
+function createSmokeRuntime(
+  textEvents: RuntimeEvent[] = [smokeTextEvent('SMOKE_OK', 'partial')],
+): HeadlessRuntime & { seenInput?: HeadlessRunInput } {
   return {
     id: 'pi',
     async runText() {
@@ -150,12 +182,15 @@ function createSmokeRuntime(): HeadlessRuntime & { seenInput?: HeadlessRunInput 
     async runHandle(input: HeadlessRunInput): Promise<RuntimeRunHandle<RuntimeEvent>> {
       const runtime = this as HeadlessRuntime & { seenInput?: HeadlessRunInput };
       runtime.seenInput = input;
-      return createSmokeHandle(input.cwd!);
+      return createSmokeHandle(input.cwd!, textEvents);
     },
   } as HeadlessRuntime & { seenInput?: HeadlessRunInput };
 }
 
-function createSmokeHandle(workspace: string): RuntimeRunHandle<RuntimeEvent> & { sessionId: string } {
+function createSmokeHandle(
+  workspace: string,
+  textEvents: RuntimeEvent[],
+): RuntimeRunHandle<RuntimeEvent> & { sessionId: string } {
   const smokePath = join(workspace, 'anthroclaw-pi-smoke.txt');
   return {
     sessionId: 'pi-smoke-session-1',
@@ -178,14 +213,7 @@ function createSmokeHandle(workspace: string): RuntimeRunHandle<RuntimeEvent> & 
     },
     async *[Symbol.asyncIterator]() {
       writeFileSync(smokePath, 'after AnthroClaw Pi smoke\n', 'utf8');
-      yield {
-        type: 'text.delta',
-        runtime: 'pi',
-        runId: 'run-1',
-        sessionId: 'pi-smoke-session-1',
-        timestamp: Date.now(),
-        text: 'SMOKE_OK',
-      };
+      for (const event of textEvents) yield event;
       yield {
         type: 'run.completed',
         runtime: 'pi',
@@ -194,6 +222,21 @@ function createSmokeHandle(workspace: string): RuntimeRunHandle<RuntimeEvent> & 
         timestamp: Date.now(),
       };
     },
+  };
+}
+
+function smokeTextEvent(
+  text: string,
+  source: 'partial' | 'message',
+): RuntimeEvent {
+  return {
+    type: 'text.delta',
+    runtime: 'pi',
+    runId: 'run-1',
+    sessionId: 'pi-smoke-session-1',
+    timestamp: Date.now(),
+    text,
+    source,
   };
 }
 

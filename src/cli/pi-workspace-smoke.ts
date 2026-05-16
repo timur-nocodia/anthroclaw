@@ -12,6 +12,7 @@ import type { RuntimeRunHandle } from '../runtime/types.js';
 const SMOKE_FILE = 'anthroclaw-pi-smoke.txt';
 const BEFORE_TEXT = 'before AnthroClaw Pi smoke\n';
 const AFTER_TEXT = 'after AnthroClaw Pi smoke\n';
+const EXPECTED_REPLY = 'SMOKE_OK';
 const USER_MESSAGE_ID = 'anthroclaw-pi-smoke-user-message';
 
 interface PiWorkspaceSmokeArgs {
@@ -160,14 +161,23 @@ export async function runPiWorkspaceSmoke(input: {
     agentId: 'pi-workspace-smoke',
   });
 
-  const textParts: string[] = [];
+  const partialTextParts: string[] = [];
+  const messageTextParts: string[] = [];
   try {
     for await (const event of handle) {
       if (event.type === 'text.delta') {
-        textParts.push(event.text);
+        if (event.source === 'message') {
+          messageTextParts.push(event.text);
+        } else {
+          partialTextParts.push(event.text);
+        }
       }
     }
     assertFile(smokePath, AFTER_TEXT, 'Pi run did not modify the smoke file as expected.');
+    const text = (partialTextParts.length > 0 ? partialTextParts : messageTextParts).join('').trim();
+    if (text !== EXPECTED_REPLY) {
+      throw new Error(`Pi workspace smoke expected reply ${JSON.stringify(EXPECTED_REPLY)}, got ${JSON.stringify(text)}.`);
+    }
 
     const dryRun = await handle.rewindFiles?.(USER_MESSAGE_ID, { dryRun: true });
     if (!dryRun?.canRewind) {
@@ -186,7 +196,7 @@ export async function runPiWorkspaceSmoke(input: {
       runtime: 'pi',
       workspace,
       sessionId: (handle as { sessionId?: string }).sessionId,
-      text: textParts.join('').trim(),
+      text,
       dryRun,
       restore,
     };
