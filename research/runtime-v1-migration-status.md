@@ -30,11 +30,12 @@ What is done:
 - Gateway now sets `OC_AGENTS_DIR` and `OC_DATA_DIR` from its actual startup arguments while running, then restores the previous process env on stop. This closes the local worktree/dev-data mismatch that made the Claude SDK surface a misleading native-binary warning.
 - Real Gateway startup was rechecked on 2026-05-16 with `OC_AGENTS_DIR`/`OC_DATA_DIR` unset and real dev config/agents/data/plugin paths; Gateway started, Telegram polling started, and the prior `Claude Code native binary not found` warning did not recur. No test messages were sent.
 - A no-channel Claude headless baseline probe was attempted after the startup fix; it reached the provider path but returned `Invalid authentication credentials` from the configured local Claude auth. The headless runtime now treats that text-shaped auth failure as an error instead of a successful smoke result.
+- The pre-Pi Claude text baseline and post-rollback Claude text prompt are explicitly waived for the first `example` Pi-only production canary window in `research/runtime-v1-production-canary-preflight.md`; Pi live-turn, tool, rollback, diagnostics, and final decision evidence remain required.
 
 What is not done:
 
 - The first production canary window has not been recorded.
-- A true Claude baseline turn has not been sent in the live channel yet; the startup blocker is fixed, but valid Claude auth or an explicit baseline waiver is still required for the remaining Claude-side evidence.
+- A true Claude baseline turn has not been sent in the live channel; this is now a written waiver for the first Pi-only window, not an unresolved startup blocker.
 - Final `READY` migration decision record has not been generated because production evidence is still pending; default-runtime flip is not started.
 
 ## Phase Checklist
@@ -72,9 +73,9 @@ What is not done:
 
 ## Next Five Tasks
 
-1. Refresh/replace the local Claude auth used by the baseline path, or write an explicit baseline waiver for the first Pi-only production canary window.
-2. Apply the guarded `example` Pi override for the first production canary window and capture one text turn plus one same-session follow-up.
-3. Exercise one harmless read, one small approved edit, one denied protected-path action, and rollback to the exact backup.
+1. Apply the guarded `example` Pi override for the first production canary window and capture one text turn plus one same-session follow-up.
+2. Exercise one harmless read, one small approved edit, one denied protected-path action, and rollback to the exact backup.
+3. Attach the redacted canary evidence plus Claude baseline waiver link to the migration record.
 4. Rerun **Pi Runtime v1 decision** on `main` with `production_canary=passed`, `pr_stack=merged`, and `fail_on_blocked=true`.
 5. If the final decision package is `READY`, prepare the smallest possible default-runtime flip PR with rollback instructions.
 

@@ -75,9 +75,27 @@ No-channel Claude baseline attempt from 2026-05-16:
 - The headless runtime was hardened afterward so text-shaped Claude auth failures fail the smoke command instead of being recorded as successful model text.
 - Remaining choice before the first Pi production canary: refresh/replace Claude auth and capture the baseline turn, or explicitly waive the Claude baseline for a Pi-first window and record that waiver with an owner.
 
+## Claude Baseline Waiver
+
+Status: **waived for the first Pi-only production canary window**.
+
+Owner: AnthroClaw migration owner in the current operator thread.
+
+Reason:
+
+- the remaining Claude baseline blocker is provider auth (`Invalid authentication credentials`), not AnthroClaw runtime startup or Gateway routing;
+- the migration goal is to move the harness contract away from Claude Agent SDK dependence, so repairing Claude auth only to prove the deprecated provider path would not reduce Pi rollout risk enough to justify delaying the first Pi-only window;
+- Claude baseline startup/routing evidence is still partially covered by the 2026-05-16 Gateway startup verification: Gateway started from the Runtime v1 worktree with real dev config/agents/data/plugin paths, Telegram polling started, and the previous native-binary/cwd blocker did not recur.
+
+Scope:
+
+- this waiver covers only the **pre-Pi Claude text baseline** and **post-rollback Claude text prompt** rows for the first `example` Pi-only production canary window;
+- it does not waive Pi real-auth smoke, scripted Runtime v1 canaries, live Pi text/follow-up turns, safe tool read/edit/deny evidence, rollback config restore, diagnostics redaction, or the final Runtime v1 decision package;
+- if the first Pi window fails for a reason that needs direct Claude comparison, refresh Claude auth before expanding the canary ring.
+
 Minimum window:
 
-- baseline one Claude text turn before the override;
+- baseline one Claude text turn before the override, or the waiver above linked in the evidence record;
 - one Pi text turn;
 - one Pi follow-up turn in the same AnthroClaw session;
 - one harmless read;
@@ -86,7 +104,7 @@ Minimum window:
 - interrupt check if a long-running prompt can be triggered safely;
 - diagnostics export with secrets and private transcripts excluded;
 - rollback to `claude-agent-sdk`;
-- one post-rollback text turn.
+- one post-rollback text turn, unless covered by the waiver above.
 
 The default 24-hour or 20-turn window from the runbook is still the stronger evidence. A shorter window should be recorded as intentionally limited and should not be treated as a broad rollout signal.
 

@@ -10,6 +10,9 @@ All notable changes to AnthroClaw are documented here.
 - Gateway now canonicalizes `OC_AGENTS_DIR` and `OC_DATA_DIR` from its actual startup paths while running, preventing the Claude SDK baseline path from resolving agent workspaces under the wrong worktree.
 - Claude headless smoke runs now fail on text-shaped authentication failures instead of treating provider auth errors as successful model output.
 
+### Documentation
+- Runtime v1 canary docs now record the first-window Claude baseline waiver and require the waiver owner/reason/scope in canary evidence.
+
 ## [1.1.7] - 2026-05-16
 
 ### Changed
