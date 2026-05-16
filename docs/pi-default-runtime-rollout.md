@@ -118,7 +118,8 @@ Ring 1 immediate live channel evidence at 2026-05-17 01:12 Asia/Almaty:
 - post-turn monitor: `passed`;
 - runs after turn: `8` total, `8` succeeded, `0` failed, `0` interrupted, `0` stale running;
 - tool events in the 15-minute Ring 1 slice: none;
-- Ring 1 exit remains pending until 30-minute post-turn monitoring stays green.
+- follow-up manual monitor at approximately 2026-05-17 01:21 Asia/Almaty passed for the 60-minute window: `3` total runs, `3` succeeded, `0` failed/interrupted/stale, auth/model alerts `0`, alerts `[]`, warnings `[]`;
+- Ring 1 is closed by operator acceptance; later monitor alerts remain escalation triggers.
 
 ## Monitoring Command
 
