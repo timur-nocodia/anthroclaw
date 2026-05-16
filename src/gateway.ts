@@ -1,4 +1,5 @@
-import { readdirSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { readdirSync, existsSync, readFileSync, statSync, unlinkSync } from 'node:fs';
+import type { Dirent } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join, isAbsolute, resolve, dirname, join as joinPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -827,10 +828,29 @@ export async function tryPluginAssemble(
  * run. The writer uses write-tmp + atomic rename, so a leftover tmp is
  * always safe to discard. Logs warn per orphan removed.
  */
+/**
+ * Returns true if `entry` is a directory, OR a symlink whose target is a
+ * directory. `Dirent.isDirectory()` alone reports false for symlinks (it
+ * inspects the link itself rather than the target), which means a perfectly
+ * valid agent dir symlinked from a shared vibe-agents repo would be skipped
+ * by discovery / cleanup. We follow symlinks via `statSync` so prod can host
+ * agents as `agents/<id> -> ../anthroclaw-vibe-agents/agents/<id>` and still
+ * be picked up.
+ */
+export function isDirOrDirSymlink(entry: Dirent, parentDir: string): boolean {
+  if (entry.isDirectory()) return true;
+  if (!entry.isSymbolicLink()) return false;
+  try {
+    return statSync(join(parentDir, entry.name)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 function cleanupOrphanTmpFiles(agentsDir: string): void {
   if (!existsSync(agentsDir)) return;
   for (const entry of readdirSync(agentsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
+    if (!isDirOrDirSymlink(entry, agentsDir)) continue;
     const tmpPath = join(agentsDir, entry.name, 'agent.yml.tmp');
     if (existsSync(tmpPath)) {
       logger.warn({ path: tmpPath }, 'cleaning up orphan agent.yml.tmp from prior crash');
@@ -6359,7 +6379,7 @@ export class Gateway {
     const dirs: string[] = [];
 
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
+      if (!isDirOrDirSymlink(entry, agentsDir)) continue;
       const agentId = entry.name;
       // Reject any directory whose name does not conform to the canonical
       // agent-id form. A non-conforming id would crash later in
