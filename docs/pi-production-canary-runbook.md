@@ -203,6 +203,30 @@ Fix verification:
 Remaining rollout requirement:
 - This focused evidence is enough for the Web UI/Gateway blocker fix. A full production canary window still requires the full runbook gates and duration/turn-count criteria below.
 
+### 2026-05-17: Limited Web UI production canary on `example`
+
+Status: **passed; rolled back**.
+
+Scope:
+- Global runtime stayed on `claude-agent-sdk`.
+- Only `example` was temporarily switched to Pi through `pnpm runtime:pi-canary-agent --enable-pi --apply`.
+- The canary used `Gateway.dispatchWebUI()` with `channel=web`; no Telegram or WhatsApp channel adapters were configured for the run.
+- This was an intentionally limited maintenance/test-agent window, not a 24-hour or 20-turn broad rollout signal.
+
+Evidence:
+- Full Runtime v1 canary from current `main` after PR #107 and PR #108 passed all ten scenarios locally. Both standalone and aggregate workspace smoke replies were exactly `SMOKE_OK`.
+- The limited Web UI window completed five Pi turns in one provider session: text, same-session follow-up, harmless workspace read, small workspace edit, and denied protected-path read.
+- Exact replies were observed for all five turns: `PI_PROD_TEXT_OK`, `PI_PROD_FOLLOWUP_OK`, `PI_PROD_READ_OK`, `PI_PROD_EDIT_OK`, and `PI_PROD_DENY_OK`.
+- The read turn used Pi `read`; the edit turn used Pi `edit`; the deny turn attempted Pi `read` on `/etc/hosts` and AnthroClaw returned the workspace-boundary denial before side effect.
+- The edit changed only the temporary `pi-production-canary.txt` file, verified the requested contents, and the canary script removed the temporary file after the run.
+- Diagnostics were exported with logs excluded. The evidence summary recorded 16 run rows, 0 failed runs, 20 diagnostic events, no Telegram accounts, and no WhatsApp accounts for this Gateway run.
+- Exact backup restore returned `example/agent.yml` to SHA-256 `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`.
+- Generated backup artifacts were removed after verification; the real dev repo returned to a clean state, still behind `origin/main` only.
+
+Decision evidence:
+- Local `pnpm runtime:pi-decision -- --production-canary passed --pr-stack merged --browser-ux not-required --fail-on-blocked` produced `READY` with no blocking failures.
+- Durable GitHub Actions decision run is tracked separately in `research/runtime-v1-migration-status.md`.
+
 ## Evidence Template
 
 Copy this template into the migration tracker or PR comment after the canary window. Keep the values redacted and link only safe artifacts.

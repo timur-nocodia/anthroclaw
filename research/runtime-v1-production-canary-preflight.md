@@ -1,8 +1,8 @@
-# Runtime v1 production canary preflight
+# Runtime v1 production canary evidence
 
-Date: 2026-05-16
+Date: 2026-05-17
 
-This note prepares the first real AnthroClaw Pi production canary window. It is not the canary evidence record; the evidence template remains in `docs/pi-production-canary-runbook.md`.
+This note started as the first real AnthroClaw Pi production canary preflight and now records the limited `example` Web UI production canary evidence. The runbook evidence log remains in `docs/pi-production-canary-runbook.md`.
 
 ## Current Evidence Baseline
 
@@ -11,6 +11,10 @@ This note prepares the first real AnthroClaw Pi production canary window. It is 
 - The generated decision package is `BLOCKED` only by `production_canary=pending`.
 - PR #106 merged on 2026-05-16 and closed the focused Pi Web UI/Gateway canary blockers found during the first `example` attempt.
 - A local full Runtime v1 canary run from `main` after PR #106 passed all ten scenarios. The regenerated decision package with `pr_stack=merged` is `BLOCKED` only by `production-canary-window=pending`.
+- PR #107 merged on 2026-05-16 and refreshed the decision evidence docs.
+- PR #108 merged on 2026-05-16 and made `pi-workspace-smoke` reject duplicated `SMOKE_OKSMOKE_OK` text instead of accepting it as green.
+- A local full Runtime v1 canary run from `main` after PR #107 and PR #108 passed all ten scenarios. Both standalone and aggregate workspace smoke results returned exactly `SMOKE_OK`.
+- The limited `example` Web UI production canary passed on 2026-05-17 local time, was rolled back with exact backup restore, and produced a local final decision package of `READY`.
 - No default-runtime flip has started.
 
 ## Candidate Shortlist
@@ -61,6 +65,19 @@ Focused Web UI/Gateway canary evidence from 2026-05-16:
 - The post-fix rollback restored `example/agent.yml` to SHA-256 `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`; generated backup artifacts were removed.
 
 This focused rerun satisfies the Web UI/Gateway blocker fix, but it still does not satisfy the full production canary window because it did not cover the duration/turn-count requirement or live channel observation.
+
+Limited Web UI production canary evidence from 2026-05-17:
+
+- The operator accepted an intentionally short first window for the low-risk `example` maintenance/test agent. This is narrower than the default 24-hour or 20-turn recommendation and should not be treated as a broad rollout signal by itself.
+- Global runtime stayed on `claude-agent-sdk`; only `example` was temporarily switched to Pi through the guarded CLI.
+- Gateway was started with real local `agents`, `data`, and `plugins` paths, but with no Telegram or WhatsApp channel adapters configured for the canary run.
+- Five Web UI turns passed in one Pi provider session: text, same-session follow-up, harmless workspace read, small workspace edit, and denied protected-path read.
+- Exact replies were `PI_PROD_TEXT_OK`, `PI_PROD_FOLLOWUP_OK`, `PI_PROD_READ_OK`, `PI_PROD_EDIT_OK`, and `PI_PROD_DENY_OK`.
+- Tool evidence covered Pi `read`, Pi `edit`, and a denied Pi `read` of `/etc/hosts`; AnthroClaw returned the workspace-boundary denial before any protected-path side effect.
+- Diagnostics were exported without logs. The safe summary recorded 16 run rows, 0 failed runs, 20 diagnostic events, and no Telegram or WhatsApp accounts active in this Gateway instance.
+- Exact restore returned `example/agent.yml` to SHA-256 `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`; temporary canary file and backup artifacts were removed.
+- Local `pnpm runtime:pi-decision -- --production-canary passed --pr-stack merged --browser-ux not-required --fail-on-blocked` produced `READY` with no blocking failures.
+- Durable GitHub Actions **Pi Runtime v1 decision** run `25970623984` on `main` commit `72766ff850a3dfff757a25e7b232c9002b7fcdac` passed build, Pi storage preparation, the full ten-scenario canary map, final `READY` decision generation with `production_canary=passed`, and artifact upload.
 
 Gateway hot-reload rehearsal evidence from 2026-05-16:
 
