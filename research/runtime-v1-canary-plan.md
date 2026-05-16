@@ -39,7 +39,7 @@ The production canary window runbook is `docs/pi-production-canary-runbook.md`.
 
 Repository-hosted full evidence is available through the manual GitHub Actions workflow **Pi Runtime v1 decision**, which uploads `pi-runtime-v1-decision`.
 
-Local evidence captured on 2026-05-16: full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed all ten scenarios with existing local Pi auth storage. The same full canary also passed on the rebased integration candidate PR #95 after the stack was replayed onto current `main`. The generated decision package remained `BLOCKED` only because the integration/PR-stack and production-canary operational gates were intentionally unset. This is useful supporting evidence, but the baseline rollout record still needs the durable workflow artifact from the target branch.
+Evidence captured on 2026-05-16: full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed all ten scenarios with existing local Pi auth storage. The same full canary also passed on the rebased integration candidate PR #95 after the stack was replayed onto current `main`, and PR #95 later merged. After repository secret `PI_AUTH_JSON_B64` was configured for CI, post-merge **Pi Runtime v1 decision** workflow run `25965686443` on `main` passed build, Pi storage preparation, the full ten-scenario canary map, and artifact upload. Its decision package is `BLOCKED` only by `production_canary=pending`.
 
 ## Canary Scenarios
 
@@ -303,8 +303,8 @@ Pi cannot become the global default until:
 
 ## Next Implementation Slice
 
-The next useful code PR should close the remaining evidence and rollout gaps:
+The next useful PR should close the remaining rollout evidence gap:
 
-1. choose the integration strategy for PR #95 versus restacking the original draft PR chain;
-2. capture the durable Runtime v1 decision workflow artifact from the chosen target branch;
-3. execute the first production canary window runbook and attach the redacted evidence.
+1. execute the first production canary window runbook and attach the redacted evidence;
+2. rerun the durable Runtime v1 decision workflow from `main` with `production_canary=passed` and `fail_on_blocked=true`;
+3. if the decision package is `READY`, prepare the smallest possible default-runtime flip with explicit rollback instructions.

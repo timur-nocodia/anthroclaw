@@ -4,7 +4,7 @@ Date: 2026-05-16
 
 ## Current State
 
-PR #95 is the cumulative Runtime v1 / Pi integration candidate rebased onto current `main`.
+PR #95 was the cumulative Runtime v1 / Pi integration candidate rebased onto current `main`. It merged into `main` on 2026-05-16 as `9b46102f74397b6eee25d8b8d60f7c85843f0ba4`.
 
 Local evidence on PR #95:
 
@@ -13,7 +13,13 @@ Local evidence on PR #95:
 - Full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed all ten scenarios with existing local Pi auth storage.
 - Local `pnpm runtime:pi-decision` generated `BLOCKED` only for the expected operational gates: `production-canary-window` and `pr-stack-merged`.
 
-The older draft stack remains open and useful as review history, but the bottom PR in that chain conflicted with current `main` before the PR #95 rebase work.
+Post-merge durable evidence on `main`:
+
+- Repository secret `PI_AUTH_JSON_B64` is configured for the manual Runtime v1 decision workflow without committing auth material.
+- **Pi Runtime v1 decision** workflow run `25965686443` passed build, Pi storage preparation, all ten Runtime v1 canary scenarios, and artifact upload.
+- The workflow decision package is `BLOCKED` only because `production_canary=pending`; `pr_stack=merged` passed.
+
+The older draft stack remains useful as review history, but PR #95 is now the merged integration path.
 
 ## Options
 
@@ -59,7 +65,7 @@ Prefer Option A: merge PR #95 as a single integration PR after review.
 Reasoning:
 
 - PR #95 is not a default-runtime flip. It lands the contract, adapter, smoke/canary harness, decision workflow, docs, and rollback evidence path.
-- Default Pi rollout is still blocked by the same explicit gates: durable Runtime v1 decision workflow artifact, first production canary window, and post-merge canary evidence.
+- Default Pi rollout is still blocked by the first production canary window and final `READY` decision package.
 - The local rebase already resolved the only observed production-fix conflicts:
   - `manage_cron` agents continue to use warm queries.
   - Pi Gateway runtime agents avoid Claude warm prewarm.
@@ -74,17 +80,16 @@ Reasoning:
 - [x] Local full Runtime v1 canary passed on PR #95.
 - [x] Local decision package generated and blocked only on operational gates.
 - [x] PR #95 is marked ready for review or merge.
-- [ ] Reviewer accepts the large integration PR shape.
-- [ ] Durable **Pi Runtime v1 decision** workflow artifact is captured from the chosen target branch.
+- [x] PR #95 merged into `main`.
+- [x] Reviewer accepts the large integration PR shape.
+- [x] Durable **Pi Runtime v1 decision** workflow artifact is captured from `main`.
 - [ ] First production canary window is completed for one low-risk real agent.
 - [ ] Default runtime decision is recorded after the durable artifact and production canary pass.
 
 ## Immediate Next Steps
 
-1. Review PR #95 as the integration vehicle.
-2. If accepted, merge PR #95 into `main`.
-3. Run **Pi Runtime v1 decision** from the merged target branch with `production_canary=pending`, `pr_stack=merged`, and `fail_on_blocked=false`.
-4. Attach the durable workflow artifact to the migration status.
-5. Execute `docs/pi-production-canary-runbook.md` for one low-risk real agent.
-6. Rerun **Pi Runtime v1 decision** with `production_canary=passed`.
-7. Only then decide whether to flip any default runtime setting.
+1. Execute `docs/pi-production-canary-runbook.md` for one low-risk real agent.
+2. Attach the redacted production canary evidence to the migration status.
+3. Rerun **Pi Runtime v1 decision** from `main` with `production_canary=passed`, `pr_stack=merged`, and `fail_on_blocked=true`.
+4. Record the final default-runtime decision.
+5. Only then decide whether to flip any default runtime setting.
