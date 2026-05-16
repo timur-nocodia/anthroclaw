@@ -6,9 +6,9 @@ This is the human-readable phase checklist for replacing the Claude Agent SDK-ce
 
 ## Current Snapshot
 
-Overall state: implementation canaries are merged into `main`; local real-auth Runtime v1 evidence is green; and the durable GitHub Actions decision artifact from `main` is captured. Default-runtime readiness is still blocked by the first production canary window.
+Overall state: implementation canaries are merged into `main`; local real-auth Runtime v1 evidence is green; and the durable GitHub Actions decision artifact from `main` is captured. The local Gateway path now canonicalizes runtime directories for the Claude baseline path. Default-runtime readiness is still blocked by the first production canary window.
 
-Approximate progress to a default-runtime decision: 93%.
+Approximate progress to a default-runtime decision: 94%.
 
 What is done:
 
@@ -27,11 +27,13 @@ What is done:
 - Latest **Pi Runtime v1 decision** workflow run `25969043105` on `main` after the exact rollback restore merge passed all ten scenarios and remains `BLOCKED` only by `production-canary-window=pending`.
 - Config-only rehearsal against local real `example` agent config completed on 2026-05-16 with no Gateway running: guarded enable wrote Pi override, exact backup restore returned `agent.yml` to its original hash `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`, and generated rehearsal backups were removed afterward.
 - Gateway hot-reload rehearsal completed on 2026-05-16 against the real local config/agents/data paths: Gateway started on current Runtime v1 code with Telegram polling, `example` was switched to Pi and restored while Gateway was running, ConfigWatcher hot-reloaded after both writes, and `agent.yml` again returned to the original hash. No test messages were sent.
+- Gateway now sets `OC_AGENTS_DIR` and `OC_DATA_DIR` from its actual startup arguments while running, then restores the previous process env on stop. This closes the local worktree/dev-data mismatch that made the Claude SDK surface a misleading native-binary warning.
+- Real Gateway startup was rechecked on 2026-05-16 with `OC_AGENTS_DIR`/`OC_DATA_DIR` unset and real dev config/agents/data/plugin paths; Gateway started, Telegram polling started, and the prior `Claude Code native binary not found` warning did not recur. No test messages were sent.
 
 What is not done:
 
 - The first production canary window has not been recorded.
-- A true Claude baseline turn from this worktree is blocked until the Claude Code native binary path is fixed; startup logs report the binary missing under this worktree's `node_modules`.
+- A true Claude baseline turn has not been sent in the live channel yet; the startup blocker is fixed, but the baseline turn still needs operator-safe canary timing.
 - Final `READY` migration decision record has not been generated because production evidence is still pending; default-runtime flip is not started.
 
 ## Phase Checklist
@@ -69,9 +71,9 @@ What is not done:
 
 ## Next Five Tasks
 
-1. Fix or point `pathToClaudeCodeExecutable` at a valid Claude Code native binary for the current worktree, or explicitly waive the Claude baseline turn for this Pi-first window.
-2. Attach the redacted production canary evidence to the migration record.
-3. Decide whether a browser screenshot pass is required as non-blocking operator UX evidence.
+1. Run the operator-safe Claude baseline turn for `example`, then immediately capture the redacted transcript/diagnostics evidence.
+2. Apply the guarded `example` Pi override for the first production canary window and capture one text turn plus one same-session follow-up.
+3. Exercise one harmless read, one small approved edit, one denied protected-path action, and rollback to the exact backup.
 4. Rerun **Pi Runtime v1 decision** on `main` with `production_canary=passed`, `pr_stack=merged`, and `fail_on_blocked=true`.
 5. If the final decision package is `READY`, prepare the smallest possible default-runtime flip PR with rollback instructions.
 
