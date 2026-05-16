@@ -29,11 +29,12 @@ What is done:
 - Gateway hot-reload rehearsal completed on 2026-05-16 against the real local config/agents/data paths: Gateway started on current Runtime v1 code with Telegram polling, `example` was switched to Pi and restored while Gateway was running, ConfigWatcher hot-reloaded after both writes, and `agent.yml` again returned to the original hash. No test messages were sent.
 - Gateway now sets `OC_AGENTS_DIR` and `OC_DATA_DIR` from its actual startup arguments while running, then restores the previous process env on stop. This closes the local worktree/dev-data mismatch that made the Claude SDK surface a misleading native-binary warning.
 - Real Gateway startup was rechecked on 2026-05-16 with `OC_AGENTS_DIR`/`OC_DATA_DIR` unset and real dev config/agents/data/plugin paths; Gateway started, Telegram polling started, and the prior `Claude Code native binary not found` warning did not recur. No test messages were sent.
+- A no-channel Claude headless baseline probe was attempted after the startup fix; it reached the provider path but returned `Invalid authentication credentials` from the configured local Claude auth. The headless runtime now treats that text-shaped auth failure as an error instead of a successful smoke result.
 
 What is not done:
 
 - The first production canary window has not been recorded.
-- A true Claude baseline turn has not been sent in the live channel yet; the startup blocker is fixed, but the baseline turn still needs operator-safe canary timing.
+- A true Claude baseline turn has not been sent in the live channel yet; the startup blocker is fixed, but valid Claude auth or an explicit baseline waiver is still required for the remaining Claude-side evidence.
 - Final `READY` migration decision record has not been generated because production evidence is still pending; default-runtime flip is not started.
 
 ## Phase Checklist
@@ -71,7 +72,7 @@ What is not done:
 
 ## Next Five Tasks
 
-1. Run the operator-safe Claude baseline turn for `example`, then immediately capture the redacted transcript/diagnostics evidence.
+1. Refresh/replace the local Claude auth used by the baseline path, or write an explicit baseline waiver for the first Pi-only production canary window.
 2. Apply the guarded `example` Pi override for the first production canary window and capture one text turn plus one same-session follow-up.
 3. Exercise one harmless read, one small approved edit, one denied protected-path action, and rollback to the exact backup.
 4. Rerun **Pi Runtime v1 decision** on `main` with `production_canary=passed`, `pr_stack=merged`, and `fail_on_blocked=true`.

@@ -68,6 +68,13 @@ Follow-up fix from 2026-05-16:
 - Real Gateway startup was rechecked with `OC_AGENTS_DIR`/`OC_DATA_DIR` unset and the same real dev config/agents/data/plugin paths; Gateway started, Telegram polling started, and the prior `Claude Code native binary not found` warning did not recur.
 - This clears the startup blocker for a Claude baseline turn. It does not itself satisfy the baseline-turn evidence because no channel message was sent during the verification.
 
+No-channel Claude baseline attempt from 2026-05-16:
+
+- `headless:runtime` was run against `claude-agent-sdk` with the real dev `config.yml`, `data`, and `agents/example` cwd.
+- The runtime reached the Claude provider path but returned `Invalid authentication credentials` from the configured local Claude auth.
+- The headless runtime was hardened afterward so text-shaped Claude auth failures fail the smoke command instead of being recorded as successful model text.
+- Remaining choice before the first Pi production canary: refresh/replace Claude auth and capture the baseline turn, or explicitly waive the Claude baseline for a Pi-first window and record that waiver with an owner.
+
 Minimum window:
 
 - baseline one Claude text turn before the override;
