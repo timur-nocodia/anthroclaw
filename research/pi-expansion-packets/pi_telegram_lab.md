@@ -2,7 +2,7 @@
 
 Date: 2026-05-17
 
-Status: ready for controlled Telegram DM turn; post-turn monitor pending.
+Status: live Telegram DM evidence closed; ready for ordinary operator use.
 
 Owner: operator
 Rollback path: disable `agents/pi_telegram_lab` route or remove `agents/pi_telegram_lab/agent.yml`; runtime fallback is `config.yml` `runtime.headless.provider=claude-agent-sdk`.
@@ -42,17 +42,24 @@ Agent source: `agents/pi_telegram_lab`
   - Result: passed from live checkout `/Users/tyess/dev/openclaw-agents-sdk-clone`.
   - Window: 60 minutes, 0 failed/interrupted/stale, auth/model alerts 0, alerts `[]`, warnings `[]`.
   - Note: run count was 0, so this is a no-alert baseline only.
-- [ ] runtime monitor after controlled Telegram DM turn: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
-- [ ] live Telegram turn check after controlled DM: `pnpm runtime:pi-telegram-lab-live-check -- --json --fail-on-pending`
+- [x] runtime monitor after controlled Telegram DM turn: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
+  - Result: passed via post-turn gate.
+  - Window: 60 minutes, 1 succeeded run, failed/interrupted/stale `0`, diagnostic events `run.sdk_started=1`, `run.completed=1`, auth/model alerts `0`, alerts `[]`, warnings `[]`.
+- [x] live Telegram turn check after controlled DM: `pnpm runtime:pi-telegram-lab-live-check -- --json --fail-on-pending`
   - Purpose: prove the live metrics database contains a recent successful `source=channel`, `channel=telegram`, `peer_id=48705953` run for `pi_telegram_lab`.
-- [ ] post-turn gate after controlled DM: `pnpm runtime:pi-telegram-lab-post-turn -- --json --fail-on-pending`
+  - Result: passed.
+  - Run: `3afa6dbe-e1d6-453d-a675-e772fec70236`, started `2026-05-17T08:30:12.524Z`, message id `144`, source `channel`, channel `telegram`, peer `48705953`, status `succeeded`.
+- [x] post-turn gate after controlled DM: `pnpm runtime:pi-telegram-lab-post-turn -- --json --fail-on-pending`
   - Purpose: combine the live Telegram turn check and runtime monitor into one final post-turn verdict.
+  - Result: passed.
 
 ## Manual Evidence
 
 - [x] learning review remains propose-only
   - Evidence: redacted audit reports `learningMode=propose`.
-- [ ] controlled Telegram DM turn returns expected Pi response.
+- [x] controlled Telegram DM turn returns expected Pi response.
+  - Evidence: operator sent `привет как дела` in Telegram DM at 2026-05-17 13:30 local time; the bot replied in Russian.
+  - Metrics: live run `3afa6dbe-e1d6-453d-a675-e772fec70236` recorded `agentId=pi_telegram_lab`, `source=channel`, `channel=telegram`, `peerId=48705953`, `status=succeeded`.
 
 ## Reproducible Audit Command
 
@@ -73,6 +80,8 @@ Send a Telegram DM to the lab bot with a harmless marker prompt:
 ```
 
 Expected result: the agent replies exactly `PI_TELEGRAM_LAB_OK`, then the post-turn monitor remains green.
+
+The first live manual evidence used a natural greeting instead of the marker prompt. The marker prompt remains the recommended repeatable smoke text.
 
 ## Notes
 
