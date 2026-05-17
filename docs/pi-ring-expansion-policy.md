@@ -613,6 +613,73 @@ Post-run monitor passed:
 
 Ring 4.4 is closed. Remaining Ring 4 surface is one business-critical workflow; do not combine it with new fanout or scheduler expansion.
 
+## Ring 4.5 Business-Critical Leads Escalation Scope
+
+The final Ring 4 high-risk surface is one business-critical customer-facing workflow for the live-only `leads_agent`: a customer asks for an Excel export of all leads. This path exercises public-profile tool policy, customer-facing refusal behavior, the `escalate` MCP tool, and the operator escalation JSONL queue without sending a WhatsApp message to a real customer.
+
+Allowed:
+
+- agent: `leads_agent`;
+- source surface: Web UI simulated customer turn;
+- customer request: all-leads Excel export;
+- tool: `escalate` exactly once;
+- escalation marker check;
+- final response marker check;
+- forbidden internal-term check;
+- escalation log rollback after verification;
+- post-run monitor;
+- dynamic cron store check.
+
+Excluded:
+
+- real WhatsApp customer delivery;
+- real customer peer;
+- export generation;
+- lead data access;
+- external MCP calls;
+- `send_message` or `send_media`;
+- production cron/proactive notification delivery;
+- lingering escalation queue entry;
+- private transcript/provider-log capture in docs or PRs.
+
+## Ring 4.5 Business-Critical Leads Escalation Evidence
+
+Ring 4.5 initially exposed a real permission-policy defect:
+
+- `leads_agent` uses `safety_profile=public` and declares `escalate`;
+- `escalate` declares `META.safe_in_public=true`;
+- `escalate` was missing from `MCP_META`;
+- the prefixed runtime tool `mcp__leads_agent-tools__escalate` was therefore treated as a plugin tool without metadata and denied under the public profile.
+
+The defect was fixed by registering `escalate` in `MCP_META` and adding regression coverage for public-profile prefixed escalation.
+
+Post-fix Ring 4.5 was executed on 2026-05-17:
+
+- agent: `leads_agent`;
+- source: Web UI simulated customer turn;
+- workflow: customer asks for all leads Excel export;
+- delivery path: Web UI Pi query -> `escalate` tool -> `data/escalations/leads_agent.jsonl`;
+- tool call count: `1`;
+- tool name: `escalate`;
+- escalation rows added during verification: `1`;
+- escalation agent id: `leads_agent`;
+- escalation marker present: true;
+- final response marker present: true;
+- forbidden internal terms present: false;
+- rollback: escalation log restored to its previous state after verification;
+- dynamic cron store: empty with no Ring 4 jobs remaining.
+
+Post-fix short monitor passed:
+
+- runs: `1` total, `1` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- diagnostic event types: `run.completed`, `run.sdk_started`;
+- tool events: `escalate` started/completed once, failed tools none;
+- auth/model alerts: `0`;
+- alerts: none;
+- warnings: none.
+
+Ring 4.5 is closed. Ring 4 high-risk rollout is complete; future expansion should start a new policy section rather than appending more surfaces to this rollout.
+
 ## Stop Conditions
 
 Stop rollout and rollback or hold the current ring when any of these occur:

@@ -231,6 +231,18 @@ Ring 4.4 controlled `send_message` fanout at 2026-05-17 local time:
 - post-run monitor passed with `4` total runs, `4` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, tool events `send_message` started/completed once, auth/model alerts `0`, alerts `[]`, warnings `[]`;
 - Ring 4.4 is closed. Remaining Ring 4 surface is one business-critical workflow.
 
+Ring 4.5 business-critical leads escalation workflow at 2026-05-17 local time:
+
+- scope: simulated customer Web UI turn for live-only `leads_agent` asking for an Excel export of all leads;
+- workflow: customer-facing refusal plus human escalation for a request the public leads agent cannot fulfill directly;
+- defect found before closure: `escalate` had public-safe tool metadata but was missing from the MCP metadata registry, so prefixed `mcp__leads_agent-tools__escalate` was denied under `safety_profile=public`;
+- fix: register `escalate` in `MCP_META` and add profile/meta regression tests;
+- post-fix delivery path: Web UI Pi query -> `escalate` tool -> `data/escalations/leads_agent.jsonl`;
+- result: exactly one `escalate` tool call, one escalation row written, escalation marker present, no forbidden internal architecture terms in final response, final marker present;
+- rollback: canary restored the escalation log to its previous state after verification;
+- post-fix short monitor passed with `1` total run, `1` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, tool events `escalate` started/completed once, auth/model alerts `0`, alerts `[]`, warnings `[]`;
+- Ring 4.5 is closed. Ring 4 high-risk rollout is complete.
+
 ## Monitoring Command
 
 Use the operator monitor during the first live window and before any ring expansion:
