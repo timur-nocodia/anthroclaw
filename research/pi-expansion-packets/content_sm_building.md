@@ -2,7 +2,7 @@
 
 Date: 2026-05-17
 
-Status: preflight automated evidence partially closed; manual evidence and post-expansion monitor pending.
+Status: safe dry-run evidence closed; allowlist confirmation and post-expansion monitor pending.
 
 Owner: operator
 Rollback path: set `runtime.headless.provider=claude-agent-sdk` or restore the pre-expansion `agent.yml` backup.
@@ -38,7 +38,10 @@ Agent source: `/Users/tyess/dev/anthroclaw-vibe-agents/agents`
 ## Manual Evidence
 
 - [ ] allowlisted peer/thread confirmation
-- [ ] tool-specific controlled fanout or scheduled-work evidence
+- [x] tool-specific controlled fanout or scheduled-work evidence
+  - Result: closed by deterministic safe dry-run.
+  - Command: `pnpm runtime:pi-content-sm-dry-run -- --json`
+  - Evidence: `send_message`, `send_media`, and `manage_cron` policy paths allowed under `chat_like_openclaw`; `send_message` and `send_media` executed only against a fake Telegram adapter; temp cron was bound to dispatch context, ignored model-supplied `deliver_to`, and was deleted before exit.
 
 ## Reproducible Audit Command
 
@@ -65,4 +68,4 @@ pnpm runtime:pi-expansion-packet -- \
 ## Notes
 
 - This packet is not approval for live group/channel expansion.
-- The remaining evidence is intentionally manual because this agent has group route and high-risk fanout tools.
+- The remaining allowlist evidence is intentionally manual because the actual group/thread identifiers stay out of redacted artifacts.
