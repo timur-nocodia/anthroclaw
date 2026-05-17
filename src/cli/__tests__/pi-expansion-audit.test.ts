@@ -81,6 +81,17 @@ cron:
       risk: 'critical',
       recommendedRing: 'ring4',
       routes: ['whatsapp:dm'],
+      evidencePlan: expect.arrayContaining([
+        {
+          check: 'public-profile policy canary',
+          mode: 'automated',
+          command: 'pnpm smoke:pi-public-escalation -- --json',
+        },
+        {
+          check: 'customer-facing dry run with no real customer delivery',
+          mode: 'manual',
+        },
+      ]),
     });
     expect(result.agents.find((agent) => agent.id === 'leads_agent')?.blockers).toEqual(expect.arrayContaining([
       'public safety profile',
@@ -117,6 +128,13 @@ mcp_tools:
     const body = JSON.parse(stdout.text());
     expect(body.status).toBe('attention');
     expect(body.riskBudgetExceeded).toBe(true);
+    expect(body.agents[0].evidencePlan).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        check: 'smoke:pi-public-escalation',
+        mode: 'automated',
+        command: 'pnpm smoke:pi-public-escalation -- --json',
+      }),
+    ]));
   });
 
   it('reports skipped directories and fails when expected live agents are absent', async () => {

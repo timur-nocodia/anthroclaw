@@ -707,7 +707,8 @@ The audit is intentionally read-only. It loads `agent.yml` files through the sam
 - enabled cron jobs;
 - notification route/subscription counts;
 - learning mode;
-- recommended rollout ring and required checks.
+- recommended rollout ring;
+- required checks and an `evidencePlan` that maps automated checks to concrete `pnpm` commands while leaving operator-only checks marked as manual.
 
 Use `--max-risk <low|medium|high|critical>` when a release or operator checkpoint wants a failing gate. Example:
 
@@ -724,12 +725,14 @@ pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents
 Directories under `agents-dir` that do not contain `agent.yml` are reported as `skippedDirectories` rather than silently treated as audited agents.
 Duplicate agent ids across repeated `--agents-dir` roots are also reported as coverage errors; resolve the ambiguity before any live expansion turn.
 
-This audit does not replace live evidence. It decides how much evidence a candidate needs before the first live turn:
+This audit does not replace live evidence. It decides how much evidence a candidate needs before the first live turn and gives the operator a concrete evidence checklist:
 
 - `low`: Ring 2-style exact-answer Web/owned-peer check plus monitor;
 - `medium`: Ring 3-style product-surface check, usually plugin or learning evidence;
 - `high`: Ring 4-style controlled side-effect canary;
 - `critical`: named owner, rollback path, no real customer delivery until a simulated customer path passes.
+
+Automated evidence commands currently include monitor, public escalation, plugin-context, and external-MCP canaries. Items such as customer-facing dry runs, allowlisted peer/thread confirmation, and tool-specific fanout evidence remain manual by design.
 
 Live-only agents must be audited from their live `agents-dir`; pass every relevant live root to the audit command. Do not commit their private configs or credential files to make them visible to the tracked repo.
 
