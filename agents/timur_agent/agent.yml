@@ -10,7 +10,6 @@ safety_profile: private
 
 routes:
   - channel: telegram
-    account: timur_agent_lab
     scope: dm
     peers: [ "48705953" ]
 
@@ -90,11 +89,11 @@ learning:
       notify: true
       routes:
         - channel: telegram
-          account_id: timur_agent_lab
+          account_id: default
           peer_id: "48705953"
       senders:
         telegram:
-          timur_agent_lab: [ "48705953" ]
+          default: [ "48705953" ]
       notify_admin_for:
         - learning_memory
         - learning_skill
@@ -120,7 +119,7 @@ notifications:
   routes:
     operator:
       channel: telegram
-      account_id: timur_agent_lab
+      account_id: default
       peer_id: "48705953"
   subscriptions:
     - event: agent_error
@@ -215,6 +214,6 @@ cron:
     prompt: "Run a silent health check. If all is fine, respond exactly [SILENT]. If something is wrong, describe the problem briefly."
     deliver_to:
       channel: telegram
-      account_id: timur_agent_lab
+      account_id: default
       peer_id: "48705953"
     enabled: false
