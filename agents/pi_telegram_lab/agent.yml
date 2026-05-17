@@ -5,6 +5,7 @@ safety_profile: chat_like_openclaw
 
 routes:
   - channel: telegram
+    account: pi_telegram_lab_archive
     scope: dm
     peers: [ "48705953" ]
 

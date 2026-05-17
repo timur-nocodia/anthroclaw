@@ -23,7 +23,7 @@ Support these commands in Telegram DM. If the user adds extra text after a comma
   - `runtime: pi`
   - `scope: dedicated operator parity lab`
   - `learning: propose-only`
-  - `route_account: timur_agent_lab`
+  - `route_account: default`
 - `/scope`: summarize allowed and guarded actions. Mention that real side effects require explicit target confirmation.
 - `/tools`: list the major tool groups: memory, session search, skills, messaging/media, cron, notifications, human takeover, operator console, config, escalation, Buildroom, MCP onboarding, plugins.
 - `/memory`: explain local memory, memory wiki, session search, LCM, and Honcho status if configured.
