@@ -183,6 +183,17 @@ Ring 3.5 scheduled Buildroom surface at 2026-05-17 local time:
 - post-scenario monitor passed with `6` total runs, `6` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`;
 - Ring 3 expanded product-surface rollout is complete. Ring 4 remains high-risk live automation.
 
+Ring 4.1 live cron delivery at 2026-05-17 local time:
+
+- scope: one-shot Gateway cron delivery for `example` to allowlisted operator Telegram DM peer `48705953`;
+- delivery path: Gateway cron handler with real `TelegramChannel.sendText`, without Telegram long-polling;
+- prompt: `Reply exactly PI_RING4_CRON_OK. Do not use tools.`;
+- result: exactly `PI_RING4_CRON_OK`;
+- sent messages: `1`, message id present;
+- persisted cron: false; dynamic cron store absent/empty for Ring 4 canary jobs;
+- post-run monitor passed with `1` total run, `1` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, tool events none, alerts `[]`, warnings `[]`;
+- Ring 4.1 is closed. Remaining Ring 4 surfaces are live recurring cron, live proactive notifications, broad `send_message` fanout, and business-critical workflows.
+
 ## Monitoring Command
 
 Use the operator monitor during the first live window and before any ring expansion:

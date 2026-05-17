@@ -387,6 +387,58 @@ Post-scenario monitor passed:
 
 Ring 3.5 is closed. Ring 3 expanded product-surface rollout is complete. The next ring is Ring 4 high-risk automation and must require explicit owner presence before live cron/proactive notification or broad fanout.
 
+## Ring 4.1 Live Cron Delivery Scope
+
+The first Ring 4 high-risk automation surface is a single live cron-delivery path to the operator-owned Telegram peer. It exercises Gateway cron delivery with Pi and real channel send, but avoids persistent scheduling and fanout.
+
+Allowed:
+
+- agent: `example`;
+- channel: Telegram DM;
+- target: allowlisted operator peer `48705953`;
+- execution path: Gateway cron delivery handler with a one-shot job object;
+- prompt: exact-answer no-tools prompt;
+- real `TelegramChannel.sendText`;
+- post-run monitor;
+- dynamic cron store check.
+
+Excluded:
+
+- persisted dynamic cron creation;
+- recurring cron;
+- broad `send_message` fanout;
+- non-operator peers;
+- production group channels;
+- Buildroom production rooms/worktrees;
+- external MCP calls;
+- private transcript/provider-log capture in docs.
+
+## Ring 4.1 Live Cron Delivery Evidence
+
+Ring 4.1 live cron delivery was executed on 2026-05-17:
+
+- agent: `example`;
+- channel: Telegram DM;
+- target: allowlisted operator peer `48705953`;
+- delivery path: Gateway cron handler with real `TelegramChannel.sendText`, without Telegram long-polling;
+- persisted cron: false;
+- prompt: `Reply exactly PI_RING4_CRON_OK. Do not use tools.`;
+- result: exactly `PI_RING4_CRON_OK`;
+- sent messages: `1`;
+- message id: present;
+- dynamic cron store: absent/empty for Ring 4 canary jobs.
+
+Post-run monitor passed:
+
+- runs: `1` total, `1` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- diagnostic event types: `run.completed`, `run.sdk_started`;
+- auth/model alerts: `0`;
+- alerts: none;
+- warnings: none;
+- tool events: none.
+
+Ring 4.1 is closed. Remaining Ring 4 surfaces are live recurring cron, live proactive notifications, broad `send_message` fanout, and business-critical workflows; do not combine them in one checkpoint.
+
 ## Stop Conditions
 
 Stop rollout and rollback or hold the current ring when any of these occur:
