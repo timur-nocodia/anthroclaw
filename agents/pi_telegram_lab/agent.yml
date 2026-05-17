@@ -19,6 +19,9 @@ mcp_tools:
   - memory_write
   - list_skills
 
+mcp_onboarding:
+  enabled: false
+
 queue_mode: steer
 
 iteration_budget:

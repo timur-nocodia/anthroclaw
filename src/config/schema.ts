@@ -81,6 +81,12 @@ const AgentRuntimeConfigSchema = z.object({
   }),
 }).optional();
 
+const McpOnboardingConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+}).default({
+  enabled: true,
+});
+
 // ─── GlobalConfigSchema ────────────────────────────────────────────
 
 export const GlobalConfigSchema = z.object({
@@ -538,6 +544,7 @@ export const AgentYmlSchema = z.object({
   pairing: PairingSchema.optional(),
   allowlist: z.record(z.string(), z.array(z.string())).optional(),
   mcp_tools: z.array(z.string().min(1)).optional(),
+  mcp_onboarding: McpOnboardingConfigSchema,
   external_mcp_servers: z.record(z.string(), ExternalMcpServerSchema).optional(),
   memory_extraction: MemoryExtractionSchema,
   learning: LearningConfigSchema,
