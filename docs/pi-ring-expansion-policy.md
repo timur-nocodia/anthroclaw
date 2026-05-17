@@ -439,6 +439,61 @@ Post-run monitor passed:
 
 Ring 4.1 is closed. Remaining Ring 4 surfaces are live recurring cron, live proactive notifications, broad `send_message` fanout, and business-critical workflows; do not combine them in one checkpoint.
 
+## Ring 4.2 Live Proactive Notification Scope
+
+The second Ring 4 high-risk automation surface is a single live proactive notification to the operator-owned Telegram peer. It exercises the AnthroClaw notification emitter, formatter, route resolution, and real channel send path without creating a Pi agent run or enabling recurring delivery.
+
+Allowed:
+
+- agent: `example`;
+- event: `escalation_needed`;
+- route: temporary in-process notification subscription;
+- channel: Telegram DM;
+- target: allowlisted operator peer `48705953`;
+- real `TelegramChannel.sendText`;
+- marker check in formatted notification text;
+- post-run monitor;
+- dynamic cron store check.
+
+Excluded:
+
+- persisted notification config changes;
+- notification scheduler registration;
+- live recurring notifications;
+- broad notification fanout;
+- non-operator peers;
+- production group channels;
+- agent query/model turn;
+- cron delivery;
+- `send_message` fanout.
+
+## Ring 4.2 Live Proactive Notification Evidence
+
+Ring 4.2 live proactive notification was executed on 2026-05-17:
+
+- agent: `example`;
+- event: `escalation_needed`;
+- channel: Telegram DM;
+- target: allowlisted operator peer `48705953`;
+- delivery path: `NotificationsEmitter.emit` -> Telegram formatter -> real `TelegramChannel.sendText`, without Telegram long-polling;
+- subscription: temporary in-process route, not persisted to agent config;
+- marker: `PI_RING4_PROACTIVE_NOTIFICATION_OK`;
+- marker present: true;
+- sent messages: `1`;
+- message id: present;
+- parse mode: `markdown`;
+- dynamic cron store: absent/empty for Ring 4 canary jobs.
+
+Post-run monitor passed:
+
+- runs: `1` total, `1` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- diagnostic event types: `run.completed`, `run.sdk_started`;
+- auth/model alerts: `0`;
+- alerts: none;
+- warnings: none;
+
+Ring 4.2 is closed. Remaining Ring 4 surfaces are live recurring cron, broad `send_message` fanout, and business-critical workflows; do not combine them in one checkpoint.
+
 ## Stop Conditions
 
 Stop rollout and rollback or hold the current ring when any of these occur:

@@ -194,6 +194,19 @@ Ring 4.1 live cron delivery at 2026-05-17 local time:
 - post-run monitor passed with `1` total run, `1` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, tool events none, alerts `[]`, warnings `[]`;
 - Ring 4.1 is closed. Remaining Ring 4 surfaces are live recurring cron, live proactive notifications, broad `send_message` fanout, and business-critical workflows.
 
+Ring 4.2 live proactive notification at 2026-05-17 local time:
+
+- scope: one-shot `escalation_needed` notification for `example` to allowlisted operator Telegram DM peer `48705953`;
+- delivery path: `NotificationsEmitter.emit` -> Telegram formatter -> real `TelegramChannel.sendText`, without Telegram long-polling;
+- subscription: temporary in-process route, not persisted to agent config;
+- marker: `PI_RING4_PROACTIVE_NOTIFICATION_OK`;
+- result: marker present in formatted Telegram notification;
+- sent messages: `1`, message id present, parse mode `markdown`;
+- no agent query/model turn was created for this notification-only path;
+- dynamic cron store absent/empty for Ring 4 canary jobs;
+- post-run monitor passed with `1` total run, `1` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`;
+- Ring 4.2 is closed. Remaining Ring 4 surfaces are live recurring cron, broad `send_message` fanout, and business-critical workflows.
+
 ## Monitoring Command
 
 Use the operator monitor during the first live window and before any ring expansion:
