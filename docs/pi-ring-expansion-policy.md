@@ -734,6 +734,19 @@ This audit does not replace live evidence. It decides how much evidence a candid
 
 Automated evidence commands currently include monitor, public escalation, plugin-context, and external-MCP canaries. Items such as customer-facing dry runs, allowlisted peer/thread confirmation, and tool-specific fanout evidence remain manual by design.
 
+After audit coverage is closed for a specific candidate, create a redacted expansion packet:
+
+```bash
+pnpm runtime:pi-expansion-packet -- \
+  --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents \
+  --agents-dir /path/to/live-only/agents \
+  --agent leads_agent \
+  --owner <operator-or-team> \
+  --rollback <rollback-runbook-or-command>
+```
+
+The packet is a review artifact, not a live action. It includes the audited source root, risk/ring, blockers, automated commands from `evidencePlan`, manual evidence checkboxes, owner, rollback path, and the exact audit command needed to reproduce the coverage decision. Packets without owner or rollback are marked `draft`.
+
 Live-only agents must be audited from their live `agents-dir`; pass every relevant live root to the audit command. Do not commit their private configs or credential files to make them visible to the tracked repo.
 
 ## Stop Conditions
