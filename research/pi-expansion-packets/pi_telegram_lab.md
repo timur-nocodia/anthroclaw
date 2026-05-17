@@ -28,6 +28,11 @@ Agent source: `agents/pi_telegram_lab`
   - Result: passed.
   - Agents included: `example`, `pi_telegram_lab`.
   - Purpose: prove the new Telegram route does not break tracked route table construction.
+- [x] direct Gateway/Pi lab smoke: `pnpm runtime:pi-telegram-lab-smoke -- --json --allow-skip`
+  - Purpose: run the tracked `pi_telegram_lab` through Gateway dispatch with a fake Telegram DM channel before or alongside a manual Telegram turn.
+  - Result: passed.
+  - Response: `PI_TELEGRAM_LAB_OK`.
+  - Approvals: `0`.
 - [x] runtime monitor before turn: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
   - Result: passed from live checkout `/Users/tyess/dev/openclaw-agents-sdk-clone`.
   - Window: 60 minutes, 0 failed/interrupted/stale, auth/model alerts 0, alerts `[]`, warnings `[]`.
