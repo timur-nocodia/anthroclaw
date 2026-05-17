@@ -2,7 +2,7 @@
 
 Date: 2026-05-17
 
-Status: tracked config points at the connected default Telegram bot; first live `timur_agent` turn pending.
+Status: tracked config points at the connected default Telegram bot; live operator command suite passed; controlled side-effect checks pending.
 Owner: operator
 Rollback path: move `agents/timur_agent` off account `default`, restore `pi_telegram_lab` to account `default`, or set `config.yml` `runtime.headless.provider=claude-agent-sdk`.
 Risk: high
@@ -51,7 +51,8 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [x] expansion audit
   - Result: passed with `status=attention`, `coverageGap=false`, `risk=high`, `recommendedRing=ring4`.
   - Command: `pnpm runtime:pi-expansion-audit -- --agents-dir agents --agent timur_agent --expect-agent timur_agent --json`
-- [ ] runtime monitor before and after expansion: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
+- [x] runtime monitor after expansion: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
+  - Result: passed after the `timur_agent` default-route switch and operator-readiness smoke, with failed/interrupted/stale runs `0`, auth/model alerts `0`, alerts `[]`, and warnings `[]`.
 - [x] smoke:pi-plugins-context: `pnpm smoke:pi-plugins-context -- --json`
   - Result: passed.
   - Covered: plugin lifecycle, plugin tools/policy, context engine assemble/compress, plugin subagent runner, LCM, operator-console, and file-transfer.
@@ -67,9 +68,12 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [ ] learning review remains propose-only or has operator approval evidence
 - [ ] tool-specific controlled fanout or scheduled-work evidence
 - [x] live Telegram account switch to `default` is approved by operator
-- [ ] first controlled live text turn returns expected behavior
-- [ ] `/smoke` returns exactly `TIMUR_AGENT_LAB_OK`
-- [ ] `/status`, `/scope`, `/tools`, `/memory`, `/plugins`, `/cron`, `/mcp`, and `/handoff` are exercised by the operator
+- [x] first controlled live text turn returns expected behavior
+  - Evidence: operator sent `/smoke` in Telegram DM at 2026-05-17 14:41 Asia/Almaty; the bot replied exactly `TIMUR_AGENT_LAB_OK`.
+- [x] `/smoke` returns exactly `TIMUR_AGENT_LAB_OK`
+- [x] `/status`, `/tools`, `/memory`, `/plugins`, and `/handoff` are exercised by the operator
+  - Evidence: operator sent these commands in Telegram DM at 2026-05-17 14:41 Asia/Almaty. The bot reported `timur_agent: ok`, `runtime: pi`, `scope: dedicated operator parity lab`, `learning: propose-only`, `route_account: default`, listed enabled tool groups, memory/LCM/Honcho state, plugin state, and the repeatable smoke command.
+- [ ] `/scope`, `/learning`, `/cron`, and `/mcp` are exercised by the operator
 
 ## Audit Command
 ```bash
