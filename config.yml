@@ -2,6 +2,11 @@ telegram:
   accounts:
     default:
       token: ${TELEGRAM_BOT_TOKEN}
+    # Optional dedicated bot account for agents/timur_agent.
+    # Uncomment only when TELEGRAM_TIMUR_AGENT_BOT_TOKEN is set; otherwise keep
+    # the account absent so the lab agent cannot steal default Telegram traffic.
+    # timur_agent_lab:
+    #   token: ${TELEGRAM_TIMUR_AGENT_BOT_TOKEN}
 
 # whatsapp:
 #   accounts:
