@@ -10,10 +10,13 @@ import {
 
 describe('Pi expansion audit CLI', () => {
   let root: string | undefined;
+  let secondRoot: string | undefined;
 
   afterEach(() => {
     if (root) rmSync(root, { recursive: true, force: true });
+    if (secondRoot) rmSync(secondRoot, { recursive: true, force: true });
     root = undefined;
+    secondRoot = undefined;
   });
 
   it('classifies low-risk and high-risk production expansion candidates', async () => {
@@ -149,10 +152,81 @@ safety_profile: chat_like_openclaw
     });
   });
 
+  it('audits multiple agent roots and satisfies expected agents across roots', async () => {
+    root = mkdtempSync(join(tmpdir(), 'pi-expansion-audit-a-'));
+    secondRoot = mkdtempSync(join(tmpdir(), 'pi-expansion-audit-b-'));
+    writeAgent(root, 'example', `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["48705953"]
+safety_profile: chat_like_openclaw
+`);
+    writeAgent(secondRoot, 'leads_agent', `
+routes:
+  - channel: whatsapp
+    scope: dm
+safety_profile: public
+mcp_tools:
+  - escalate
+`);
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiExpansionAuditCli([
+      '--agents-dir', root,
+      '--agents-dir', secondRoot,
+      '--expect-agent', 'example',
+      '--expect-agent', 'leads_agent',
+      '--json',
+    ], { stdout, stderr });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    const body = JSON.parse(stdout.text());
+    expect(body).toMatchObject({
+      coverageGap: false,
+      expectedAgentsMissing: [],
+      agentsDirs: [root, secondRoot],
+      summary: {
+        totalAgents: 2,
+      },
+    });
+    expect(body.agents.map((agent: { id: string; agentsDir: string }) => [agent.id, agent.agentsDir])).toEqual([
+      ['leads_agent', secondRoot],
+      ['example', root],
+    ]);
+  });
+
+  it('reports duplicate agent ids across multiple roots as a coverage error', async () => {
+    root = mkdtempSync(join(tmpdir(), 'pi-expansion-audit-a-'));
+    secondRoot = mkdtempSync(join(tmpdir(), 'pi-expansion-audit-b-'));
+    for (const dir of [root, secondRoot]) {
+      writeAgent(dir, 'example', `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["48705953"]
+safety_profile: chat_like_openclaw
+`);
+    }
+
+    const result = auditPiExpansionReadiness({ agentsDir: root, agentsDirs: [root, secondRoot] });
+
+    expect(result.coverageGap).toBe(true);
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agentId: 'example',
+        error: expect.stringContaining('duplicate agent id'),
+      }),
+    ]));
+  });
+
   it('parses flags narrowly', () => {
     expect(parsePiExpansionAuditArgs([
       '--',
       '--agents-dir', '/tmp/agents',
+      '--agents-dir', '/tmp/live-agents',
       '--agent', 'example',
       '--expect-agent', 'example',
       '--expect-agent', 'leads_agent',
@@ -160,6 +234,7 @@ safety_profile: chat_like_openclaw
       '--json',
     ])).toMatchObject({
       agentsDir: '/tmp/agents',
+      agentsDirs: ['/tmp/agents', '/tmp/live-agents'],
       agent: 'example',
       expectAgents: ['example', 'leads_agent'],
       maxRisk: 'high',

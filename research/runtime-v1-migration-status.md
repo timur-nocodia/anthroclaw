@@ -93,9 +93,10 @@ What is done:
 - Ring 4.5 post-fix short monitor passed with one succeeded run, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, `escalate` started/completed once, zero failed tool events, zero auth/model alerts, no alerts, and no warnings.
 - Post-Ring-4.5 durable guard exists: `pnpm smoke:pi-public-escalation -- --json` validates `MCP_META.escalate`, public-profile prefixed MCP permission, denial of unknown plugin MCP tools, and isolated JSONL escalation logging for `leads_agent`.
 - Durable **Pi Runtime v1 decision** workflow run `25981278010` on `main` commit `1825b973110ba6f91bcc5fc6e3b9293e409c2f1d` passed with the expanded 11-scenario canary map, including `pi.public-escalation`, and uploaded artifact `7039268917`.
-- Post-rollout expansion audit CLI exists as `pnpm runtime:pi-expansion-audit`. It reads an `agents-dir`, classifies per-agent expansion risk, recommends Ring 2/3/4 evidence, and reports only redacted structural config facts.
+- Post-rollout expansion audit CLI exists as `pnpm runtime:pi-expansion-audit`. It reads one or more `agents-dir` roots, classifies per-agent expansion risk, recommends Ring 2/3/4 evidence, and reports only redacted structural config facts.
 - Live checkout audit at `/Users/tyess/dev/openclaw-agents-sdk-clone/agents` currently sees one tracked `agent.yml` candidate, `example`; it classifies as high/ring4 because its tracked config includes high-risk tools (`manage_cron`, `manage_skills`, `send_message`) plus `escalate`. The `amina` directory in that checkout contains credential material but no `agent.yml`, so it is reported as `skippedDirectories`.
 - Named live-only coverage check works: `pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --expect-agent leads_agent --json` exits non-zero with `coverageGap=true` and `expectedAgentsMissing=["leads_agent"]`, proving this tracked agents dir does not cover that production config.
+- Repeated `--agents-dir` values are supported for split tracked/live-only config roots. Expected agents are checked across the combined inventory, each audited agent reports its source `agentsDir`, and duplicate agent ids across roots fail as `coverageGap=true`.
 
 What is not done:
 
@@ -139,8 +140,8 @@ No Runtime v1 decision or initial rollout blockers remain.
 
 1. Keep `runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert` as the operator health check during normal operation.
 2. Treat any new production-agent/channel expansion as a new rollout policy section with its own owner and rollback path.
-3. Run `runtime:pi-expansion-audit` against the exact live `agents-dir` before any future production-agent/channel expansion.
-4. Review live-only production agent configs separately from tracked repo configs before broadening customer-facing coverage; if they live outside `/Users/tyess/dev/openclaw-agents-sdk-clone/agents`, pass that exact directory to the audit command.
+3. Run `runtime:pi-expansion-audit` against every exact live `agents-dir` root before any future production-agent/channel expansion.
+4. Review live-only production agent configs separately from tracked repo configs before broadening customer-facing coverage; if they live outside `/Users/tyess/dev/openclaw-agents-sdk-clone/agents`, pass each exact directory to the audit command and require `--expect-agent` coverage for named candidates.
 5. Keep the config-only rollback path ready by setting `runtime.headless.provider=claude-agent-sdk` if a future stop condition appears.
 
 ## Default Runtime Gate

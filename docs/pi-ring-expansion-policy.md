@@ -688,6 +688,15 @@ Future production expansion should start with a config-only audit before any liv
 pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --json
 ```
 
+`--agents-dir` is repeatable when production configs are split between the tracked checkout and live-only roots:
+
+```bash
+pnpm runtime:pi-expansion-audit -- \
+  --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents \
+  --agents-dir /path/to/live-only/agents \
+  --json
+```
+
 The audit is intentionally read-only. It loads `agent.yml` files through the same schema parser used by Gateway and emits redacted structural risk only:
 
 - safety profile and per-agent runtime override;
@@ -706,13 +715,14 @@ Use `--max-risk <low|medium|high|critical>` when a release or operator checkpoin
 pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --max-risk medium --json
 ```
 
-Use `--expect-agent <id>` when the checkpoint is about a specific live-only production agent. The command exits non-zero with `coverageGap=true` when that agent has no `agent.yml` in the audited directory:
+Use `--expect-agent <id>` when the checkpoint is about a specific live-only production agent. Expected agents are checked against the combined inventory from all audited roots. The command exits non-zero with `coverageGap=true` when that agent has no `agent.yml` in any audited directory:
 
 ```bash
 pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --expect-agent leads_agent --json
 ```
 
 Directories under `agents-dir` that do not contain `agent.yml` are reported as `skippedDirectories` rather than silently treated as audited agents.
+Duplicate agent ids across repeated `--agents-dir` roots are also reported as coverage errors; resolve the ambiguity before any live expansion turn.
 
 This audit does not replace live evidence. It decides how much evidence a candidate needs before the first live turn:
 
@@ -721,7 +731,7 @@ This audit does not replace live evidence. It decides how much evidence a candid
 - `high`: Ring 4-style controlled side-effect canary;
 - `critical`: named owner, rollback path, no real customer delivery until a simulated customer path passes.
 
-Live-only agents must be audited from their live `agents-dir`; do not commit their private configs or credential files to make them visible to the tracked repo.
+Live-only agents must be audited from their live `agents-dir`; pass every relevant live root to the audit command. Do not commit their private configs or credential files to make them visible to the tracked repo.
 
 ## Stop Conditions
 
