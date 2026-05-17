@@ -252,7 +252,10 @@ function classifyAgent(agentId: string, agentsDir: string, yml: AgentYml): Agent
   ]);
   const notes: string[] = [];
   const routes = yml.routes.map((route) => `${route.channel}:${route.scope}`);
-  const tools = yml.mcp_tools ?? [];
+  const tools = [
+    ...(yml.mcp_tools ?? []),
+    ...(yml.mcp_onboarding.enabled ? ['connect_mcp'] : []),
+  ];
   const plugins = Object.entries(yml.plugins ?? {})
     .filter(([, config]) => config.enabled !== false)
     .map(([name]) => name)

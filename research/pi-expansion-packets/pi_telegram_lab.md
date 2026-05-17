@@ -16,6 +16,7 @@ Agent source: `agents/pi_telegram_lab`
 - Route is bound to the allowlisted operator peer.
 - No group route.
 - No `send_message`, `send_media`, `manage_cron`, `manage_skills`, `escalate`, plugins, external MCP, notifications, or cron jobs.
+- MCP onboarding is disabled; `connect_mcp` is not part of the runtime tool surface.
 - Learning is propose-only.
 
 ## Automated Evidence

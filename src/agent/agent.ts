@@ -550,23 +550,20 @@ export class Agent {
       }
     }
 
-    // Always-on built-in: `connect_mcp` (no opt-in via `mcp_tools`). The tool
-    // is harmless without an active pending row and the chat-side guards
-    // (DM-only, agent context) live in the onboarding facade. The handler
-    // resolves the facade lazily so test/headless harnesses that don't wire
-    // `getMcpOnboarding` get a clean "facade unavailable" error rather than
-    // a load-time crash. Per-dispatch context (agentSessionKey, chatType)
-    // is injected by the Gateway via the same substitution mechanism that
-    // wires `manage_cron`/`send_message`.
-    tools.push(
-      createConnectMcpTool(id, () => {
-        const facade = getMcpOnboarding?.() ?? null;
-        if (!facade) {
-          throw new Error('mcp_onboarding_facade_unavailable');
-        }
-        return facade;
-      }),
-    );
+    // Built-in: `connect_mcp` is enabled by default without an `mcp_tools`
+    // opt-in so the MCP onboarding flow is reachable for ordinary agents.
+    // Narrow lab agents can opt out with `mcp_onboarding.enabled: false`.
+    if (config.mcp_onboarding.enabled) {
+      tools.push(
+        createConnectMcpTool(id, () => {
+          const facade = getMcpOnboarding?.() ?? null;
+          if (!facade) {
+            throw new Error('mcp_onboarding_facade_unavailable');
+          }
+          return facade;
+        }),
+      );
+    }
 
     // The tools are already created via SDK's tool() and have the right shape
     // for createSdkMcpServer (name, description, inputSchema as Zod, handler)

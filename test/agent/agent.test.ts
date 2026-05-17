@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { z } from 'zod';
@@ -106,11 +106,19 @@ describe('Agent', () => {
     writeMinimalAgentYml(agentDir);
     const agent = await Agent.load(agentDir, dataDir);
 
-    // `connect_mcp` is registered unconditionally for every agent so the
-    // MCP onboarding flow is reachable without per-agent opt-in. Other
-    // built-ins still require an `mcp_tools` entry.
+    // `connect_mcp` is registered by default for every agent so the MCP
+    // onboarding flow is reachable without per-agent opt-in. Other built-ins
+    // still require an `mcp_tools` entry.
     const names = agent.tools.map((t) => t.name);
     expect(names).toEqual(['connect_mcp']);
+  });
+
+  it('can disable MCP onboarding for narrow lab agents', async () => {
+    writeMinimalAgentYml(agentDir);
+    appendFileSync(join(agentDir, 'agent.yml'), 'mcp_onboarding:\n  enabled: false\n');
+    const agent = await Agent.load(agentDir, dataDir);
+
+    expect(agent.tools.map((t) => t.name)).toEqual([]);
   });
 
   it('binds plugin tools with dispatch session key when available', async () => {
