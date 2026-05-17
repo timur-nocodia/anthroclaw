@@ -16,6 +16,8 @@ data/
 agents/*
 !agents/example/
 !agents/example/**
+!agents/pi_telegram_lab/
+!agents/pi_telegram_lab/**
 
 # Reference projects (local only)
 reference-projects/
@@ -34,6 +36,7 @@ docs/*
 .worktrees/
 
 CLAUDE.md
+!agents/pi_telegram_lab/CLAUDE.md
 AGENTS.md
 
 # Local-only drafts — handoffs, presentations, briefs, longreads-in-progress
