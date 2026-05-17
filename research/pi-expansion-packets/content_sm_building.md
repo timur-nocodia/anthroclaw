@@ -2,7 +2,7 @@
 
 Date: 2026-05-17
 
-Status: safe dry-run evidence closed; allowlist confirmation and post-expansion monitor pending.
+Status: pre-live-turn gate passed; controlled live group turn and post-expansion monitor pending.
 
 Owner: operator
 Rollback path: set `runtime.headless.provider=claude-agent-sdk` or restore the pre-expansion `agent.yml` backup.
@@ -33,11 +33,17 @@ Agent source: `/Users/tyess/dev/anthroclaw-vibe-agents/agents`
   - Result: passed from live checkout `/Users/tyess/dev/openclaw-agents-sdk-clone`.
   - Window: 60 minutes, 0 failed/interrupted/stale, auth/model alerts 0, alerts `[]`, warnings `[]`.
   - Note: run count was 0, so this is a no-alert baseline only.
+- [x] pre-live-turn gate: `pnpm runtime:pi-content-sm-preflight -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agents-dir /Users/tyess/dev/anthroclaw-vibe-agents/agents --data-dir /Users/tyess/dev/openclaw-agents-sdk-clone/data --confirm-peer <operator-confirmed-peer> --confirm-topic <operator-confirmed-topic> --json`
+  - Purpose: combine multi-root audit, explicit operator peer/topic confirmation, safe fake-delivery dry-run, and live runtime monitor before any controlled live group turn.
+  - Result: passed.
+  - Checks: expansion audit passed with `coverageGap=false`, `risk=high`, `recommendedRing=ring4`; route confirmation passed for the mention-only `content_sm` Telegram group route and configured topics; safe dry-run passed with fake delivery only and temp cron cleanup; runtime monitor passed with alerts `[]` and warnings `[]`.
 - [ ] runtime monitor after expansion: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
 
 ## Manual Evidence
 
-- [ ] allowlisted peer/thread confirmation
+- [x] allowlisted peer/thread confirmation
+  - Evidence: pre-live-turn gate required explicit `--confirm-peer` plus repeated `--confirm-topic`; the configured mention-only Telegram group route matched those operator-supplied values.
+- [ ] controlled live group turn approved by operator
 - [x] tool-specific controlled fanout or scheduled-work evidence
   - Result: closed by deterministic safe dry-run.
   - Command: `pnpm runtime:pi-content-sm-dry-run -- --json`
