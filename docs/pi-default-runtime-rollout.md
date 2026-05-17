@@ -5,6 +5,7 @@ Date: 2026-05-17
 This document records the first default-runtime flip from `claude-agent-sdk` to Pi. It is intentionally small: the tracked global `config.yml` selects Pi, while agent-specific runtime overrides remain untouched.
 
 Ring expansion after this default flip is controlled by `docs/pi-ring-expansion-policy.md`.
+Post-rollout expansion audit is available as `pnpm runtime:pi-expansion-audit -- --agents-dir <live-agents-dir> --json`.
 
 ## Evidence
 
@@ -242,6 +243,8 @@ Ring 4.5 business-critical leads escalation workflow at 2026-05-17 local time:
 - rollback: canary restored the escalation log to its previous state after verification;
 - post-fix short monitor passed with `1` total run, `1` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, tool events `escalate` started/completed once, auth/model alerts `0`, alerts `[]`, warnings `[]`;
 - Ring 4.5 is closed. Ring 4 high-risk rollout is complete.
+- Post-Ring-4.5 durable **Pi Runtime v1 decision** run `25981278010` passed on `main` commit `1825b973110ba6f91bcc5fc6e3b9293e409c2f1d` with the expanded 11-scenario map, including `pi.public-escalation`.
+- Use `pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --json` before broadening to any further production agent/channel surface.
 
 ## Monitoring Command
 

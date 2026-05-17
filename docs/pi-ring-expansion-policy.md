@@ -680,6 +680,41 @@ Post-fix short monitor passed:
 
 Ring 4.5 is closed. Ring 4 high-risk rollout is complete; future expansion should start a new policy section rather than appending more surfaces to this rollout.
 
+## Post-Rollout Expansion Audit
+
+Future production expansion should start with a config-only audit before any live turn:
+
+```bash
+pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --json
+```
+
+The audit is intentionally read-only. It loads `agent.yml` files through the same schema parser used by Gateway and emits redacted structural risk only:
+
+- safety profile and per-agent runtime override;
+- channel routes and whether peers are explicit;
+- MCP tool names;
+- plugin names;
+- external MCP server names;
+- enabled cron jobs;
+- notification route/subscription counts;
+- learning mode;
+- recommended rollout ring and required checks.
+
+Use `--max-risk <low|medium|high|critical>` when a release or operator checkpoint wants a failing gate. Example:
+
+```bash
+pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --max-risk medium --json
+```
+
+This audit does not replace live evidence. It decides how much evidence a candidate needs before the first live turn:
+
+- `low`: Ring 2-style exact-answer Web/owned-peer check plus monitor;
+- `medium`: Ring 3-style product-surface check, usually plugin or learning evidence;
+- `high`: Ring 4-style controlled side-effect canary;
+- `critical`: named owner, rollback path, no real customer delivery until a simulated customer path passes.
+
+Live-only agents must be audited from their live `agents-dir`; do not commit their private configs or credential files to make them visible to the tracked repo.
+
 ## Stop Conditions
 
 Stop rollout and rollback or hold the current ring when any of these occur:
@@ -723,6 +758,7 @@ Before advancing:
 ```bash
 pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6
 pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert
+pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --json
 ```
 
 After the ring action:
