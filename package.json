@@ -29,6 +29,7 @@
     "runtime:pi-telegram-lab-smoke": "tsx src/cli/pi-telegram-lab-smoke.ts",
     "runtime:pi-telegram-lab-readiness": "tsx src/cli/pi-telegram-lab-readiness.ts",
     "runtime:pi-telegram-lab-live-check": "tsx src/cli/pi-telegram-lab-live-check.ts",
+    "runtime:pi-telegram-lab-post-turn": "tsx src/cli/pi-telegram-lab-post-turn.ts",
     "reset-password": "tsx src/cli/reset-password.ts",
     "learning": "tsx src/cli/learning.ts",
     "headless:runtime": "tsx src/cli/headless-runtime.ts",

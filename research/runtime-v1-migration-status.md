@@ -146,7 +146,7 @@ No Runtime v1 decision or initial rollout blockers remain.
 1. Keep `runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert` as the operator health check during normal operation.
 2. Treat any new production-agent/channel expansion as a new rollout policy section with its own owner and rollback path.
 3. Run `runtime:pi-expansion-audit` against every exact live `agents-dir` root before any future production-agent/channel expansion.
-4. From the live checkout, run `pnpm runtime:pi-telegram-lab-readiness -- --json --allow-skip`, send the controlled Telegram DM marker `PI_TELEGRAM_LAB_OK`, then run `pnpm runtime:pi-telegram-lab-live-check -- --json --fail-on-pending` plus post-turn monitor.
+4. From the live checkout, run `pnpm runtime:pi-telegram-lab-readiness -- --json --allow-skip`, send the controlled Telegram DM marker `PI_TELEGRAM_LAB_OK`, then run `pnpm runtime:pi-telegram-lab-post-turn -- --json --fail-on-pending`.
 5. Treat `leads_agent` packet evidence as closed; before any live customer-facing expansion, perform an explicit operator go/no-go and keep the rollback path ready.
 6. For `content_sm_building`, close manual allowlisted peer/thread confirmation and then run post-expansion monitor only after a controlled live turn.
 

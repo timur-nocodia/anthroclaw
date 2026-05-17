@@ -44,6 +44,8 @@ Agent source: `agents/pi_telegram_lab`
 - [ ] runtime monitor after controlled Telegram DM turn: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
 - [ ] live Telegram turn check after controlled DM: `pnpm runtime:pi-telegram-lab-live-check -- --json --fail-on-pending`
   - Purpose: prove the live metrics database contains a recent successful `source=channel`, `channel=telegram`, `peer_id=48705953` run for `pi_telegram_lab`.
+- [ ] post-turn gate after controlled DM: `pnpm runtime:pi-telegram-lab-post-turn -- --json --fail-on-pending`
+  - Purpose: combine the live Telegram turn check and runtime monitor into one final post-turn verdict.
 
 ## Manual Evidence
 
