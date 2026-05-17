@@ -18,6 +18,10 @@ describe('tracked agent routing', () => {
         id: 'pi_telegram_lab',
         config: loadAgentYml(resolve(agentsDir, 'pi_telegram_lab')),
       },
+      {
+        id: 'timur_agent',
+        config: loadAgentYml(resolve(agentsDir, 'timur_agent')),
+      },
     ]);
 
     expect(table.resolve('telegram', 'default', 'dm', '48705953')?.agentId).toBe(
@@ -25,6 +29,9 @@ describe('tracked agent routing', () => {
     );
     expect(table.resolve('telegram', 'default', 'dm', 'not-the-lab-peer')?.agentId).toBe(
       'example',
+    );
+    expect(table.resolve('telegram', 'timur_agent_lab', 'dm', '48705953')?.agentId).toBe(
+      'timur_agent',
     );
   });
 });
