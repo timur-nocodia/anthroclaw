@@ -195,17 +195,35 @@ display:
   taskNotifications: true
 
 quick_commands:
+  help:
+    command: "printf '%s\n' '/status - runtime and route status' '/scope - allowed and guarded actions' '/tools - enabled tool groups' '/memory - memory and session context' '/learning - propose-only learning state' '/plugins - plugin state' '/cron - cron state' '/mcp - MCP onboarding state' '/smoke - Pi runtime canary' '/handoff - operator handoff summary'"
+    timeout: 10
   status:
-    command: "echo 'timur_agent: ok'; echo 'runtime: pi'; echo 'scope: dedicated Telegram operator lab'; echo \"PWD: $(pwd)\""
+    command: "printf '%s\n' 'timur_agent: ok' 'runtime: pi' 'scope: dedicated operator parity lab' 'learning: propose-only' 'route_account: default'"
+    timeout: 10
+  scope:
+    command: "printf '%s\n' 'allowed: allowlisted Telegram DM with Timur' 'allowed: memory, session search, skills, messaging/media, cron, notifications, operator console, config, escalation, Buildroom, MCP onboarding, plugins' 'guarded: real side effects require explicit target confirmation' 'blocked: broad groups, customers, unknown peers, hardcoded secrets, fleet rollout claims'"
     timeout: 10
   tools:
-    command: "node -e \"const fs=require('fs'); const y=require('yaml'); const cfg=y.parse(fs.readFileSync('agents/timur_agent/agent.yml','utf8')); console.log((cfg.mcp_tools||[]).join('\\n'))\""
+    command: "printf '%s\n' 'memory' 'session search' 'skills' 'messaging/media' 'cron' 'notifications' 'human takeover' 'operator console' 'config' 'escalation' 'Buildroom' 'MCP onboarding' 'plugins'"
     timeout: 10
   memory:
-    command: "out=$(find agents/timur_agent -path '*memory*' -type f 2>/dev/null | head -20); [ -n \"$out\" ] && echo \"$out\" || echo 'No local memory files yet'"
+    command: "printf '%s\n' 'memory: local durable notes and search are enabled' 'memory wiki: structured durable pages are enabled' 'session search: previous turns can be searched' 'LCM: enabled for long-context carryover' 'Honcho: configured but disabled until local service is available'"
     timeout: 10
-  routes:
-    command: "node -e \"const fs=require('fs'); const y=require('yaml'); const cfg=y.parse(fs.readFileSync('agents/timur_agent/agent.yml','utf8')); console.log(JSON.stringify(cfg.routes,null,2))\""
+  learning:
+    command: "printf '%s\n' 'learning: propose-only' 'operator review required before applying learning actions'"
+    timeout: 10
+  plugins:
+    command: "printf '%s\n' 'LCM: enabled' 'operator-console: enabled' 'file-transfer: enabled for configured roots' 'Honcho: configured, disabled until local service is available'"
+    timeout: 10
+  cron:
+    command: "printf '%s\n' 'cron: timur-agent-lab-silent-check exists' 'cron: disabled by default' 'operator approval required before enabling live firing'"
+    timeout: 10
+  mcp:
+    command: "printf '%s\n' 'MCP onboarding: enabled' 'external MCP servers: managed flow only' 'secrets: never hardcoded in chat or config'"
+    timeout: 10
+  handoff:
+    command: "printf '%s\n' 'handoff: timur_agent operator parity lab' 'scope: allowlisted Telegram DM, route_account default' 'side effects: require explicit target confirmation' 'feature groups: memory, learning, plugins, cron, notifications, MCP onboarding, Buildroom' 'repeatable checks: pnpm runtime:pi-timur-agent-operator-smoke -- --json --allow-skip'"
     timeout: 10
 
 cron:

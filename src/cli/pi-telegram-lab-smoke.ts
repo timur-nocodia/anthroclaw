@@ -132,6 +132,8 @@ export async function runPiTelegramLabSmokeCli(
 
 export async function runPiTelegramLabSmoke(input: {
   GatewayCtor?: new () => Gateway;
+  agentId?: string;
+  accountId?: string;
   agentsDir: string;
   dataDir: string;
   pluginsDir: string;
@@ -145,6 +147,7 @@ export async function runPiTelegramLabSmoke(input: {
   expectIncludes?: string[];
   timeoutMs: number;
 }): Promise<PiTelegramLabSmokeResult> {
+  const agentId = input.agentId ?? AGENT_ID;
   const agentsDir = resolve(input.agentsDir);
   const dataDir = resolve(input.dataDir);
   const pluginsDir = resolve(input.pluginsDir);
@@ -173,12 +176,12 @@ export async function runPiTelegramLabSmoke(input: {
     gateway._setChannel(CHANNEL_ID, channel);
 
     const priorFailedRunIds = new Set(
-      gateway.listAgentRuns({ agentId: AGENT_ID, status: 'failed', limit: 1000 }).map((run) => run.runId),
+      gateway.listAgentRuns({ agentId, status: 'failed', limit: 1000 }).map((run) => run.runId),
     );
     await withTimeout(gateway.dispatch(labSmokeMessage(input)), input.timeoutMs);
 
     const failedRun = gateway
-      .listAgentRuns({ agentId: AGENT_ID, status: 'failed', limit: 10 })
+      .listAgentRuns({ agentId, status: 'failed', limit: 10 })
       .find((run) => !priorFailedRunIds.has(run.runId));
     if (failedRun?.error) {
       throw new Error(`Pi Telegram lab runtime failed: ${failedRun.error}`);
@@ -213,11 +216,11 @@ export async function runPiTelegramLabSmoke(input: {
       );
     }
 
-    const sessions = await gateway.listAgentSessions(AGENT_ID);
+    const sessions = await gateway.listAgentSessions(agentId);
     return {
       status: 'passed',
       runtime: 'pi',
-      agentId: AGENT_ID,
+      agentId,
       agentsDir,
       dataDir,
       pluginsDir,
@@ -333,13 +336,14 @@ function labSmokeConfig(input: { model?: string; authPath?: string; modelsPath?:
 }
 
 function labSmokeMessage(input: {
+  accountId?: string;
   peerId: string;
   senderId: string;
   prompt: string;
 }): InboundMessage {
   return {
     channel: CHANNEL_ID,
-    accountId: ACCOUNT_ID,
+    accountId: input.accountId ?? ACCOUNT_ID,
     chatType: 'dm',
     peerId: input.peerId,
     senderId: input.senderId,
