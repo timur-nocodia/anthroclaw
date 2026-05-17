@@ -6,7 +6,7 @@ This is the human-readable phase checklist for replacing the Claude Agent SDK-ce
 
 ## Current Snapshot
 
-Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. PR #110 merged the default-runtime flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`. Post-merge local verification and durable decision run `25971022679` are green. The live runtime checkout was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e`; post-pull `pi-auth`, `pi-all`, safe Web UI, first monitoring slice, and extended 60-minute monitoring snapshot are green. Ring 1 live channel turn returned exactly `PI_LIVE_CHANNEL_OK`; the immediate post-turn monitor and follow-up manual monitor are green. Ring 1 is closed by operator acceptance, with later monitor alerts treated as escalation triggers. Ring 2 is closed after green scope/preflight, Web UI plus allowlisted Telegram DM usage window, and post-window monitor. Ring 3 expanded product-surface rollout is complete. Ring 4.1 live cron delivery, Ring 4.2 live proactive notification, Ring 4.3 live recurring cron, Ring 4.4 controlled `send_message` fanout, and Ring 4.5 business-critical leads escalation are closed after controlled real operator-path deliveries/writes, no lingering persisted cron/config/escalation changes, and green post-fix monitor.
+Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. PR #110 merged the default-runtime flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`. Post-merge local verification and durable decision run `25971022679` are green. The live runtime checkout was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e`; post-pull `pi-auth`, `pi-all`, safe Web UI, first monitoring slice, and extended 60-minute monitoring snapshot are green. Ring 1 live channel turn returned exactly `PI_LIVE_CHANNEL_OK`; the immediate post-turn monitor and follow-up manual monitor are green. Ring 1 is closed by operator acceptance, with later monitor alerts treated as escalation triggers. Ring 2 is closed after green scope/preflight, Web UI plus allowlisted Telegram DM usage window, and post-window monitor. Ring 3 expanded product-surface rollout is complete. Ring 4.1 live cron delivery, Ring 4.2 live proactive notification, Ring 4.3 live recurring cron, Ring 4.4 controlled `send_message` fanout, and Ring 4.5 business-critical leads escalation are closed after controlled real operator-path deliveries/writes, no lingering persisted cron/config/escalation changes, and green post-fix monitor. Ring 4.5's `MCP_META.escalate` defect now has a durable deterministic canary, `pi.public-escalation`, so future Runtime v1 canary maps cover the public-profile escalation regression directly.
 
 Approximate progress to a default-runtime decision: 100%.
 
@@ -14,7 +14,7 @@ What is done:
 
 - Runtime v1 feature atlas and canary map exist.
 - Pi auth/workspace/Gateway smoke entrypoints exist.
-- Scripted canaries exist for sessions/memory/learning, plugins/context/tools, external MCP, rollback/mixed runtime, and scheduled Buildroom.
+- Scripted canaries exist for sessions/memory/learning, plugins/context/tools, external MCP, rollback/mixed runtime, scheduled Buildroom, and public-profile escalation.
 - Production canary runbook exists at `docs/pi-production-canary-runbook.md`.
 - Manual Runtime v1 decision workflow exists at `.github/workflows/pi-runtime-v1-decision.yml`.
 - Local full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed on 2026-05-16 with existing local Pi auth storage; the generated decision package is blocked only by PR-stack and production-canary operational gates.
@@ -91,6 +91,7 @@ What is done:
 - Ring 4.5 initially exposed a permission-policy defect: `escalate` was public-safe but missing from `MCP_META`, causing prefixed `mcp__leads_agent-tools__escalate` to be denied under `safety_profile=public`; the defect is fixed by registering `escalate` in `MCP_META` with regression tests.
 - Ring 4.5 post-fix evidence passed on 2026-05-17: the Pi turn called `escalate` exactly once, wrote one `leads_agent` escalation row with marker present, avoided forbidden internal architecture terms in the final response, restored the escalation log to its previous state, and left dynamic cron empty.
 - Ring 4.5 post-fix short monitor passed with one succeeded run, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, `escalate` started/completed once, zero failed tool events, zero auth/model alerts, no alerts, and no warnings.
+- Post-Ring-4.5 durable guard exists: `pnpm smoke:pi-public-escalation -- --json` validates `MCP_META.escalate`, public-profile prefixed MCP permission, denial of unknown plugin MCP tools, and isolated JSONL escalation logging for `leads_agent`.
 
 What is not done:
 
@@ -105,7 +106,7 @@ What is not done:
 | 1. Freeze Runtime v1 contract | Mostly done | Capture 100% feature surfaces that a replacement must preserve. | `src/runtime/contract.ts` covers runtime, Gateway, tools, sessions, memory, plugins, dashboard, Buildroom, config, and ops. |
 | 2. Candidate harness research | Done enough for canary work | Compare Pi/OpenAI/OpenCode/opencode-like options against the contract. | Candidate notes identify Pi as primary near-term harness and keep alternatives visible. |
 | 3. Build Pi adapter and smoke gates | Done | Prove Pi can run the critical runtime paths without breaking AnthroClaw-owned policy. | Auth, workspace, Gateway, and aggregate Pi smoke commands pass with real auth locally and in the durable decision workflow. |
-| 4. Cover deep product surfaces | Mostly done | Prove non-obvious product features survive runtime replacement. | Scripted canaries pass for sessions/memory/learning, plugins/context/tools, external MCP, scheduled Buildroom, and rollback. |
+| 4. Cover deep product surfaces | Mostly done | Prove non-obvious product features survive runtime replacement. | Scripted canaries pass for sessions/memory/learning, plugins/context/tools, external MCP, scheduled Buildroom, public escalation, and rollback. |
 | 5. Dashboard/operator evidence | Done enough for default flip PR | Prove the operator API contracts expose the same state under Pi-shaped runs. | `/api/gateway/status`, agents, sessions, runs, learning, plugins, MCP, channels, and diagnostics are covered by scripted canary and limited production evidence; browser UX evidence is optional. |
 | 6. Rollout decision package | Done | Produce the final go/no-go artifact. | Local and durable GitHub Actions decision packages emit `READY` with production canary passed and PR stack merged. |
 | 7. Default-runtime rollout | Done | Flip runtime default safely. | Default flip is merged into `main`; post-merge local, durable, live pull, safe Web UI, extended monitoring, Ring 1, Ring 2, Ring 3, Ring 4.1 one-shot live cron, Ring 4.2 live proactive notification, Ring 4.3 live recurring cron, Ring 4.4 controlled `send_message` fanout, and Ring 4.5 business-critical leads escalation are green. |
@@ -123,6 +124,7 @@ What is not done:
 | `pi.sessions-memory-learning` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-sessions-memory -- --json` |
 | `pi.dashboard-operator` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-dashboard-operator -- --json` |
 | `pi.scheduled-buildroom` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-scheduled-buildroom -- --json` |
+| `pi.public-escalation` | scripted canary | Local deterministic pass after Ring 4.5 fix; ready for next durable canary run | `pnpm smoke:pi-public-escalation -- --json` |
 | `pi.rollback-mixed-runtime` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-rollback-runtime -- --json` |
 
 ## Current Blockers
@@ -133,7 +135,7 @@ No Runtime v1 decision or initial rollout blockers remain.
 
 1. Keep `runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert` as the operator health check during normal operation.
 2. Treat any new production-agent/channel expansion as a new rollout policy section with its own owner and rollback path.
-3. Promote durable coverage for public-profile escalation if the workflow becomes a recurring release gate.
+3. Add `pi.public-escalation` to the next durable Runtime v1 decision workflow run after this PR lands.
 4. Review live-only production agent configs separately from tracked repo configs before broadening customer-facing coverage.
 5. Keep the config-only rollback path ready by setting `runtime.headless.provider=claude-agent-sdk` if a future stop condition appears.
 

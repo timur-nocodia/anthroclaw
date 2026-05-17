@@ -21,6 +21,7 @@ pnpm runtime:pi-decision -- --input <pi-v1-canary.log-or-json> --summary <decisi
 pnpm smoke:pi-sessions-memory -- --json
 pnpm smoke:pi-sessions-memory -- --json --gateway --allow-skip --model anthropic/claude-sonnet-4-6 --timeout-ms 120000
 pnpm smoke:pi-external-mcp -- --json
+pnpm smoke:pi-public-escalation -- --json
 ```
 
 `--smoke-only` runs only the automated smoke scenarios that exist today. Full mode runs the smoke and scripted canary map. Gateway-backed scripted checks are opt-in through `--include-gateway-scripted` because they can use real Pi auth/tokens.
@@ -39,7 +40,7 @@ The production canary window runbook is `docs/pi-production-canary-runbook.md`.
 
 Repository-hosted full evidence is available through the manual GitHub Actions workflow **Pi Runtime v1 decision**, which uploads `pi-runtime-v1-decision`.
 
-Evidence captured on 2026-05-16 and 2026-05-17: full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed all ten scenarios with existing local Pi auth storage. The same full canary also passed on the rebased integration candidate PR #95 after the stack was replayed onto current `main`, and PR #95 later merged. After repository secret `PI_AUTH_JSON_B64` was configured for CI, post-merge **Pi Runtime v1 decision** workflow run `25965686443` on `main` passed build, Pi storage preparation, the full ten-scenario canary map, and artifact upload. After the guarded canary CLI merge and exact rollback restore update, workflow run `25969043105` on `main` passed the same ten-scenario map. PR #106 later fixed the focused Pi Web UI/Gateway canary blockers: session continuation now resumes through Pi's session-file reference, outside-workspace filesystem tools are denied, and Pi partial streaming no longer duplicates `text_end`. PR #108 made `pi-workspace-smoke` require an exact `SMOKE_OK` reply. A local full canary from `main` after PR #107 and PR #108 passed all ten scenarios again, with standalone and aggregate workspace smoke both returning exactly `SMOKE_OK`. The limited `example` Web UI production canary then passed and was rolled back with exact backup restore; the regenerated local decision package with `production_canary=passed` and `pr_stack=merged` is `READY`.
+Evidence captured on 2026-05-16 and 2026-05-17: full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed all ten original scenarios with existing local Pi auth storage. The same full canary also passed on the rebased integration candidate PR #95 after the stack was replayed onto current `main`, and PR #95 later merged. After repository secret `PI_AUTH_JSON_B64` was configured for CI, post-merge **Pi Runtime v1 decision** workflow run `25965686443` on `main` passed build, Pi storage preparation, the full ten-scenario canary map, and artifact upload. After the guarded canary CLI merge and exact rollback restore update, workflow run `25969043105` on `main` passed the same ten-scenario map. PR #106 later fixed the focused Pi Web UI/Gateway canary blockers: session continuation now resumes through Pi's session-file reference, outside-workspace filesystem tools are denied, and Pi partial streaming no longer duplicates `text_end`. PR #108 made `pi-workspace-smoke` require an exact `SMOKE_OK` reply. A local full canary from `main` after PR #107 and PR #108 passed all ten scenarios again, with standalone and aggregate workspace smoke both returning exactly `SMOKE_OK`. The limited `example` Web UI production canary then passed and was rolled back with exact backup restore; the regenerated local decision package with `production_canary=passed` and `pr_stack=merged` is `READY`. After Ring 4.5 exposed and fixed the public `escalate` MCP metadata gap, `pi.public-escalation` was added as the eleventh durable canary scenario.
 
 ## Canary Scenarios
 
@@ -269,7 +270,29 @@ Evidence command:
 
 - `pnpm smoke:pi-scheduled-buildroom -- --json`
 
-### 10. `pi.rollback-mixed-runtime`
+### 10. `pi.public-escalation`
+
+Status: scripted canary implemented.
+
+Proves:
+
+- public-facing agents can call the operator escalation path through prefixed MCP tool policy;
+- `MCP_META.escalate` remains registered as public-safe, non-destructive, and not hard-blacklisted;
+- `allowed_mcp_tools` may allow the local tool name while still denying unknown plugin MCP tools in `safety_profile=public`;
+- escalation output is AnthroClaw-owned JSONL under isolated `OC_DATA_DIR`, not provider conversation state.
+
+Required checks:
+
+- public profile policy allows `mcp__leads_agent-tools__escalate`;
+- public profile policy denies an unknown `mcp__leads_agent-tools__*` plugin tool;
+- escalation tool writes exactly one `leads_agent` JSONL row;
+- temporary workspace/data paths are removed unless `--keep-workspace` is requested.
+
+Evidence command:
+
+- `pnpm smoke:pi-public-escalation -- --json`
+
+### 11. `pi.rollback-mixed-runtime`
 
 Status: scripted canary implemented.
 

@@ -783,6 +783,26 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
     { evidenceCommand: 'pnpm smoke:pi-scheduled-buildroom -- --json' },
   ),
   canary(
+    'pi.public-escalation',
+    'scripted_canary',
+    'Public-profile escalation canary',
+    'Prove public-facing Pi agents can invoke the safe escalation path while unknown plugin MCP tools remain denied and escalation logs stay AnthroClaw-owned.',
+    [
+      'tools.builtin-tool-policy',
+      'tools.dynamic-dispatch-tools',
+      'routing.channels',
+      'config.schema-auth',
+      'observability.metrics-runs',
+    ],
+    [
+      'Validate MCP_META.escalate is registered as public-safe, non-destructive, and not hard-blacklisted.',
+      'Run public safety-profile policy against a prefixed leads_agent escalation tool with allowed_mcp_tools set to the local tool name.',
+      'Verify the same public profile still denies an unknown plugin MCP tool.',
+      'Invoke the escalation tool with isolated OC_DATA_DIR and verify exactly one JSONL operator escalation row.',
+    ],
+    { evidenceCommand: 'pnpm smoke:pi-public-escalation -- --json' },
+  ),
+  canary(
     'pi.rollback-mixed-runtime',
     'scripted_canary',
     'Per-agent rollback and mixed-runtime canary',
