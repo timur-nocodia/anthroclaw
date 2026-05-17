@@ -26,6 +26,7 @@
     "runtime:pi-expansion-packet": "tsx src/cli/pi-expansion-packet.ts",
     "runtime:pi-leads-agent-dry-run": "tsx src/cli/pi-leads-agent-dry-run.ts",
     "runtime:pi-content-sm-dry-run": "tsx src/cli/pi-content-sm-dry-run.ts",
+    "runtime:pi-content-sm-preflight": "tsx src/cli/pi-content-sm-preflight.ts",
     "runtime:pi-telegram-lab-smoke": "tsx src/cli/pi-telegram-lab-smoke.ts",
     "runtime:pi-telegram-lab-operator-smoke": "tsx src/cli/pi-telegram-lab-operator-smoke.ts",
     "runtime:pi-telegram-lab-readiness": "tsx src/cli/pi-telegram-lab-readiness.ts",
