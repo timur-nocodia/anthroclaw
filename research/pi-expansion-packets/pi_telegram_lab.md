@@ -57,6 +57,10 @@ Agent source: `agents/pi_telegram_lab`
 - [x] post-turn gate after controlled DM: `pnpm runtime:pi-telegram-lab-post-turn -- --json --fail-on-pending`
   - Purpose: combine the live Telegram turn check and runtime monitor into one final post-turn verdict.
   - Result: passed.
+- [x] post-turn gate after live operator command suite: `pnpm runtime:pi-telegram-lab-post-turn -- --json --fail-on-pending`
+  - Purpose: prove the live Telegram command turns are recorded as successful Pi channel runs and did not leave monitoring alerts.
+  - Result: passed.
+  - Window: 60 minutes, 5 succeeded `pi_telegram_lab` Telegram runs, failed/interrupted/stale `0`, diagnostic events `run.sdk_started=5`, `run.completed=5`, auth/model alerts `0`, alerts `[]`, warnings `[]`.
 
 ## Manual Evidence
 
@@ -65,6 +69,9 @@ Agent source: `agents/pi_telegram_lab`
 - [x] controlled Telegram DM turn returns expected Pi response.
   - Evidence: operator sent `привет как дела` in Telegram DM at 2026-05-17 13:30 local time; the bot replied in Russian.
   - Metrics: live run `3afa6dbe-e1d6-453d-a675-e772fec70236` recorded `agentId=pi_telegram_lab`, `source=channel`, `channel=telegram`, `peerId=48705953`, `status=succeeded`.
+- [x] live Telegram operator command suite returns expected command responses.
+  - Evidence: operator sent `/help`, `/status`, `/scope`, and `/smoke` in Telegram DM at 2026-05-17 13:51 local time; the bot listed commands, reported Pi/runtime/tool/scope status, reported allowed/blocked scope, and returned `PI_TELEGRAM_LAB_OK`.
+  - Metrics: live runs `a16f7a32-7155-41e4-be07-cdb14289ec36`, `135b58e1-0e89-406b-a58f-468357429a5c`, `6c1a8e4f-b220-4c1b-a06e-f41b2182e4ff`, and `08829eab-4035-418f-88f2-f4db0034e793` recorded `agentId=pi_telegram_lab`, `source=channel`, `channel=telegram`, `peerId=48705953`, message ids `146`, `148`, `150`, and `152`, all `status=succeeded`.
 
 ## Reproducible Audit Command
 
@@ -87,6 +94,8 @@ Send a Telegram DM to the lab bot with a harmless marker prompt:
 Expected result: the agent replies exactly `PI_TELEGRAM_LAB_OK`, then the post-turn monitor remains green.
 
 The first live manual evidence used a natural greeting instead of the marker prompt. The marker prompt remains the recommended repeatable smoke text.
+
+The first live operator command evidence used `/help`, `/status`, `/scope`, and `/smoke`. `/memory` and `/handoff` remain covered by the fake Telegram command smoke and can be exercised manually when needed.
 
 ## Operator Commands
 
