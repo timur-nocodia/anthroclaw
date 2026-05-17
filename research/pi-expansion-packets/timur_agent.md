@@ -58,6 +58,9 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [x] smoke:pi-public-escalation: `pnpm smoke:pi-public-escalation -- --json`
   - Result: passed.
   - Covered: public-safe escalation metadata, prefixed MCP permission, unknown plugin MCP denial, isolated escalation logging, and no real customer delivery.
+- [x] operator command smoke: `pnpm runtime:pi-timur-agent-operator-smoke -- --json --allow-skip`
+  - Purpose: verify `/smoke`, `/help`, `/status`, `/scope`, `/tools`, `/memory`, `/learning`, `/plugins`, `/cron`, `/mcp`, and `/handoff` through fake Telegram DM dispatch before or alongside manual live Telegram use.
+  - Result: passed. Covered the Pi `/smoke` runtime canary and deterministic Telegram operator readiness commands on the `default` account route.
 
 ## Manual Evidence
 - [ ] controlled proactive notification canary
