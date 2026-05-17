@@ -94,7 +94,8 @@ What is done:
 - Post-Ring-4.5 durable guard exists: `pnpm smoke:pi-public-escalation -- --json` validates `MCP_META.escalate`, public-profile prefixed MCP permission, denial of unknown plugin MCP tools, and isolated JSONL escalation logging for `leads_agent`.
 - Durable **Pi Runtime v1 decision** workflow run `25981278010` on `main` commit `1825b973110ba6f91bcc5fc6e3b9293e409c2f1d` passed with the expanded 11-scenario canary map, including `pi.public-escalation`, and uploaded artifact `7039268917`.
 - Post-rollout expansion audit CLI exists as `pnpm runtime:pi-expansion-audit`. It reads an `agents-dir`, classifies per-agent expansion risk, recommends Ring 2/3/4 evidence, and reports only redacted structural config facts.
-- Live checkout audit at `/Users/tyess/dev/openclaw-agents-sdk-clone/agents` currently sees one tracked `agent.yml` candidate, `example`; it classifies as high/ring4 because its tracked config includes high-risk tools (`manage_cron`, `manage_skills`, `send_message`) plus `escalate`. The `amina` directory in that checkout contains credential material but no `agent.yml`, so it is intentionally not audited as an agent config.
+- Live checkout audit at `/Users/tyess/dev/openclaw-agents-sdk-clone/agents` currently sees one tracked `agent.yml` candidate, `example`; it classifies as high/ring4 because its tracked config includes high-risk tools (`manage_cron`, `manage_skills`, `send_message`) plus `escalate`. The `amina` directory in that checkout contains credential material but no `agent.yml`, so it is reported as `skippedDirectories`.
+- Named live-only coverage check works: `pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --expect-agent leads_agent --json` exits non-zero with `coverageGap=true` and `expectedAgentsMissing=["leads_agent"]`, proving this tracked agents dir does not cover that production config.
 
 What is not done:
 

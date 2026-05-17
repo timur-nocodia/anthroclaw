@@ -116,16 +116,52 @@ mcp_tools:
     expect(body.riskBudgetExceeded).toBe(true);
   });
 
+  it('reports skipped directories and fails when expected live agents are absent', async () => {
+    root = mkdtempSync(join(tmpdir(), 'pi-expansion-audit-'));
+    writeAgent(root, 'example', `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["48705953"]
+safety_profile: chat_like_openclaw
+`);
+    mkdirSync(join(root, 'amina', 'credentials'), { recursive: true });
+    writeFileSync(join(root, 'amina', 'credentials', 'mcp:test.enc'), 'encrypted', 'utf8');
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiExpansionAuditCli([
+      '--agents-dir', root,
+      '--expect-agent', 'leads_agent',
+      '--json',
+    ], { stdout, stderr });
+
+    expect(code).toBe(1);
+    expect(stderr.text()).toBe('');
+    const body = JSON.parse(stdout.text());
+    expect(body).toMatchObject({
+      status: 'attention',
+      coverageGap: true,
+      expectedAgentsMissing: ['leads_agent'],
+      skippedDirectories: [
+        { name: 'amina', reason: 'missing agent.yml' },
+      ],
+    });
+  });
+
   it('parses flags narrowly', () => {
     expect(parsePiExpansionAuditArgs([
       '--',
       '--agents-dir', '/tmp/agents',
       '--agent', 'example',
+      '--expect-agent', 'example',
+      '--expect-agent', 'leads_agent',
       '--max-risk', 'high',
       '--json',
     ])).toMatchObject({
       agentsDir: '/tmp/agents',
       agent: 'example',
+      expectAgents: ['example', 'leads_agent'],
       maxRisk: 'high',
       json: true,
     });
