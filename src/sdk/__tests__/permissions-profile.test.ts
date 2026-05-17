@@ -131,4 +131,19 @@ describe('canUseTool profile gating', () => {
     const r = await can('send_message', { peer_id: '1', text: 'hi' }, { signal: new AbortController().signal, toolUseID: "test" } as any);
     expect(r.behavior).toBe('allow');
   });
+
+  it('public + prefixed escalate declared in mcp_tools → allow', async () => {
+    const can = createCanUseTool({
+      agent: fakeAgent(publicProfile, ['escalate']),
+      approvalBroker: new ApprovalBroker(),
+      channel: undefined,
+      sessionContext: { peerId: '1', senderId: '1' },
+    });
+    const r = await can(
+      'mcp__leads_agent-tools__escalate',
+      { summary: 'client requested all leads export', urgency: 'urgent' },
+      { signal: new AbortController().signal, toolUseID: "test" } as any,
+    );
+    expect(r.behavior).toBe('allow');
+  });
 });

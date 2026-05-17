@@ -12,6 +12,7 @@ import { META as listSkillsMeta } from '../list-skills.js';
 import { META as localNoteSearchMeta } from '../local-note-search.js';
 import { META as localNoteProposeMeta } from '../local-note-propose.js';
 import { META as sessionSearchMeta } from '../session-search.js';
+import { META as escalateMeta } from '../escalate.js';
 
 describe('MCP tool META', () => {
   it('memory_search: read-only, safe everywhere', () => {
@@ -79,5 +80,11 @@ describe('MCP tool META', () => {
 
   it('session_search: not safe in public', () => {
     expect(sessionSearchMeta.safe_in_public).toBe(false);
+  });
+
+  it('escalate: safe in public and non-destructive', () => {
+    expect(escalateMeta.safe_in_public).toBe(true);
+    expect(escalateMeta.destructive).toBe(false);
+    expect(escalateMeta.hard_blacklist_in).toEqual([]);
   });
 });
