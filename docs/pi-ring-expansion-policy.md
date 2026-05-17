@@ -554,6 +554,65 @@ Post-run monitor passed:
 
 Ring 4.3 is closed. Remaining Ring 4 surfaces are broad `send_message` fanout and business-critical workflows; do not combine them in one checkpoint.
 
+## Ring 4.4 Controlled Send Message Fanout Scope
+
+The fourth Ring 4 high-risk automation surface is a controlled `send_message` tool delivery. It exercises Pi tool-call planning, AnthroClaw per-dispatch tool binding, peer/account argument handling, pause-store path availability, real Telegram channel delivery, and monitor-visible tool diagnostics.
+
+Allowed:
+
+- agent: `example`;
+- source surface: Web UI;
+- tool: `send_message` exactly once;
+- channel: Telegram DM;
+- account: `default`;
+- target: allowlisted operator peer `48705953`;
+- marker check in delivered tool text;
+- final Web UI exact-answer check;
+- post-run monitor;
+- dynamic cron store check.
+
+Excluded:
+
+- non-operator peers;
+- production group channels;
+- WhatsApp;
+- media sends;
+- repeated sends;
+- unmanaged fanout lists;
+- cron/proactive notification delivery;
+- business-critical workflow execution;
+- private transcript/provider-log capture in docs or PRs.
+
+## Ring 4.4 Controlled Send Message Fanout Evidence
+
+Ring 4.4 controlled `send_message` fanout was executed on 2026-05-17:
+
+- agent: `example`;
+- source: Web UI;
+- delivery path: Web UI Pi query -> `send_message` tool -> real `TelegramChannel.sendText`, without Telegram long-polling;
+- channel: Telegram DM;
+- account: `default`;
+- target: allowlisted operator peer `48705953`;
+- tool call count: `1`;
+- tool name: `send_message`;
+- marker: `PI_RING4_SEND_MESSAGE_TOOL_OK`;
+- marker present in Telegram delivery: true;
+- sent messages: `1`;
+- message id: present;
+- final Web UI response: exactly `PI_RING4_SEND_MESSAGE_DONE`;
+- dynamic cron store: empty with no Ring 4 jobs remaining.
+
+Post-run monitor passed:
+
+- runs: `4` total, `4` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- diagnostic event types: `run.completed`, `run.sdk_started`;
+- tool events: `send_message` started/completed once, failed tools none;
+- auth/model alerts: `0`;
+- alerts: none;
+- warnings: none.
+
+Ring 4.4 is closed. Remaining Ring 4 surface is one business-critical workflow; do not combine it with new fanout or scheduler expansion.
+
 ## Stop Conditions
 
 Stop rollout and rollback or hold the current ring when any of these occur:

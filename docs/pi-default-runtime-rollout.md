@@ -219,6 +219,18 @@ Ring 4.3 live recurring cron at 2026-05-17 local time:
 - post-run monitor passed with `3` total runs, `3` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`;
 - Ring 4.3 is closed. Remaining Ring 4 surfaces are broad `send_message` fanout and business-critical workflows.
 
+Ring 4.4 controlled `send_message` fanout at 2026-05-17 local time:
+
+- scope: Web UI prompt for `example` that must call `send_message` exactly once to the allowlisted operator Telegram DM peer `48705953`;
+- delivery path: Web UI Pi query -> `send_message` tool -> real `TelegramChannel.sendText`, without Telegram long-polling;
+- tool target: Telegram account `default`, peer `48705953`;
+- marker: `PI_RING4_SEND_MESSAGE_TOOL_OK`;
+- result: one `send_message` tool call, one Telegram delivery, marker present, message id present;
+- final Web UI response: exactly `PI_RING4_SEND_MESSAGE_DONE`;
+- excluded: non-operator peers, production groups, WhatsApp, media sends, repeated sends, and unmanaged fanout;
+- post-run monitor passed with `4` total runs, `4` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, tool events `send_message` started/completed once, auth/model alerts `0`, alerts `[]`, warnings `[]`;
+- Ring 4.4 is closed. Remaining Ring 4 surface is one business-critical workflow.
+
 ## Monitoring Command
 
 Use the operator monitor during the first live window and before any ring expansion:
