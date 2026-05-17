@@ -6,7 +6,7 @@ This is the human-readable phase checklist for replacing the Claude Agent SDK-ce
 
 ## Current Snapshot
 
-Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. PR #110 merged the default-runtime flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`. Post-merge local verification and durable decision run `25971022679` are green. The live runtime checkout was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e`; post-pull `pi-auth`, `pi-all`, safe Web UI, first monitoring slice, and extended 60-minute monitoring snapshot are green. Ring 1 live channel turn returned exactly `PI_LIVE_CHANNEL_OK`; the immediate post-turn monitor and follow-up manual monitor are green. Ring 1 is closed by operator acceptance, with later monitor alerts treated as escalation triggers. Ring 2 is closed after green scope/preflight, Web UI plus allowlisted Telegram DM usage window, and post-window monitor. Ring 3 expanded product-surface rollout is complete. Ring 4.1 live cron delivery and Ring 4.2 live proactive notification are closed after one real operator Telegram delivery each, no persisted cron/config changes, and green monitor.
+Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. PR #110 merged the default-runtime flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`. Post-merge local verification and durable decision run `25971022679` are green. The live runtime checkout was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e`; post-pull `pi-auth`, `pi-all`, safe Web UI, first monitoring slice, and extended 60-minute monitoring snapshot are green. Ring 1 live channel turn returned exactly `PI_LIVE_CHANNEL_OK`; the immediate post-turn monitor and follow-up manual monitor are green. Ring 1 is closed by operator acceptance, with later monitor alerts treated as escalation triggers. Ring 2 is closed after green scope/preflight, Web UI plus allowlisted Telegram DM usage window, and post-window monitor. Ring 3 expanded product-surface rollout is complete. Ring 4.1 live cron delivery, Ring 4.2 live proactive notification, and Ring 4.3 live recurring cron are closed after controlled real operator Telegram deliveries, no lingering persisted cron/config changes, and green monitor.
 
 Approximate progress to a default-runtime decision: 100%.
 
@@ -81,11 +81,14 @@ What is done:
 - Ring 4.2 live proactive notification scope is defined and executed: `example` only, one temporary in-process `escalation_needed` subscription, allowlisted operator Telegram DM peer `48705953`, real `TelegramChannel.sendText`, no persisted notification config change, no scheduler registration, no fanout, no non-operator peer.
 - Ring 4.2 live proactive notification evidence passed on 2026-05-17: `NotificationsEmitter.emit` produced a formatted Telegram notification containing `PI_RING4_PROACTIVE_NOTIFICATION_OK`, one Telegram message was sent, message id was present, parse mode was `markdown`, and the dynamic cron store was absent/empty for Ring 4 canary jobs.
 - Ring 4.2 post-run monitor passed with one succeeded run, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, zero auth/model alerts, no alerts, and no warnings.
+- Ring 4.3 live recurring cron scope is defined and executed: `example` only, short-lived dynamic recurring cron, allowlisted operator Telegram DM peer `48705953`, schedule `*/15 * * * * *`, `runOnce=false`, short `expiresAt`, real `TelegramChannel.sendText`, no static agent cron config change, no fanout, no non-operator peer.
+- Ring 4.3 live recurring cron evidence passed on 2026-05-17: the dynamic job registered through `Gateway.reloadDynamicCron`, fired twice through `CronScheduler`, both ticks returned exactly `PI_RING4_RECURRING_CRON_OK`, two Telegram messages were sent with message ids present, and cleanup disabled/deleted the job.
+- Ring 4.3 post-run cleanup and monitor passed: dynamic cron store is empty with no Ring 4 jobs remaining; monitor showed three succeeded runs, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, zero auth/model alerts, no alerts, and no warnings.
 
 What is not done:
 
 - A true Claude baseline turn has not been sent in the live channel; this remains a written waiver for the first Pi-only window, not an unresolved startup blocker.
-- Remaining Ring 4 high-risk live automation has not started: live recurring cron, broad `send_message` fanout, and business-critical workflows.
+- Remaining Ring 4 high-risk live automation has not started: broad `send_message` fanout and business-critical workflows.
 
 ## Phase Checklist
 
@@ -98,7 +101,7 @@ What is not done:
 | 4. Cover deep product surfaces | Mostly done | Prove non-obvious product features survive runtime replacement. | Scripted canaries pass for sessions/memory/learning, plugins/context/tools, external MCP, scheduled Buildroom, and rollback. |
 | 5. Dashboard/operator evidence | Done enough for default flip PR | Prove the operator API contracts expose the same state under Pi-shaped runs. | `/api/gateway/status`, agents, sessions, runs, learning, plugins, MCP, channels, and diagnostics are covered by scripted canary and limited production evidence; browser UX evidence is optional. |
 | 6. Rollout decision package | Done | Produce the final go/no-go artifact. | Local and durable GitHub Actions decision packages emit `READY` with production canary passed and PR stack merged. |
-| 7. Default-runtime rollout | In progress | Flip runtime default safely. | Default flip is merged into `main`; post-merge local, durable, live pull, safe Web UI, extended monitoring, Ring 1, Ring 2, Ring 3, Ring 4.1 one-shot live cron, and Ring 4.2 live proactive notification are green; remaining Ring 4 high-risk automation remains. |
+| 7. Default-runtime rollout | In progress | Flip runtime default safely. | Default flip is merged into `main`; post-merge local, durable, live pull, safe Web UI, extended monitoring, Ring 1, Ring 2, Ring 3, Ring 4.1 one-shot live cron, Ring 4.2 live proactive notification, and Ring 4.3 live recurring cron are green; remaining Ring 4 high-risk automation remains. |
 
 ## Canary Scenario Checklist
 
@@ -121,7 +124,7 @@ No Runtime v1 decision blockers remain. The remaining work is rollout execution,
 
 ## Next Five Tasks
 
-1. Choose the next Ring 4 path: live recurring cron, broad `send_message`, or one business-critical workflow.
+1. Choose the next Ring 4 path: broad `send_message` or one business-critical workflow.
 2. Define the single selected path with explicit rollback owner, stop condition, and post-run monitor window.
 3. Run pre-check `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`.
 4. Execute only that selected Ring 4 path with live stop-condition monitoring.
@@ -131,4 +134,4 @@ No Runtime v1 decision blockers remain. The remaining work is rollout execution,
 
 The evidence gate for making Pi the tracked global default is satisfied and the flip is merged. Durable run `25970623984` established the pre-flip `READY` decision, PR #110 carried rollout/rollback instructions, and durable run `25971022679` revalidated the decision package after the default flip landed on `main`.
 
-Ring 1 is closed by operator acceptance after green live-channel and monitor evidence. Ring 2 is closed after the low-risk normal-operation window and post-window monitor. Ring 3 expanded product-surface rollout is complete. Ring 4.1 one-shot live cron delivery and Ring 4.2 live proactive notification are closed. Default Pi is no longer evidence-blocked; the next gate is another Ring 4 high-risk automation path.
+Ring 1 is closed by operator acceptance after green live-channel and monitor evidence. Ring 2 is closed after the low-risk normal-operation window and post-window monitor. Ring 3 expanded product-surface rollout is complete. Ring 4.1 one-shot live cron delivery, Ring 4.2 live proactive notification, and Ring 4.3 live recurring cron are closed. Default Pi is no longer evidence-blocked; the next gate is another Ring 4 high-risk automation path.
