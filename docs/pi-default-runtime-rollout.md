@@ -245,6 +245,7 @@ Ring 4.5 business-critical leads escalation workflow at 2026-05-17 local time:
 - Ring 4.5 is closed. Ring 4 high-risk rollout is complete.
 - Post-Ring-4.5 durable **Pi Runtime v1 decision** run `25981278010` passed on `main` commit `1825b973110ba6f91bcc5fc6e3b9293e409c2f1d` with the expanded 11-scenario map, including `pi.public-escalation`.
 - Use `pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --json` before broadening to any further production agent/channel surface.
+- Use `--expect-agent <id>` for named live-only candidates so a missing `agent.yml` becomes an explicit `coverageGap=true` result instead of a false audit pass.
 
 ## Monitoring Command
 

@@ -10,6 +10,7 @@ type RecommendedRing = 'ring2' | 'ring3' | 'ring4';
 interface PiExpansionAuditArgs {
   agentsDir: string;
   agent?: string;
+  expectAgents: string[];
   maxRisk?: ExpansionRisk;
   json: boolean;
   help: boolean;
@@ -53,6 +54,9 @@ interface PiExpansionAuditResult {
   };
   agents: AgentExpansionAudit[];
   riskBudgetExceeded: boolean;
+  coverageGap: boolean;
+  expectedAgentsMissing: string[];
+  skippedDirectories: Array<{ name: string; reason: string }>;
   errors: Array<{ agentId: string; error: string }>;
 }
 
@@ -90,7 +94,7 @@ export async function runPiExpansionAuditCli(
   try {
     const result = auditPiExpansionReadiness(args);
     stdout.write(args.json ? `${JSON.stringify(result)}\n` : renderHuman(result));
-    return result.riskBudgetExceeded ? 1 : 0;
+    return result.riskBudgetExceeded || result.coverageGap ? 1 : 0;
   } catch (err) {
     stderr.write(`${redactSecrets(message(err))}\n`);
     return 1;
@@ -100,6 +104,7 @@ export async function runPiExpansionAuditCli(
 export function parsePiExpansionAuditArgs(argv: string[]): PiExpansionAuditArgs {
   const args: PiExpansionAuditArgs = {
     agentsDir: resolve(process.env.OC_AGENTS_DIR ?? 'agents'),
+    expectAgents: [],
     json: false,
     help: false,
   };
@@ -119,6 +124,9 @@ export function parsePiExpansionAuditArgs(argv: string[]): PiExpansionAuditArgs 
       case '--agent':
         args.agent = requireValue(argv, ++i, '--agent');
         break;
+      case '--expect-agent':
+        args.expectAgents.push(requireValue(argv, ++i, '--expect-agent'));
+        break;
       case '--max-risk':
         args.maxRisk = parseRisk(requireValue(argv, ++i, '--max-risk'));
         break;
@@ -136,6 +144,7 @@ export function parsePiExpansionAuditArgs(argv: string[]): PiExpansionAuditArgs 
 export function auditPiExpansionReadiness(input: {
   agentsDir: string;
   agent?: string;
+  expectAgents?: string[];
   maxRisk?: ExpansionRisk;
 }): PiExpansionAuditResult {
   const agentsDir = resolve(input.agentsDir);
@@ -143,7 +152,8 @@ export function auditPiExpansionReadiness(input: {
     throw new Error(`agents directory not found: ${agentsDir}`);
   }
 
-  const agentIds = discoverAgentIds(agentsDir, input.agent);
+  const inventory = discoverAgentInventory(agentsDir, input.agent);
+  const agentIds = inventory.agentIds;
   const agents: AgentExpansionAudit[] = [];
   const errors: Array<{ agentId: string; error: string }> = [];
 
@@ -163,9 +173,15 @@ export function auditPiExpansionReadiness(input: {
   const byRisk = countBy(RISK_ORDER, agents.map((agent) => agent.risk));
   const rings: RecommendedRing[] = ['ring2', 'ring3', 'ring4'];
   const byRecommendedRing = countBy(rings, agents.map((agent) => agent.recommendedRing));
+  const expectedAgentsMissing = [...new Set(input.expectAgents ?? [])]
+    .filter((agentId) => !agentIds.includes(agentId))
+    .sort();
+  const coverageGap = expectedAgentsMissing.length > 0;
 
   return {
-    status: agents.some((agent) => agent.risk === 'high' || agent.risk === 'critical') || errors.length > 0
+    status: agents.some((agent) => agent.risk === 'high' || agent.risk === 'critical')
+        || errors.length > 0
+        || coverageGap
       ? 'attention'
       : 'passed',
     agentsDir,
@@ -179,6 +195,9 @@ export function auditPiExpansionReadiness(input: {
     },
     agents,
     riskBudgetExceeded,
+    coverageGap,
+    expectedAgentsMissing,
+    skippedDirectories: inventory.skippedDirectories,
     errors,
   };
 }
@@ -309,12 +328,25 @@ function classifyAgent(agentId: string, yml: AgentYml): AgentExpansionAudit {
   }
 }
 
-function discoverAgentIds(agentsDir: string, onlyAgent?: string): string[] {
-  const ids = readdirSync(agentsDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .filter((agentId) => existsSync(resolve(agentsDir, agentId, 'agent.yml')));
-  return (onlyAgent ? ids.filter((agentId) => agentId === onlyAgent) : ids).sort();
+function discoverAgentInventory(
+  agentsDir: string,
+  onlyAgent?: string,
+): { agentIds: string[]; skippedDirectories: Array<{ name: string; reason: string }> } {
+  const agentIds: string[] = [];
+  const skippedDirectories: Array<{ name: string; reason: string }> = [];
+  for (const entry of readdirSync(agentsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (onlyAgent && entry.name !== onlyAgent) continue;
+    if (existsSync(resolve(agentsDir, entry.name, 'agent.yml'))) {
+      agentIds.push(entry.name);
+    } else {
+      skippedDirectories.push({ name: entry.name, reason: 'missing agent.yml' });
+    }
+  }
+  return {
+    agentIds: agentIds.sort(),
+    skippedDirectories: skippedDirectories.sort((a, b) => a.name.localeCompare(b.name)),
+  };
 }
 
 function renderHuman(result: PiExpansionAuditResult): string {
@@ -333,6 +365,12 @@ function renderHuman(result: PiExpansionAuditResult): string {
   ];
   if (result.errors.length > 0) {
     lines.push('', 'Errors:', ...result.errors.map((err) => `${err.agentId}: ${err.error}`));
+  }
+  if (result.expectedAgentsMissing.length > 0) {
+    lines.push('', `Missing expected agents: ${result.expectedAgentsMissing.join(', ')}`);
+  }
+  if (result.skippedDirectories.length > 0) {
+    lines.push('', 'Skipped directories:', ...result.skippedDirectories.map((entry) => `${entry.name}: ${entry.reason}`));
   }
   return `${lines.join('\n')}\n`;
 }
@@ -373,6 +411,7 @@ function usage(): string {
     'Options:',
     '  --agents-dir <path>  agents directory to scan (default: OC_AGENTS_DIR or ./agents)',
     '  --agent <id>         scan only one agent id',
+    '  --expect-agent <id>  fail with a coverage gap when an expected agent.yml is absent; repeatable',
     '  --max-risk <risk>    exit 1 when any agent exceeds low|medium|high|critical',
     '  --json               print structured result',
   ].join('\n');

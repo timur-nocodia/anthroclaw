@@ -706,6 +706,14 @@ Use `--max-risk <low|medium|high|critical>` when a release or operator checkpoin
 pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --max-risk medium --json
 ```
 
+Use `--expect-agent <id>` when the checkpoint is about a specific live-only production agent. The command exits non-zero with `coverageGap=true` when that agent has no `agent.yml` in the audited directory:
+
+```bash
+pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --expect-agent leads_agent --json
+```
+
+Directories under `agents-dir` that do not contain `agent.yml` are reported as `skippedDirectories` rather than silently treated as audited agents.
+
 This audit does not replace live evidence. It decides how much evidence a candidate needs before the first live turn:
 
 - `low`: Ring 2-style exact-answer Web/owned-peer check plus monitor;
