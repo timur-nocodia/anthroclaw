@@ -21,12 +21,17 @@ describe('Pi public escalation canary CLI', () => {
       assertions: {
         mcpMetaRegistered: true,
         publicProfileAllowsEscalate: true,
+        simulatedCustomerRequest: true,
         allowedMcpToolsFilterAllowsLocalName: true,
         publicProfileDeniesUnknownPluginTool: true,
         escalationLogged: true,
         escalationRows: 1,
         escalationAgentId: 'leads_agent',
         escalationUrgency: 'urgent',
+        noRealCustomerDelivery: true,
+        sendMessageNotInvoked: true,
+        leadExportNotGenerated: true,
+        externalMcpNotInvoked: true,
       },
     });
     expect(body.assertions.escalationSummary).toContain('Excel export');

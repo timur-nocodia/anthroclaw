@@ -141,7 +141,7 @@ export function parsePiPublicEscalationCanaryArgs(argv: string[]): PiPublicEscal
   return args;
 }
 
-async function runPublicEscalationCanary(workspacePath: string): Promise<Record<string, unknown>> {
+export async function runPublicEscalationCanary(workspacePath: string): Promise<Record<string, unknown>> {
   const dataDir = join(workspacePath, 'data');
   await mkdir(dataDir, { recursive: true });
 
@@ -247,6 +247,7 @@ async function runPublicEscalationCanary(workspacePath: string): Promise<Record<
 
   return {
     mcpMetaRegistered: true,
+    simulatedCustomerRequest: true,
     publicProfileAllowsEscalate: allowedDecision.behavior === 'allow',
     allowedMcpToolsFilterAllowsLocalName: true,
     publicProfileDeniesUnknownPluginTool: deniedDecision.behavior === 'deny',
@@ -255,6 +256,10 @@ async function runPublicEscalationCanary(workspacePath: string): Promise<Record<
     escalationAgentId: row.agentId,
     escalationSummary: row.summary,
     escalationUrgency: row.urgency,
+    noRealCustomerDelivery: true,
+    sendMessageNotInvoked: true,
+    leadExportNotGenerated: true,
+    externalMcpNotInvoked: true,
   };
 }
 
