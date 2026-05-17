@@ -100,6 +100,7 @@ What is done:
 - Repeated `--agents-dir` values are supported for split tracked/live-only config roots. Expected agents are checked across the combined inventory, each audited agent reports its source `agentsDir`, and duplicate agent ids across roots fail as `coverageGap=true`.
 - Local multi-root evidence check against `/Users/tyess/dev/openclaw-agents-sdk-clone/agents` plus `/Users/tyess/dev/anthroclaw-vibe-agents/agents` found `leads_agent`, closed `coverageGap=false`, and ranked the current live expansion queue as one critical agent (`leads_agent`) plus three high-risk agents (`content_sm_building`, tracked `example`, and `project-manager`).
 - `leads_agent` expansion packet is recorded in `research/pi-expansion-packets/leads_agent.md`. Automated evidence is closed: public escalation passed, plugin-context canary passed, and the live checkout 60-minute monitor passed. Learning evidence is closed by redacted multi-root audit (`learningMode=propose`, `coverageGap=false`). Customer-facing dry-run evidence is closed by `pnpm runtime:pi-leads-agent-dry-run -- --json`: simulated customer request escalated, no real delivery, no `send_message`, no lead export, and no external MCP.
+- `content_sm_building` expansion packet is recorded in `research/pi-expansion-packets/content_sm_building.md`. Plugin-context and external-MCP automated preflight evidence passed. Live monitor pre-expansion baseline passed with no alerts, but post-expansion monitor remains open because no live expansion turn has been executed.
 
 What is not done:
 
@@ -145,7 +146,7 @@ No Runtime v1 decision or initial rollout blockers remain.
 2. Treat any new production-agent/channel expansion as a new rollout policy section with its own owner and rollback path.
 3. Run `runtime:pi-expansion-audit` against every exact live `agents-dir` root before any future production-agent/channel expansion.
 4. Treat `leads_agent` packet evidence as closed; before any live customer-facing expansion, perform an explicit operator go/no-go and keep the rollback path ready.
-5. Keep the config-only rollback path ready by setting `runtime.headless.provider=claude-agent-sdk` if a future stop condition appears.
+5. For `content_sm_building`, close manual group/fanout evidence and then run post-expansion monitor only after a controlled live turn.
 
 ## Default Runtime Gate
 
