@@ -73,7 +73,8 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [x] `/smoke` returns exactly `TIMUR_AGENT_LAB_OK`
 - [x] `/status`, `/tools`, `/memory`, `/plugins`, and `/handoff` are exercised by the operator
   - Evidence: operator sent these commands in Telegram DM at 2026-05-17 14:41 Asia/Almaty. The bot reported `timur_agent: ok`, `runtime: pi`, `scope: dedicated operator parity lab`, `learning: propose-only`, `route_account: default`, listed enabled tool groups, memory/LCM/Honcho state, plugin state, and the repeatable smoke command.
-- [ ] `/scope`, `/learning`, `/cron`, and `/mcp` are exercised by the operator
+- [x] `/scope`, `/learning`, `/cron`, and `/mcp` are exercised by the operator
+  - Evidence: operator sent these commands in Telegram DM at 2026-05-17 14:45 Asia/Almaty. The bot reported allowlisted Telegram DM scope, guarded real side effects with explicit target confirmation, propose-only learning with operator review, disabled-by-default lab cron, managed MCP onboarding, and no hardcoded secrets.
 
 ## Audit Command
 ```bash
