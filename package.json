@@ -35,6 +35,7 @@
     "smoke:pi-external-mcp": "tsx src/cli/pi-external-mcp-canary.ts",
     "smoke:pi-dashboard-operator": "tsx src/cli/pi-dashboard-operator-canary.ts",
     "smoke:pi-scheduled-buildroom": "tsx src/cli/pi-scheduled-buildroom-canary.ts",
+    "smoke:pi-public-escalation": "tsx src/cli/pi-public-escalation-canary.ts",
     "smoke:pi-rollback-runtime": "tsx src/cli/pi-rollback-mixed-runtime-canary.ts",
     "buildroom": "tsx src/cli/buildroom.ts",
     "plugins": "tsx src/cli/plugins.ts",
