@@ -2,7 +2,7 @@
 
 Date: 2026-05-17
 
-Status: automated evidence closed; manual evidence pending operator closure.
+Status: automated evidence closed; learning evidence closed; customer-facing dry run pending operator closure.
 
 Owner: operator
 Rollback path: set `runtime.headless.provider=claude-agent-sdk` or restore the pre-expansion `agent.yml` backup.
@@ -40,7 +40,10 @@ Agent source: `/Users/tyess/dev/anthroclaw-vibe-agents/agents`
 ## Manual Evidence
 
 - [ ] customer-facing dry run with no real customer delivery
-- [ ] learning review remains propose-only or has operator approval evidence
+- [x] learning review remains propose-only or has operator approval evidence
+  - Result: closed by redacted multi-root audit.
+  - Evidence: `learningMode` for `leads_agent` is `propose`, so the agent can propose learning actions but does not auto-apply them.
+  - Audit status: `coverageGap=false`, `expectedAgentsMissing=[]`, `errors=[]`.
 
 ## Reproducible Audit Command
 
@@ -67,4 +70,4 @@ pnpm runtime:pi-expansion-packet -- \
 ## Notes
 
 - Monitor evidence must be collected from the live checkout because isolated worktrees do not have the live `data/metrics.sqlite`.
-- This packet is not approval for a live customer-facing expansion until both manual evidence items are closed.
+- This packet is not approval for a live customer-facing expansion until the customer-facing dry run item is closed.
