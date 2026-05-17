@@ -99,7 +99,7 @@ What is done:
 - Named live-only coverage check works: `pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --expect-agent leads_agent --json` exits non-zero with `coverageGap=true` and `expectedAgentsMissing=["leads_agent"]`, proving this tracked agents dir does not cover that production config.
 - Repeated `--agents-dir` values are supported for split tracked/live-only config roots. Expected agents are checked across the combined inventory, each audited agent reports its source `agentsDir`, and duplicate agent ids across roots fail as `coverageGap=true`.
 - Local multi-root evidence check against `/Users/tyess/dev/openclaw-agents-sdk-clone/agents` plus `/Users/tyess/dev/anthroclaw-vibe-agents/agents` found `leads_agent`, closed `coverageGap=false`, and ranked the current live expansion queue as one critical agent (`leads_agent`) plus three high-risk agents (`content_sm_building`, tracked `example`, and `project-manager`).
-- `leads_agent` expansion packet is recorded in `research/pi-expansion-packets/leads_agent.md`. Automated evidence is closed: public escalation passed, plugin-context canary passed, and the live checkout 60-minute monitor passed. Manual evidence remains pending: customer-facing dry run with no real customer delivery, and learning review/approval evidence.
+- `leads_agent` expansion packet is recorded in `research/pi-expansion-packets/leads_agent.md`. Automated evidence is closed: public escalation passed, plugin-context canary passed, and the live checkout 60-minute monitor passed. Learning evidence is closed by redacted multi-root audit (`learningMode=propose`, `coverageGap=false`). Remaining manual evidence: customer-facing dry run with no real customer delivery.
 
 What is not done:
 
@@ -144,7 +144,7 @@ No Runtime v1 decision or initial rollout blockers remain.
 1. Keep `runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert` as the operator health check during normal operation.
 2. Treat any new production-agent/channel expansion as a new rollout policy section with its own owner and rollback path.
 3. Run `runtime:pi-expansion-audit` against every exact live `agents-dir` root before any future production-agent/channel expansion.
-4. Close `leads_agent` manual evidence before any new customer-facing expansion: customer-facing dry run with no real customer delivery, plus learning review remains propose-only or has operator approval evidence.
+4. Close the remaining `leads_agent` manual evidence before any new customer-facing expansion: customer-facing dry run with no real customer delivery.
 5. Keep the config-only rollback path ready by setting `runtime.headless.provider=claude-agent-sdk` if a future stop condition appears.
 
 ## Default Runtime Gate
