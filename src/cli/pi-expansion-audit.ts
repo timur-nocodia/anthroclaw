@@ -9,6 +9,7 @@ type RecommendedRing = 'ring2' | 'ring3' | 'ring4';
 
 interface PiExpansionAuditArgs {
   agentsDir: string;
+  agentsDirs: string[];
   agent?: string;
   expectAgents: string[];
   maxRisk?: ExpansionRisk;
@@ -23,6 +24,7 @@ interface PiExpansionAuditDeps {
 
 interface AgentExpansionAudit {
   id: string;
+  agentsDir: string;
   risk: ExpansionRisk;
   recommendedRing: RecommendedRing;
   safetyProfile?: string;
@@ -46,6 +48,7 @@ interface AgentExpansionAudit {
 interface PiExpansionAuditResult {
   status: 'passed' | 'attention';
   agentsDir: string;
+  agentsDirs: string[];
   summary: {
     totalAgents: number;
     byRisk: Record<ExpansionRisk, number>;
@@ -56,7 +59,7 @@ interface PiExpansionAuditResult {
   riskBudgetExceeded: boolean;
   coverageGap: boolean;
   expectedAgentsMissing: string[];
-  skippedDirectories: Array<{ name: string; reason: string }>;
+  skippedDirectories: Array<{ agentsDir: string; name: string; reason: string }>;
   errors: Array<{ agentId: string; error: string }>;
 }
 
@@ -104,6 +107,7 @@ export async function runPiExpansionAuditCli(
 export function parsePiExpansionAuditArgs(argv: string[]): PiExpansionAuditArgs {
   const args: PiExpansionAuditArgs = {
     agentsDir: resolve(process.env.OC_AGENTS_DIR ?? 'agents'),
+    agentsDirs: [],
     expectAgents: [],
     json: false,
     help: false,
@@ -119,7 +123,7 @@ export function parsePiExpansionAuditArgs(argv: string[]): PiExpansionAuditArgs 
         args.help = true;
         break;
       case '--agents-dir':
-        args.agentsDir = requireValue(argv, ++i, '--agents-dir');
+        args.agentsDirs.push(requireValue(argv, ++i, '--agents-dir'));
         break;
       case '--agent':
         args.agent = requireValue(argv, ++i, '--agent');
@@ -138,31 +142,53 @@ export function parsePiExpansionAuditArgs(argv: string[]): PiExpansionAuditArgs 
     }
   }
 
+  if (args.agentsDirs.length === 0) {
+    args.agentsDirs.push(args.agentsDir);
+  } else {
+    args.agentsDir = args.agentsDirs[0] ?? args.agentsDir;
+  }
+
   return args;
 }
 
 export function auditPiExpansionReadiness(input: {
   agentsDir: string;
+  agentsDirs?: string[];
   agent?: string;
   expectAgents?: string[];
   maxRisk?: ExpansionRisk;
 }): PiExpansionAuditResult {
-  const agentsDir = resolve(input.agentsDir);
-  if (!existsSync(agentsDir)) {
-    throw new Error(`agents directory not found: ${agentsDir}`);
+  const agentsDirs = normalizeAgentsDirs(input.agentsDirs ?? [input.agentsDir]);
+  for (const agentsDir of agentsDirs) {
+    if (!existsSync(agentsDir)) {
+      throw new Error(`agents directory not found: ${agentsDir}`);
+    }
   }
 
-  const inventory = discoverAgentInventory(agentsDir, input.agent);
-  const agentIds = inventory.agentIds;
   const agents: AgentExpansionAudit[] = [];
   const errors: Array<{ agentId: string; error: string }> = [];
+  const skippedDirectories: Array<{ agentsDir: string; name: string; reason: string }> = [];
+  const seenAgentRoots = new Map<string, string>();
 
-  for (const agentId of agentIds) {
-    try {
-      const yml = loadAgentYml(resolve(agentsDir, agentId));
-      agents.push(classifyAgent(agentId, yml));
-    } catch (err) {
-      errors.push({ agentId, error: redactSecrets(message(err)) });
+  for (const agentsDir of agentsDirs) {
+    const inventory = discoverAgentInventory(agentsDir, input.agent);
+    skippedDirectories.push(...inventory.skippedDirectories);
+    for (const agentId of inventory.agentIds) {
+      const previousRoot = seenAgentRoots.get(agentId);
+      if (previousRoot) {
+        errors.push({
+          agentId,
+          error: `duplicate agent id across agents roots: ${previousRoot} and ${agentsDir}`,
+        });
+        continue;
+      }
+      seenAgentRoots.set(agentId, agentsDir);
+      try {
+        const yml = loadAgentYml(resolve(agentsDir, agentId));
+        agents.push(classifyAgent(agentId, agentsDir, yml));
+      } catch (err) {
+        errors.push({ agentId, error: redactSecrets(message(err)) });
+      }
     }
   }
 
@@ -174,9 +200,10 @@ export function auditPiExpansionReadiness(input: {
   const rings: RecommendedRing[] = ['ring2', 'ring3', 'ring4'];
   const byRecommendedRing = countBy(rings, agents.map((agent) => agent.recommendedRing));
   const expectedAgentsMissing = [...new Set(input.expectAgents ?? [])]
-    .filter((agentId) => !agentIds.includes(agentId))
+    .filter((agentId) => !seenAgentRoots.has(agentId))
     .sort();
-  const coverageGap = expectedAgentsMissing.length > 0;
+  const duplicateAgentErrors = errors.filter((err) => err.error.includes('duplicate agent id'));
+  const coverageGap = expectedAgentsMissing.length > 0 || duplicateAgentErrors.length > 0;
 
   return {
     status: agents.some((agent) => agent.risk === 'high' || agent.risk === 'critical')
@@ -184,7 +211,8 @@ export function auditPiExpansionReadiness(input: {
         || coverageGap
       ? 'attention'
       : 'passed',
-    agentsDir,
+    agentsDir: agentsDirs[0] ?? resolve(input.agentsDir),
+    agentsDirs,
     summary: {
       totalAgents: agents.length,
       byRisk,
@@ -197,12 +225,12 @@ export function auditPiExpansionReadiness(input: {
     riskBudgetExceeded,
     coverageGap,
     expectedAgentsMissing,
-    skippedDirectories: inventory.skippedDirectories,
+    skippedDirectories,
     errors,
   };
 }
 
-function classifyAgent(agentId: string, yml: AgentYml): AgentExpansionAudit {
+function classifyAgent(agentId: string, agentsDir: string, yml: AgentYml): AgentExpansionAudit {
   const blockers: string[] = [];
   const requiredChecks = new Set<string>([
     'runtime:pi-monitor before and after expansion',
@@ -303,6 +331,7 @@ function classifyAgent(agentId: string, yml: AgentYml): AgentExpansionAudit {
 
   return {
     id: agentId,
+    agentsDir,
     risk,
     recommendedRing,
     safetyProfile: yml.safety_profile,
@@ -331,28 +360,28 @@ function classifyAgent(agentId: string, yml: AgentYml): AgentExpansionAudit {
 function discoverAgentInventory(
   agentsDir: string,
   onlyAgent?: string,
-): { agentIds: string[]; skippedDirectories: Array<{ name: string; reason: string }> } {
+): { agentIds: string[]; skippedDirectories: Array<{ agentsDir: string; name: string; reason: string }> } {
   const agentIds: string[] = [];
-  const skippedDirectories: Array<{ name: string; reason: string }> = [];
+  const skippedDirectories: Array<{ agentsDir: string; name: string; reason: string }> = [];
   for (const entry of readdirSync(agentsDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     if (onlyAgent && entry.name !== onlyAgent) continue;
     if (existsSync(resolve(agentsDir, entry.name, 'agent.yml'))) {
       agentIds.push(entry.name);
     } else {
-      skippedDirectories.push({ name: entry.name, reason: 'missing agent.yml' });
+      skippedDirectories.push({ agentsDir, name: entry.name, reason: 'missing agent.yml' });
     }
   }
   return {
     agentIds: agentIds.sort(),
-    skippedDirectories: skippedDirectories.sort((a, b) => a.name.localeCompare(b.name)),
+    skippedDirectories: skippedDirectories.sort((a, b) => a.agentsDir.localeCompare(b.agentsDir) || a.name.localeCompare(b.name)),
   };
 }
 
 function renderHuman(result: PiExpansionAuditResult): string {
   const lines = [
     `Pi expansion audit ${result.status}.`,
-    `agentsDir: ${result.agentsDir}`,
+    `agentsDirs: ${result.agentsDirs.join(', ')}`,
     `totalAgents: ${result.summary.totalAgents}`,
     `byRisk: ${JSON.stringify(result.summary.byRisk)}`,
     '',
@@ -373,6 +402,10 @@ function renderHuman(result: PiExpansionAuditResult): string {
     lines.push('', 'Skipped directories:', ...result.skippedDirectories.map((entry) => `${entry.name}: ${entry.reason}`));
   }
   return `${lines.join('\n')}\n`;
+}
+
+function normalizeAgentsDirs(agentsDirs: string[]): string[] {
+  return [...new Set(agentsDirs.map((dir) => resolve(dir)))];
 }
 
 function countBy<T extends string>(keys: readonly T[], values: T[]): Record<T, number> {
