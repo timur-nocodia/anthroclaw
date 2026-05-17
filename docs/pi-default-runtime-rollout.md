@@ -207,6 +207,18 @@ Ring 4.2 live proactive notification at 2026-05-17 local time:
 - post-run monitor passed with `1` total run, `1` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`;
 - Ring 4.2 is closed. Remaining Ring 4 surfaces are live recurring cron, broad `send_message` fanout, and business-critical workflows.
 
+Ring 4.3 live recurring cron at 2026-05-17 local time:
+
+- scope: short-lived dynamic recurring cron for `example` to allowlisted operator Telegram DM peer `48705953`;
+- delivery path: `DynamicCronStore.create` -> `Gateway.reloadDynamicCron` -> `CronScheduler` tick -> Pi query -> real `TelegramChannel.sendText`, without Telegram long-polling;
+- schedule: `*/15 * * * * *`, `runOnce=false`, short `expiresAt` configured;
+- prompt: `Reply exactly PI_RING4_RECURRING_CRON_OK. Do not use tools.`;
+- result: two scheduled ticks both returned exactly `PI_RING4_RECURRING_CRON_OK`;
+- sent messages: `2`, both message ids present;
+- cleanup: dynamic cron job disabled/deleted, scheduler reloaded, dynamic cron store empty with no Ring 4 jobs remaining;
+- post-run monitor passed with `3` total runs, `3` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`;
+- Ring 4.3 is closed. Remaining Ring 4 surfaces are broad `send_message` fanout and business-critical workflows.
+
 ## Monitoring Command
 
 Use the operator monitor during the first live window and before any ring expansion:

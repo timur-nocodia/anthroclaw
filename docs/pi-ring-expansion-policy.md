@@ -494,6 +494,66 @@ Post-run monitor passed:
 
 Ring 4.2 is closed. Remaining Ring 4 surfaces are live recurring cron, broad `send_message` fanout, and business-critical workflows; do not combine them in one checkpoint.
 
+## Ring 4.3 Live Recurring Cron Scope
+
+The third Ring 4 high-risk automation surface is a short-lived live recurring cron delivery to the operator-owned Telegram peer. It exercises persisted dynamic cron registration, scheduler reload, multiple scheduler ticks, Pi query execution, real channel delivery, and explicit teardown.
+
+Allowed:
+
+- agent: `example`;
+- dynamic cron id prefixed with `ring4-recurring-cron-`;
+- schedule: `*/15 * * * * *`;
+- `runOnce=false`;
+- short `expiresAt`;
+- channel: Telegram DM;
+- target: allowlisted operator peer `48705953`;
+- exactly two live delivery ticks;
+- real `TelegramChannel.sendText`;
+- dynamic cron disable/delete cleanup;
+- scheduler reload after cleanup;
+- post-run monitor;
+- dynamic cron store check.
+
+Excluded:
+
+- long-lived recurring jobs;
+- production static agent cron config changes;
+- broad cron fanout;
+- non-operator peers;
+- production group channels;
+- proactive notifications;
+- `send_message` fanout;
+- business-critical workflow execution;
+- private transcript/provider-log capture in docs or PRs.
+
+## Ring 4.3 Live Recurring Cron Evidence
+
+Ring 4.3 live recurring cron was executed on 2026-05-17:
+
+- agent: `example`;
+- channel: Telegram DM;
+- target: allowlisted operator peer `48705953`;
+- delivery path: `DynamicCronStore.create` -> `Gateway.reloadDynamicCron` -> `CronScheduler` tick -> Pi query -> real `TelegramChannel.sendText`, without Telegram long-polling;
+- schedule: `*/15 * * * * *`;
+- `runOnce`: false;
+- short `expiresAt`: configured;
+- scheduler registration: dynamic job present during the window and absent after cleanup;
+- prompt: `Reply exactly PI_RING4_RECURRING_CRON_OK. Do not use tools.`;
+- results: two ticks, both exactly `PI_RING4_RECURRING_CRON_OK`;
+- sent messages: `2`;
+- message ids: present for both deliveries;
+- cleanup: job disabled/deleted, scheduler reloaded, dynamic cron store empty with no Ring 4 jobs remaining.
+
+Post-run monitor passed:
+
+- runs: `3` total, `3` succeeded, `0` failed, `0` interrupted, `0` stale running;
+- diagnostic event types: `run.completed`, `run.sdk_started`;
+- auth/model alerts: `0`;
+- alerts: none;
+- warnings: none.
+
+Ring 4.3 is closed. Remaining Ring 4 surfaces are broad `send_message` fanout and business-critical workflows; do not combine them in one checkpoint.
+
 ## Stop Conditions
 
 Stop rollout and rollback or hold the current ring when any of these occur:
