@@ -18,6 +18,7 @@ Agent source: `agents/pi_telegram_lab`
 - No `send_message`, `send_media`, `manage_cron`, `manage_skills`, `escalate`, plugins, external MCP, notifications, or cron jobs.
 - MCP onboarding is disabled; `connect_mcp` is not part of the runtime tool surface.
 - Learning is propose-only.
+- Telegram DM operator commands are explicitly defined in `agents/pi_telegram_lab/CLAUDE.md`: `/help`, `/status`, `/scope`, `/memory`, `/smoke`, `/handoff`.
 
 ## Automated Evidence
 
@@ -34,6 +35,10 @@ Agent source: `agents/pi_telegram_lab`
   - Result: passed.
   - Response: `PI_TELEGRAM_LAB_OK`.
   - Approvals: `0`.
+- [x] operator command smoke: `pnpm runtime:pi-telegram-lab-operator-smoke -- --json --allow-skip`
+  - Purpose: verify the Telegram lab command contract for `/smoke`, `/help`, `/status`, `/scope`, `/memory`, and `/handoff` through fake Telegram DM dispatch.
+  - Result: passed.
+  - Expected: `/smoke` returns exactly `PI_TELEGRAM_LAB_OK`; informational commands include their required operator contract lines.
 - [x] operator readiness gate: `pnpm runtime:pi-telegram-lab-readiness -- --json --allow-skip`
   - Purpose: combine config audit, route proof, direct Pi smoke, and live monitor into one pre-manual-turn verdict.
   - Result: passed against live agents/data/plugins roots.
@@ -82,6 +87,15 @@ Send a Telegram DM to the lab bot with a harmless marker prompt:
 Expected result: the agent replies exactly `PI_TELEGRAM_LAB_OK`, then the post-turn monitor remains green.
 
 The first live manual evidence used a natural greeting instead of the marker prompt. The marker prompt remains the recommended repeatable smoke text.
+
+## Operator Commands
+
+- `/help`: list `/status`, `/scope`, `/memory`, `/smoke`, `/handoff`.
+- `/status`: report `pi_telegram_lab: ok`, `runtime: pi`, the allowlisted Telegram DM scope, available tools, and propose-only learning.
+- `/scope`: report allowed Telegram DM/memory/list-skills actions and blocked fanout, media, cron, external MCP, and MCP onboarding.
+- `/memory`: explain when durable memory search/write may be used.
+- `/smoke`: reply exactly plain text `PI_TELEGRAM_LAB_OK`, with no backticks, quotes, bullet, or extra text.
+- `/handoff`: summarize scope and provide the readiness/post-turn commands.
 
 ## Notes
 

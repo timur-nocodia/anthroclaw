@@ -1,7 +1,7 @@
 {
   "name": "anthroclaw",
   "version": "1.1.7",
-  "description": "Claude Agent SDK-native control plane for personal multi-agent assistants",
+  "description": "Runtime-owned control plane for personal multi-agent assistants",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -27,6 +27,7 @@
     "runtime:pi-leads-agent-dry-run": "tsx src/cli/pi-leads-agent-dry-run.ts",
     "runtime:pi-content-sm-dry-run": "tsx src/cli/pi-content-sm-dry-run.ts",
     "runtime:pi-telegram-lab-smoke": "tsx src/cli/pi-telegram-lab-smoke.ts",
+    "runtime:pi-telegram-lab-operator-smoke": "tsx src/cli/pi-telegram-lab-operator-smoke.ts",
     "runtime:pi-telegram-lab-readiness": "tsx src/cli/pi-telegram-lab-readiness.ts",
     "runtime:pi-telegram-lab-live-check": "tsx src/cli/pi-telegram-lab-live-check.ts",
     "runtime:pi-telegram-lab-post-turn": "tsx src/cli/pi-telegram-lab-post-turn.ts",

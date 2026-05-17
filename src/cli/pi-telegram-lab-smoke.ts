@@ -142,6 +142,7 @@ export async function runPiTelegramLabSmoke(input: {
   senderId: string;
   prompt: string;
   expectText: string;
+  expectIncludes?: string[];
   timeoutMs: number;
 }): Promise<PiTelegramLabSmokeResult> {
   const agentsDir = resolve(input.agentsDir);
@@ -185,8 +186,24 @@ export async function runPiTelegramLabSmoke(input: {
 
     const lastText = sentText.at(-1)?.trim() ?? '';
     const normalizedText = normalizeTelegramText(lastText);
+    const expectedIncludes = input.expectIncludes ?? [];
+    if (expectedIncludes.length > 0) {
+      const missing = expectedIncludes.filter((expected) => {
+        return !normalizedText.includes(normalizeTelegramText(expected));
+      });
+      if (missing.length > 0) {
+        throw new Error(
+          [
+            'Pi Telegram lab response missing expected text.',
+            `Missing ${JSON.stringify(missing)},`,
+            `got ${JSON.stringify(lastText)} (${JSON.stringify(normalizedText)} normalized).`,
+          ].join(' '),
+        );
+      }
+    }
+
     const normalizedExpected = normalizeTelegramText(input.expectText);
-    if (normalizedText !== normalizedExpected) {
+    if (expectedIncludes.length === 0 && normalizedText !== normalizedExpected) {
       throw new Error(
         [
           'Pi Telegram lab response mismatch.',
@@ -403,8 +420,9 @@ function writeResult(
   stream.write(`Pi Telegram lab smoke ${result.status}: ${result.error ?? 'unknown error'}\n`);
 }
 
-function normalizeTelegramText(value: string): string {
-  return value.trim().replace(/\\([_*\[\]()~`>#+\-=|{}.!])/g, '$1');
+export function normalizeTelegramText(value: string): string {
+  const unescaped = value.trim().replace(/\\([_*\[\]()~`>#+\-=|{}.!])/g, '$1');
+  return unescaped.replace(/`/g, '');
 }
 
 function isSkippableSmokeError(message: string): boolean {
