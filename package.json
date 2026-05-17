@@ -22,6 +22,7 @@
     "runtime:pi-decision": "node scripts/runtime-v1-decision-package.mjs",
     "runtime:pi-canary-agent": "tsx src/cli/pi-production-canary-agent.ts",
     "runtime:pi-monitor": "tsx src/cli/pi-monitor.ts",
+    "runtime:pi-expansion-audit": "tsx src/cli/pi-expansion-audit.ts",
     "reset-password": "tsx src/cli/reset-password.ts",
     "learning": "tsx src/cli/learning.ts",
     "headless:runtime": "tsx src/cli/headless-runtime.ts",
