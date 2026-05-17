@@ -26,6 +26,7 @@
     "runtime:pi-expansion-packet": "tsx src/cli/pi-expansion-packet.ts",
     "runtime:pi-leads-agent-dry-run": "tsx src/cli/pi-leads-agent-dry-run.ts",
     "runtime:pi-content-sm-dry-run": "tsx src/cli/pi-content-sm-dry-run.ts",
+    "runtime:pi-telegram-lab-smoke": "tsx src/cli/pi-telegram-lab-smoke.ts",
     "reset-password": "tsx src/cli/reset-password.ts",
     "learning": "tsx src/cli/learning.ts",
     "headless:runtime": "tsx src/cli/headless-runtime.ts",
