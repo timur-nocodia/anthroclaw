@@ -33,6 +33,10 @@ Agent source: `agents/pi_telegram_lab`
   - Result: passed.
   - Response: `PI_TELEGRAM_LAB_OK`.
   - Approvals: `0`.
+- [x] operator readiness gate: `pnpm runtime:pi-telegram-lab-readiness -- --json --allow-skip`
+  - Purpose: combine config audit, route proof, direct Pi smoke, and live monitor into one pre-manual-turn verdict.
+  - Result: passed against live agents/data/plugins roots.
+  - Checks: config audit passed, route proof passed, monitor-before passed, direct Pi smoke passed, monitor-after passed.
 - [x] runtime monitor before turn: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
   - Result: passed from live checkout `/Users/tyess/dev/openclaw-agents-sdk-clone`.
   - Window: 60 minutes, 0 failed/interrupted/stale, auth/model alerts 0, alerts `[]`, warnings `[]`.
