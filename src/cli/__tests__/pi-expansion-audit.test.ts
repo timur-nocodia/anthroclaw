@@ -28,6 +28,8 @@ routes:
 allowlist:
   telegram: ["48705953"]
 safety_profile: chat_like_openclaw
+mcp_onboarding:
+  enabled: false
 learning:
   enabled: true
   mode: propose
