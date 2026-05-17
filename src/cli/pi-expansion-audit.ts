@@ -42,7 +42,14 @@ interface AgentExpansionAudit {
   learningMode?: string;
   blockers: string[];
   requiredChecks: string[];
+  evidencePlan: EvidenceRequirement[];
   notes: string[];
+}
+
+interface EvidenceRequirement {
+  check: string;
+  mode: 'automated' | 'manual';
+  command?: string;
 }
 
 interface PiExpansionAuditResult {
@@ -73,6 +80,14 @@ const HIGH_RISK_TOOLS = new Set([
   'buildroom_submit_signal',
   'buildroom_submit_session_summary',
 ]);
+
+const AUTOMATED_EVIDENCE_COMMANDS: Record<string, string> = {
+  'public-profile policy canary': 'pnpm smoke:pi-public-escalation -- --json',
+  'runtime:pi-monitor before and after expansion': 'pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert',
+  'smoke:pi-external-mcp': 'pnpm smoke:pi-external-mcp -- --json',
+  'smoke:pi-plugins-context': 'pnpm smoke:pi-plugins-context -- --json',
+  'smoke:pi-public-escalation': 'pnpm smoke:pi-public-escalation -- --json',
+};
 
 export async function runPiExpansionAuditCli(
   argv: string[],
@@ -349,12 +364,23 @@ function classifyAgent(agentId: string, agentsDir: string, yml: AgentYml): Agent
     learningMode: yml.learning.mode,
     blockers: [...new Set(blockers)],
     requiredChecks: [...requiredChecks].sort(),
+    evidencePlan: buildEvidencePlan([...requiredChecks].sort()),
     notes,
   };
 
   function raise(next: ExpansionRisk): void {
     if (riskScore(next) > riskScore(risk)) risk = next;
   }
+}
+
+function buildEvidencePlan(requiredChecks: string[]): EvidenceRequirement[] {
+  return requiredChecks.map((check) => {
+    const command = AUTOMATED_EVIDENCE_COMMANDS[check];
+    if (command) {
+      return { check, mode: 'automated', command };
+    }
+    return { check, mode: 'manual' };
+  });
 }
 
 function discoverAgentInventory(
@@ -390,6 +416,7 @@ function renderHuman(result: PiExpansionAuditResult): string {
       `  routes: ${agent.routes.join(', ') || 'none'}`,
       `  blockers: ${agent.blockers.join('; ') || 'none'}`,
       `  requiredChecks: ${agent.requiredChecks.join('; ')}`,
+      `  evidencePlan: ${agent.evidencePlan.map((entry) => entry.command ?? `${entry.check} [manual]`).join('; ')}`,
     ].join('\n')),
   ];
   if (result.errors.length > 0) {
