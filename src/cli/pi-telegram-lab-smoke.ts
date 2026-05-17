@@ -25,6 +25,7 @@ const DEFAULT_EXPECT_TEXT = 'PI_TELEGRAM_LAB_OK';
 
 interface PiTelegramLabSmokeArgs {
   agentsDir: string;
+  pluginsDir: string;
   model?: string;
   authPath?: string;
   modelsPath?: string;
@@ -53,8 +54,10 @@ interface PiTelegramLabSmokeResult {
   agentId: string;
   agentsDir: string;
   dataDir: string;
+  pluginsDir: string;
   peerId: string;
   sentText: string[];
+  normalizedText?: string;
   approvals: number;
   sessionId?: string;
   error?: string;
@@ -82,7 +85,6 @@ export async function runPiTelegramLabSmokeCli(
 
   const workspace = deps.makeWorkspace?.() ?? mkdtempSync(join(tmpdir(), 'anthroclaw-pi-telegram-lab-'));
   const dataDir = join(workspace, 'data');
-  const pluginsDir = join(workspace, 'plugins');
   let shouldRemoveWorkspace = !args.keepData;
 
   try {
@@ -91,7 +93,7 @@ export async function runPiTelegramLabSmokeCli(
       GatewayCtor: deps.GatewayCtor,
       agentsDir: args.agentsDir,
       dataDir,
-      pluginsDir,
+      pluginsDir: args.pluginsDir,
       model: args.model,
       authPath: args.authPath,
       modelsPath: args.modelsPath,
@@ -112,6 +114,7 @@ export async function runPiTelegramLabSmokeCli(
       agentId: AGENT_ID,
       agentsDir: args.agentsDir,
       dataDir,
+      pluginsDir: args.pluginsDir,
       peerId: args.peerId,
       sentText: [],
       approvals: 0,
@@ -145,7 +148,6 @@ export async function runPiTelegramLabSmoke(input: {
   const dataDir = resolve(input.dataDir);
   const pluginsDir = resolve(input.pluginsDir);
   mkdirSync(dataDir, { recursive: true });
-  mkdirSync(pluginsDir, { recursive: true });
 
   const GatewayCtor = input.GatewayCtor ?? Gateway;
   const gateway = new GatewayCtor();
@@ -181,10 +183,16 @@ export async function runPiTelegramLabSmoke(input: {
       throw new Error(`Pi Telegram lab runtime failed: ${failedRun.error}`);
     }
 
-    const lastText = sentText.at(-1)?.trim();
-    if (lastText !== input.expectText) {
+    const lastText = sentText.at(-1)?.trim() ?? '';
+    const normalizedText = normalizeTelegramText(lastText);
+    const normalizedExpected = normalizeTelegramText(input.expectText);
+    if (normalizedText !== normalizedExpected) {
       throw new Error(
-        `Pi Telegram lab response mismatch. Expected ${JSON.stringify(input.expectText)}, got ${JSON.stringify(lastText ?? '')}.`,
+        [
+          'Pi Telegram lab response mismatch.',
+          `Expected ${JSON.stringify(input.expectText)} (${JSON.stringify(normalizedExpected)} normalized),`,
+          `got ${JSON.stringify(lastText)} (${JSON.stringify(normalizedText)} normalized).`,
+        ].join(' '),
       );
     }
 
@@ -195,8 +203,10 @@ export async function runPiTelegramLabSmoke(input: {
       agentId: AGENT_ID,
       agentsDir,
       dataDir,
+      pluginsDir,
       peerId: input.peerId,
       sentText,
+      normalizedText,
       approvals: approvals.length,
       sessionId: sessions[0]?.sessionId,
     };
@@ -208,6 +218,7 @@ export async function runPiTelegramLabSmoke(input: {
 export function parsePiTelegramLabSmokeArgs(argv: string[]): PiTelegramLabSmokeArgs {
   const args: PiTelegramLabSmokeArgs = {
     agentsDir: process.env.OC_AGENTS_DIR ? resolve(process.env.OC_AGENTS_DIR) : resolve('agents'),
+    pluginsDir: process.env.OC_PLUGINS_DIR ? resolve(process.env.OC_PLUGINS_DIR) : resolve('plugins'),
     peerId: DEFAULT_PEER_ID,
     senderId: DEFAULT_SENDER_ID,
     prompt: DEFAULT_PROMPT,
@@ -230,6 +241,9 @@ export function parsePiTelegramLabSmokeArgs(argv: string[]): PiTelegramLabSmokeA
         break;
       case '--agents-dir':
         args.agentsDir = resolve(requireValue(argv, ++i, '--agents-dir'));
+        break;
+      case '--plugins-dir':
+        args.pluginsDir = resolve(requireValue(argv, ++i, '--plugins-dir'));
         break;
       case '--model':
         args.model = requireValue(argv, ++i, '--model');
@@ -389,6 +403,10 @@ function writeResult(
   stream.write(`Pi Telegram lab smoke ${result.status}: ${result.error ?? 'unknown error'}\n`);
 }
 
+function normalizeTelegramText(value: string): string {
+  return value.trim().replace(/\\([_*\[\]()~`>#+\-=|{}.!])/g, '$1');
+}
+
 function isSkippableSmokeError(message: string): boolean {
   return /@earendil-works\/pi-coding-agent|optional package|api key|auth|oauth|credential|model registry/i
     .test(message);
@@ -420,15 +438,16 @@ function usage(): string {
     '',
     'Options:',
     '  --agents-dir <path>   agents directory containing pi_telegram_lab (default: agents)',
+    '  --plugins-dir <path>  plugin directory loaded by Gateway (default: plugins)',
     '  --model <model>       model override for the smoke run',
     '  --auth-path <path>    optional Pi auth.json path',
     '  --models-path <path>  optional Pi models.json path',
     '  --peer-id <id>        Telegram peer id to simulate (default: 48705953)',
     '  --sender-id <id>      Telegram sender id to simulate (default: 48705953)',
     '  --prompt <text>       marker prompt to dispatch',
-    '  --expect-text <text>  exact final outbound text expected from the agent',
+    '  --expect-text <text>  final outbound text expected after Telegram escape normalization',
     '  --timeout-ms <ms>     positive integer dispatch timeout (default: 120000)',
-    '  --keep-data           keep temporary data/plugins directory for inspection',
+    '  --keep-data           keep temporary data directory for inspection',
     '  --allow-skip          exit 0 for missing optional Pi runtime/auth setup',
     '  --json                print structured smoke result',
   ].join('\n');
