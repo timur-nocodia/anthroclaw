@@ -102,7 +102,7 @@ Default Runtime v1 parity is green. Fleet-wide live parity is still in expansion
 
 | Agent | Risk | Current state | Next gate |
 | --- | --- | --- | --- |
-| `example` | high by tool inventory, controlled test scope | Default-runtime canary, Web UI, Telegram DM, cron, proactive notification, recurring cron, `send_message`, escalation policy, rollback, and monitor evidence are closed. | Keep as regression canary; no active blocker. |
+| `example` | high by tool inventory, controlled test scope | Default-runtime canary, Web UI, Telegram DM, cron, proactive notification, recurring cron, `send_message`, escalation policy, rollback, monitor evidence, and expansion packet are closed. | Keep as regression canary; no active blocker. |
 | `pi_telegram_lab` | low/ring2 | Live Telegram DM and operator command suite are closed with monitor evidence. | Keep `runtime:pi-telegram-lab-readiness`, operator smoke, and post-turn checks as repeatable health probes. |
 | `timur_agent` | high/operator lab | Tracked full-featured parity lab config exists with Pi runtime, memory/session tools, learning, delivery/media/cron/notifications/admin tools, MCP onboarding, LCM, operator-console, file-transfer, Buildroom tools, connected default Telegram route, expansion packet, operator command smoke, full live read-only command suite, post-expansion monitor evidence, generic Pi memory/session read gate, generic Pi propose-only learning gate, fake-only cron/proactive notification smoke, fake-only messaging/media smoke, temp-only admin/config smoke, temp-only Buildroom handoff smoke, temp-only MCP/file-transfer smoke, and temp-only Honcho local smoke. | Operator can continue manual end-to-end use; next engineering gate is an explicitly operator-approved live action or new production-agent expansion packet. |
 | `leads_agent` | critical/customer-facing | Public escalation, plugin context, learning propose-only audit, safe dry-run, and monitor evidence are closed; no live customer-facing delivery was performed. | Explicit operator go/no-go before any WhatsApp/customer live expansion. |
@@ -117,11 +117,12 @@ For each new production agent/channel/tool expansion:
 
 1. Run `runtime:pi-expansion-audit` against every exact live `agents-dir` root.
 2. Generate or update the expansion packet.
-3. Close automated evidence: relevant `smoke:pi-*`, safe dry-run, and `runtime:pi-monitor`.
-4. Close manual evidence: owner, rollback path, allowlisted route confirmation, and explicit go/no-go.
-5. Run exactly one controlled live turn for the riskiest side effect.
-6. Run post-expansion `runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`.
-7. Record the result in the packet and this matrix if it changes fleet status.
+3. Run `runtime:pi-expansion-audit -- --require-packets-dir research/pi-expansion-packets ...` so high/critical audited agents cannot remain packetless.
+4. Close automated evidence: relevant `smoke:pi-*`, safe dry-run, and `runtime:pi-monitor`.
+5. Close manual evidence: owner, rollback path, allowlisted route confirmation, and explicit go/no-go.
+6. Run exactly one controlled live turn for the riskiest side effect.
+7. Run post-expansion `runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`.
+8. Record the result in the packet and this matrix if it changes fleet status.
 
 ## Practical Answer
 

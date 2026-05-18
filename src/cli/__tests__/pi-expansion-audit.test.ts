@@ -147,6 +147,8 @@ routes:
     scope: dm
     peers: ["48705953"]
 safety_profile: chat_like_openclaw
+mcp_onboarding:
+  enabled: false
 `);
     mkdirSync(join(root, 'amina', 'credentials'), { recursive: true });
     writeFileSync(join(root, 'amina', 'credentials', 'mcp:test.enc'), 'encrypted', 'utf8');
@@ -181,6 +183,8 @@ routes:
     scope: dm
     peers: ["48705953"]
 safety_profile: chat_like_openclaw
+mcp_onboarding:
+  enabled: false
 `);
     writeAgent(secondRoot, 'leads_agent', `
 routes:
@@ -228,6 +232,8 @@ routes:
     scope: dm
     peers: ["48705953"]
 safety_profile: chat_like_openclaw
+mcp_onboarding:
+  enabled: false
 `);
     }
 
@@ -242,6 +248,73 @@ safety_profile: chat_like_openclaw
     ]));
   });
 
+  it('fails packet coverage when high-risk audited agents have no expansion packet', async () => {
+    root = mkdtempSync(join(tmpdir(), 'pi-expansion-audit-'));
+    secondRoot = mkdtempSync(join(tmpdir(), 'pi-expansion-packets-'));
+    writeAgent(root, 'project-manager', `
+routes:
+  - channel: telegram
+    scope: group
+safety_profile: chat_like_openclaw
+mcp_tools:
+  - manage_cron
+`);
+    writeAgent(root, 'example', `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["48705953"]
+safety_profile: chat_like_openclaw
+mcp_onboarding:
+  enabled: false
+`);
+
+    const result = auditPiExpansionReadiness({
+      agentsDir: root,
+      requirePacketsDir: secondRoot,
+    });
+
+    expect(result.packetCoverageGap).toBe(true);
+    expect(result.packetCoverage).toMatchObject({
+      packetsDir: secondRoot,
+      requiredAgents: ['project-manager'],
+      present: [],
+      missing: ['project-manager'],
+    });
+  });
+
+  it('passes packet coverage when high-risk audited agents have expansion packets', async () => {
+    root = mkdtempSync(join(tmpdir(), 'pi-expansion-audit-'));
+    secondRoot = mkdtempSync(join(tmpdir(), 'pi-expansion-packets-'));
+    writeAgent(root, 'project-manager', `
+routes:
+  - channel: telegram
+    scope: group
+safety_profile: chat_like_openclaw
+mcp_tools:
+  - manage_cron
+`);
+    writeFileSync(join(secondRoot, 'project-manager.md'), '# packet\n', 'utf8');
+
+    const stdout = createWriter();
+    const stderr = createWriter();
+    const code = await runPiExpansionAuditCli([
+      '--agents-dir', root,
+      '--require-packets-dir', secondRoot,
+      '--json',
+    ], { stdout, stderr });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    const body = JSON.parse(stdout.text());
+    expect(body.packetCoverageGap).toBe(false);
+    expect(body.packetCoverage).toMatchObject({
+      requiredAgents: ['project-manager'],
+      present: ['project-manager'],
+      missing: [],
+    });
+  });
+
   it('parses flags narrowly', () => {
     expect(parsePiExpansionAuditArgs([
       '--',
@@ -250,6 +323,7 @@ safety_profile: chat_like_openclaw
       '--agent', 'example',
       '--expect-agent', 'example',
       '--expect-agent', 'leads_agent',
+      '--require-packets-dir', '/tmp/packets',
       '--max-risk', 'high',
       '--json',
     ])).toMatchObject({
@@ -257,6 +331,7 @@ safety_profile: chat_like_openclaw
       agentsDirs: ['/tmp/agents', '/tmp/live-agents'],
       agent: 'example',
       expectAgents: ['example', 'leads_agent'],
+      requirePacketsDir: '/tmp/packets',
       maxRisk: 'high',
       json: true,
     });
