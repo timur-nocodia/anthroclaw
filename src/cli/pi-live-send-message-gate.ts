@@ -2,23 +2,22 @@ import 'dotenv/config';
 import { resolve } from 'node:path';
 import {
   createFailedLiveSendMessageGateResult,
+  DEFAULT_LIVE_SEND_MESSAGE_MARKER_PREFIX,
   runLiveSendMessageGate,
   type LiveSendMessageGateDeps,
   type LiveSendMessageGateInput,
   type LiveSendMessageGateResult,
 } from '../runtime/side-effect-gates/live-send-message.js';
 
-const AGENT_ID = 'timur_agent';
-const ACCOUNT_ID = 'default';
-const DEFAULT_PEER_ID = '48705953';
-const MARKER_PREFIX = 'TIMUR_AGENT_LIVE_SEND_MESSAGE_OK';
-
-interface PiTimurAgentLiveSendMessageArgs {
+interface PiLiveSendMessageGateArgs {
+  agentId?: string;
   configPath: string;
   agentsDir: string;
   dataDir: string;
   accountId: string;
-  peerId: string;
+  peerId?: string;
+  expectedPeerId?: string;
+  markerPrefix: string;
   marker?: string;
   confirmLiveSend: boolean;
   dryRun: boolean;
@@ -26,23 +25,22 @@ interface PiTimurAgentLiveSendMessageArgs {
   help: boolean;
 }
 
-type PiTimurAgentLiveSendMessageDeps = LiveSendMessageGateDeps & {
+type PiLiveSendMessageGateDeps = LiveSendMessageGateDeps & {
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
   stderr?: Pick<NodeJS.WriteStream, 'write'>;
 };
 
-type PiTimurAgentLiveSendMessageResult = LiveSendMessageGateResult;
-
-export async function runPiTimurAgentLiveSendMessageCli(
+export async function runPiLiveSendMessageGateCli(
   argv: string[],
-  deps: PiTimurAgentLiveSendMessageDeps = {},
+  deps: PiLiveSendMessageGateDeps = {},
 ): Promise<number> {
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
 
-  let args: PiTimurAgentLiveSendMessageArgs;
+  let args: PiLiveSendMessageGateArgs;
   try {
-    args = parsePiTimurAgentLiveSendMessageArgs(argv);
+    args = parsePiLiveSendMessageGateArgs(argv);
+    validateArgs(args);
   } catch (err) {
     stderr.write(`${errorMessage(err)}\n${usage()}\n`);
     return 2;
@@ -58,32 +56,26 @@ export async function runPiTimurAgentLiveSendMessageCli(
     return 2;
   }
 
+  const gateInput = toGateInput(args);
   try {
-    const result = await runPiTimurAgentLiveSendMessage(args, deps);
+    const result = await runLiveSendMessageGate(gateInput, deps);
     writeResult(stdout, args.json, result);
     return 0;
   } catch (err) {
-    const markerText = args.marker ?? `${MARKER_PREFIX} ${new Date((deps.now ?? Date.now)()).toISOString()}`;
-    const result = createFailedLiveSendMessageGateResult(toGateInput(args), markerText, errorMessage(err));
+    const markerText = args.marker ?? `${args.markerPrefix} ${new Date((deps.now ?? Date.now)()).toISOString()}`;
+    const result = createFailedLiveSendMessageGateResult(gateInput, markerText, errorMessage(err));
     writeResult(stderr, args.json, result);
     return 1;
   }
 }
 
-export async function runPiTimurAgentLiveSendMessage(
-  input: PiTimurAgentLiveSendMessageArgs,
-  deps: LiveSendMessageGateDeps = {},
-): Promise<PiTimurAgentLiveSendMessageResult> {
-  return runLiveSendMessageGate(toGateInput(input), deps);
-}
-
-export function parsePiTimurAgentLiveSendMessageArgs(argv: string[]): PiTimurAgentLiveSendMessageArgs {
-  const args: PiTimurAgentLiveSendMessageArgs = {
+export function parsePiLiveSendMessageGateArgs(argv: string[]): PiLiveSendMessageGateArgs {
+  const args: PiLiveSendMessageGateArgs = {
     configPath: process.env.OC_CONFIG ? resolve(process.env.OC_CONFIG) : resolve('config.yml'),
     agentsDir: process.env.OC_AGENTS_DIR ? resolve(process.env.OC_AGENTS_DIR) : resolve('agents'),
     dataDir: process.env.OC_DATA_DIR ? resolve(process.env.OC_DATA_DIR) : resolve('data'),
-    accountId: ACCOUNT_ID,
-    peerId: DEFAULT_PEER_ID,
+    accountId: 'default',
+    markerPrefix: DEFAULT_LIVE_SEND_MESSAGE_MARKER_PREFIX,
     confirmLiveSend: false,
     dryRun: false,
     json: false,
@@ -99,6 +91,10 @@ export function parsePiTimurAgentLiveSendMessageArgs(argv: string[]): PiTimurAge
       case '-h':
         args.help = true;
         break;
+      case '--agent':
+      case '--agent-id':
+        args.agentId = requireValue(argv, ++i, arg);
+        break;
       case '--config':
         args.configPath = resolve(requireValue(argv, ++i, '--config'));
         break;
@@ -113,6 +109,12 @@ export function parsePiTimurAgentLiveSendMessageArgs(argv: string[]): PiTimurAge
         break;
       case '--peer-id':
         args.peerId = requireValue(argv, ++i, '--peer-id');
+        break;
+      case '--expected-peer-id':
+        args.expectedPeerId = requireValue(argv, ++i, '--expected-peer-id');
+        break;
+      case '--marker-prefix':
+        args.markerPrefix = requireValue(argv, ++i, '--marker-prefix');
         break;
       case '--marker':
         args.marker = requireValue(argv, ++i, '--marker');
@@ -134,26 +136,34 @@ export function parsePiTimurAgentLiveSendMessageArgs(argv: string[]): PiTimurAge
   return args;
 }
 
-function toGateInput(args: PiTimurAgentLiveSendMessageArgs): LiveSendMessageGateInput {
+function validateArgs(args: PiLiveSendMessageGateArgs): void {
+  if (args.help) return;
+  if (!args.agentId) throw new Error('--agent-id is required.');
+  if (!args.peerId) throw new Error('--peer-id is required.');
+}
+
+function toGateInput(args: PiLiveSendMessageGateArgs): LiveSendMessageGateInput {
+  if (!args.agentId) throw new Error('--agent-id is required.');
+  if (!args.peerId) throw new Error('--peer-id is required.');
   return {
-    agentId: AGENT_ID,
+    agentId: args.agentId,
     configPath: args.configPath,
     agentsDir: args.agentsDir,
     dataDir: args.dataDir,
     accountId: args.accountId,
     peerId: args.peerId,
-    markerPrefix: MARKER_PREFIX,
+    markerPrefix: args.markerPrefix,
     marker: args.marker,
     confirmLiveSend: args.confirmLiveSend,
     dryRun: args.dryRun,
-    expectedPeerId: DEFAULT_PEER_ID,
+    expectedPeerId: args.expectedPeerId,
   };
 }
 
 function writeResult(
   stream: Pick<NodeJS.WriteStream, 'write'>,
   json: boolean,
-  result: PiTimurAgentLiveSendMessageResult,
+  result: LiveSendMessageGateResult,
 ): void {
   if (json) {
     stream.write(`${JSON.stringify(result)}\n`);
@@ -162,7 +172,8 @@ function writeResult(
 
   if (result.status === 'passed') {
     stream.write([
-      `Pi timur_agent live send_message ${result.dryRun ? 'dry-run' : 'gate'} passed.`,
+      `Pi live send_message ${result.dryRun ? 'dry-run' : 'gate'} passed.`,
+      `agent: ${result.agentId}`,
       `target: telegram/${result.target.accountId}/${result.target.peerId}`,
       `marker: ${result.markerText}`,
       `delivery: ${JSON.stringify(result.delivery)}`,
@@ -172,7 +183,7 @@ function writeResult(
     return;
   }
 
-  stream.write(`Pi timur_agent live send_message gate failed: ${result.error ?? 'unknown error'}\n`);
+  stream.write(`Pi live send_message gate failed: ${result.error ?? 'unknown error'}\n`);
 }
 
 function requireValue(argv: string[], index: number, flag: string): string {
@@ -187,14 +198,17 @@ function errorMessage(err: unknown): string {
 
 function usage(): string {
   return [
-    'Usage: pnpm runtime:pi-timur-agent-live-send-message -- [options]',
+    'Usage: pnpm runtime:pi-live-send-message-gate -- --agent-id <id> --peer-id <id> [options]',
     '',
     'Options:',
+    '  --agent-id <id>          agent directory id under --agents-dir',
     '  --config <path>          global config path (default: ./config.yml or OC_CONFIG)',
-    '  --agents-dir <path>      agents directory containing timur_agent (default: ./agents or OC_AGENTS_DIR)',
+    '  --agents-dir <path>      agents directory (default: ./agents or OC_AGENTS_DIR)',
     '  --data-dir <path>        data directory for metrics.sqlite (default: ./data or OC_DATA_DIR)',
     '  --account-id <id>        Telegram account id (default: default)',
-    '  --peer-id <id>           Telegram peer id (default: operator peer)',
+    '  --peer-id <id>           Telegram peer id',
+    '  --expected-peer-id <id>  optional fanout guard peer id (default: --peer-id)',
+    '  --marker-prefix <text>   marker prefix (default: LIVE_SEND_MESSAGE_OK)',
     '  --marker <text>          exact text to send (default: timestamped canary marker)',
     '  --confirm-live-send      required for real Telegram delivery',
     '  --dry-run                validate policy without sending or writing metrics',
@@ -204,7 +218,7 @@ function usage(): string {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runPiTimurAgentLiveSendMessageCli(process.argv.slice(2))
+  runPiLiveSendMessageGateCli(process.argv.slice(2))
     .then((code) => {
       process.exitCode = code;
     })

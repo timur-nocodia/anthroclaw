@@ -22,11 +22,17 @@ Every live side-effect gate must declare:
 
 ## Refactor Direction
 
-Existing migration CLIs such as `pi-timur-agent-live-send-message`, `pi-timur-agent-live-send-media`, and `pi-timur-agent-live-notification` remain evidence until they are moved. New work should create or extend generic gates first, then bind a concrete agent through CLI args or expansion-packet fixtures.
+`live-send-message` is the first extracted gate. The reusable implementation lives in `src/runtime/side-effect-gates/live-send-message.ts` and is runnable through:
+
+```sh
+pnpm runtime:pi-live-send-message-gate -- --agent-id <id> --peer-id <peer> --dry-run --json
+```
+
+The old `pi-timur-agent-live-send-message` command remains only as a compatibility/evidence alias with `timur_agent` defaults. Existing migration CLIs such as `pi-timur-agent-live-send-media` and `pi-timur-agent-live-notification` remain evidence until they are moved. New work should create or extend generic gates first, then bind a concrete agent through CLI args or expansion-packet fixtures.
 
 The desired end state is:
 
-1. `runtime:pi-live-gate -- --agent <id> --gate live-send-message ...`
+1. `runtime:pi-live-gate -- --agent <id> --gate live-send-message ...`, or the interim focused command `runtime:pi-live-send-message-gate`
 2. expansion packets record the concrete command and operator approval
 3. agent-specific CLI names are gradually removed or reduced to thin aliases
 
