@@ -68,12 +68,17 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [x] learning propose-only smoke: `pnpm runtime:pi-timur-agent-learning-propose-smoke -- --json --allow-skip`
   - Purpose: verify a Pi-backed learning review for `timur_agent` persists proposed actions and artifacts without applying memory or skill changes before operator approval.
   - Result: passed. The review completed in `mode=propose`, produced one `memory_candidate` action with `status=proposed`, created one pending operator decision, persisted artifacts, and left `memoryWrites=0` plus `skillSnapshots=0`.
+- [x] cron/notification smoke: `pnpm runtime:pi-timur-agent-cron-notification-smoke -- --json`
+  - Purpose: verify the disabled-by-default cron contract and proactive notification route without live channel delivery.
+  - Result: passed. The static `timur-agent-lab-silent-check` cron existed with `enabled=false`; a temp dynamic cron was created, listed, toggled disabled, deleted with `remaining=0`, and bound delivery to the operator dispatch context while ignoring a model-supplied target. The notification tool test dispatched once through an injected fake dispatcher, and `NotificationsEmitter` produced exactly one fake `escalation_needed` send to the operator route with the canary marker.
 
 ## Manual Evidence
-- [ ] controlled proactive notification canary
+- [x] controlled proactive notification canary
+  - Evidence: `pnpm runtime:pi-timur-agent-cron-notification-smoke -- --json` passed with fake-only `manage_notifications` test dispatch and one fake `NotificationsEmitter` proactive send to `telegram/default/48705953`. No real Telegram delivery was performed.
 - [x] learning review remains propose-only or has operator approval evidence
   - Evidence: `pnpm runtime:pi-timur-agent-learning-propose-smoke -- --json --allow-skip` passed with proposed-only action status, pending decision status, and no memory/skill application.
-- [ ] tool-specific controlled fanout or scheduled-work evidence
+- [x] tool-specific controlled fanout or scheduled-work evidence
+  - Evidence: `pnpm runtime:pi-timur-agent-cron-notification-smoke -- --json` passed with static cron disabled, temp dynamic cron cleanup, operator-context delivery binding, and fake-only notification fanout.
 - [x] live Telegram account switch to `default` is approved by operator
 - [x] first controlled live text turn returns expected behavior
   - Evidence: operator sent `/smoke` in Telegram DM at 2026-05-17 14:41 Asia/Almaty; the bot replied exactly `TIMUR_AGENT_LAB_OK`.
