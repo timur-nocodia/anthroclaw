@@ -1,6 +1,6 @@
 # Pi Expansion Packet: project-manager
 
-Status: generic group-route and scheduled-work preflight passed; post-expansion monitor pending.
+Status: generic group-route and scheduled-work preflight passed; operator go/no-go and post-expansion monitor pending.
 Owner: Timur
 Rollback path: research/runtime-v1-migration-status.md
 Risk: high
@@ -51,6 +51,7 @@ Agent source: /Users/tyess/dev/anthroclaw-vibe-agents/agents
   - Evidence: tracked `agent.yml` has `learning.enabled=true` and `learning.mode=propose`; `runtime:pi-expansion-audit` reports `learningMode="propose"` for `project-manager`.
 - [x] tool-specific controlled fanout or scheduled-work evidence
   - Evidence: generic scheduled-work gate passed without live firing and without source config mutation.
+- [ ] operator go/no-go for controlled group expansion
 
 ## Audit Command
 
