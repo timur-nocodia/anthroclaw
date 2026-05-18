@@ -29,6 +29,7 @@
     "runtime:pi-content-sm-preflight": "tsx src/cli/pi-content-sm-preflight.ts",
     "runtime:pi-timur-agent-cron-notification-smoke": "tsx src/cli/pi-timur-agent-cron-notification-smoke.ts",
     "runtime:pi-timur-agent-learning-propose-smoke": "tsx src/cli/pi-timur-agent-learning-propose-smoke.ts",
+    "runtime:pi-timur-agent-messaging-media-smoke": "tsx src/cli/pi-timur-agent-messaging-media-smoke.ts",
     "runtime:pi-timur-agent-memory-read-smoke": "tsx src/cli/pi-timur-agent-memory-read-smoke.ts",
     "runtime:pi-timur-agent-operator-smoke": "tsx src/cli/pi-timur-agent-operator-smoke.ts",
     "runtime:pi-telegram-lab-smoke": "tsx src/cli/pi-telegram-lab-smoke.ts",

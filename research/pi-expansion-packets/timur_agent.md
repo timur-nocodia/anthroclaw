@@ -71,6 +71,9 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [x] cron/notification smoke: `pnpm runtime:pi-timur-agent-cron-notification-smoke -- --json`
   - Purpose: verify the disabled-by-default cron contract and proactive notification route without live channel delivery.
   - Result: passed. The static `timur-agent-lab-silent-check` cron existed with `enabled=false`; a temp dynamic cron was created, listed, toggled disabled, deleted with `remaining=0`, and bound delivery to the operator dispatch context while ignoring a model-supplied target. The notification tool test dispatched once through an injected fake dispatcher, and `NotificationsEmitter` produced exactly one fake `escalation_needed` send to the operator route with the canary marker.
+- [x] messaging/media smoke: `pnpm runtime:pi-timur-agent-messaging-media-smoke -- --json`
+  - Purpose: verify controlled `send_message` and `send_media` fanout through the `timur_agent` private operator route without live channel delivery.
+  - Result: passed. `send_message` was allowed, `send_media` requested and received explicit approval, fake text/media sends each fired exactly once to `telegram/default/48705953`, account and thread context were preserved, media path traversal was blocked, and a paused peer suppressed an attempted `send_message` with no extra fake send.
 
 ## Manual Evidence
 - [x] controlled proactive notification canary
@@ -79,6 +82,8 @@ The tracked route uses the connected Telegram account `default`. The previous `p
   - Evidence: `pnpm runtime:pi-timur-agent-learning-propose-smoke -- --json --allow-skip` passed with proposed-only action status, pending decision status, and no memory/skill application.
 - [x] tool-specific controlled fanout or scheduled-work evidence
   - Evidence: `pnpm runtime:pi-timur-agent-cron-notification-smoke -- --json` passed with static cron disabled, temp dynamic cron cleanup, operator-context delivery binding, and fake-only notification fanout.
+- [x] controlled messaging/media canary
+  - Evidence: `pnpm runtime:pi-timur-agent-messaging-media-smoke -- --json` passed with fake-only `send_message` and `send_media` delivery, explicit `send_media` approval, operator peer/account/thread binding, path traversal denial, and paused-peer suppression. No real Telegram delivery was performed.
 - [x] live Telegram account switch to `default` is approved by operator
 - [x] first controlled live text turn returns expected behavior
   - Evidence: operator sent `/smoke` in Telegram DM at 2026-05-17 14:41 Asia/Almaty; the bot replied exactly `TIMUR_AGENT_LAB_OK`.
