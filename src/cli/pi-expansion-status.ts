@@ -93,6 +93,19 @@ interface PiExpansionStatus {
   };
 }
 
+interface PiExpansionStatusPolicy {
+  failOnOpen: boolean;
+  allowedOpenKinds: OpenEvidenceKind[];
+  exitCode: 0 | 1;
+  passed: boolean;
+  reason: string;
+  disallowedOpenEvidenceByKind: Record<OpenEvidenceKind, number>;
+}
+
+type PiExpansionStatusCliOutput = PiExpansionStatus & {
+  policy: PiExpansionStatusPolicy;
+};
+
 export async function runPiExpansionStatusCli(
   argv: string[],
   deps: PiExpansionStatusDeps = {},
@@ -115,9 +128,11 @@ export async function runPiExpansionStatusCli(
 
   try {
     const result = buildPiExpansionStatus(args);
-    const renderedResult = args.openOnly ? filterOpenAgents(result) : result;
+    const policy = evaluatePiExpansionStatusPolicy(result, args);
+    const output = withPolicy(result, policy);
+    const renderedResult = args.openOnly ? filterOpenAgents(output) : output;
     stdout.write(args.json ? `${JSON.stringify(renderedResult)}\n` : renderHuman(renderedResult));
-    return shouldFailOnOpen(result, args) ? 1 : 0;
+    return policy.exitCode;
   } catch (err) {
     stderr.write(`${redactSecrets(message(err))}\n`);
     return 1;
@@ -190,15 +205,50 @@ function isOpenEvidenceKind(value: string): value is OpenEvidenceKind {
   return (OPEN_EVIDENCE_KINDS as string[]).includes(value);
 }
 
-function shouldFailOnOpen(result: PiExpansionStatus, args: PiExpansionStatusArgs): boolean {
-  if (!args.failOnOpen || result.status !== 'attention') return false;
-  if (args.allowedOpenKinds.length === 0) return true;
+function evaluatePiExpansionStatusPolicy(
+  result: PiExpansionStatus,
+  args: Pick<PiExpansionStatusArgs, 'failOnOpen' | 'allowedOpenKinds'>,
+): PiExpansionStatusPolicy {
+  const base = {
+    failOnOpen: args.failOnOpen,
+    allowedOpenKinds: [...args.allowedOpenKinds],
+    disallowedOpenEvidenceByKind: emptyOpenEvidenceBreakdown(),
+  };
+
+  if (!args.failOnOpen) return {
+    ...base,
+    exitCode: 0,
+    passed: true,
+    reason: 'fail-on-open disabled',
+  };
+
+  if (result.status !== 'attention') return {
+    ...base,
+    exitCode: 0,
+    passed: true,
+    reason: 'expansion status passed',
+  };
+
+  if (args.allowedOpenKinds.length === 0) return {
+    ...base,
+    exitCode: 1,
+    passed: false,
+    reason: 'open expansion work remains',
+  };
 
   const allowedKinds = new Set(args.allowedOpenKinds);
-  const disallowedOpenEvidence = OPEN_EVIDENCE_KINDS.some((kind) => (
-    result.summary.openEvidenceByKind[kind] > 0 && !allowedKinds.has(kind)
-  ));
-  if (disallowedOpenEvidence) return true;
+  const disallowedOpenEvidenceByKind = OPEN_EVIDENCE_KINDS.reduce((totals, kind) => {
+    totals[kind] = allowedKinds.has(kind) ? 0 : result.summary.openEvidenceByKind[kind];
+    return totals;
+  }, emptyOpenEvidenceBreakdown());
+  const disallowedOpenEvidence = OPEN_EVIDENCE_KINDS.some((kind) => disallowedOpenEvidenceByKind[kind] > 0);
+  if (disallowedOpenEvidence) return {
+    ...base,
+    disallowedOpenEvidenceByKind,
+    exitCode: 1,
+    passed: false,
+    reason: 'disallowed open evidence kinds remain',
+  };
 
   const openEvidenceItems = result.summary.openEvidenceItems;
   const openEvidenceOnly = (
@@ -216,7 +266,19 @@ function shouldFailOnOpen(result: PiExpansionStatus, args: PiExpansionStatusArgs
     ))
   );
 
-  return !openEvidenceOnly;
+  if (!openEvidenceOnly) return {
+    ...base,
+    exitCode: 1,
+    passed: false,
+    reason: 'non-evidence expansion blockers remain',
+  };
+
+  return {
+    ...base,
+    exitCode: 0,
+    passed: true,
+    reason: 'only allowed open evidence kinds remain',
+  };
 }
 
 export function buildPiExpansionStatus(input: {
@@ -299,7 +361,14 @@ export function buildPiExpansionStatus(input: {
   };
 }
 
-function filterOpenAgents(result: PiExpansionStatus): PiExpansionStatus {
+function withPolicy(result: PiExpansionStatus, policy: PiExpansionStatusPolicy): PiExpansionStatusCliOutput {
+  return {
+    ...result,
+    policy,
+  };
+}
+
+function filterOpenAgents<T extends PiExpansionStatus>(result: T): T {
   return {
     ...result,
     agents: result.agents.filter((agent) => agent.state !== 'closed' && agent.state !== 'no_packet_required'),
@@ -448,13 +517,16 @@ function buildNextActions(input: {
   return [...new Set(actions)];
 }
 
-function renderHuman(result: PiExpansionStatus): string {
+function renderHuman(result: PiExpansionStatus & { policy?: PiExpansionStatusPolicy }): string {
   const lines = [
     `Pi expansion status ${result.status}.`,
     `agentsDirs: ${result.agentsDirs.join(', ')}`,
     `packetsDir: ${result.packetsDir}`,
     `summary: total=${result.summary.totalAgents}, highOrCritical=${result.summary.highOrCriticalAgents}, closed=${result.summary.closedAgents}, open=${result.summary.openAgents}, packetMissing=${result.summary.packetMissing}, evidence=${result.summary.closedEvidenceItems}/${result.summary.totalEvidenceItems} (${result.summary.evidenceProgressPercent}%)`,
     `openEvidenceByKind: operatorApproval=${result.summary.openEvidenceByKind.operatorApproval}, postExpansionMonitor=${result.summary.openEvidenceByKind.postExpansionMonitor}, liveAction=${result.summary.openEvidenceByKind.liveAction}, automated=${result.summary.openEvidenceByKind.automated}, manual=${result.summary.openEvidenceByKind.manual}`,
+    ...(result.policy
+      ? [`policy: passed=${result.policy.passed}, exitCode=${result.policy.exitCode}, reason=${result.policy.reason}, allowedOpenKinds=${result.policy.allowedOpenKinds.join(',') || 'none'}`]
+      : []),
     '',
     ...result.agents.map((agent) => [
       `${agent.id}: ${agent.state} (${agent.risk}/${agent.recommendedRing})`,

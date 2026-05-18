@@ -120,7 +120,15 @@ safety_profile: chat_like_openclaw
     ], { stdout: createWriter(), stderr: createWriter() });
 
     expect(firstCode).toBe(0);
-    expect(JSON.parse(firstStdout.text())).toMatchObject({ status: 'attention' });
+    expect(JSON.parse(firstStdout.text())).toMatchObject({
+      status: 'attention',
+      policy: {
+        failOnOpen: false,
+        exitCode: 0,
+        passed: true,
+        reason: 'fail-on-open disabled',
+      },
+    });
     expect(secondCode).toBe(1);
   });
 
@@ -158,6 +166,7 @@ safety_profile: chat_like_openclaw
       '--allow-open-kind', 'operatorApproval',
       '--allow-open-kind', 'postExpansionMonitor',
     ], { stdout: allowedStdout, stderr: createWriter() });
+    const blockedStdout = createWriter();
     const blockedCode = await runPiExpansionStatusCli([
       '--agents-dir', root,
       '--packets-dir', packetsRoot,
@@ -165,7 +174,7 @@ safety_profile: chat_like_openclaw
       '--fail-on-open',
       '--allow-open-kind', 'operatorApproval',
       '--allow-open-kind', 'postExpansionMonitor',
-    ], { stdout: createWriter(), stderr: createWriter() });
+    ], { stdout: blockedStdout, stderr: createWriter() });
 
     expect(allowedCode).toBe(0);
     expect(JSON.parse(allowedStdout.text())).toMatchObject({
@@ -177,8 +186,32 @@ safety_profile: chat_like_openclaw
           manual: 0,
         },
       },
+      policy: {
+        failOnOpen: true,
+        allowedOpenKinds: ['operatorApproval', 'postExpansionMonitor'],
+        exitCode: 0,
+        passed: true,
+        reason: 'only allowed open evidence kinds remain',
+        disallowedOpenEvidenceByKind: {
+          operatorApproval: 0,
+          postExpansionMonitor: 0,
+          liveAction: 0,
+          automated: 0,
+          manual: 0,
+        },
+      },
     });
     expect(blockedCode).toBe(1);
+    expect(JSON.parse(blockedStdout.text())).toMatchObject({
+      policy: {
+        exitCode: 1,
+        passed: false,
+        reason: 'disallowed open evidence kinds remain',
+        disallowedOpenEvidenceByKind: {
+          manual: 1,
+        },
+      },
+    });
   });
 
   it('prints only open agents with --open-only while preserving full summary', async () => {
@@ -220,6 +253,11 @@ safety_profile: chat_like_openclaw
       openEvidenceByKind: {
         manual: 1,
       },
+    });
+    expect(body.policy).toMatchObject({
+      failOnOpen: false,
+      exitCode: 0,
+      passed: true,
     });
     expect(body.agents.map((agent: { id: string }) => agent.id)).toEqual(['open_agent']);
   });
