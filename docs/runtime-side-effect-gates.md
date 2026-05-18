@@ -44,11 +44,13 @@ The aggregate dispatcher is available as:
 ```sh
 pnpm runtime:pi-live-gate -- --list
 pnpm runtime:pi-live-gate -- --list --json
+pnpm runtime:pi-live-gate -- --describe <gate-id>
+pnpm runtime:pi-live-gate -- --describe <gate-id> --json
 pnpm runtime:pi-live-gate -- --gate live-send-message --agent-id <id> --peer-id <peer> --dry-run --json
 pnpm runtime:pi-live-gate -- --gate memory-read --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip
 ```
 
-The JSON list is the automation contract for dashboards and runners. Each gate entry includes `risk`, `action`, focused/compatibility commands, `execution.requiredFlags`, `execution.optionalFlags`, `execution.supportsDryRun`, `execution.safetyMode`, `execution.approval`, and generic `execution.exampleArgs`. It must not include concrete agent ids, peer ids, or operator secrets.
+The JSON list and single-gate description are the automation contract for dashboards and runners. Each gate entry includes `risk`, `action`, focused/compatibility commands, `execution.requiredFlags`, `execution.optionalFlags`, `execution.supportsDryRun`, `execution.safetyMode`, `execution.approval`, and generic `execution.exampleArgs`. It must not include concrete agent ids, peer ids, or operator secrets.
 
 The desired end state is:
 

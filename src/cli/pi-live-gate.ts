@@ -21,6 +21,7 @@ export const PI_LIVE_GATE_IDS = sideEffectGateIds();
 export type PiLiveGateId = SideEffectGateId;
 
 interface PiLiveGateArgs {
+  describe?: PiLiveGateId;
   gate?: PiLiveGateId;
   rest: string[];
   help: boolean;
@@ -70,6 +71,15 @@ export async function runPiLiveGateCli(
     stdout.write(args.json ? `${JSON.stringify(listPayload(), null, 2)}\n` : `${formatGateList()}\n`);
     return 0;
   }
+  if (args.describe) {
+    const gate = findSideEffectGate(args.describe);
+    if (!gate) {
+      stderr.write(`Unknown gate: ${args.describe}\n${usage()}\n`);
+      return 2;
+    }
+    stdout.write(args.json ? `${JSON.stringify(describePayload(gate), null, 2)}\n` : `${formatGateDescription(gate)}\n`);
+    return 0;
+  }
   if (!args.gate) {
     stderr.write(`--gate is required.\n${usage()}\n`);
     return 2;
@@ -80,6 +90,7 @@ export async function runPiLiveGateCli(
 }
 
 export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
+  let describe: PiLiveGateId | undefined;
   const rest: string[] = [];
   let gate: PiLiveGateId | undefined;
   let help = false;
@@ -102,6 +113,14 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
       list = true;
       continue;
     }
+    if (arg === '--describe') {
+      describe = parseGateId(requireValue(argv, ++i, '--describe'));
+      continue;
+    }
+    if (arg.startsWith('--describe=')) {
+      describe = parseGateId(arg.slice('--describe='.length));
+      continue;
+    }
     if (arg === '--gate') {
       gate = parseGateId(requireValue(argv, ++i, '--gate'));
       continue;
@@ -113,13 +132,20 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
     rest.push(arg);
   }
 
-  return { gate, rest, help, json, list };
+  return { describe, gate, rest, help, json, list };
 }
 
 function listPayload() {
   return {
     status: 'ok',
     gates: SIDE_EFFECT_GATE_REGISTRY,
+  };
+}
+
+function describePayload(gate: NonNullable<ReturnType<typeof findSideEffectGate>>) {
+  return {
+    status: 'ok',
+    gate,
   };
 }
 
@@ -133,6 +159,22 @@ function formatGateList(): string {
       `    focused: ${gate.focusedCommand}`,
       `    compatibility: ${gate.compatibilityCommand}`,
     ].join('\n')),
+  ].join('\n');
+}
+
+function formatGateDescription(gate: NonNullable<ReturnType<typeof findSideEffectGate>>): string {
+  return [
+    `Pi live gate: ${gate.id}`,
+    `  action: ${gate.action}`,
+    `  risk: ${gate.risk}`,
+    `  focused: ${gate.focusedCommand}`,
+    `  compatibility: ${gate.compatibilityCommand}`,
+    `  safety: ${gate.execution.safetyMode}`,
+    `  approval: ${gate.execution.approval}`,
+    `  supportsDryRun: ${gate.execution.supportsDryRun}`,
+    `  requiredFlags: ${gate.execution.requiredFlags.join(', ')}`,
+    `  optionalFlags: ${gate.execution.optionalFlags.join(', ')}`,
+    `  example: pnpm runtime:pi-live-gate -- --gate ${gate.id} ${gate.execution.exampleArgs.join(' ')}`,
   ].join('\n');
 }
 
@@ -151,6 +193,7 @@ function usage(): string {
   return [
     'Usage: pnpm runtime:pi-live-gate -- --gate <gate-id> [gate options]',
     '       pnpm runtime:pi-live-gate -- --list [--json]',
+    '       pnpm runtime:pi-live-gate -- --describe <gate-id> [--json]',
     '',
     'Gate ids:',
     ...PI_LIVE_GATE_IDS.map((id) => `  ${id}`),

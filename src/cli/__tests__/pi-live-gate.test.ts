@@ -72,6 +72,56 @@ describe('Pi live gate dispatcher CLI', () => {
     });
   });
 
+  it('describes one gate without requiring a run', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiLiveGateCli(['--describe', 'memory-read'], { stdout, stderr });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    expect(stdout.text()).toContain('memory-read');
+    expect(stdout.text()).toContain('runtime:pi-memory-read-gate');
+    expect(stdout.text()).toContain('not-required-read-only');
+  });
+
+  it('describes one gate as JSON for automation', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiLiveGateCli(['--describe=live-send-message', '--json'], { stdout, stderr });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    const payload = JSON.parse(stdout.text()) as {
+      status: string;
+      gate: {
+        id: string;
+        execution: {
+          supportsDryRun: boolean;
+          approval: string;
+        };
+      };
+    };
+    expect(payload.status).toBe('ok');
+    expect(payload.gate.id).toBe('live-send-message');
+    expect(payload.gate.execution).toMatchObject({
+      supportsDryRun: true,
+      approval: 'required-for-live',
+    });
+  });
+
+  it('returns usage error for an unknown described gate', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiLiveGateCli(['--describe', 'unknown'], { stdout, stderr });
+
+    expect(code).toBe(2);
+    expect(stdout.text()).toBe('');
+    expect(stderr.text()).toContain('Unknown gate');
+  });
+
   it('dispatches to the selected gate runner', async () => {
     const stdout = createWriter();
     const stderr = createWriter();
