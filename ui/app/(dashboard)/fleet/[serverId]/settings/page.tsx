@@ -68,6 +68,36 @@ interface SdkActiveInputStatus {
   reason: string;
 }
 
+interface RuntimeControlStatus {
+  harness?: { id?: string };
+  defaultProvider?: "claude-agent-sdk" | "pi" | "opencode";
+  pi?: {
+    packageAvailable?: boolean;
+    authConfigured?: boolean;
+    modelsConfigured?: boolean;
+  };
+  agents?: {
+    total?: number;
+    byEffectiveProvider?: Record<string, number>;
+  };
+  gateway?: {
+    activeSessions?: number | null;
+    lastError?: string | null;
+  };
+}
+
+interface RuntimeGateRegistryResponse {
+  gates?: Array<{
+    id: string;
+    capabilityGroup: string;
+    execution: {
+      supportsDryRun: boolean;
+      approval: string;
+      safetyMode: string;
+    };
+  }>;
+}
+
 interface MetricsResponse {
   gauges?: {
     active_sessions?: number;
@@ -1452,19 +1482,38 @@ function AdvancedSection({ serverId }: { serverId: string }) {
   const diagnosticsUrl = `/api/fleet/${serverId}/diagnostics/export?includeLogs=true&runLimit=50&routeDecisionLimit=50&diagnosticEventLimit=200`;
   const [activeInput, setActiveInput] = useState<SdkActiveInputStatus | null>(null);
   const [runtimeDefaults, setRuntimeDefaults] = useState<GatewayInfo["runtimeDefaults"] | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeControlStatus | null>(null);
+  const [runtimeGates, setRuntimeGates] = useState<RuntimeGateRegistryResponse | null>(null);
 
   useEffect(() => {
-    fetch(`/api/fleet/${serverId}/gateway/status`)
-      .then((r) => r.json())
-      .then((data: GatewayInfo) => {
-        setActiveInput(data.sdkActiveInput ?? null);
-        setRuntimeDefaults(data.runtimeDefaults ?? null);
+    Promise.all([
+      fetch(`/api/fleet/${serverId}/gateway/status`).then((r) => r.json()),
+      fetch(`/api/fleet/${serverId}/runtime/status`).then((r) => r.json()),
+      fetch(`/api/fleet/${serverId}/runtime/gates`).then((r) => r.json()),
+    ])
+      .then(([gateway, runtime, gates]: [GatewayInfo, RuntimeControlStatus, RuntimeGateRegistryResponse]) => {
+        setActiveInput(gateway.sdkActiveInput ?? null);
+        setRuntimeDefaults(gateway.runtimeDefaults ?? null);
+        setRuntimeStatus(runtime);
+        setRuntimeGates(gates);
       })
       .catch(() => {
         setActiveInput(null);
         setRuntimeDefaults(null);
+        setRuntimeStatus(null);
+        setRuntimeGates(null);
       });
   }, [serverId]);
+
+  const piReady = Boolean(
+    runtimeStatus?.defaultProvider === "pi"
+    && runtimeStatus?.pi?.packageAvailable
+    && runtimeStatus?.pi?.authConfigured
+    && runtimeStatus?.pi?.modelsConfigured,
+  );
+  const gateCount = runtimeGates?.gates?.length ?? 0;
+  const gatedCapabilityCount = new Set((runtimeGates?.gates ?? []).map((gate) => gate.capabilityGroup)).size;
+  const allGatesDryRun = (runtimeGates?.gates ?? []).every((gate) => gate.execution.supportsDryRun);
 
   return (
     <div className="flex max-w-[720px] flex-col gap-4">
@@ -1487,8 +1536,33 @@ function AdvancedSection({ serverId }: { serverId: string }) {
       </div>
       <Divider />
       <SectionHead
-        title="Active input"
-        desc="Current SDK-native steer decision for active runs."
+        title="Runtime execution controls"
+        desc="Read-only state for active runs, interrupts, checkpoints, tool policy, side-effect gates, and fallback behavior."
+      />
+      <div
+        className="flex flex-col gap-2 rounded-md border px-3.5 py-3"
+        style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
+      >
+        <RuntimeRow label="Active run registry" value={`${runtimeStatus?.gateway?.activeSessions ?? 0} active session(s) visible from gateway status`} />
+        <RuntimeRow label="Interrupt support" value="Runtime queue modes support collect, serial, steer, and interrupt per agent" />
+        <RuntimeRow label="Checkpoint/rewind support" value="Session rewind endpoints and legacy file checkpointing are exposed only where configured" />
+        <RuntimeRow label="Tool policy gate" value="Agent safety profile, allow/deny tools, MCP preflight, and side-effect registry are the active policy surfaces" />
+        <RuntimeRow label="Side-effect gate harness" value={`${gateCount} gate(s), ${gatedCapabilityCount} capability group(s), dry-run ${allGatesDryRun ? "available" : "mixed"}`} />
+        <RuntimeRow label="Fallback/rollback policy" value={`Default provider ${runtimeStatus?.defaultProvider ?? runtimeDefaults?.headlessProvider ?? "unknown"}; Pi readiness ${piReady ? "ready" : "needs setup"}`} />
+        <div className="pt-1 text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
+          Live gate execution is intentionally absent from Settings. Use the Runtime page for registry, expansion, and plan-only diagnostics.
+        </div>
+        <a href={`/fleet/${serverId}/runtime`} className="mt-1 w-fit">
+          <Button variant="outline" size="sm">
+            <Terminal className="h-3.5 w-3.5" />
+            Open Runtime page
+          </Button>
+        </a>
+      </div>
+      <Divider />
+      <SectionHead
+        title="Legacy active input diagnostics"
+        desc="Compatibility-only Claude Agent SDK native steer state for older provider paths."
       />
       <div
         className="flex flex-col gap-2 rounded-md border px-3.5 py-3"

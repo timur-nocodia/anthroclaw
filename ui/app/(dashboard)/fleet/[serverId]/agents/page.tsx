@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Bot,
+  Cpu,
   MessageSquare,
   Pencil,
   Plus,
@@ -33,6 +34,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import {
+  STATIC_RUNTIME_MODEL_OPTIONS,
+  withCurrentRuntimeModelOption,
+  type RuntimeModelOption,
+} from "@/lib/runtime-models";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -42,6 +48,11 @@ interface AgentSummary {
   id: string;
   model?: string;
   description?: string;
+  runtime?: {
+    headless?: {
+      provider?: "claude-agent-sdk" | "pi" | "opencode";
+    };
+  };
   routes?: Array<{ channel: string }>;
   skills?: string[];
   skillCount?: number;
@@ -49,13 +60,11 @@ interface AgentSummary {
   session_policy?: string;
 }
 
-const MODELS = [
-  "claude-sonnet-4-6",
-  "claude-opus-4-6",
-  "claude-haiku-4-5",
-  "claude-sonnet-4-5",
-  "claude-opus-4-7",
-];
+interface RuntimeModelsResponse {
+  defaultProvider?: "claude-agent-sdk" | "pi" | "opencode";
+  defaultModel?: string;
+  options?: RuntimeModelOption[];
+}
 
 /* ------------------------------------------------------------------ */
 /*  Main                                                               */
@@ -67,13 +76,14 @@ export default function AgentsListPage() {
   const serverId = params.serverId as string;
 
   const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [runtimeModels, setRuntimeModels] = useState<RuntimeModelsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
 
   // Create dialog state
   const [createOpen, setCreateOpen] = useState(false);
   const [newId, setNewId] = useState("");
-  const [newModel, setNewModel] = useState("claude-sonnet-4-6");
+  const [newModel, setNewModel] = useState(STATIC_RUNTIME_MODEL_OPTIONS[0]?.id ?? "anthropic/claude-sonnet-4-6");
   const [newTemplate, setNewTemplate] = useState<"blank" | "example">("blank");
   const [creating, setCreating] = useState(false);
 
@@ -99,6 +109,16 @@ export default function AgentsListPage() {
     fetchAgents();
   }, [fetchAgents]);
 
+  useEffect(() => {
+    fetch(`/api/fleet/${serverId}/runtime/models`)
+      .then((r) => r.json())
+      .then((data: RuntimeModelsResponse) => {
+        setRuntimeModels(data);
+        if (data.defaultModel) setNewModel(data.defaultModel);
+      })
+      .catch(() => setRuntimeModels(null));
+  }, [serverId]);
+
   const filtered = agents.filter(
     (a) =>
       a.id.toLowerCase().includes(q.toLowerCase()) ||
@@ -106,6 +126,11 @@ export default function AgentsListPage() {
   );
 
   const totalRoutes = agents.reduce((n, a) => n + (a.routes?.length ?? 0), 0);
+  const defaultProvider = runtimeModels?.defaultProvider ?? "pi";
+  const modelOptions = withCurrentRuntimeModelOption(
+    runtimeModels?.options?.length ? runtimeModels.options : STATIC_RUNTIME_MODEL_OPTIONS,
+    newModel,
+  );
 
   const handleCreate = async () => {
     if (!newId) return;
@@ -202,7 +227,7 @@ export default function AgentsListPage() {
           <div
             className="grid items-center px-3.5 py-2 text-[10px] uppercase tracking-[0.5px]"
             style={{
-              gridTemplateColumns: "1.4fr 140px 120px 80px 110px 110px 96px",
+              gridTemplateColumns: "1.35fr 170px 96px 120px 80px 110px 110px 96px",
               color: "var(--oc-text-muted)",
               borderBottom: "1px solid var(--oc-border)",
               background: "var(--oc-bg2)",
@@ -210,6 +235,7 @@ export default function AgentsListPage() {
           >
             <span>Name</span>
             <span>Model</span>
+            <span>Runtime</span>
             <span>Routes</span>
             <span>Skills</span>
             <span>Queue</span>
@@ -229,7 +255,7 @@ export default function AgentsListPage() {
                 onClick={() => router.push(`/fleet/${serverId}/agents/${a.id}`)}
                 className="grid cursor-pointer items-center gap-2 px-3.5 py-3 transition-colors hover:bg-[var(--oc-bg2)]"
                 style={{
-                  gridTemplateColumns: "1.4fr 140px 120px 80px 110px 110px 96px",
+                  gridTemplateColumns: "1.35fr 170px 96px 120px 80px 110px 110px 96px",
                   borderBottom:
                     i === filtered.length - 1
                       ? "none"
@@ -270,6 +296,7 @@ export default function AgentsListPage() {
                 >
                   {a.model ?? "---"}
                 </span>
+                <ProviderBadge provider={effectiveProvider(a, defaultProvider)} />
                 <div className="flex flex-wrap gap-1">
                   {tg > 0 && (
                     <span
@@ -379,7 +406,7 @@ export default function AgentsListPage() {
                 key={`sk-${i}`}
                 className="grid items-center gap-2 px-3.5 py-3"
                 style={{
-                  gridTemplateColumns: "1.4fr 140px 120px 80px 110px 110px 96px",
+                  gridTemplateColumns: "1.35fr 170px 96px 120px 80px 110px 110px 96px",
                   borderBottom: i === 3 ? "none" : "1px solid var(--oc-border)",
                 }}
               >
@@ -395,6 +422,10 @@ export default function AgentsListPage() {
                 </div>
                 <div
                   className="h-3 w-24 animate-pulse rounded"
+                  style={{ background: "var(--oc-bg3)" }}
+                />
+                <div
+                  className="h-3 w-14 animate-pulse rounded"
                   style={{ background: "var(--oc-bg3)" }}
                 />
                 <div
@@ -494,12 +525,15 @@ export default function AgentsListPage() {
                   color: "var(--color-foreground)",
                 }}
               >
-                {MODELS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
+                {modelOptions.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
                   </option>
                 ))}
               </select>
+              <p className="mt-1 text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
+                Runtime model registry. Legacy Claude ids remain compatibility-only.
+              </p>
             </div>
             <div>
               <label
@@ -535,7 +569,7 @@ export default function AgentsListPage() {
                       style={{ color: "var(--oc-text-muted)" }}
                     >
                       {t === "blank"
-                        ? "Minimal CLAUDE.md only"
+                        ? "Minimal runtime-ready files"
                         : "Copy from example agent"}
                     </span>
                   </button>
@@ -588,5 +622,38 @@ export default function AgentsListPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function effectiveProvider(
+  agent: AgentSummary,
+  defaultProvider: "claude-agent-sdk" | "pi" | "opencode",
+): "claude-agent-sdk" | "pi" | "opencode" {
+  return agent.runtime?.headless?.provider ?? defaultProvider;
+}
+
+function ProviderBadge({ provider }: { provider: "claude-agent-sdk" | "pi" | "opencode" }) {
+  const isPi = provider === "pi";
+  const isLegacy = provider === "claude-agent-sdk";
+  return (
+    <span
+      className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-px text-[10px] font-medium"
+      style={{
+        background: isPi
+          ? "rgba(74,222,128,0.13)"
+          : isLegacy
+            ? "rgba(251,191,36,0.13)"
+            : "rgba(255,255,255,0.04)",
+        border: "1px solid var(--oc-border)",
+        color: isPi
+          ? "var(--oc-green)"
+          : isLegacy
+            ? "var(--oc-yellow)"
+            : "var(--oc-text-dim)",
+      }}
+    >
+      <Cpu className="h-2.5 w-2.5" />
+      {provider}
+    </span>
   );
 }

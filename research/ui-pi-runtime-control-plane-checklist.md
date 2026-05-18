@@ -222,74 +222,74 @@ This plan is intentionally broader than a rename. The source of truth must move 
 
 ### Phase 7 - Agent page runtime parity
 
-- [ ] Show effective runtime provider on the agent header.
-- [ ] Show global default vs per-agent override.
-- [ ] Show model source.
-- [ ] Show side-effect capability groups inferred from config:
-  - [ ] messaging.
-  - [ ] media.
-  - [ ] cron/scheduled work.
-  - [ ] notifications.
-  - [ ] admin/config.
-  - [ ] MCP onboarding/external MCP.
-  - [ ] memory/session/search.
-  - [ ] learning.
-  - [ ] Buildroom.
-- [ ] Replace Anthropic-only model dropdown with runtime model selector.
+- [x] Show effective runtime provider on the agent header.
+- [x] Show global default vs per-agent override.
+- [x] Show model source.
+- [x] Show side-effect capability groups inferred from config:
+  - [x] messaging.
+  - [x] media.
+  - [x] cron/scheduled work.
+  - [x] notifications.
+  - [x] admin/config.
+  - [x] MCP onboarding/external MCP.
+  - [x] memory/session/search.
+  - [x] learning.
+  - [x] Buildroom.
+- [x] Replace Anthropic-only model dropdown with runtime model selector.
 
 ### Phase 8 - Settings Advanced cleanup
 
-- [ ] Replace "Active input" SDK section with "Runtime execution controls".
-- [ ] Move `sdkActiveInput` to legacy diagnostics.
-- [ ] Show:
-  - [ ] active run registry.
-  - [ ] interrupt support.
-  - [ ] checkpoint/rewind support.
-  - [ ] tool policy gate.
-  - [ ] side-effect gate harness.
-  - [ ] fallback/rollback policy.
+- [x] Replace "Active input" SDK section with "Runtime execution controls".
+- [x] Move `sdkActiveInput` to legacy diagnostics.
+- [x] Show:
+  - [x] active run registry.
+  - [x] interrupt support.
+  - [x] checkpoint/rewind support.
+  - [x] tool policy gate.
+  - [x] side-effect gate harness.
+  - [x] fallback/rollback policy.
 
 ### Phase 9 - Fleet overview
 
-- [ ] Add runtime health column/card.
-- [ ] Show default provider and expansion progress per server.
-- [ ] Link unhealthy runtime state to `Runtime` page.
-- [ ] Keep fleet deploy/server health independent from provider branding.
+- [x] Add runtime health column/card.
+- [x] Show default provider and expansion progress per server.
+- [x] Link unhealthy runtime state to `Runtime` page.
+- [x] Keep fleet deploy/server health independent from provider branding.
 
 ## Legacy Quarantine Checklist
 
-- [ ] Keep backend `claude-agent-sdk` code only behind runtime adapter/fallback boundaries.
-- [ ] Rename UI tests so new primary tests do not assert Claude wording.
-- [ ] Keep old `/api/claude-auth/*` temporarily.
-- [ ] Add copy stating that Claude Agent SDK is a legacy compatibility provider.
-- [ ] Add a later removal phase for:
-  - [ ] `ui/lib/claude-auth.ts`.
-  - [ ] `ui/lib/claude-auth-instance.ts`.
-  - [ ] `ui/app/api/claude-auth/*`.
-  - [ ] `@anthropic-ai/claude-agent-sdk` UI externals in `ui/next.config.ts`.
+- [x] Keep backend `claude-agent-sdk` code only behind runtime adapter/fallback boundaries.
+- [x] Rename UI tests so new primary tests do not assert Claude wording.
+- [x] Keep old `/api/claude-auth/*` temporarily.
+- [x] Add copy stating that Claude Agent SDK is a legacy compatibility provider.
+- [x] Add a later removal phase for:
+  - [x] `ui/lib/claude-auth.ts`.
+  - [x] `ui/lib/claude-auth-instance.ts`.
+  - [x] `ui/app/api/claude-auth/*`.
+  - [x] `@anthropic-ai/claude-agent-sdk` UI externals in `ui/next.config.ts`.
 
 ## Safety and Approval Requirements
 
-- [ ] UI must not run live gates until a separate explicit approval design lands.
-- [ ] Any future live action modal must show:
-  - [ ] exact gate id.
-  - [ ] exact agent id.
-  - [ ] exact channel/account/peer/thread target.
-  - [ ] expected effect count.
-  - [ ] dry-run result.
-  - [ ] post-action monitor command.
-- [ ] Dry-run/plan/validate endpoints must be clearly labeled as no-live-side-effect.
-- [ ] Secret values must stay masked in config and runtime status responses.
+- [x] UI must not run live gates until a separate explicit approval design lands.
+- [x] Any future live action modal must show:
+  - [x] exact gate id.
+  - [x] exact agent id.
+  - [x] exact channel/account/peer/thread target.
+  - [x] expected effect count.
+  - [x] dry-run result.
+  - [x] post-action monitor command.
+- [x] Dry-run/plan/validate endpoints must be clearly labeled as no-live-side-effect.
+- [x] Secret values must stay masked in config and runtime status responses.
 
 ## Completion Definition
 
 The UI migration is complete when:
 
-- [ ] The primary settings/runtime UI has no Claude subscription or Agent SDK-native wording.
-- [ ] Pi readiness is visible without reading CLI output.
-- [ ] Runtime gates are visible from registry data in UI.
-- [ ] Expansion packet progress is visible from UI.
-- [ ] Agent pages show effective runtime and non-Claude model choices.
-- [ ] Claude Agent SDK appears only under legacy compatibility diagnostics.
-- [ ] API/component tests cover the new runtime status/gates/expansion contracts.
-- [ ] Existing `pnpm build` and `pnpm test` pass.
+- [x] The primary settings/runtime UI has no Claude subscription or Agent SDK-native wording.
+- [x] Pi readiness is visible without reading CLI output.
+- [x] Runtime gates are visible from registry data in UI.
+- [x] Expansion packet progress is visible from UI.
+- [x] Agent pages show effective runtime and non-Claude model choices.
+- [x] Claude Agent SDK appears only under legacy compatibility diagnostics.
+- [x] API/component tests cover the new runtime status/gates/expansion contracts.
+- [x] Existing `pnpm build` and `pnpm test` pass.

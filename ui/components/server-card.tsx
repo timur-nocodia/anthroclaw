@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronRight, Cpu } from "lucide-react";
 import type { FleetServerStatus } from "@/lib/fleet";
 import { StatusIndicator } from "@/components/status-indicator";
 import { ResourceBar } from "@/components/resource-bar";
@@ -65,9 +65,17 @@ function StatCell({
 
 interface ServerCardProps {
   server: FleetServerStatus;
+  runtime?: RuntimeCardHealth;
 }
 
-export function ServerCard({ server: s }: ServerCardProps) {
+interface RuntimeCardHealth {
+  defaultProvider: string;
+  piReady: boolean;
+  progressPercent: number | null;
+  status: "ok" | "attention" | "unknown";
+}
+
+export function ServerCard({ server: s, runtime }: ServerCardProps) {
   const statusDot =
     s.status === "healthy"
       ? "connected"
@@ -101,7 +109,7 @@ export function ServerCard({ server: s }: ServerCardProps) {
 
   return (
     <Link
-      href={`/fleet/${s.id}/`}
+      href={runtime && (runtime.status === "attention" || !runtime.piReady) ? `/fleet/${s.id}/runtime` : `/fleet/${s.id}/`}
       className={cn(
         "group relative flex flex-col gap-3 overflow-hidden rounded-md p-3.5 transition-colors",
         s.status === "offline" && "opacity-85",
@@ -252,6 +260,7 @@ export function ServerCard({ server: s }: ServerCardProps) {
         style={{ borderColor: "var(--oc-border)" }}
       >
         <div className="flex gap-[5px]">
+          <RuntimeCardBadge runtime={runtime} />
           {s.channels.telegram > 0 && (
             <span
               className="inline-flex items-center rounded px-[5px] py-px text-[10px] font-medium"
@@ -317,5 +326,34 @@ export function ServerCard({ server: s }: ServerCardProps) {
         </div>
       </div>
     </Link>
+  );
+}
+
+function RuntimeCardBadge({ runtime }: { runtime?: RuntimeCardHealth }) {
+  const tone = !runtime
+    ? "unknown"
+    : runtime.status === "attention" || !runtime.piReady
+      ? "attention"
+      : "ok";
+  const color = tone === "ok"
+    ? "var(--oc-green)"
+    : tone === "attention"
+      ? "var(--oc-yellow)"
+      : "var(--oc-text-muted)";
+  const label = runtime
+    ? `${runtime.defaultProvider}${runtime.progressPercent === null ? "" : ` ${runtime.progressPercent}%`}`
+    : "runtime";
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded px-[5px] py-px text-[10px] font-medium"
+      style={{
+        background: tone === "ok" ? "rgba(74,222,128,0.13)" : tone === "attention" ? "rgba(251,191,36,0.13)" : "rgba(255,255,255,0.04)",
+        color,
+        border: "1px solid var(--oc-border)",
+      }}
+    >
+      <Cpu className="h-2.5 w-2.5" />
+      {label}
+    </span>
   );
 }

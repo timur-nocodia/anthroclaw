@@ -35,6 +35,11 @@ export class ValidationError extends Error {
 export interface AgentSummary {
   id: string;
   model: string;
+  runtime?: {
+    headless?: {
+      provider?: 'claude-agent-sdk' | 'pi' | 'opencode';
+    };
+  };
   description?: string;
   routes: Array<{ channel: string; account?: string; scope?: string }>;
   skills?: string[];
@@ -104,7 +109,8 @@ export function listAgents(): AgentSummary[] {
 
       results.push({
         id: entry.name,
-        model: (parsed.model as string) ?? 'claude-sonnet-4-6',
+        model: (parsed.model as string) ?? 'anthropic/claude-sonnet-4-6',
+        runtime: readRuntimeOverride(parsed),
         description: parsed.description as string | undefined,
         routes,
         skills: Array.isArray(parsed.skills) ? (parsed.skills as string[]) : undefined,
@@ -119,6 +125,20 @@ export function listAgents(): AgentSummary[] {
   }
 
   return results;
+}
+
+function readRuntimeOverride(parsed: Record<string, unknown>): AgentSummary['runtime'] {
+  const runtime = parsed.runtime;
+  if (!runtime || typeof runtime !== 'object' || Array.isArray(runtime)) return undefined;
+  const headless = (runtime as Record<string, unknown>).headless;
+  if (!headless || typeof headless !== 'object' || Array.isArray(headless)) return undefined;
+  const provider = (headless as Record<string, unknown>).provider;
+  if (provider !== 'claude-agent-sdk' && provider !== 'pi' && provider !== 'opencode') return undefined;
+  return {
+    headless: {
+      provider,
+    },
+  };
 }
 
 /**
@@ -285,7 +305,7 @@ export function createAgent(
   mkdirSync(join(dir, 'memory'), { recursive: true });
   mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
 
-  const agentModel = model ?? 'claude-sonnet-4-6';
+  const agentModel = model ?? 'anthropic/claude-sonnet-4-6';
   const valueSafeDefaults = createValueSafeDefaults(id);
 
   if (template === 'example') {

@@ -10,6 +10,15 @@ const SETTINGS_PAGE_PATH = resolve(
   process.cwd(),
   'app/(dashboard)/fleet/[serverId]/settings/page.tsx',
 );
+const AGENTS_LIST_PAGE_PATH = resolve(
+  process.cwd(),
+  'app/(dashboard)/fleet/[serverId]/agents/page.tsx',
+);
+const FLEET_PAGE_PATH = resolve(
+  process.cwd(),
+  'app/(dashboard)/fleet/page.tsx',
+);
+const SERVER_CARD_PATH = resolve(process.cwd(), 'components/server-card.tsx');
 
 describe('agent config page — chat profile constants', () => {
   const source = readFileSync(PAGE_PATH, 'utf-8');
@@ -61,6 +70,18 @@ describe('agent config page — chat profile constants', () => {
     expect(source).toContain('withCurrentRuntimeModelOption(STATIC_RUNTIME_MODEL_OPTIONS, cfg.model)');
   });
 
+  it('agent header and config expose effective runtime provider and capability groups', () => {
+    expect(source).toContain('effective runtime: {effectiveProvider}');
+    expect(source).toContain('Runtime provider override');
+    expect(source).toContain('Side-effect capability groups');
+    expect(source).toContain('inferAgentCapabilityGroups');
+  });
+
+  it('legacy SDK controls are quarantined as compatibility diagnostics', () => {
+    expect(source).toContain('Legacy Claude Agent SDK compatibility');
+    expect(source).toContain('Runtime v1 + Pi remains the primary harness path.');
+  });
+
   it('personality field appears in cfg state initializer', () => {
     expect(source).toMatch(/personality:\s*agent\.personality/);
   });
@@ -79,5 +100,47 @@ describe('settings page — runtime primary surface', () => {
     expect(source).toContain('@/components/settings/RuntimeAuthPanel');
     expect(source.indexOf('<RuntimeAuthPanel')).toBeLessThan(source.indexOf('<ClaudeAuthPanel'));
     expect(source).toContain('Legacy Claude Agent SDK compatibility');
+  });
+
+  it('advanced settings show generic runtime execution controls before legacy active input diagnostics', () => {
+    expect(source).toContain('Runtime execution controls');
+    expect(source).toContain('Legacy active input diagnostics');
+    expect(source.indexOf('Runtime execution controls')).toBeLessThan(source.indexOf('Legacy active input diagnostics'));
+    expect(source).toContain('Side-effect gate harness');
+  });
+});
+
+describe('agents list page — runtime model creation', () => {
+  const source = readFileSync(AGENTS_LIST_PAGE_PATH, 'utf-8');
+
+  it('uses runtime model registry for new agents', () => {
+    expect(source).toContain('@/lib/runtime-models');
+    expect(source).toContain('/runtime/models');
+    expect(source).toContain('modelOptions.map');
+    expect(source).not.toMatch(/const MODELS\s*=/);
+  });
+
+  it('shows effective provider in the list table', () => {
+    expect(source).toContain('<span>Runtime</span>');
+    expect(source).toContain('effectiveProvider(a, defaultProvider)');
+    expect(source).toContain('ProviderBadge');
+  });
+});
+
+describe('fleet overview — runtime health', () => {
+  const fleetSource = readFileSync(FLEET_PAGE_PATH, 'utf-8');
+  const cardSource = readFileSync(SERVER_CARD_PATH, 'utf-8');
+
+  it('fetches runtime readiness and expansion progress per server', () => {
+    expect(fleetSource).toContain('/runtime/status');
+    expect(fleetSource).toContain('/runtime/expansion-status');
+    expect(fleetSource).toContain('progressPercent');
+  });
+
+  it('links unhealthy runtime states to the runtime page', () => {
+    expect(fleetSource).toContain('runtimeLinkForServer');
+    expect(fleetSource).toContain('RuntimeHealthBadge');
+    expect(cardSource).toContain('/runtime');
+    expect(cardSource).toContain('RuntimeCardBadge');
   });
 });

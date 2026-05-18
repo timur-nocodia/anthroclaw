@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Clock,
   Copy,
+  Cpu,
   Database,
   Download,
   DollarSign,
@@ -89,6 +90,11 @@ import { AgentDisplaySection } from "@/components/AgentDisplaySection";
 interface AgentConfig {
   id: string;
   model?: string;
+  runtime?: {
+    headless?: {
+      provider?: RuntimeProvider;
+    };
+  };
   thinking?: { type: string; budgetTokens?: number };
   effort?: string;
   safety_profile?: 'public' | 'trusted' | 'private' | 'chat_like_openclaw';
@@ -219,6 +225,17 @@ interface AgentConfig {
       schedule?: string;
       throttle?: string;
     }>;
+  };
+}
+
+type RuntimeProvider = "claude-agent-sdk" | "pi" | "opencode";
+
+interface RuntimeStatus {
+  defaultProvider?: RuntimeProvider;
+  pi?: {
+    packageAvailable?: boolean;
+    authConfigured?: boolean;
+    modelsConfigured?: boolean;
   };
 }
 
@@ -816,6 +833,84 @@ function describeCron(expr: string): string {
   return pieces.join(", ");
 }
 
+function getEffectiveRuntimeProvider(
+  agent: Pick<AgentConfig, "runtime">,
+  defaultProvider: RuntimeProvider | undefined,
+): RuntimeProvider {
+  return agent.runtime?.headless?.provider ?? defaultProvider ?? "pi";
+}
+
+function inferRuntimeModelSource(model: string | undefined): "pi" | "legacy" | "custom" | "runtime" {
+  if (!model) return "runtime";
+  if (model.startsWith("claude-")) return "legacy";
+  if (model.includes("/") || model.includes(":")) return "pi";
+  return "custom";
+}
+
+function HeaderPill({
+  tone,
+  children,
+}: {
+  tone: "accent" | "ok" | "warn" | "muted";
+  children: React.ReactNode;
+}) {
+  const color = tone === "accent"
+    ? "var(--oc-accent)"
+    : tone === "ok"
+      ? "var(--oc-green)"
+      : tone === "warn"
+        ? "var(--oc-yellow)"
+        : "var(--oc-text-muted)";
+  const background = tone === "accent"
+    ? "var(--oc-accent-soft)"
+    : tone === "ok"
+      ? "rgba(74,222,128,0.15)"
+      : tone === "warn"
+        ? "rgba(251,191,36,0.15)"
+        : "rgba(255,255,255,0.04)";
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded px-1.5 py-px text-[10px] font-medium"
+      style={{ background, border: "1px solid var(--oc-border)", color }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function inferAgentCapabilityGroups(config: {
+  routes?: Array<{ channel: string }>;
+  mcp_tools?: string[];
+  cron?: Array<{ enabled: boolean }>;
+  notifications?: AgentConfig["notifications"];
+  external_mcp_servers?: Record<string, ExternalMcpServerConfig>;
+  memory_extraction?: { enabled?: boolean };
+  learning?: { enabled?: boolean };
+  plugins?: Record<string, unknown>;
+  quick_commands?: Record<string, unknown>;
+  sdk?: {
+    allowedTools?: string[];
+    permissions?: {
+      allow_mcp?: boolean;
+      allow_bash?: boolean;
+      allow_web?: boolean;
+    };
+  };
+}): string[] {
+  const groups = new Set<string>();
+  if ((config.routes?.length ?? 0) > 0) groups.add("messaging");
+  if (config.mcp_tools?.some((tool) => tool.includes("media") || tool.includes("file"))) groups.add("media");
+  if ((config.cron ?? []).some((entry) => entry.enabled)) groups.add("cron");
+  if (config.notifications?.enabled || Object.keys(config.notifications?.routes ?? {}).length > 0) groups.add("notifications");
+  if (config.mcp_tools?.some((tool) => tool.includes("memory")) || config.memory_extraction?.enabled) groups.add("memory/session/search");
+  if (config.learning?.enabled) groups.add("learning");
+  if (config.mcp_tools?.some((tool) => tool.includes("buildroom"))) groups.add("Buildroom");
+  if (Object.keys(config.external_mcp_servers ?? {}).length > 0 || config.sdk?.permissions?.allow_mcp) groups.add("MCP onboarding/external MCP");
+  if (config.quick_commands && Object.keys(config.quick_commands).length > 0) groups.add("admin/config");
+  if (config.sdk?.permissions?.allow_bash || config.sdk?.permissions?.allow_web) groups.add("tool policy");
+  return groups.size > 0 ? [...groups].sort((a, b) => a.localeCompare(b)) : ["messaging"];
+}
+
 /* ------------------------------------------------------------------ */
 /*  Agent Editor                                                       */
 /* ------------------------------------------------------------------ */
@@ -827,6 +922,7 @@ export default function AgentEditorPage() {
   const agentId = params.agentId as string;
 
   const [agent, setAgent] = useState<AgentConfig | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   // Init tab from `?tab=` so the OAuth callback (and any future deep link)
   // can drop the operator on a specific tab. Falls back to "config" when
@@ -856,6 +952,13 @@ export default function AgentEditorPage() {
     fetchAgent();
   }, [fetchAgent]);
 
+  useEffect(() => {
+    fetch(`/api/fleet/${serverId}/runtime/status`)
+      .then((r) => r.json())
+      .then((data: RuntimeStatus) => setRuntimeStatus(data))
+      .catch(() => setRuntimeStatus(null));
+  }, [serverId]);
+
   // After we've consumed `?tab=` into the initial tab state above, strip
   // it from the URL so manually switching tabs and reloading doesn't
   // snap back to the deep-linked tab. mcpWizard/pendingId params are
@@ -869,6 +972,12 @@ export default function AgentEditorPage() {
     const url = window.location.pathname + (qs.length > 0 ? `?${qs}` : "");
     window.history.replaceState({}, "", url);
   }, []);
+
+  const effectiveRuntimeProvider = agent
+    ? getEffectiveRuntimeProvider(agent, runtimeStatus?.defaultProvider)
+    : runtimeStatus?.defaultProvider ?? "pi";
+  const runtimeOverride = agent?.runtime?.headless?.provider;
+  const modelRuntime = agent ? inferRuntimeModelSource(agent.model) : "runtime";
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -898,16 +1007,17 @@ export default function AgentEditorPage() {
             </h1>
             {agent && (
               <div className="flex items-center gap-1.5">
-                <span
-                  className="inline-flex rounded px-1.5 py-px text-[10px] font-medium"
-                  style={{
-                    background: "var(--oc-accent-soft)",
-                    border: "1px solid var(--oc-accent-ring)",
-                    color: "var(--oc-accent)",
-                  }}
-                >
-                  {agent.model ?? "---"}
-                </span>
+                <HeaderPill tone="accent">{agent.model ?? "---"}</HeaderPill>
+                <HeaderPill tone={effectiveRuntimeProvider === "pi" ? "ok" : effectiveRuntimeProvider === "claude-agent-sdk" ? "warn" : "muted"}>
+                  <Cpu className="h-2.5 w-2.5" />
+                  {effectiveRuntimeProvider}
+                </HeaderPill>
+                <HeaderPill tone={runtimeOverride ? "accent" : "muted"}>
+                  {runtimeOverride ? "agent override" : "inherits default"}
+                </HeaderPill>
+                <HeaderPill tone={modelRuntime === "legacy" ? "warn" : "muted"}>
+                  model: {modelRuntime}
+                </HeaderPill>
                 <span
                   className="inline-flex rounded px-1.5 py-px text-[10px] font-medium"
                   style={{
@@ -1032,7 +1142,7 @@ export default function AgentEditorPage() {
         </TabsList>
 
         <TabsContent value="config" className="mt-0 flex-1 overflow-auto">
-          {agent && <ConfigTab serverId={serverId} agentId={agentId} agent={agent} onReload={fetchAgent} />}
+          {agent && <ConfigTab serverId={serverId} agentId={agentId} agent={agent} runtimeStatus={runtimeStatus} onReload={fetchAgent} />}
         </TabsContent>
         <TabsContent value="files" className="mt-0 flex-1 overflow-hidden">
           <FilesTab serverId={serverId} agentId={agentId} />
@@ -1077,11 +1187,13 @@ function ConfigTab({
   serverId,
   agentId,
   agent,
+  runtimeStatus,
   onReload,
 }: {
   serverId: string;
   agentId: string;
   agent: AgentConfig;
+  runtimeStatus: RuntimeStatus | null;
   onReload: () => Promise<void> | void;
 }) {
   // Channel accounts configured at gateway level. Fetched once on mount
@@ -1112,7 +1224,8 @@ function ConfigTab({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [cfg, setCfg] = useState({
-    model: agent.model ?? "claude-sonnet-4-6",
+    model: agent.model ?? "anthropic/claude-sonnet-4-6",
+    runtime: agent.runtime ?? {},
     thinking: agent.thinking ?? { type: "adaptive" as string, budgetTokens: undefined as number | undefined },
     effort: agent.effort ?? "high",
     safety_profile: (agent.safety_profile ?? 'chat_like_openclaw') as 'public' | 'trusted' | 'private' | 'chat_like_openclaw',
@@ -1256,6 +1369,14 @@ function ConfigTab({
 
   const updateSdkSandboxFilesystem = (patch: Partial<typeof cfg.sdk.sandbox.filesystem>) => {
     updateSdkSandbox({ filesystem: { ...cfg.sdk.sandbox.filesystem, ...patch } });
+  };
+
+  const updateRuntimeProvider = (provider: RuntimeProvider | "") => {
+    update({
+      runtime: provider
+        ? { ...cfg.runtime, headless: { ...cfg.runtime.headless, provider } }
+        : { ...cfg.runtime, headless: undefined },
+    });
   };
 
   const updateChannelContext = (patch: Partial<ChannelContextConfig>) => {
@@ -1474,6 +1595,7 @@ function ConfigTab({
           maxBudgetUsd,
           safety_overrides,
           heartbeat,
+          runtime,
           sdk: _sdk,
           channel_context: _channelContext,
           external_mcp_servers: _externalMcpServers,
@@ -1487,6 +1609,7 @@ function ConfigTab({
         if (maxBudgetUsd > 0) clean.maxBudgetUsd = maxBudgetUsd;
         if (Object.keys(safety_overrides).length > 0) clean.safety_overrides = safety_overrides;
         if (heartbeat) clean.heartbeat = heartbeat;
+        if (runtime.headless?.provider) clean.runtime = runtime;
         const channelContextPayload = buildChannelContextPayload();
         if (channelContextPayload) clean.channel_context = channelContextPayload;
         // external_mcp_servers is now managed exclusively by McpTab. To avoid
@@ -1530,6 +1653,10 @@ function ConfigTab({
       setSaving(false);
     }
   };
+
+  const effectiveProvider = cfg.runtime.headless?.provider ?? runtimeStatus?.defaultProvider ?? "pi";
+  const modelSource = inferRuntimeModelSource(cfg.model);
+  const capabilityGroups = inferAgentCapabilityGroups(cfg);
 
   return (
     <div className="flex max-w-[1100px] flex-col gap-3.5 p-5">
@@ -1582,6 +1709,51 @@ function ConfigTab({
         <>
           {/* General */}
           <Section title="General" tooltip="Core agent settings: model, timezone, message queue behavior, and memory rotation." icon={<Settings2 className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
+            <div
+              className="mb-3 rounded-md border p-3"
+              style={{ background: "var(--oc-bg2)", borderColor: "var(--oc-border)" }}
+            >
+              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                <HeaderPill tone={effectiveProvider === "pi" ? "ok" : effectiveProvider === "claude-agent-sdk" ? "warn" : "muted"}>
+                  <Cpu className="h-2.5 w-2.5" />
+                  effective runtime: {effectiveProvider}
+                </HeaderPill>
+                <HeaderPill tone={cfg.runtime.headless?.provider ? "accent" : "muted"}>
+                  {cfg.runtime.headless?.provider ? "agent override" : `inherits ${runtimeStatus?.defaultProvider ?? "gateway default"}`}
+                </HeaderPill>
+                <HeaderPill tone={modelSource === "legacy" ? "warn" : "muted"}>
+                  model source: {modelSource}
+                </HeaderPill>
+              </div>
+              <FormGrid>
+                <Field label="Runtime provider override" tooltip="Leave inherited for the gateway default. Set only when this agent must use a different runtime adapter.">
+                  <select
+                    value={cfg.runtime.headless?.provider ?? ""}
+                    onChange={(e) => updateRuntimeProvider(e.target.value as RuntimeProvider | "")}
+                    className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                    style={{
+                      background: "var(--oc-bg3)",
+                      borderColor: "var(--oc-border)",
+                      color: "var(--color-foreground)",
+                    }}
+                  >
+                    <option value="">inherit gateway default ({runtimeStatus?.defaultProvider ?? "pi"})</option>
+                    <option value="pi">pi</option>
+                    <option value="opencode">opencode</option>
+                    <option value="claude-agent-sdk">legacy claude-agent-sdk</option>
+                  </select>
+                </Field>
+                <Field label="Side-effect capability groups" tooltip="Inferred from routes, tools, cron, notifications, plugins, MCP, memory, learning, and Buildroom access. These map to Runtime v1 gate capability groups.">
+                  <div className="flex min-h-8 flex-wrap items-center gap-1.5 rounded-[5px] border px-2 py-1" style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)" }}>
+                    {capabilityGroups.map((group) => (
+                      <span key={group} className="rounded px-1.5 py-px text-[10px] font-medium" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--oc-border)", color: "var(--oc-text-dim)" }}>
+                        {group}
+                      </span>
+                    ))}
+                  </div>
+                </Field>
+              </FormGrid>
+            </div>
             <FormGrid>
               <Field label="Model" tooltip="Runtime model id. Pi models use provider/model ids; legacy Claude Agent SDK bare ids remain available only for compatibility.">
                 <select
@@ -2568,9 +2740,9 @@ function ConfigTab({
           </Section>
 
 
-          {/* Claude Agent SDK */}
-          <Section title="Claude Agent SDK"
-            tooltip="Native Claude Agent SDK controls passed through buildSdkOptions. These do not create a separate LLM runtime."
+          {/* Legacy runtime compatibility */}
+          <Section title="Legacy Claude Agent SDK compatibility"
+            tooltip="Compatibility-only controls used when this agent explicitly runs the legacy claude-agent-sdk provider."
             icon={<Key className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
             <div className="flex flex-col gap-4">
               <div
@@ -2584,15 +2756,15 @@ function ConfigTab({
                 <div className="mb-1 flex items-center gap-2">
                   <Key className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />
                   <span className="text-[12px] font-semibold" style={{ color: "var(--color-foreground)" }}>
-                    Strict native runtime
+                    Compatibility diagnostics
                   </span>
                 </div>
                 <p className="text-[11.5px] leading-relaxed">
-                  These settings are passed to Claude Agent SDK/Claude Code. AnthroClaw does not run an outer LLM failover loop or a custom tool execution path.
+                  These settings are passed through only for the legacy Claude Agent SDK provider. Runtime v1 + Pi remains the primary harness path.
                 </p>
               </div>
               <FormGrid>
-                <Field label="Fallback model" tooltip="Native SDK fallbackModel. Used only inside the Claude Agent SDK query lifecycle, not as AnthroClaw-side provider routing.">
+                <Field label="Fallback model" tooltip="Legacy SDK fallbackModel. Used only inside the Claude Agent SDK query lifecycle, not as AnthroClaw-side provider routing.">
                   <select
                     value={cfg.sdk.fallbackModel || ""}
                     onChange={(e) => updateSdk({ fallbackModel: e.target.value })}
@@ -2605,7 +2777,7 @@ function ConfigTab({
                     ))}
                   </select>
                 </Field>
-                <Field label="Allowed built-in tools" tooltip="SDK built-in tools, comma-separated. Example: Read, Edit, Bash. Leave empty to use runtime defaults.">
+                <Field label="Allowed built-in tools" tooltip="Legacy SDK built-in tools, comma-separated. Example: Read, Edit, Bash. Leave empty to use runtime defaults.">
                   <input
                     value={arrayToCsv(cfg.sdk.allowedTools)}
                     onChange={(e) => updateSdk({ allowedTools: csvToArray(e.target.value) })}
@@ -2614,7 +2786,7 @@ function ConfigTab({
                     style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
                   />
                 </Field>
-                <Field label="Disallowed built-in tools" tooltip="SDK built-in tools to deny, comma-separated. Useful for explicit restrictions.">
+                <Field label="Disallowed built-in tools" tooltip="Legacy SDK built-in tools to deny, comma-separated. Useful for explicit restrictions.">
                   <input
                     value={arrayToCsv(cfg.sdk.disallowedTools)}
                     onChange={(e) => updateSdk({ disallowedTools: csvToArray(e.target.value) })}
@@ -2623,7 +2795,7 @@ function ConfigTab({
                     style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
                   />
                 </Field>
-                <Field label="Permission mode" tooltip="Native SDK permission mode. default keeps approvals/policy normal; dontAsk is stricter headless policy behavior.">
+                <Field label="Permission mode" tooltip="Legacy SDK permission mode. default keeps approvals/policy normal; dontAsk is stricter headless policy behavior.">
                   <select
                     value={cfg.sdk.permissions.mode}
                     onChange={(e) => updateSdkPermissions({ mode: e.target.value })}
