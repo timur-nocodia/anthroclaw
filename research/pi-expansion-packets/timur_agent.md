@@ -65,10 +65,14 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [x] memory/session read smoke: `pnpm runtime:pi-timur-agent-memory-read-smoke -- --json --allow-skip`
   - Purpose: verify `memory_search`, `session_search`, and `local_note_search` through Pi Gateway dispatch against a seeded temp `timur_agent` workspace.
   - Result: passed. Required read-only tools each had one started and one completed event, forbidden write/delivery/cron/admin/escalation/Buildroom/MCP tools had zero events, approval requests were `0`, and the response included `TIMUR_AGENT_MEMORY_READ_OK`.
+- [x] learning propose-only smoke: `pnpm runtime:pi-timur-agent-learning-propose-smoke -- --json --allow-skip`
+  - Purpose: verify a Pi-backed learning review for `timur_agent` persists proposed actions and artifacts without applying memory or skill changes before operator approval.
+  - Result: passed. The review completed in `mode=propose`, produced one `memory_candidate` action with `status=proposed`, created one pending operator decision, persisted artifacts, and left `memoryWrites=0` plus `skillSnapshots=0`.
 
 ## Manual Evidence
 - [ ] controlled proactive notification canary
-- [ ] learning review remains propose-only or has operator approval evidence
+- [x] learning review remains propose-only or has operator approval evidence
+  - Evidence: `pnpm runtime:pi-timur-agent-learning-propose-smoke -- --json --allow-skip` passed with proposed-only action status, pending decision status, and no memory/skill application.
 - [ ] tool-specific controlled fanout or scheduled-work evidence
 - [x] live Telegram account switch to `default` is approved by operator
 - [x] first controlled live text turn returns expected behavior
