@@ -16,6 +16,7 @@ describe('side-effect gate registry', () => {
       'live-send-media',
       'live-notification',
       'cron-notification',
+      'scheduled-work',
       'buildroom-handoff',
       'admin-config',
       'mcp-file-transfer',
@@ -39,9 +40,10 @@ describe('side-effect gate registry', () => {
       expect(gate.execution.safetyMode).toMatch(/^(dry-run-first|temp-only|propose-only|read-only)$/);
       expect(gate.execution.approval).toMatch(/^(required-for-live|operator-review|not-required-read-only)$/);
       expect(packageJson.scripts[gate.focusedCommand]).toBeTruthy();
-      if (gate.compatibilityCommand) {
-        expect(gate.compatibilityCommand).toContain('timur-agent');
-        expect(packageJson.scripts[gate.compatibilityCommand]).toBeTruthy();
+      const compatibilityCommand = 'compatibilityCommand' in gate ? gate.compatibilityCommand : undefined;
+      if (compatibilityCommand) {
+        expect(compatibilityCommand).toContain('timur-agent');
+        expect(packageJson.scripts[compatibilityCommand]).toBeTruthy();
       }
     }
   });
@@ -74,6 +76,16 @@ describe('side-effect gate registry', () => {
     expect(byId['memory-read']).toMatchObject({
       title: 'Memory Read',
       capabilityGroup: 'memory',
+    });
+    expect(byId['scheduled-work']?.execution).toMatchObject({
+      requiredFlags: ['agent-id', 'peer-id', 'sender-id'],
+      supportsDryRun: false,
+      safetyMode: 'temp-only',
+      approval: 'operator-review',
+    });
+    expect(byId['scheduled-work']).toMatchObject({
+      title: 'Scheduled Work',
+      capabilityGroup: 'scheduling',
     });
 
     for (const gate of SIDE_EFFECT_GATE_REGISTRY) {

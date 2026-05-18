@@ -35,6 +35,7 @@
     "runtime:pi-buildroom-handoff-gate": "tsx src/cli/pi-buildroom-handoff-gate.ts",
     "runtime:pi-timur-agent-cron-notification-smoke": "tsx src/cli/pi-timur-agent-cron-notification-smoke.ts",
     "runtime:pi-cron-notification-gate": "tsx src/cli/pi-cron-notification-gate.ts",
+    "runtime:pi-scheduled-work-gate": "tsx src/cli/pi-scheduled-work-gate.ts",
     "runtime:pi-timur-agent-honcho-local-smoke": "tsx src/cli/pi-timur-agent-honcho-local-smoke.ts",
     "runtime:pi-honcho-local-gate": "tsx src/cli/pi-honcho-local-gate.ts",
     "runtime:pi-timur-agent-learning-propose-smoke": "tsx src/cli/pi-timur-agent-learning-propose-smoke.ts",

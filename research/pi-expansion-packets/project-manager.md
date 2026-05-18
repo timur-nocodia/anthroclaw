@@ -1,6 +1,6 @@
 # Pi Expansion Packet: project-manager
 
-Status: generic group-route preflight passed; live tool evidence pending.
+Status: generic group-route and scheduled-work preflight passed; post-expansion monitor pending.
 Owner: Timur
 Rollback path: research/runtime-v1-migration-status.md
 Risk: high
@@ -37,6 +37,9 @@ Agent source: /Users/tyess/dev/anthroclaw-vibe-agents/agents
 - [x] generic Telegram group-route preflight: `pnpm runtime:pi-telegram-group-preflight -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agents-dir /Users/tyess/dev/anthroclaw-vibe-agents/agents --data-dir /Users/tyess/dev/openclaw-agents-sdk-clone/data --agent-id project-manager --confirm-account content_sm --confirm-peer -1003729315809 --confirm-topic 8 --json`
   - Result: passed.
   - Covered: multi-root audit with `coverageGap=false`, configured Telegram group route, explicit account/peer/topic confirmation, `mention_only=true`, and live runtime monitor with alerts `[]` and warnings `[]`.
+- [x] generic scheduled-work gate: `pnpm runtime:pi-scheduled-work-gate -- --agents-dir /Users/tyess/dev/anthroclaw-vibe-agents/agents --agent-id project-manager --account-id content_sm --peer-id -1003729315809 --sender-id 48705953 --thread-id 8 --cron-id scheduled-work-evidence --json`
+  - Result: passed.
+  - Covered: `manage_cron` exposure, temp-only dynamic cron create/list/toggle/delete, dispatch-bound delivery to the confirmed Telegram account/peer/thread, ignored model-supplied delivery target, zero remaining temp cron jobs, and byte-for-byte unchanged source `agent.yml`.
 - [ ] runtime:pi-monitor after expansion: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
 
 ## Manual Evidence
@@ -46,7 +49,8 @@ Agent source: /Users/tyess/dev/anthroclaw-vibe-agents/agents
 - [x] learning review remains propose-only or has operator approval evidence
   - Result: closed by config audit.
   - Evidence: tracked `agent.yml` has `learning.enabled=true` and `learning.mode=propose`; `runtime:pi-expansion-audit` reports `learningMode="propose"` for `project-manager`.
-- [ ] tool-specific controlled fanout or scheduled-work evidence
+- [x] tool-specific controlled fanout or scheduled-work evidence
+  - Evidence: generic scheduled-work gate passed without live firing and without source config mutation.
 
 ## Audit Command
 

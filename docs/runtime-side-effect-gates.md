@@ -22,13 +22,14 @@ Every live side-effect gate must declare:
 
 ## Refactor Direction
 
-`live-send-message`, `live-send-media`, `live-notification`, `cron-notification`, `buildroom-handoff`, `admin-config`, `mcp-file-transfer`, `honcho-local`, `learning-propose`, and `memory-read` are the first extracted gates. The machine-readable gate list lives in `src/runtime/side-effect-gates/registry.ts`; add or rename gates there first, then wire the focused CLI and docs. The reusable implementations live under `src/runtime/side-effect-gates/` and are runnable through:
+`live-send-message`, `live-send-media`, `live-notification`, `cron-notification`, `scheduled-work`, `buildroom-handoff`, `admin-config`, `mcp-file-transfer`, `honcho-local`, `learning-propose`, and `memory-read` are the first extracted gates. The machine-readable gate list lives in `src/runtime/side-effect-gates/registry.ts`; add or rename gates there first, then wire the focused CLI and docs. The reusable implementations live under `src/runtime/side-effect-gates/` and are runnable through:
 
 ```sh
 pnpm runtime:pi-live-send-message-gate -- --agent-id <id> --peer-id <peer> --dry-run --json
 pnpm runtime:pi-live-send-media-gate -- --agent-id <id> --peer-id <peer> --file-path <path> --allowed-file-root <root> --dry-run --json
 pnpm runtime:pi-live-notification-gate -- --agent-id <id> --peer-id <peer> --dry-run --json
 pnpm runtime:pi-cron-notification-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --static-cron-id <id> --dynamic-cron-id <id> --json
+pnpm runtime:pi-scheduled-work-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json
 pnpm runtime:pi-buildroom-handoff-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json
 pnpm runtime:pi-admin-config-gate -- --agent-id <id> --peer-id <peer> --session-key <key> --json
 pnpm runtime:pi-mcp-file-transfer-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json
@@ -52,6 +53,7 @@ pnpm runtime:pi-live-gate -- --plan <gate-id> [gate options] --strict --json
 pnpm runtime:pi-live-gate -- --validate-args <gate-id> [gate options]
 pnpm runtime:pi-live-gate -- --validate-args <gate-id> [gate options] --strict --json
 pnpm runtime:pi-live-gate -- --gate live-send-message --agent-id <id> --peer-id <peer> --dry-run --json
+pnpm runtime:pi-live-gate -- --gate scheduled-work --agent-id <id> --peer-id <peer> --sender-id <sender> --json
 pnpm runtime:pi-live-gate -- --gate memory-read --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip
 ```
 
@@ -59,7 +61,7 @@ The JSON list, single-gate description, run plan, and argument validation are th
 
 The desired end state is:
 
-1. `runtime:pi-live-gate -- --gate <gate-id> --agent-id <id> ...`; focused commands such as `runtime:pi-live-send-message-gate`, `runtime:pi-live-send-media-gate`, `runtime:pi-live-notification-gate`, `runtime:pi-cron-notification-gate`, `runtime:pi-buildroom-handoff-gate`, `runtime:pi-admin-config-gate`, `runtime:pi-mcp-file-transfer-gate`, `runtime:pi-honcho-local-gate`, `runtime:pi-learning-propose-gate`, and `runtime:pi-memory-read-gate` remain as direct entrypoints and compatibility with existing evidence
+1. `runtime:pi-live-gate -- --gate <gate-id> --agent-id <id> ...`; focused commands such as `runtime:pi-live-send-message-gate`, `runtime:pi-live-send-media-gate`, `runtime:pi-live-notification-gate`, `runtime:pi-cron-notification-gate`, `runtime:pi-scheduled-work-gate`, `runtime:pi-buildroom-handoff-gate`, `runtime:pi-admin-config-gate`, `runtime:pi-mcp-file-transfer-gate`, `runtime:pi-honcho-local-gate`, `runtime:pi-learning-propose-gate`, and `runtime:pi-memory-read-gate` remain as direct entrypoints and compatibility with existing evidence
 2. expansion packets record the concrete command and operator approval
 3. agent-specific CLI names are gradually removed or reduced to thin aliases
 

@@ -9,6 +9,7 @@ import { runPiLiveSendMediaGateCli } from './pi-live-send-media-gate.js';
 import { runPiLiveSendMessageGateCli } from './pi-live-send-message-gate.js';
 import { runPiMcpFileTransferGateCli } from './pi-mcp-file-transfer-gate.js';
 import { runPiMemoryReadGateCli } from './pi-memory-read-gate.js';
+import { runPiScheduledWorkGateCli } from './pi-scheduled-work-gate.js';
 import {
   SIDE_EFFECT_GATE_REGISTRY,
   findSideEffectGate,
@@ -44,6 +45,7 @@ const GATE_RUNNERS: Record<PiLiveGateId, (argv: string[], deps?: unknown) => Pro
   'live-send-media': (argv, deps) => runPiLiveSendMediaGateCli(argv, deps as never),
   'live-notification': (argv, deps) => runPiLiveNotificationGateCli(argv, deps as never),
   'cron-notification': (argv, deps) => runPiCronNotificationGateCli(argv, deps as never),
+  'scheduled-work': (argv, deps) => runPiScheduledWorkGateCli(argv, deps as never),
   'buildroom-handoff': (argv, deps) => runPiBuildroomHandoffGateCli(argv, deps as never),
   'admin-config': (argv, deps) => runPiAdminConfigGateCli(argv, deps as never),
   'mcp-file-transfer': (argv, deps) => runPiMcpFileTransferGateCli(argv, deps as never),
@@ -246,19 +248,23 @@ function buildRunPlanCatalog(strict: boolean) {
 function formatGateList(): string {
   return [
     'Pi live gates:',
-    ...SIDE_EFFECT_GATE_REGISTRY.map((gate) => [
-      `  ${gate.id} - ${gate.title}`,
-      `    group: ${gate.capabilityGroup}`,
-      `    summary: ${gate.summary}`,
-      `    action: ${gate.action}`,
-      `    risk: ${gate.risk}`,
-      `    focused: ${gate.focusedCommand}`,
-      `    compatibility: ${gate.compatibilityCommand}`,
-    ].join('\n')),
+    ...SIDE_EFFECT_GATE_REGISTRY.map((gate) => {
+      const compatibilityCommand = 'compatibilityCommand' in gate ? gate.compatibilityCommand : undefined;
+      return [
+        `  ${gate.id} - ${gate.title}`,
+        `    group: ${gate.capabilityGroup}`,
+        `    summary: ${gate.summary}`,
+        `    action: ${gate.action}`,
+        `    risk: ${gate.risk}`,
+        `    focused: ${gate.focusedCommand}`,
+        `    compatibility: ${compatibilityCommand ?? 'none'}`,
+      ].join('\n');
+    }),
   ].join('\n');
 }
 
 function formatGateDescription(gate: NonNullable<ReturnType<typeof findSideEffectGate>>): string {
+  const compatibilityCommand = 'compatibilityCommand' in gate ? gate.compatibilityCommand : undefined;
   return [
     `Pi live gate: ${gate.id} - ${gate.title}`,
     `  group: ${gate.capabilityGroup}`,
@@ -266,7 +272,7 @@ function formatGateDescription(gate: NonNullable<ReturnType<typeof findSideEffec
     `  action: ${gate.action}`,
     `  risk: ${gate.risk}`,
     `  focused: ${gate.focusedCommand}`,
-    `  compatibility: ${gate.compatibilityCommand}`,
+    `  compatibility: ${compatibilityCommand ?? 'none'}`,
     `  safety: ${gate.execution.safetyMode}`,
     `  approval: ${gate.execution.approval}`,
     `  supportsDryRun: ${gate.execution.supportsDryRun}`,
@@ -391,6 +397,7 @@ function usage(): string {
     '',
     'Examples:',
     '  pnpm runtime:pi-live-gate -- --gate live-send-message --agent-id <id> --peer-id <peer> --dry-run --json',
+    '  pnpm runtime:pi-live-gate -- --gate scheduled-work --agent-id <id> --peer-id <peer> --sender-id <sender> --json',
     '  pnpm runtime:pi-live-gate -- --gate memory-read --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip',
     '',
     'Pass -h/--help after a focused gate command to see that gate-specific help.',
