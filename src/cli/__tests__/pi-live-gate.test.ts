@@ -17,6 +17,8 @@ describe('Pi live gate dispatcher CLI', () => {
       gate: 'memory-read',
       rest: ['--agent-id', 'custom_agent', '--peer-id', '42', '--json'],
       help: false,
+      json: true,
+      list: false,
     });
     expect(parsePiLiveGateArgs([
       '--gate=live-send-message',
@@ -26,6 +28,40 @@ describe('Pi live gate dispatcher CLI', () => {
       rest: ['--dry-run'],
     });
     expect(() => parsePiLiveGateArgs(['--gate', 'unknown'])).toThrow(/Unknown gate/);
+  });
+
+  it('prints a human-readable gate registry without requiring a gate', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiLiveGateCli(['--list'], { stdout, stderr });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    expect(stdout.text()).toContain('live-send-message');
+    expect(stdout.text()).toContain('runtime:pi-live-send-message-gate');
+    expect(stdout.text()).toContain('external_write');
+  });
+
+  it('prints the gate registry as JSON for automation', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiLiveGateCli(['--list', '--json'], { stdout, stderr });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    const payload = JSON.parse(stdout.text()) as {
+      status: string;
+      gates: Array<{
+        id: string;
+        focusedCommand: string;
+        aggregateDispatcher: boolean;
+      }>;
+    };
+    expect(payload.status).toBe('ok');
+    expect(payload.gates.some((gate) => gate.id === 'memory-read')).toBe(true);
+    expect(payload.gates.every((gate) => gate.aggregateDispatcher)).toBe(true);
   });
 
   it('dispatches to the selected gate runner', async () => {

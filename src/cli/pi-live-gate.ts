@@ -10,6 +10,7 @@ import { runPiLiveSendMessageGateCli } from './pi-live-send-message-gate.js';
 import { runPiMcpFileTransferGateCli } from './pi-mcp-file-transfer-gate.js';
 import { runPiMemoryReadGateCli } from './pi-memory-read-gate.js';
 import {
+  SIDE_EFFECT_GATE_REGISTRY,
   findSideEffectGate,
   sideEffectGateIds,
   type SideEffectGateId,
@@ -23,6 +24,8 @@ interface PiLiveGateArgs {
   gate?: PiLiveGateId;
   rest: string[];
   help: boolean;
+  json: boolean;
+  list: boolean;
 }
 
 interface PiLiveGateDeps {
@@ -63,6 +66,10 @@ export async function runPiLiveGateCli(
     stdout.write(`${usage()}\n`);
     return 0;
   }
+  if (args.list) {
+    stdout.write(args.json ? `${JSON.stringify(listPayload(), null, 2)}\n` : `${formatGateList()}\n`);
+    return 0;
+  }
   if (!args.gate) {
     stderr.write(`--gate is required.\n${usage()}\n`);
     return 2;
@@ -76,12 +83,23 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
   const rest: string[] = [];
   let gate: PiLiveGateId | undefined;
   let help = false;
+  let json = false;
+  let list = false;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--') continue;
     if (arg === '--help' || arg === '-h') {
       help = true;
+      continue;
+    }
+    if (arg === '--json') {
+      json = true;
+      rest.push(arg);
+      continue;
+    }
+    if (arg === '--list') {
+      list = true;
       continue;
     }
     if (arg === '--gate') {
@@ -95,7 +113,27 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
     rest.push(arg);
   }
 
-  return { gate, rest, help };
+  return { gate, rest, help, json, list };
+}
+
+function listPayload() {
+  return {
+    status: 'ok',
+    gates: SIDE_EFFECT_GATE_REGISTRY,
+  };
+}
+
+function formatGateList(): string {
+  return [
+    'Pi live gates:',
+    ...SIDE_EFFECT_GATE_REGISTRY.map((gate) => [
+      `  ${gate.id}`,
+      `    action: ${gate.action}`,
+      `    risk: ${gate.risk}`,
+      `    focused: ${gate.focusedCommand}`,
+      `    compatibility: ${gate.compatibilityCommand}`,
+    ].join('\n')),
+  ].join('\n');
 }
 
 function parseGateId(value: string): PiLiveGateId {
@@ -112,6 +150,7 @@ function requireValue(argv: string[], index: number, flag: string): string {
 function usage(): string {
   return [
     'Usage: pnpm runtime:pi-live-gate -- --gate <gate-id> [gate options]',
+    '       pnpm runtime:pi-live-gate -- --list [--json]',
     '',
     'Gate ids:',
     ...PI_LIVE_GATE_IDS.map((id) => `  ${id}`),

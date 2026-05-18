@@ -42,6 +42,8 @@ The old `pi-timur-agent-live-send-message`, `pi-timur-agent-live-send-media`, `p
 The aggregate dispatcher is available as:
 
 ```sh
+pnpm runtime:pi-live-gate -- --list
+pnpm runtime:pi-live-gate -- --list --json
 pnpm runtime:pi-live-gate -- --gate live-send-message --agent-id <id> --peer-id <peer> --dry-run --json
 pnpm runtime:pi-live-gate -- --gate memory-read --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip
 ```
