@@ -39,7 +39,9 @@ Agent source: /Users/tyess/dev/anthroclaw-vibe-agents/agents
 ## Manual Evidence
 
 - [ ] allowlisted peer/thread confirmation
-- [ ] learning review remains propose-only or has operator approval evidence
+- [x] learning review remains propose-only or has operator approval evidence
+  - Result: closed by config audit.
+  - Evidence: tracked `agent.yml` has `learning.enabled=true` and `learning.mode=propose`; `runtime:pi-expansion-audit` reports `learningMode="propose"` for `project-manager`.
 - [ ] tool-specific controlled fanout or scheduled-work evidence
 
 ## Audit Command
