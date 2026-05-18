@@ -111,6 +111,57 @@ describe('Pi live gate dispatcher CLI', () => {
     });
   });
 
+  it('validates focused gate arguments without running the gate', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiLiveGateCli([
+      '--validate-args', 'live-send-media',
+      '--agent-id', 'custom_agent',
+      '--peer-id', '42',
+      '--file-path', '/tmp/file.txt',
+      '--allowed-file-root=/tmp',
+      '--json',
+    ], { stdout, stderr });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    const payload = JSON.parse(stdout.text()) as {
+      status: string;
+      gateId: string;
+      missingFlags: string[];
+    };
+    expect(payload).toMatchObject({
+      status: 'ok',
+      gateId: 'live-send-media',
+      missingFlags: [],
+    });
+  });
+
+  it('reports missing required focused gate arguments', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiLiveGateCli([
+      '--validate-args=live-send-media',
+      '--agent-id', 'custom_agent',
+      '--json',
+    ], { stdout, stderr });
+
+    expect(code).toBe(2);
+    expect(stderr.text()).toBe('');
+    const payload = JSON.parse(stdout.text()) as {
+      status: string;
+      gateId: string;
+      missingFlags: string[];
+    };
+    expect(payload).toMatchObject({
+      status: 'failed',
+      gateId: 'live-send-media',
+      missingFlags: ['peer-id', 'file-path', 'allowed-file-root'],
+    });
+  });
+
   it('returns usage error for an unknown described gate', async () => {
     const stdout = createWriter();
     const stderr = createWriter();

@@ -46,11 +46,13 @@ pnpm runtime:pi-live-gate -- --list
 pnpm runtime:pi-live-gate -- --list --json
 pnpm runtime:pi-live-gate -- --describe <gate-id>
 pnpm runtime:pi-live-gate -- --describe <gate-id> --json
+pnpm runtime:pi-live-gate -- --validate-args <gate-id> [gate options]
+pnpm runtime:pi-live-gate -- --validate-args <gate-id> [gate options] --json
 pnpm runtime:pi-live-gate -- --gate live-send-message --agent-id <id> --peer-id <peer> --dry-run --json
 pnpm runtime:pi-live-gate -- --gate memory-read --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip
 ```
 
-The JSON list and single-gate description are the automation contract for dashboards and runners. Each gate entry includes `risk`, `action`, focused/compatibility commands, `execution.requiredFlags`, `execution.optionalFlags`, `execution.supportsDryRun`, `execution.safetyMode`, `execution.approval`, and generic `execution.exampleArgs`. It must not include concrete agent ids, peer ids, or operator secrets.
+The JSON list, single-gate description, and argument validation are the automation contract for dashboards and runners. Each gate entry includes `risk`, `action`, focused/compatibility commands, `execution.requiredFlags`, `execution.optionalFlags`, `execution.supportsDryRun`, `execution.safetyMode`, `execution.approval`, and generic `execution.exampleArgs`. It must not include concrete agent ids, peer ids, or operator secrets. `--validate-args` checks required flags only and does not run the gate.
 
 The desired end state is:
 

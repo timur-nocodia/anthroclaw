@@ -24,6 +24,7 @@ interface PiLiveGateArgs {
   describe?: PiLiveGateId;
   gate?: PiLiveGateId;
   rest: string[];
+  validateArgs?: PiLiveGateId;
   help: boolean;
   json: boolean;
   list: boolean;
@@ -80,6 +81,16 @@ export async function runPiLiveGateCli(
     stdout.write(args.json ? `${JSON.stringify(describePayload(gate), null, 2)}\n` : `${formatGateDescription(gate)}\n`);
     return 0;
   }
+  if (args.validateArgs) {
+    const gate = findSideEffectGate(args.validateArgs);
+    if (!gate) {
+      stderr.write(`Unknown gate: ${args.validateArgs}\n${usage()}\n`);
+      return 2;
+    }
+    const validation = validateGateArgs(gate, args.rest);
+    stdout.write(args.json ? `${JSON.stringify(validation, null, 2)}\n` : `${formatValidation(validation)}\n`);
+    return validation.status === 'ok' ? 0 : 2;
+  }
   if (!args.gate) {
     stderr.write(`--gate is required.\n${usage()}\n`);
     return 2;
@@ -93,6 +104,7 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
   let describe: PiLiveGateId | undefined;
   const rest: string[] = [];
   let gate: PiLiveGateId | undefined;
+  let validateArgs: PiLiveGateId | undefined;
   let help = false;
   let json = false;
   let list = false;
@@ -121,6 +133,14 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
       describe = parseGateId(arg.slice('--describe='.length));
       continue;
     }
+    if (arg === '--validate-args') {
+      validateArgs = parseGateId(requireValue(argv, ++i, '--validate-args'));
+      continue;
+    }
+    if (arg.startsWith('--validate-args=')) {
+      validateArgs = parseGateId(arg.slice('--validate-args='.length));
+      continue;
+    }
     if (arg === '--gate') {
       gate = parseGateId(requireValue(argv, ++i, '--gate'));
       continue;
@@ -132,7 +152,7 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
     rest.push(arg);
   }
 
-  return { describe, gate, rest, help, json, list };
+  return { describe, gate, rest, validateArgs, help, json, list };
 }
 
 function listPayload() {
@@ -178,6 +198,48 @@ function formatGateDescription(gate: NonNullable<ReturnType<typeof findSideEffec
   ].join('\n');
 }
 
+function validateGateArgs(
+  gate: NonNullable<ReturnType<typeof findSideEffectGate>>,
+  argv: string[],
+) {
+  const presentFlags = collectPresentFlags(argv);
+  const missingFlags = gate.execution.requiredFlags.filter((flag) => !presentFlags.has(flag));
+  return {
+    status: missingFlags.length === 0 ? 'ok' : 'failed',
+    gateId: gate.id,
+    missingFlags,
+    requiredFlags: gate.execution.requiredFlags,
+    optionalFlags: gate.execution.optionalFlags,
+  };
+}
+
+function collectPresentFlags(argv: string[]): Set<string> {
+  const present = new Set<string>();
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (!arg.startsWith('--')) continue;
+    const rawName = arg.slice(2);
+    const equalsIndex = rawName.indexOf('=');
+    if (equalsIndex >= 0) {
+      if (rawName.slice(equalsIndex + 1).length > 0) present.add(rawName.slice(0, equalsIndex));
+      continue;
+    }
+    if (argv[i + 1] && !argv[i + 1].startsWith('--')) {
+      present.add(rawName);
+      i += 1;
+    }
+  }
+  return present;
+}
+
+function formatValidation(validation: ReturnType<typeof validateGateArgs>): string {
+  if (validation.status === 'ok') return `Pi live gate args ok: ${validation.gateId}`;
+  return [
+    `Pi live gate args failed: ${validation.gateId}`,
+    `  missingFlags: ${validation.missingFlags.join(', ')}`,
+  ].join('\n');
+}
+
 function parseGateId(value: string): PiLiveGateId {
   if (findSideEffectGate(value)) return value as PiLiveGateId;
   throw new Error(`Unknown gate: ${value}`);
@@ -194,6 +256,7 @@ function usage(): string {
     'Usage: pnpm runtime:pi-live-gate -- --gate <gate-id> [gate options]',
     '       pnpm runtime:pi-live-gate -- --list [--json]',
     '       pnpm runtime:pi-live-gate -- --describe <gate-id> [--json]',
+    '       pnpm runtime:pi-live-gate -- --validate-args <gate-id> [gate options] [--json]',
     '',
     'Gate ids:',
     ...PI_LIVE_GATE_IDS.map((id) => `  ${id}`),
