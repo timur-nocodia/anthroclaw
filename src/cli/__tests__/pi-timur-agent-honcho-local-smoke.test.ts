@@ -79,7 +79,7 @@ describe('Pi timur_agent Honcho local smoke CLI', () => {
         observeHookRegistered: true,
         toolsPresent: true,
         statusToolWorks: true,
-        statusReportsLocalHost: true,
+        statusReportsExpectedHost: true,
         sessionToolRequiresDispatch: true,
         sessionToolUsesDispatchKey: true,
         noApiKeyRequiredByConfig: true,
