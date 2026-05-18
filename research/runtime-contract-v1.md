@@ -1,6 +1,6 @@
 # Runtime contract v1
 
-Date: 2026-05-16
+Date: 2026-05-18
 
 ## Purpose
 
@@ -185,25 +185,22 @@ Phase 1 is complete when every feature contract has at least unit or integration
 
 ### Claude Agent SDK
 
-Claude remains the production baseline. Passing v1 means no existing product feature regresses while runtime boundaries are introduced.
+Claude Agent SDK remains a supported provider/fallback path, but it is no longer the product contract. Passing v1 now means no existing product feature regresses while Runtime v1 owns the harness boundary.
 
 ### Pi
 
-Pi is the primary migration candidate. It has passed the compact v0 contract, but v1 requires feature-level proof across dashboard, plugins, learning, memory, sessions, and Buildroom surfaces before default rollout.
+Pi is the primary migration candidate and current default runtime path. It has passed the compact v0 contract, Runtime v1 default rollout, and the generic side-effect gate harness; remaining work is expansion-specific live evidence for concrete agents, channels, and high-risk side effects.
 
 ### OpenCode
 
 OpenCode remains a benchmark adapter until it can satisfy Gateway, tool policy, custom tools, external MCP proxying, plugins, dashboard observability, and canary requirements.
 
-## Immediate Gaps
+## Remaining Gaps
 
-1. Dashboard runtime copy still contains Claude-native language in the fleet advanced settings panel. This should become effective-runtime status rather than a hardcoded statement.
-2. The compact candidate score says Pi has no v0 blockers, but v1 still needs canary evidence across real agents and dashboard/operator workflows.
-3. OpenCode should not be upgraded beyond benchmark unless it gets Gateway-path evidence comparable to Pi smoke.
-4. Buildroom native-agent adapter must be explicitly audited before any global default flip.
-5. Session transcript ownership is the highest-risk area if a runtime cannot expose provider transcripts; AnthroClaw may need a provider-neutral transcript mirror for Pi default rollout.
-6. Current tests cover most control-plane surfaces in focused slices; `research/runtime-v1-canary-plan.md` defines the smoke/scripted/manual canary map needed to prove those slices under Pi before default rollout.
-7. Channel parity is intentionally uneven: Telegram supports interactive approvals while WhatsApp currently does not. V1 should treat this as a channel capability contract, not as an accidental runtime difference.
+1. OpenCode should not be upgraded beyond benchmark unless it gets Gateway-path evidence comparable to Pi smoke.
+2. Session transcript ownership remains a long-term portability risk for any candidate that cannot expose provider transcripts; Runtime v1 can mitigate this with a provider-neutral transcript mirror if a future provider needs it.
+3. Channel parity is intentionally uneven: Telegram supports interactive approvals while WhatsApp currently does not. V1 treats this as a channel capability contract, not as an accidental runtime difference.
+4. Production expansion is still per-agent/per-channel: every new live-only agent, group, WhatsApp, external MCP, media, Buildroom, or proactive side-effect path needs an expansion packet, operator go/no-go, and post-expansion monitor evidence.
 
 ## Phase 1 Exit Criteria
 
@@ -211,5 +208,5 @@ OpenCode remains a benchmark adapter until it can satisfy Gateway, tool policy, 
 - Runtime contract tests assert feature ids are unique, evidence-backed, and cover every domain.
 - This document names every domain and contract.
 - Follow-up work is filed against concrete feature ids rather than vague runtime parity.
-- No default-runtime flip proceeds until feature contracts move from documented coverage to smoke/canary evidence.
+- Default-runtime flip is closed; future changes must preserve the feature contracts and use expansion packets for new live surfaces.
 - `RUNTIME_CANARY_SCENARIOS` covers every default-runtime blocking feature contract.

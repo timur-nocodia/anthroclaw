@@ -129,7 +129,7 @@ import type { ChannelAdapter, InboundMessage } from './channels/types.js';
 import { resolveDisplayConfig } from './channels/display-config.js';
 import { ToolProgressBubble } from './channels/tool-progress-bubble.js';
 import { formatChannelOperatorContext, resolveChannelContext, resolveReplyToId } from './channels/context.js';
-import type { AgentYml, GlobalConfig } from './config/schema.js';
+import type { AgentYml, GlobalConfig, HeadlessRuntimeProvider } from './config/schema.js';
 import { HookEmitter } from './hooks/emitter.js';
 import { IterationBudget } from './session/budget.js';
 import { SessionCompressor } from './session/compressor.js';
@@ -2500,6 +2500,10 @@ export class Gateway {
     activeSessions: number;
     nodeVersion: string;
     platform: string;
+    runtimeDefaults: {
+      headlessProvider: HeadlessRuntimeProvider;
+      gatewayHarness: 'runtime-v1';
+    };
     sdkActiveInput: SdkActiveInputStatus;
     channels: {
       telegram: { accountId: string; botUsername: string; status: string }[];
@@ -2520,6 +2524,10 @@ export class Gateway {
       activeSessions,
       nodeVersion: process.version,
       platform: process.platform,
+      runtimeDefaults: {
+        headlessProvider: this.globalConfig?.runtime?.headless.provider ?? 'claude-agent-sdk',
+        gatewayHarness: 'runtime-v1',
+      },
       sdkActiveInput: getSdkActiveInputStatus(this.globalConfig?.features?.sdk_active_input ?? false),
       channels: {
         telegram: tg instanceof TelegramChannel ? tg.getAccountInfo() : [],

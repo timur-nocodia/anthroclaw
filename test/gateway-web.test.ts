@@ -98,6 +98,10 @@ pairing:
     expect(status.activeSessions).toBe(0);
     expect(status.nodeVersion).toMatch(/^v\d+/);
     expect(typeof status.platform).toBe('string');
+    expect(status.runtimeDefaults).toEqual({
+      headlessProvider: 'claude-agent-sdk',
+      gatewayHarness: 'runtime-v1',
+    });
     expect(status.sdkActiveInput).toMatchObject({
       streamInputAvailable: true,
       unstableSessionApiAvailable: true,
@@ -111,6 +115,35 @@ pairing:
     expect(status.channels).toHaveProperty('whatsapp');
     expect(Array.isArray(status.channels.telegram)).toBe(true);
     expect(Array.isArray(status.channels.whatsapp)).toBe(true);
+
+    await gw.stop();
+  });
+
+  it('getStatus() reports the configured Runtime v1 provider', async () => {
+    const botDir = join(agentsDir, 'runtime-bot');
+    mkdirSync(botDir);
+    writeAgentYml(botDir, `
+routes:
+  - channel: telegram
+    scope: dm
+pairing:
+  mode: open
+`);
+
+    const gw = new Gateway();
+    await gw.start({
+      ...minimalConfig(),
+      runtime: {
+        headless: {
+          provider: 'pi',
+        },
+      },
+    }, agentsDir, dataDir);
+
+    expect(gw.getStatus().runtimeDefaults).toEqual({
+      headlessProvider: 'pi',
+      gatewayHarness: 'runtime-v1',
+    });
 
     await gw.stop();
   });

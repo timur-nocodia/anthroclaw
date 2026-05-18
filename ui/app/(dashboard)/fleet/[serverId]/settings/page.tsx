@@ -49,6 +49,10 @@ interface GatewayInfo {
   agents?: number | string[];
   activeSessions?: number;
   sessions?: number;
+  runtimeDefaults?: {
+    headlessProvider?: "claude-agent-sdk" | "pi" | "opencode";
+    gatewayHarness?: "runtime-v1";
+  };
   sdkActiveInput?: SdkActiveInputStatus;
 }
 
@@ -1430,19 +1434,26 @@ function SkeletonMetric() {
 function AdvancedSection({ serverId }: { serverId: string }) {
   const diagnosticsUrl = `/api/fleet/${serverId}/diagnostics/export?includeLogs=true&runLimit=50&routeDecisionLimit=50&diagnosticEventLimit=200`;
   const [activeInput, setActiveInput] = useState<SdkActiveInputStatus | null>(null);
+  const [runtimeDefaults, setRuntimeDefaults] = useState<GatewayInfo["runtimeDefaults"] | null>(null);
 
   useEffect(() => {
     fetch(`/api/fleet/${serverId}/gateway/status`)
       .then((r) => r.json())
-      .then((data: GatewayInfo) => setActiveInput(data.sdkActiveInput ?? null))
-      .catch(() => setActiveInput(null));
+      .then((data: GatewayInfo) => {
+        setActiveInput(data.sdkActiveInput ?? null);
+        setRuntimeDefaults(data.runtimeDefaults ?? null);
+      })
+      .catch(() => {
+        setActiveInput(null);
+        setRuntimeDefaults(null);
+      });
   }, [serverId]);
 
   return (
     <div className="flex max-w-[720px] flex-col gap-4">
       <SectionHead
         title="Runtime contract"
-        desc="Read-only guardrails for the strict native Claude Agent SDK architecture."
+        desc="Read-only guardrails for the effective Runtime v1 harness."
       />
       <div
         className="flex flex-col gap-2 rounded-md p-3.5"
@@ -1451,10 +1462,11 @@ function AdvancedSection({ serverId }: { serverId: string }) {
           border: "1px solid var(--oc-border)",
         }}
       >
-        <RuntimeRow label="LLM runtime" value="Claude Agent SDK / Claude Code only" />
-        <RuntimeRow label="Retry/fallback" value="Delegated to native SDK behavior" />
+        <RuntimeRow label="Gateway harness" value={runtimeDefaults?.gatewayHarness ?? "runtime-v1"} />
+        <RuntimeRow label="Default headless provider" value={runtimeDefaults?.headlessProvider ?? "unknown"} />
+        <RuntimeRow label="Retry/fallback" value="Handled by the selected runtime adapter and AnthroClaw rollback policy" />
         <RuntimeRow label="OpenAI usage" value="Embeddings for memory only" />
-        <RuntimeRow label="Agent tools" value="SDK-native MCP servers and tool() definitions" />
+        <RuntimeRow label="Agent tools" value="AnthroClaw MCP/custom tools exposed through the selected runtime" />
       </div>
       <Divider />
       <SectionHead
@@ -1523,7 +1535,7 @@ function AdvancedSection({ serverId }: { serverId: string }) {
         desc="The previous experimental toggles and storage selector were UI-only switches with no backend effect."
       />
       <div className="rounded-md border px-3.5 py-3 text-xs leading-relaxed" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)", color: "var(--oc-text-dim)" }}>
-        Runtime-affecting settings now live on each agent under the Claude Agent SDK section. Gateway-wide controls here only expose behavior that is actually wired to backend state.
+        Runtime-affecting settings now live on each agent and in the Runtime v1 config. Gateway-wide controls here only expose behavior that is actually wired to backend state.
       </div>
     </div>
   );
