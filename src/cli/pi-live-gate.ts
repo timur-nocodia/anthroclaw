@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { runPiAdminConfigGateCli } from './pi-admin-config-gate.js';
 import { runPiBuildroomHandoffGateCli } from './pi-buildroom-handoff-gate.js';
+import { runPiControlledLiveTurnGateCli } from './pi-controlled-live-turn-gate.js';
 import { runPiCronNotificationGateCli } from './pi-cron-notification-gate.js';
 import { runPiHonchoLocalGateCli } from './pi-honcho-local-gate.js';
 import { runPiLearningProposeGateCli } from './pi-learning-propose-gate.js';
@@ -41,6 +42,7 @@ interface PiLiveGateDeps {
 }
 
 const GATE_RUNNERS: Record<PiLiveGateId, (argv: string[], deps?: unknown) => Promise<number>> = {
+  'controlled-live-turn': (argv, deps) => runPiControlledLiveTurnGateCli(argv, deps as never),
   'live-send-message': (argv, deps) => runPiLiveSendMessageGateCli(argv, deps as never),
   'live-send-media': (argv, deps) => runPiLiveSendMediaGateCli(argv, deps as never),
   'live-notification': (argv, deps) => runPiLiveNotificationGateCli(argv, deps as never),
@@ -396,6 +398,7 @@ function usage(): string {
     ...PI_LIVE_GATE_IDS.map((id) => `  ${id}`),
     '',
     'Examples:',
+    '  pnpm runtime:pi-live-gate -- --gate controlled-live-turn --agent-id <id> --peer-id <peer> --thread-id <topic> --dry-run --json',
     '  pnpm runtime:pi-live-gate -- --gate live-send-message --agent-id <id> --peer-id <peer> --dry-run --json',
     '  pnpm runtime:pi-live-gate -- --gate scheduled-work --agent-id <id> --peer-id <peer> --sender-id <sender> --json',
     '  pnpm runtime:pi-live-gate -- --gate memory-read --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip',

@@ -25,11 +25,15 @@ export interface LiveSendMessageGateInput {
   dataDir: string;
   accountId: string;
   peerId: string;
+  threadId?: string;
+  routeScope?: 'dm' | 'group';
+  requireMentionOnly?: boolean;
   markerPrefix?: string;
   marker?: string;
   confirmLiveSend: boolean;
   dryRun: boolean;
   expectedPeerId?: string;
+  expectedThreadId?: string;
 }
 
 export interface LiveSendMessageGateDeps {
@@ -57,12 +61,14 @@ export interface LiveSendMessageGateResult {
     channel: 'telegram';
     accountId: string;
     peerId: string;
+    threadId?: string;
   };
   markerPrefix: string;
   markerText: string;
   permission: {
     mcpToolPresent: boolean;
     privateAllowlistSinglePeer: boolean;
+    groupMentionOnly: boolean;
     routeBound: boolean;
     sendMessageAllowed: boolean;
   };
@@ -91,7 +97,10 @@ export interface LiveSendMessageGateResult {
 
 type NormalizedLiveSendMessageGateInput = LiveSendMessageGateInput & {
   markerPrefix: string;
+  routeScope: 'dm' | 'group';
+  requireMentionOnly: boolean;
   expectedPeerId: string;
+  expectedThreadId?: string;
 };
 
 export async function runLiveSendMessageGate(
@@ -103,7 +112,8 @@ export async function runLiveSendMessageGate(
   const startedAt = now();
   const markerText = normalized.marker ?? `${normalized.markerPrefix} ${new Date(startedAt).toISOString()}`;
   const metricsDb = join(normalized.dataDir, 'metrics.sqlite');
-  const sessionKey = `${normalized.agentId}:telegram:dm:${normalized.peerId}:live-send-message`;
+  const targetScope = normalized.routeScope === 'group' ? `group:${normalized.peerId}:${normalized.threadId ?? 'root'}` : `dm:${normalized.peerId}`;
+  const sessionKey = `${normalized.agentId}:telegram:${targetScope}:live-send-message`;
   const runId = deps.makeRunId?.() ?? `pi-live-send-${randomUUID()}`;
   const gate = buildLiveSendMessageGateSpec(normalized);
 
@@ -130,6 +140,7 @@ export async function runLiveSendMessageGate(
       peerId: normalized.peerId,
       senderId: normalized.peerId,
       accountId: normalized.accountId,
+      ...(normalized.threadId ? { threadId: normalized.threadId } : {}),
     },
   });
   const permission = await canUseTool(
@@ -138,6 +149,7 @@ export async function runLiveSendMessageGate(
       channel: 'telegram',
       peer_id: normalized.peerId,
       account_id: normalized.accountId,
+      ...(normalized.threadId ? { thread_id: normalized.threadId } : {}),
       text: markerText,
     },
     { signal: new AbortController().signal, toolUseID: `${LIVE_SEND_MESSAGE_GATE_ID}:${normalized.agentId}` } as any,
@@ -199,6 +211,7 @@ export async function runLiveSendMessageGate(
       channel: 'telegram',
       accountId: normalized.accountId,
       peerId: normalized.peerId,
+      ...(normalized.threadId ? { threadId: normalized.threadId } : {}),
       markerPrefix: normalized.markerPrefix,
       gateId: LIVE_SEND_MESSAGE_GATE_ID,
     },
@@ -224,6 +237,7 @@ export async function runLiveSendMessageGate(
       dispatchContext: {
         channel: 'telegram',
         accountId: normalized.accountId,
+        ...(normalized.threadId ? { threadId: normalized.threadId } : {}),
       },
     },
   );
@@ -234,6 +248,7 @@ export async function runLiveSendMessageGate(
       channel: 'telegram',
       peer_id: normalized.peerId,
       account_id: normalized.accountId,
+      ...(normalized.threadId ? { thread_id: normalized.threadId } : {}),
       text: markerText,
     });
     if (toolResult.isError) {
@@ -338,12 +353,18 @@ export function createFailedLiveSendMessageGateResult(
     gate,
     live: !normalized.dryRun,
     dryRun: normalized.dryRun,
-    target: { channel: 'telegram', accountId: normalized.accountId, peerId: normalized.peerId },
+    target: {
+      channel: 'telegram',
+      accountId: normalized.accountId,
+      peerId: normalized.peerId,
+      ...(normalized.threadId ? { threadId: normalized.threadId } : {}),
+    },
     markerPrefix: normalized.markerPrefix,
     markerText,
     permission: {
       mcpToolPresent: false,
       privateAllowlistSinglePeer: false,
+      groupMentionOnly: false,
       routeBound: false,
       sendMessageAllowed: false,
     },
@@ -368,7 +389,10 @@ function normalizeLiveSendMessageGateInput(input: LiveSendMessageGateInput): Nor
   return {
     ...input,
     markerPrefix,
+    routeScope: input.routeScope ?? 'dm',
+    requireMentionOnly: input.requireMentionOnly ?? true,
     expectedPeerId: input.expectedPeerId ?? input.peerId,
+    expectedThreadId: input.expectedThreadId ?? input.threadId,
   };
 }
 
@@ -383,6 +407,7 @@ function buildLiveSendMessageGateSpec(input: NormalizedLiveSendMessageGateInput)
       channel: 'telegram',
       accountId: input.accountId,
       peerId: input.peerId,
+      ...(input.threadId ? { threadId: input.threadId } : {}),
     },
     markerPrefix: input.markerPrefix,
     dryRunSupported: true,
@@ -395,14 +420,23 @@ function buildLiveSendMessageGateSpec(input: NormalizedLiveSendMessageGateInput)
       },
       {
         id: 'private-single-peer-allowlist',
-        description: 'Agent uses the private safety profile and a single Telegram peer allowlist matching the target.',
-        required: true,
+        description: input.routeScope === 'dm'
+          ? 'Agent uses the private safety profile and a single Telegram peer allowlist matching the target.'
+          : 'Group routes are bound by explicit route peer/topic confirmation instead of private DM allowlist.',
+        required: input.routeScope === 'dm',
       },
       {
-        id: 'route-bound-to-target-dm',
-        description: 'Agent has one Telegram DM route for the target account and peer.',
+        id: input.routeScope === 'group' ? 'route-bound-to-target-group-topic' : 'route-bound-to-target-dm',
+        description: input.routeScope === 'group'
+          ? 'Agent has a Telegram group route for the confirmed account, peer, and topic.'
+          : 'Agent has one Telegram DM route for the target account and peer.',
         required: true,
       },
+      ...(input.routeScope === 'group' ? [{
+        id: 'mention-only-group-route',
+        description: 'Telegram group routes must remain mention-only unless the operator explicitly allows otherwise.',
+        required: input.requireMentionOnly,
+      }] : []),
       {
         id: 'operator-approval',
         description: 'Live delivery requires explicit operator approval.',
@@ -418,6 +452,7 @@ function buildLiveSendMessageGateSpec(input: NormalizedLiveSendMessageGateInput)
           channel: 'telegram',
           accountId: input.accountId,
           peerId: input.peerId,
+          ...(input.threadId ? { threadId: input.threadId } : {}),
         },
         maxCount: 1,
       },
@@ -459,25 +494,34 @@ function validateTarget(
     config.safety_profile === 'private' &&
     config.allowlist?.telegram?.length === 1 &&
     config.allowlist.telegram[0] === input.peerId;
-  const routeBound = (config.routes ?? []).some((route) =>
-    route.channel === 'telegram' &&
-    route.scope === 'dm' &&
-    (route.account === undefined || route.account === input.accountId) &&
-    (route.peers ?? []).length === 1 &&
-    (route.peers ?? [])[0] === input.peerId
-  );
+  const route = (config.routes ?? []).find((candidate) => {
+    if (candidate.channel !== 'telegram') return false;
+    if (candidate.scope !== input.routeScope) return false;
+    if (candidate.account !== undefined && candidate.account !== input.accountId) return false;
+    const peers = candidate.peers ?? [];
+    if (input.routeScope === 'dm') return peers.length === 1 && peers[0] === input.peerId;
+    if (!peers.includes(input.peerId)) return false;
+    if (!input.threadId) return true;
+    return (candidate.topics ?? []).includes(input.threadId);
+  });
+  const routeBound = route !== undefined;
+  const groupMentionOnly = input.routeScope === 'group' && route?.mention_only === true;
 
   if (!mcpToolPresent) throw new Error(`${input.agentId} must expose send_message.`);
-  if (!privateAllowlistSinglePeer) {
+  if (input.routeScope === 'dm' && !privateAllowlistSinglePeer) {
     throw new Error(`${input.agentId} must remain private and allowlisted to exactly one Telegram peer.`);
   }
   if (!routeBound) {
-    throw new Error(`${input.agentId} must route only the target Telegram DM for this live gate.`);
+    throw new Error(`${input.agentId} must route only the target Telegram ${input.routeScope} for this live gate.`);
+  }
+  if (input.routeScope === 'group' && input.requireMentionOnly && !groupMentionOnly) {
+    throw new Error(`${input.agentId} Telegram group route must be mention_only for this live gate.`);
   }
 
   return {
     mcpToolPresent,
     privateAllowlistSinglePeer,
+    groupMentionOnly,
     routeBound,
     sendMessageAllowed: false,
   };
@@ -486,7 +530,8 @@ function validateTarget(
 function safetyFacts(input: NormalizedLiveSendMessageGateInput): LiveSendMessageGateResult['safety'] {
   return {
     operatorApproved: input.confirmLiveSend || input.dryRun,
-    noBroadFanout: input.peerId === input.expectedPeerId,
+    noBroadFanout: input.peerId === input.expectedPeerId
+      && (input.expectedThreadId === undefined || input.threadId === input.expectedThreadId),
     noMedia: true,
     noConfigMutation: true,
   };
@@ -517,6 +562,7 @@ function passedResult(input: {
       channel: 'telegram',
       accountId: input.input.accountId,
       peerId: input.input.peerId,
+      ...(input.input.threadId ? { threadId: input.input.threadId } : {}),
     },
     markerPrefix: input.input.markerPrefix,
     markerText: input.markerText,

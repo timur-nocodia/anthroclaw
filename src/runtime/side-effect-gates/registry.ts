@@ -1,5 +1,38 @@
 export const SIDE_EFFECT_GATE_REGISTRY = [
   {
+    id: 'controlled-live-turn',
+    title: 'Controlled Live Turn',
+    summary: 'Send one operator-approved marker message to a confirmed Telegram group topic for any configured agent.',
+    capabilityGroup: 'messaging',
+    focusedCommand: 'runtime:pi-controlled-live-turn-gate',
+    aggregateDispatcher: true,
+    risk: 'external_write',
+    action: 'message.controlled_live_turn',
+    execution: executionHints({
+      requiredFlags: ['agent-id', 'peer-id', 'thread-id'],
+      optionalFlags: [
+        'agents-dir',
+        'account-id',
+        'marker',
+        'marker-prefix',
+        'dry-run',
+        'confirm-controlled-live-turn',
+        'allow-non-mention-only',
+        'json',
+      ],
+      supportsDryRun: true,
+      safetyMode: 'dry-run-first',
+      approval: 'required-for-live',
+      exampleArgs: [
+        '--agent-id', '<id>',
+        '--peer-id', '<peer>',
+        '--thread-id', '<topic>',
+        '--dry-run',
+        '--json',
+      ],
+    }),
+  },
+  {
     id: 'live-send-message',
     title: 'Live Send Message',
     summary: 'Send an operator-approved text message to one configured peer.',

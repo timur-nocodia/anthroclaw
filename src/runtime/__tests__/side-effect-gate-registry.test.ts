@@ -12,6 +12,7 @@ describe('side-effect gate registry', () => {
     expect(ids).toHaveLength(SIDE_EFFECT_GATE_REGISTRY.length);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual([
+      'controlled-live-turn',
       'live-send-message',
       'live-send-media',
       'live-notification',
@@ -59,6 +60,16 @@ describe('side-effect gate registry', () => {
     });
     expect(byId['live-send-message']).toMatchObject({
       title: 'Live Send Message',
+      capabilityGroup: 'messaging',
+    });
+    expect(byId['controlled-live-turn']?.execution).toMatchObject({
+      requiredFlags: ['agent-id', 'peer-id', 'thread-id'],
+      supportsDryRun: true,
+      safetyMode: 'dry-run-first',
+      approval: 'required-for-live',
+    });
+    expect(byId['controlled-live-turn']).toMatchObject({
+      title: 'Controlled Live Turn',
       capabilityGroup: 'messaging',
     });
     expect(byId['live-send-media']?.execution.requiredFlags).toEqual([
