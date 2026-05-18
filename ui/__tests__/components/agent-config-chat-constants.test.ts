@@ -6,6 +6,10 @@ const PAGE_PATH = resolve(
   process.cwd(),
   'app/(dashboard)/fleet/[serverId]/agents/[agentId]/page.tsx',
 );
+const SETTINGS_PAGE_PATH = resolve(
+  process.cwd(),
+  'app/(dashboard)/fleet/[serverId]/settings/page.tsx',
+);
 
 describe('agent config page — chat profile constants', () => {
   const source = readFileSync(PAGE_PATH, 'utf-8');
@@ -65,5 +69,15 @@ describe('agent config page — chat profile constants', () => {
     expect(source).toMatch(
       /cfg\.safety_profile\s*===\s*['"]chat_like_openclaw['"]\s*&&[\s\S]{0,200}<Field[\s\S]{0,200}label=["']Personality["']/,
     );
+  });
+});
+
+describe('settings page — runtime primary surface', () => {
+  const source = readFileSync(SETTINGS_PAGE_PATH, 'utf-8');
+
+  it('renders RuntimeAuthPanel as the primary runtime settings surface', () => {
+    expect(source).toContain('@/components/settings/RuntimeAuthPanel');
+    expect(source.indexOf('<RuntimeAuthPanel')).toBeLessThan(source.indexOf('<ClaudeAuthPanel'));
+    expect(source).toContain('Legacy Claude Agent SDK compatibility');
   });
 });

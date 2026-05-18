@@ -191,14 +191,14 @@ This plan is intentionally broader than a rename. The source of truth must move 
 
 ### Phase 5 - Replace ClaudeAuthPanel primary usage
 
-- [ ] Create `RuntimeAuthPanel`.
-- [ ] Render Pi readiness and config paths.
-- [ ] Remove "Claude subscription auth" from primary settings.
-- [ ] Keep `ClaudeAuthPanel` only under `Legacy`.
-- [ ] Rename component tests or add new tests:
-  - [ ] Runtime panel calls `/api/fleet/:serverId/runtime/status`.
-  - [ ] It renders Pi status and not Claude subscription copy.
-  - [ ] Legacy panel still works when explicitly opened.
+- [x] Create `RuntimeAuthPanel`.
+- [x] Render Pi readiness and config paths.
+- [x] Remove "Claude subscription auth" from primary settings.
+- [x] Keep `ClaudeAuthPanel` only under `Legacy`.
+- [x] Rename component tests or add new tests:
+  - [x] Runtime panel calls `/api/fleet/:serverId/runtime/status`.
+  - [x] It renders Pi status and not Claude subscription copy.
+  - [x] Legacy panel still works when explicitly opened.
 
 ### Phase 6 - Runtime page
 

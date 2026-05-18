@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClaudeAuthPanel } from "@/components/settings/ClaudeAuthPanel";
+import { RuntimeAuthPanel } from "@/components/settings/RuntimeAuthPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -311,6 +312,7 @@ function GeneralSection({ serverId }: { serverId: string }) {
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
+  const [legacyRuntimeOpen, setLegacyRuntimeOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [environment, setEnvironment] = useState<Environment>("development");
   const [envSaving, setEnvSaving] = useState(false);
@@ -454,7 +456,22 @@ function GeneralSection({ serverId }: { serverId: string }) {
 
       <Divider />
 
-      <ClaudeAuthPanel serverId={serverId} />
+      <RuntimeAuthPanel serverId={serverId} />
+
+      <details
+        className="rounded-md border p-3"
+        style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
+        onToggle={(event) => setLegacyRuntimeOpen(event.currentTarget.open)}
+      >
+        <summary className="cursor-pointer text-xs font-semibold" style={{ color: "var(--color-foreground)" }}>
+          Legacy Claude Agent SDK compatibility
+        </summary>
+        {legacyRuntimeOpen && (
+          <div className="mt-3">
+            <ClaudeAuthPanel serverId={serverId} />
+          </div>
+        )}
+      </details>
 
       <Divider />
 
