@@ -67,7 +67,8 @@ safety_profile: chat_like_openclaw
     });
     expect(status.agents.find((agent) => agent.id === 'ready_agent')).toMatchObject({
       state: 'evidence_open',
-      packet: { uncheckedItems: 1 },
+      packet: { uncheckedItems: 1, uncheckedLabels: ['manual evidence'] },
+      nextActions: ['Resolve packet item: manual evidence'],
     });
     expect(status.agents.find((agent) => agent.id === 'missing_packet_agent')).toMatchObject({
       state: 'packet_missing',

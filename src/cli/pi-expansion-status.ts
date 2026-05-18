@@ -33,6 +33,7 @@ interface PacketSummary {
   path?: string;
   status?: string;
   uncheckedItems: number;
+  uncheckedLabels: string[];
 }
 
 interface AgentExpansionStatus {
@@ -215,19 +216,27 @@ export function buildPiExpansionStatus(input: {
 
 function readPacketSummary(packetsDir: string, agentId: string): PacketSummary {
   const path = resolve(packetsDir, `${agentId}.md`);
-  if (!existsSync(path)) return { present: false, uncheckedItems: 0 };
+  if (!existsSync(path)) return { present: false, uncheckedItems: 0, uncheckedLabels: [] };
   const body = readFileSync(path, 'utf8');
+  const uncheckedLabels = parseUncheckedLabels(body);
   return {
     present: true,
     path,
     status: parsePacketStatus(body),
-    uncheckedItems: (body.match(/^- \[ \]/gm) ?? []).length,
+    uncheckedItems: uncheckedLabels.length,
+    uncheckedLabels,
   };
 }
 
 function parsePacketStatus(body: string): string | undefined {
   const match = body.match(/^Status:\s*(.+)$/m);
   return match ? match[1].trim() : undefined;
+}
+
+function parseUncheckedLabels(body: string): string[] {
+  return [...body.matchAll(/^- \[ \]\s+(.+)$/gm)]
+    .map((match) => (match[1] ?? '').trim())
+    .filter(Boolean);
 }
 
 function classifyState(input: {
@@ -261,6 +270,9 @@ function buildNextActions(input: {
     return [
       `Create packet: pnpm runtime:pi-expansion-packet -- ${input.agentsDirs.map((dir) => `--agents-dir ${shellQuote(dir)}`).join(' ')} --agent ${shellQuote(input.agentId)} --output ${shellQuote(resolve(input.packetsDir, `${input.agentId}.md`))}`,
     ];
+  }
+  if (input.packet.uncheckedLabels.length > 0) {
+    return input.packet.uncheckedLabels.map((label) => `Resolve packet item: ${label}`);
   }
 
   const actions = input.evidencePlan.map((entry) => (

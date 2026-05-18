@@ -1,6 +1,6 @@
 # Pi Expansion Packet: project-manager
 
-Status: ready_for_execution
+Status: automated pre-live evidence passed; manual group/tool evidence pending.
 Owner: Timur
 Rollback path: research/runtime-v1-migration-status.md
 Risk: high
@@ -24,9 +24,17 @@ Agent source: /Users/tyess/dev/anthroclaw-vibe-agents/agents
 
 ## Automated Evidence
 
-- [ ] runtime:pi-monitor before and after expansion: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
-- [ ] smoke:pi-external-mcp: `pnpm smoke:pi-external-mcp -- --json`
-- [ ] smoke:pi-plugins-context: `pnpm smoke:pi-plugins-context -- --json`
+- [x] runtime:pi-monitor before expansion: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
+  - Result: passed from live checkout `/Users/tyess/dev/openclaw-agents-sdk-clone`.
+  - Window: 60 minutes, 0 failed/interrupted/stale, auth/model alerts 0, alerts `[]`, warnings `[]`.
+  - Note: run count was 0, so this is a no-alert baseline only.
+- [x] smoke:pi-external-mcp: `pnpm smoke:pi-external-mcp -- --json`
+  - Result: passed.
+  - Covered: credential header resolution, credential store reads, allowed proxy tool exposure, hidden disallowed tool, Pi custom tool definition/execution, Pi policy denial, upstream call path, redaction, and agent schema validation.
+- [x] smoke:pi-plugins-context: `pnpm smoke:pi-plugins-context -- --json`
+  - Result: passed.
+  - Covered: plugin loading/enabling, disabled-agent tool exclusion, plugin tool policy, hooks, context/compression, subagent tool disabling, bundled `file-transfer`, `lcm`, and `operator-console` plugin paths.
+- [ ] runtime:pi-monitor after expansion: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
 
 ## Manual Evidence
 
