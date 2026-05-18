@@ -152,6 +152,121 @@ describe('Pi live gate dispatcher CLI', () => {
     });
   });
 
+  it('builds a JSON run plan without running the gate', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiLiveGateCli([
+      '--plan', 'live-send-message',
+      '--agent-id', 'custom_agent',
+      '--peer-id', '42',
+      '--dry-run',
+      '--json',
+    ], { stdout, stderr });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    const payload = JSON.parse(stdout.text()) as {
+      status: string;
+      validation: { status: string; missingFlags: string[]; unknownFlags: string[] };
+      gate: { id: string; title: string; capabilityGroup: string };
+      operator: { approval: string; safetyMode: string; supportsDryRun: boolean };
+      run: {
+        aggregateArgs: string[];
+        focusedArgs: string[];
+        packageScripts: {
+          aggregate: string[];
+          focused: string[];
+        };
+      };
+    };
+    expect(payload).toMatchObject({
+      status: 'ok',
+      validation: {
+        status: 'ok',
+        missingFlags: [],
+        unknownFlags: [],
+      },
+      gate: {
+        id: 'live-send-message',
+        title: 'Live Send Message',
+        capabilityGroup: 'messaging',
+      },
+      operator: {
+        approval: 'required-for-live',
+        safetyMode: 'dry-run-first',
+        supportsDryRun: true,
+      },
+    });
+    expect(payload.run.aggregateArgs).toEqual([
+      '--gate',
+      'live-send-message',
+      '--agent-id',
+      'custom_agent',
+      '--peer-id',
+      '42',
+      '--dry-run',
+      '--json',
+    ]);
+    expect(payload.run.focusedArgs).toEqual([
+      '--agent-id',
+      'custom_agent',
+      '--peer-id',
+      '42',
+      '--dry-run',
+      '--json',
+    ]);
+    expect(payload.run.packageScripts.aggregate).toEqual([
+      'pnpm',
+      'runtime:pi-live-gate',
+      '--',
+      '--gate',
+      'live-send-message',
+      '--agent-id',
+      'custom_agent',
+      '--peer-id',
+      '42',
+      '--dry-run',
+      '--json',
+    ]);
+    expect(payload.run.packageScripts.focused).toEqual([
+      'pnpm',
+      'runtime:pi-live-send-message-gate',
+      '--',
+      '--agent-id',
+      'custom_agent',
+      '--peer-id',
+      '42',
+      '--dry-run',
+      '--json',
+    ]);
+  });
+
+  it('returns failed plan status when required args are missing', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiLiveGateCli([
+      '--plan=live-send-media',
+      '--agent-id', 'custom_agent',
+      '--json',
+    ], { stdout, stderr });
+
+    expect(code).toBe(2);
+    expect(stderr.text()).toBe('');
+    const payload = JSON.parse(stdout.text()) as {
+      status: string;
+      validation: { status: string; missingFlags: string[] };
+    };
+    expect(payload).toMatchObject({
+      status: 'failed',
+      validation: {
+        status: 'failed',
+        missingFlags: ['peer-id', 'file-path', 'allowed-file-root'],
+      },
+    });
+  });
+
   it('reports missing required focused gate arguments', async () => {
     const stdout = createWriter();
     const stderr = createWriter();

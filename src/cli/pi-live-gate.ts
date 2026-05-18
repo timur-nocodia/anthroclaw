@@ -23,6 +23,7 @@ export type PiLiveGateId = SideEffectGateId;
 interface PiLiveGateArgs {
   describe?: PiLiveGateId;
   gate?: PiLiveGateId;
+  plan?: PiLiveGateId;
   rest: string[];
   validateArgs?: PiLiveGateId;
   help: boolean;
@@ -82,6 +83,16 @@ export async function runPiLiveGateCli(
     stdout.write(args.json ? `${JSON.stringify(describePayload(gate), null, 2)}\n` : `${formatGateDescription(gate)}\n`);
     return 0;
   }
+  if (args.plan) {
+    const gate = findSideEffectGate(args.plan);
+    if (!gate) {
+      stderr.write(`Unknown gate: ${args.plan}\n${usage()}\n`);
+      return 2;
+    }
+    const plan = buildRunPlan(gate, args.rest, args.strict);
+    stdout.write(args.json ? `${JSON.stringify(plan, null, 2)}\n` : `${formatRunPlan(plan)}\n`);
+    return plan.status === 'ok' ? 0 : 2;
+  }
   if (args.validateArgs) {
     const gate = findSideEffectGate(args.validateArgs);
     if (!gate) {
@@ -105,6 +116,7 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
   let describe: PiLiveGateId | undefined;
   const rest: string[] = [];
   let gate: PiLiveGateId | undefined;
+  let plan: PiLiveGateId | undefined;
   let validateArgs: PiLiveGateId | undefined;
   let help = false;
   let json = false;
@@ -139,6 +151,14 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
       describe = parseGateId(arg.slice('--describe='.length));
       continue;
     }
+    if (arg === '--plan') {
+      plan = parseGateId(requireValue(argv, ++i, '--plan'));
+      continue;
+    }
+    if (arg.startsWith('--plan=')) {
+      plan = parseGateId(arg.slice('--plan='.length));
+      continue;
+    }
     if (arg === '--validate-args') {
       validateArgs = parseGateId(requireValue(argv, ++i, '--validate-args'));
       continue;
@@ -158,7 +178,7 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
     rest.push(arg);
   }
 
-  return { describe, gate, rest, validateArgs, help, json, list, strict };
+  return { describe, gate, plan, rest, validateArgs, help, json, list, strict };
 }
 
 function listPayload() {
@@ -172,6 +192,35 @@ function describePayload(gate: NonNullable<ReturnType<typeof findSideEffectGate>
   return {
     status: 'ok',
     gate,
+  };
+}
+
+function buildRunPlan(
+  gate: NonNullable<ReturnType<typeof findSideEffectGate>>,
+  argv: string[],
+  strict: boolean,
+) {
+  const validation = validateGateArgs(gate, argv, strict);
+  const aggregateArgs = ['--gate', gate.id, ...argv];
+  return {
+    status: validation.status,
+    gate,
+    validation,
+    operator: {
+      risk: gate.risk,
+      action: gate.action,
+      approval: gate.execution.approval,
+      safetyMode: gate.execution.safetyMode,
+      supportsDryRun: gate.execution.supportsDryRun,
+    },
+    run: {
+      aggregateArgs,
+      focusedArgs: argv,
+      packageScripts: {
+        aggregate: ['pnpm', 'runtime:pi-live-gate', '--', ...aggregateArgs],
+        focused: ['pnpm', gate.focusedCommand, '--', ...argv],
+      },
+    },
   };
 }
 
@@ -205,6 +254,24 @@ function formatGateDescription(gate: NonNullable<ReturnType<typeof findSideEffec
     `  requiredFlags: ${gate.execution.requiredFlags.join(', ')}`,
     `  optionalFlags: ${gate.execution.optionalFlags.join(', ')}`,
     `  example: pnpm runtime:pi-live-gate -- --gate ${gate.id} ${gate.execution.exampleArgs.join(' ')}`,
+  ].join('\n');
+}
+
+function formatRunPlan(plan: ReturnType<typeof buildRunPlan>): string {
+  return [
+    `Pi live gate plan: ${plan.gate.id} - ${plan.gate.title}`,
+    `  status: ${plan.status}`,
+    `  group: ${plan.gate.capabilityGroup}`,
+    `  summary: ${plan.gate.summary}`,
+    `  action: ${plan.operator.action}`,
+    `  risk: ${plan.operator.risk}`,
+    `  safety: ${plan.operator.safetyMode}`,
+    `  approval: ${plan.operator.approval}`,
+    `  supportsDryRun: ${plan.operator.supportsDryRun}`,
+    `  missingFlags: ${plan.validation.missingFlags.join(', ')}`,
+    `  unknownFlags: ${plan.validation.unknownFlags.join(', ')}`,
+    `  aggregate: ${plan.run.packageScripts.aggregate.join(' ')}`,
+    `  focused: ${plan.run.packageScripts.focused.join(' ')}`,
   ].join('\n');
 }
 
@@ -284,6 +351,7 @@ function usage(): string {
     'Usage: pnpm runtime:pi-live-gate -- --gate <gate-id> [gate options]',
     '       pnpm runtime:pi-live-gate -- --list [--json]',
     '       pnpm runtime:pi-live-gate -- --describe <gate-id> [--json]',
+    '       pnpm runtime:pi-live-gate -- --plan <gate-id> [gate options] [--strict] [--json]',
     '       pnpm runtime:pi-live-gate -- --validate-args <gate-id> [gate options] [--strict] [--json]',
     '',
     'Gate ids:',
