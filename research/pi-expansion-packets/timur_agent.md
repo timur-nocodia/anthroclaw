@@ -2,7 +2,7 @@
 
 Date: 2026-05-17
 
-Status: tracked config points at the connected default Telegram bot; live operator command suite passed; controlled side-effect smoke gates are closing by feature class.
+Status: tracked config points at the connected default Telegram bot; live operator command suite passed; controlled side-effect smoke gates are closing by feature class, including managed MCP onboarding and file-transfer.
 Owner: operator
 Rollback path: move `agents/timur_agent` off account `default`, restore `pi_telegram_lab` to account `default`, or set `config.yml` `runtime.headless.provider=claude-agent-sdk`.
 Risk: high
@@ -80,6 +80,9 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [x] Buildroom handoff smoke: `pnpm runtime:pi-timur-agent-buildroom-handoff-smoke -- --json`
   - Purpose: verify sanitized Buildroom session-summary and handoff-signal tools on temp Buildroom storage without creating live Buildroom artifacts or granting execution authority.
   - Result: passed. The temp room failed closed when uninitialized, then accepted one sanitized `session_summary` and one parent-linked `handoff_signal`; both used the dispatch-bound `sourceSessionId`, raw transcript inclusion stayed false, the summary could not approve work, the handoff requested `research_only`, and `authority.canApprove=false` plus `authority.canBuild=false`.
+- [x] MCP/file-transfer smoke: `pnpm runtime:pi-timur-agent-mcp-file-transfer-smoke -- --json`
+  - Purpose: verify managed `connect_mcp` onboarding and bundled file-transfer root policy without external MCP calls or live file writes.
+  - Result: passed. Private Telegram DM attribution was forwarded into `connect_mcp`, group chat onboarding was rejected with `mcp_onboarding_requires_dm`, check/cancel lifecycle calls returned expected statuses, no hardcoded external MCP servers were configured, bundled file-transfer exposed list/fetch/write tools for temp roots derived from `agents/timur_agent/lab-files` and `research`, and an outside-root fetch was denied.
 
 ## Manual Evidence
 - [x] controlled proactive notification canary
@@ -94,6 +97,8 @@ The tracked route uses the connected Telegram account `default`. The previous `p
   - Evidence: `pnpm runtime:pi-timur-agent-admin-config-smoke -- --json` passed against a temp `timur_agent` copy with `show_config`, `manage_operator_console`, `manage_human_takeover`, config audit/backups, cross-agent denial, and temp-only `access_control` approve/revoke.
 - [x] controlled Buildroom handoff canary
   - Evidence: `pnpm runtime:pi-timur-agent-buildroom-handoff-smoke -- --json` passed against temp Buildroom storage with sanitized session summary, parent-linked handoff signal, fail-closed uninitialized storage, and explicit no-approval/no-build authority.
+- [x] controlled MCP/file-transfer canary
+  - Evidence: `pnpm runtime:pi-timur-agent-mcp-file-transfer-smoke -- --json` passed with managed onboarding attribution, DM-only rejection, no committed external MCP server config, temp-only file-transfer read/list/write, and outside-root denial.
 - [x] live Telegram account switch to `default` is approved by operator
 - [x] first controlled live text turn returns expected behavior
   - Evidence: operator sent `/smoke` in Telegram DM at 2026-05-17 14:41 Asia/Almaty; the bot replied exactly `TIMUR_AGENT_LAB_OK`.
