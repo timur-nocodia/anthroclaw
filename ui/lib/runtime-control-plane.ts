@@ -9,6 +9,11 @@ import {
   SIDE_EFFECT_GATE_REGISTRY,
   type SideEffectGateRegistryEntry,
 } from '@backend/runtime/side-effect-gates/registry.js';
+import {
+  modelOption,
+  STATIC_RUNTIME_MODEL_OPTIONS,
+  type RuntimeModelOption,
+} from '@/lib/runtime-models';
 
 export type RuntimeProvider = 'claude-agent-sdk' | 'pi' | 'opencode';
 
@@ -98,6 +103,28 @@ export interface RuntimeGatePlanResult {
   validation: RuntimeGateValidationResult;
   command: string;
   argv: string[];
+}
+
+export interface RuntimeModelGroup {
+  id: 'pi' | 'opencode' | 'legacy-claude';
+  title: string;
+  enabled: boolean;
+  compatibility?: boolean;
+  source: {
+    kind: 'configured' | 'static' | 'compatibility';
+    modelsPath?: string | null;
+    modelsConfigured?: boolean;
+    error?: string | null;
+  };
+  models: RuntimeModelOption[];
+}
+
+export interface RuntimeModelRegistryResponse {
+  status: 'ok';
+  defaultProvider: RuntimeProvider;
+  defaultModel: string;
+  groups: RuntimeModelGroup[];
+  options: RuntimeModelOption[];
 }
 
 const CONFIG_PATH = process.env.OC_CONFIG
@@ -212,6 +239,64 @@ export function planRuntimeGate(
     validation,
     command: gate.focusedCommand,
     argv: argsToCliArgv(validation.normalizedArgs),
+  };
+}
+
+export function getRuntimeModelRegistry(): RuntimeModelRegistryResponse {
+  const config = loadGlobalConfigWithOverlay(CONFIG_PATH, OVERLAY_PATH);
+  const defaultProvider = config.runtime.headless.provider;
+  const modelsPath = config.runtime.headless.pi?.models_path ?? null;
+  const configuredPiModels = readConfiguredPiModels(modelsPath);
+  const staticPiModels = STATIC_RUNTIME_MODEL_OPTIONS.filter((option) => option.runtime === 'pi');
+  const piModels = mergeModelOptions([
+    ...configuredPiModels.models,
+    ...staticPiModels,
+  ]);
+  const opencodeEnabled = defaultProvider === 'opencode';
+  const opencodeModels = opencodeEnabled
+    ? [modelOption(config.defaults.model, undefined, 'opencode')]
+    : [];
+  const legacyModels = STATIC_RUNTIME_MODEL_OPTIONS.filter((option) => option.runtime === 'legacy-claude');
+  const groups: RuntimeModelGroup[] = [
+    {
+      id: 'pi',
+      title: 'Pi configured models',
+      enabled: defaultProvider === 'pi',
+      source: {
+        kind: configuredPiModels.models.length > 0 ? 'configured' : 'static',
+        modelsPath,
+        modelsConfigured: configuredPathExists(modelsPath),
+        error: configuredPiModels.error,
+      },
+      models: piModels,
+    },
+    {
+      id: 'opencode',
+      title: 'OpenCode models',
+      enabled: opencodeEnabled,
+      source: {
+        kind: 'static',
+      },
+      models: opencodeModels,
+    },
+    {
+      id: 'legacy-claude',
+      title: 'Legacy Claude Agent SDK compatibility',
+      enabled: true,
+      compatibility: true,
+      source: {
+        kind: 'compatibility',
+      },
+      models: legacyModels,
+    },
+  ];
+
+  return {
+    status: 'ok',
+    defaultProvider,
+    defaultModel: config.defaults.model,
+    groups,
+    options: mergeModelOptions(groups.flatMap((group) => group.models)),
   };
 }
 
@@ -344,4 +429,66 @@ function argsToCliArgv(args: Record<string, string | number | boolean>): string[
     argv.push(`--${key}`, String(value));
   }
   return argv;
+}
+
+function readConfiguredPiModels(modelsPath: string | null): { models: RuntimeModelOption[]; error: string | null } {
+  if (!modelsPath || !configuredPathExists(modelsPath)) {
+    return { models: [], error: null };
+  }
+
+  try {
+    const path = isAbsolute(modelsPath) ? modelsPath : resolve(process.cwd(), '..', modelsPath);
+    const parsed = JSON.parse(readFileSync(path, 'utf-8'));
+    return { models: extractModelOptions(parsed), error: null };
+  } catch (err) {
+    return {
+      models: [],
+      error: err instanceof Error ? err.message : 'Failed to read Pi models file',
+    };
+  }
+}
+
+function extractModelOptions(value: unknown): RuntimeModelOption[] {
+  if (Array.isArray(value)) return value.flatMap(extractModelEntry);
+  if (isRecord(value)) {
+    if (Array.isArray(value.models)) return value.models.flatMap(extractModelEntry);
+    if (Array.isArray(value.available)) return value.available.flatMap(extractModelEntry);
+  }
+  return [];
+}
+
+function extractModelEntry(value: unknown): RuntimeModelOption[] {
+  if (typeof value === 'string' && value.trim()) {
+    return [modelOption(value.trim(), undefined, 'pi', false, 'configured')];
+  }
+  if (!isRecord(value)) return [];
+
+  const provider = typeof value.provider === 'string' ? value.provider : undefined;
+  const rawId = typeof value.id === 'string'
+    ? value.id
+    : typeof value.modelId === 'string'
+      ? value.modelId
+      : typeof value.model === 'string'
+        ? value.model
+        : undefined;
+  if (!rawId) return [];
+
+  const id = provider && !rawId.includes('/') && !rawId.includes(':')
+    ? `${provider}/${rawId}`
+    : rawId;
+  const label = typeof value.name === 'string' && value.name.trim()
+    ? `${id} - ${value.name.trim()}`
+    : id;
+  return [modelOption(id, provider, 'pi', false, 'configured', label)];
+}
+
+function mergeModelOptions(options: RuntimeModelOption[]): RuntimeModelOption[] {
+  const seen = new Set<string>();
+  const merged: RuntimeModelOption[] = [];
+  for (const option of options) {
+    if (seen.has(option.id)) continue;
+    seen.add(option.id);
+    merged.push(option);
+  }
+  return merged;
 }

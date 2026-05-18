@@ -185,6 +185,68 @@ describe('runtime control plane API', () => {
     expect(controlledLiveTurn.execution.approval).toBe('required-for-live');
   });
 
+  it('returns runtime model registry with configured Pi and legacy compatibility groups', async () => {
+    writeFileSync(
+      join(tempRoot, 'models.json'),
+      JSON.stringify([
+        { provider: 'openai', id: 'gpt-5-mini', name: 'GPT 5 Mini' },
+        { provider: 'anthropic', id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+      ]),
+      'utf-8',
+    );
+
+    const { GET } = await import('@/app/api/runtime/models/route');
+    const res = await GET();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.status).toBe('ok');
+    expect(body.defaultProvider).toBe('pi');
+    expect(body.groups.find((group: { id: string }) => group.id === 'pi')).toMatchObject({
+      enabled: true,
+      source: {
+        kind: 'configured',
+        modelsConfigured: true,
+      },
+    });
+    expect(body.options.map((option: { id: string }) => option.id)).toContain('openai/gpt-5-mini');
+    expect(body.options.map((option: { id: string }) => option.id)).toContain('claude-sonnet-4-6');
+    expect(body.groups.find((group: { id: string }) => group.id === 'legacy-claude')).toMatchObject({
+      compatibility: true,
+    });
+  });
+
+  it('enables OpenCode model group when OpenCode is the default provider', async () => {
+    writeFileSync(
+      join(tempRoot, 'config.yml'),
+      [
+        'defaults:',
+        '  model: anthropic/claude-sonnet-4-6',
+        'runtime:',
+        '  headless:',
+        '    provider: opencode',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const { GET } = await import('@/app/api/runtime/models/route');
+    const res = await GET();
+    const body = await res.json();
+    const opencodeGroup = body.groups.find((group: { id: string }) => group.id === 'opencode');
+
+    expect(res.status).toBe(200);
+    expect(body.defaultProvider).toBe('opencode');
+    expect(opencodeGroup).toMatchObject({
+      enabled: true,
+      models: [
+        expect.objectContaining({
+          id: 'anthropic/claude-sonnet-4-6',
+          runtime: 'opencode',
+        }),
+      ],
+    });
+  });
+
   it('validates runtime gate args with structured missing and unknown flags', async () => {
     const { POST } = await import('@/app/api/runtime/gates/validate/route');
     const res = await POST(jsonRequest('/api/runtime/gates/validate', {

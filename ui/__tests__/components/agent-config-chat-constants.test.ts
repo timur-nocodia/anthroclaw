@@ -51,6 +51,12 @@ describe('agent config page — chat profile constants', () => {
     expect(source).toMatch(/safety_profile\?:[^;\n]*chat_like_openclaw/);
   });
 
+  it('model selector uses runtime model options instead of Anthropic-only options', () => {
+    expect(source).toContain('@/lib/runtime-models');
+    expect(source).not.toContain('@/lib/anthropic-models');
+    expect(source).toContain('withCurrentRuntimeModelOption(STATIC_RUNTIME_MODEL_OPTIONS, cfg.model)');
+  });
+
   it('personality field appears in cfg state initializer', () => {
     expect(source).toMatch(/personality:\s*agent\.personality/);
   });

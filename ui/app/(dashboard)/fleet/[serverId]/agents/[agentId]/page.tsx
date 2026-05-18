@@ -64,7 +64,10 @@ import { DoctorPanel } from "@/components/lcm/DoctorPanel";
 import { HandoffTab } from "@/components/handoff/HandoffTab";
 import { Section } from "@/components/ui/section";
 import { WhereAgentListensSection } from "@/components/binding/WhereAgentListensSection";
-import { ANTHROPIC_MODELS as MODELS } from "@/lib/anthropic-models";
+import {
+  STATIC_RUNTIME_MODEL_OPTIONS,
+  withCurrentRuntimeModelOption,
+} from "@/lib/runtime-models";
 import {
   LearningAdminApprovalsEditor,
   type LearningAdminApprovalRoute,
@@ -1580,7 +1583,7 @@ function ConfigTab({
           {/* General */}
           <Section title="General" tooltip="Core agent settings: model, timezone, message queue behavior, and memory rotation." icon={<Settings2 className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
             <FormGrid>
-              <Field label="Model" tooltip="Which Claude model to use. Opus is the smartest, Haiku is the fastest and cheapest, Sonnet is a balanced option.">
+              <Field label="Model" tooltip="Runtime model id. Pi models use provider/model ids; legacy Claude Agent SDK bare ids remain available only for compatibility.">
                 <select
                   value={cfg.model}
                   onChange={(e) => update({ model: e.target.value })}
@@ -1591,9 +1594,9 @@ function ConfigTab({
                     color: "var(--color-foreground)",
                   }}
                 >
-                  {MODELS.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
+                  {withCurrentRuntimeModelOption(STATIC_RUNTIME_MODEL_OPTIONS, cfg.model).map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
                     </option>
                   ))}
                 </select>
@@ -2585,11 +2588,11 @@ function ConfigTab({
                   </span>
                 </div>
                 <p className="text-[11.5px] leading-relaxed">
-                  These settings are passed to Claude Agent SDK/Claude Code. OpenClaw does not run an outer LLM failover loop or a custom tool execution path.
+                  These settings are passed to Claude Agent SDK/Claude Code. AnthroClaw does not run an outer LLM failover loop or a custom tool execution path.
                 </p>
               </div>
               <FormGrid>
-                <Field label="Fallback model" tooltip="Native SDK fallbackModel. Used only inside the Claude Agent SDK query lifecycle, not as OpenClaw-side provider routing.">
+                <Field label="Fallback model" tooltip="Native SDK fallbackModel. Used only inside the Claude Agent SDK query lifecycle, not as AnthroClaw-side provider routing.">
                   <select
                     value={cfg.sdk.fallbackModel || ""}
                     onChange={(e) => updateSdk({ fallbackModel: e.target.value })}
@@ -2597,8 +2600,8 @@ function ConfigTab({
                     style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
                   >
                     <option value="">none</option>
-                    {MODELS.map((m) => (
-                      <option key={m} value={m}>{m}</option>
+                    {withCurrentRuntimeModelOption(STATIC_RUNTIME_MODEL_OPTIONS, cfg.sdk.fallbackModel).map((m) => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
                     ))}
                   </select>
                 </Field>

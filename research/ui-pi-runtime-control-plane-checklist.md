@@ -177,15 +177,15 @@ This plan is intentionally broader than a rename. The source of truth must move 
 
 ### Phase 4 - Runtime model registry API
 
-- [ ] Replace `ui/lib/anthropic-models.ts` with `ui/lib/runtime-models.ts`.
-- [ ] Add `GET /api/runtime/models`.
-- [ ] Support model groups:
-  - [ ] Pi configured models.
-  - [ ] OpenCode models when provider is enabled.
-  - [ ] Legacy Claude model list as compatibility only.
-- [ ] Tests:
-  - [ ] Agent config model selector can render non-Claude model ids.
-  - [ ] Unknown current model remains selectable as a custom/current value.
+- [x] Replace `ui/lib/anthropic-models.ts` with `ui/lib/runtime-models.ts`.
+- [x] Add `GET /api/runtime/models`.
+- [x] Support model groups:
+  - [x] Pi configured models.
+  - [x] OpenCode models when provider is enabled.
+  - [x] Legacy Claude model list as compatibility only.
+- [x] Tests:
+  - [x] Agent config model selector can render non-Claude model ids.
+  - [x] Unknown current model remains selectable as a custom/current value.
 
 ## UI Component Checklist
 
