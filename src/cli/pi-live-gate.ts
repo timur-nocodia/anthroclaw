@@ -28,6 +28,7 @@ interface PiLiveGateArgs {
   help: boolean;
   json: boolean;
   list: boolean;
+  strict: boolean;
 }
 
 interface PiLiveGateDeps {
@@ -87,7 +88,7 @@ export async function runPiLiveGateCli(
       stderr.write(`Unknown gate: ${args.validateArgs}\n${usage()}\n`);
       return 2;
     }
-    const validation = validateGateArgs(gate, args.rest);
+    const validation = validateGateArgs(gate, args.rest, args.strict);
     stdout.write(args.json ? `${JSON.stringify(validation, null, 2)}\n` : `${formatValidation(validation)}\n`);
     return validation.status === 'ok' ? 0 : 2;
   }
@@ -108,6 +109,7 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
   let help = false;
   let json = false;
   let list = false;
+  let strict = false;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -123,6 +125,10 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
     }
     if (arg === '--list') {
       list = true;
+      continue;
+    }
+    if (arg === '--strict') {
+      strict = true;
       continue;
     }
     if (arg === '--describe') {
@@ -152,7 +158,7 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
     rest.push(arg);
   }
 
-  return { describe, gate, rest, validateArgs, help, json, list };
+  return { describe, gate, rest, validateArgs, help, json, list, strict };
 }
 
 function listPayload() {
@@ -201,13 +207,19 @@ function formatGateDescription(gate: NonNullable<ReturnType<typeof findSideEffec
 function validateGateArgs(
   gate: NonNullable<ReturnType<typeof findSideEffectGate>>,
   argv: string[],
+  strict: boolean,
 ) {
   const presentFlags = collectPresentFlags(argv);
   const missingFlags = gate.execution.requiredFlags.filter((flag) => !presentFlags.has(flag));
+  const allowedFlags = new Set([...gate.execution.requiredFlags, ...gate.execution.optionalFlags]);
+  const unknownFlags = strict
+    ? collectMentionedFlags(argv).filter((flag) => !allowedFlags.has(flag))
+    : [];
   return {
-    status: missingFlags.length === 0 ? 'ok' : 'failed',
+    status: missingFlags.length === 0 && unknownFlags.length === 0 ? 'ok' : 'failed',
     gateId: gate.id,
     missingFlags,
+    unknownFlags,
     requiredFlags: gate.execution.requiredFlags,
     optionalFlags: gate.execution.optionalFlags,
   };
@@ -232,11 +244,23 @@ function collectPresentFlags(argv: string[]): Set<string> {
   return present;
 }
 
+function collectMentionedFlags(argv: string[]): string[] {
+  const present = new Set<string>();
+  for (const arg of argv) {
+    if (!arg.startsWith('--')) continue;
+    const rawName = arg.slice(2);
+    const equalsIndex = rawName.indexOf('=');
+    present.add(equalsIndex >= 0 ? rawName.slice(0, equalsIndex) : rawName);
+  }
+  return [...present];
+}
+
 function formatValidation(validation: ReturnType<typeof validateGateArgs>): string {
   if (validation.status === 'ok') return `Pi live gate args ok: ${validation.gateId}`;
   return [
     `Pi live gate args failed: ${validation.gateId}`,
     `  missingFlags: ${validation.missingFlags.join(', ')}`,
+    `  unknownFlags: ${validation.unknownFlags.join(', ')}`,
   ].join('\n');
 }
 
@@ -256,7 +280,7 @@ function usage(): string {
     'Usage: pnpm runtime:pi-live-gate -- --gate <gate-id> [gate options]',
     '       pnpm runtime:pi-live-gate -- --list [--json]',
     '       pnpm runtime:pi-live-gate -- --describe <gate-id> [--json]',
-    '       pnpm runtime:pi-live-gate -- --validate-args <gate-id> [gate options] [--json]',
+    '       pnpm runtime:pi-live-gate -- --validate-args <gate-id> [gate options] [--strict] [--json]',
     '',
     'Gate ids:',
     ...PI_LIVE_GATE_IDS.map((id) => `  ${id}`),

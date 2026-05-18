@@ -13,7 +13,7 @@ describe('Pi live gate dispatcher CLI', () => {
       '--agent-id', 'custom_agent',
       '--peer-id', '42',
       '--json',
-    ])).toEqual({
+    ])).toMatchObject({
       gate: 'memory-read',
       rest: ['--agent-id', 'custom_agent', '--peer-id', '42', '--json'],
       help: false,
@@ -159,6 +159,57 @@ describe('Pi live gate dispatcher CLI', () => {
       status: 'failed',
       gateId: 'live-send-media',
       missingFlags: ['peer-id', 'file-path', 'allowed-file-root'],
+    });
+  });
+
+  it('reports unknown focused gate arguments in strict validation mode', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiLiveGateCli([
+      '--validate-args', 'live-send-message',
+      '--agent-id', 'custom_agent',
+      '--peer-id', '42',
+      '--weird-flag', 'value',
+      '--strict',
+      '--json',
+    ], { stdout, stderr });
+
+    expect(code).toBe(2);
+    expect(stderr.text()).toBe('');
+    const payload = JSON.parse(stdout.text()) as {
+      status: string;
+      missingFlags: string[];
+      unknownFlags: string[];
+    };
+    expect(payload).toMatchObject({
+      status: 'failed',
+      missingFlags: [],
+      unknownFlags: ['weird-flag'],
+    });
+  });
+
+  it('ignores unknown focused gate arguments outside strict validation mode', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiLiveGateCli([
+      '--validate-args', 'live-send-message',
+      '--agent-id', 'custom_agent',
+      '--peer-id', '42',
+      '--weird-flag', 'value',
+      '--json',
+    ], { stdout, stderr });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    const payload = JSON.parse(stdout.text()) as {
+      status: string;
+      unknownFlags: string[];
+    };
+    expect(payload).toMatchObject({
+      status: 'ok',
+      unknownFlags: [],
     });
   });
 
