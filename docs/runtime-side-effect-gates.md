@@ -22,7 +22,7 @@ Every live side-effect gate must declare:
 
 ## Refactor Direction
 
-`live-send-message`, `live-send-media`, `live-notification`, `cron-notification`, `buildroom-handoff`, `admin-config`, `mcp-file-transfer`, `honcho-local`, and `learning-propose` are the first extracted gates. The reusable implementations live under `src/runtime/side-effect-gates/` and are runnable through:
+`live-send-message`, `live-send-media`, `live-notification`, `cron-notification`, `buildroom-handoff`, `admin-config`, `mcp-file-transfer`, `honcho-local`, `learning-propose`, and `memory-read` are the first extracted gates. The reusable implementations live under `src/runtime/side-effect-gates/` and are runnable through:
 
 ```sh
 pnpm runtime:pi-live-send-message-gate -- --agent-id <id> --peer-id <peer> --dry-run --json
@@ -34,13 +34,14 @@ pnpm runtime:pi-admin-config-gate -- --agent-id <id> --peer-id <peer> --session-
 pnpm runtime:pi-mcp-file-transfer-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json
 pnpm runtime:pi-honcho-local-gate -- --agent-id <id> --peer-id <peer> --expected-workspace-id <workspace> --json
 pnpm runtime:pi-learning-propose-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip
+pnpm runtime:pi-memory-read-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip
 ```
 
-The old `pi-timur-agent-live-send-message`, `pi-timur-agent-live-send-media`, `pi-timur-agent-live-notification`, `pi-timur-agent-cron-notification-smoke`, `pi-timur-agent-buildroom-handoff-smoke`, `pi-timur-agent-admin-config-smoke`, `pi-timur-agent-mcp-file-transfer-smoke`, `pi-timur-agent-honcho-local-smoke`, and `pi-timur-agent-learning-propose-smoke` commands remain only as compatibility/evidence aliases with `timur_agent` defaults. New work should create or extend generic gates first, then bind a concrete agent through CLI args or expansion-packet fixtures.
+The old `pi-timur-agent-live-send-message`, `pi-timur-agent-live-send-media`, `pi-timur-agent-live-notification`, `pi-timur-agent-cron-notification-smoke`, `pi-timur-agent-buildroom-handoff-smoke`, `pi-timur-agent-admin-config-smoke`, `pi-timur-agent-mcp-file-transfer-smoke`, `pi-timur-agent-honcho-local-smoke`, `pi-timur-agent-learning-propose-smoke`, and `pi-timur-agent-memory-read-smoke` commands remain only as compatibility/evidence aliases with `timur_agent` defaults. New work should create or extend generic gates first, then bind a concrete agent through CLI args or expansion-packet fixtures.
 
 The desired end state is:
 
-1. `runtime:pi-live-gate -- --agent <id> --gate live-send-message ...`, or interim focused commands such as `runtime:pi-live-send-message-gate`, `runtime:pi-live-send-media-gate`, `runtime:pi-live-notification-gate`, `runtime:pi-cron-notification-gate`, `runtime:pi-buildroom-handoff-gate`, `runtime:pi-admin-config-gate`, `runtime:pi-mcp-file-transfer-gate`, `runtime:pi-honcho-local-gate`, and `runtime:pi-learning-propose-gate`
+1. `runtime:pi-live-gate -- --agent <id> --gate live-send-message ...`, or interim focused commands such as `runtime:pi-live-send-message-gate`, `runtime:pi-live-send-media-gate`, `runtime:pi-live-notification-gate`, `runtime:pi-cron-notification-gate`, `runtime:pi-buildroom-handoff-gate`, `runtime:pi-admin-config-gate`, `runtime:pi-mcp-file-transfer-gate`, `runtime:pi-honcho-local-gate`, `runtime:pi-learning-propose-gate`, and `runtime:pi-memory-read-gate`
 2. expansion packets record the concrete command and operator approval
 3. agent-specific CLI names are gradually removed or reduced to thin aliases
 

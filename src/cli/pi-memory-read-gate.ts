@@ -2,35 +2,25 @@ import 'dotenv/config';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { Gateway } from '../gateway.js';
 import { DEFAULT_PI_MODEL_ID } from '../runtime/pi-headless.js';
 import {
-  analyzeToolEvents,
   createFailedMemoryReadGateResult,
   runMemoryReadGate,
   type MemoryReadGateInput,
   type MemoryReadGateResult,
-  type ToolEventRow,
-  type ToolEvidence,
 } from '../runtime/side-effect-gates/memory-read.js';
 
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
-const AGENT_ID = 'timur_agent';
-const DEFAULT_PEER_ID = '48705953';
-const DEFAULT_SENDER_ID = '48705953';
-const MEMORY_SENTINEL = 'TIMUR_MEMORY_READ_SENTINEL';
-const SESSION_SENTINEL = 'TIMUR_SESSION_READ_SENTINEL';
-const LOCAL_NOTE_SENTINEL = 'TIMUR_LOCAL_NOTE_SENTINEL';
-const EXPECTED_RESPONSE = 'TIMUR_AGENT_MEMORY_READ_OK';
 
-interface PiTimurAgentMemoryReadSmokeArgs {
+interface PiMemoryReadGateArgs {
+  agentId?: string;
   agentsDir: string;
   pluginsDir: string;
   model?: string;
   authPath?: string;
   modelsPath?: string;
-  peerId: string;
-  senderId: string;
+  peerId?: string;
+  senderId?: string;
   timeoutMs: number;
   keepData: boolean;
   allowSkip: boolean;
@@ -38,31 +28,28 @@ interface PiTimurAgentMemoryReadSmokeArgs {
   help: boolean;
 }
 
-interface PiTimurAgentMemoryReadSmokeDeps {
-  GatewayCtor?: new () => Gateway;
+interface PiMemoryReadGateDeps {
   makeWorkspace?: () => string;
   preflightPiRuntime?: () => Promise<void>;
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
   stderr?: Pick<NodeJS.WriteStream, 'write'>;
 }
 
-type PiTimurAgentMemoryReadSmokeResult = MemoryReadGateResult | (Omit<MemoryReadGateResult, 'status'> & {
+type PiMemoryReadGateCliResult = MemoryReadGateResult | (Omit<MemoryReadGateResult, 'status'> & {
   status: 'skipped';
 });
 
-export type { ToolEventRow, ToolEvidence };
-export { analyzeToolEvents };
-
-export async function runPiTimurAgentMemoryReadSmokeCli(
+export async function runPiMemoryReadGateCli(
   argv: string[],
-  deps: PiTimurAgentMemoryReadSmokeDeps = {},
+  deps: PiMemoryReadGateDeps = {},
 ): Promise<number> {
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
-  let args: PiTimurAgentMemoryReadSmokeArgs;
+  let args: PiMemoryReadGateArgs;
 
   try {
-    args = parsePiTimurAgentMemoryReadSmokeArgs(argv);
+    args = parsePiMemoryReadGateArgs(argv);
+    validateArgs(args);
   } catch (err) {
     stderr.write(`${errorMessage(err)}\n${usage()}\n`);
     return 2;
@@ -73,22 +60,22 @@ export async function runPiTimurAgentMemoryReadSmokeCli(
     return 0;
   }
 
-  const workspace = deps.makeWorkspace?.() ?? mkdtempSync(join(tmpdir(), 'anthroclaw-pi-timur-agent-memory-read-'));
+  const workspace = deps.makeWorkspace?.() ?? mkdtempSync(join(tmpdir(), 'anthroclaw-pi-memory-read-gate-'));
   let shouldRemoveWorkspace = !args.keepData;
-  const input = toGateInput(args, workspace, deps.GatewayCtor);
+  const input = toGateInput(args, workspace);
 
   try {
     await (deps.preflightPiRuntime ?? ensurePiRuntimeImportable)();
     const result = await runMemoryReadGate(input);
     writeResult(stdout, args.json, result);
-    return result.status === 'failed' ? 1 : 0;
+    return 0;
   } catch (err) {
     const error = errorMessage(err);
-    const status = args.allowSkip && isSkippableSmokeError(error) ? 'skipped' : 'failed';
+    const status = args.allowSkip && isSkippableGateError(error) ? 'skipped' : 'failed';
     const result = {
       ...createFailedMemoryReadGateResult(input, error),
       status,
-    } satisfies PiTimurAgentMemoryReadSmokeResult;
+    } satisfies PiMemoryReadGateCliResult;
     writeResult(status === 'failed' ? stderr : stdout, args.json, result);
     if (status === 'failed') shouldRemoveWorkspace = false;
     return status === 'skipped' ? 0 : 1;
@@ -99,24 +86,11 @@ export async function runPiTimurAgentMemoryReadSmokeCli(
   }
 }
 
-export async function runPiTimurAgentMemoryReadSmoke(input: PiTimurAgentMemoryReadSmokeArgs & {
-  GatewayCtor?: new () => Gateway;
-  sourceAgentsDir?: string;
-  workspace: string;
-}): Promise<PiTimurAgentMemoryReadSmokeResult> {
-  return runMemoryReadGate(toGateInput({
-    ...input,
-    agentsDir: input.sourceAgentsDir ?? input.agentsDir,
-  }, input.workspace, input.GatewayCtor));
-}
-
-export function parsePiTimurAgentMemoryReadSmokeArgs(argv: string[]): PiTimurAgentMemoryReadSmokeArgs {
-  const args: PiTimurAgentMemoryReadSmokeArgs = {
+export function parsePiMemoryReadGateArgs(argv: string[]): PiMemoryReadGateArgs {
+  const args: PiMemoryReadGateArgs = {
     agentsDir: process.env.OC_AGENTS_DIR ? resolve(process.env.OC_AGENTS_DIR) : resolve('agents'),
     pluginsDir: process.env.OC_PLUGINS_DIR ? resolve(process.env.OC_PLUGINS_DIR) : resolve('plugins'),
     model: DEFAULT_PI_MODEL_ID,
-    peerId: DEFAULT_PEER_ID,
-    senderId: DEFAULT_SENDER_ID,
     timeoutMs: 120_000,
     keepData: false,
     allowSkip: false,
@@ -132,6 +106,10 @@ export function parsePiTimurAgentMemoryReadSmokeArgs(argv: string[]): PiTimurAge
       case '--help':
       case '-h':
         args.help = true;
+        break;
+      case '--agent':
+      case '--agent-id':
+        args.agentId = requireValue(argv, ++i, arg);
         break;
       case '--agents-dir':
         args.agentsDir = resolve(requireValue(argv, ++i, '--agents-dir'));
@@ -174,14 +152,19 @@ export function parsePiTimurAgentMemoryReadSmokeArgs(argv: string[]): PiTimurAge
   return args;
 }
 
-function toGateInput(
-  args: PiTimurAgentMemoryReadSmokeArgs,
-  workspace: string,
-  GatewayCtor?: new () => Gateway,
-): MemoryReadGateInput {
+function validateArgs(args: PiMemoryReadGateArgs): void {
+  if (args.help) return;
+  if (!args.agentId) throw new Error('--agent-id is required.');
+  if (!args.peerId) throw new Error('--peer-id is required.');
+  if (!args.senderId) throw new Error('--sender-id is required.');
+}
+
+function toGateInput(args: PiMemoryReadGateArgs, workspace: string): MemoryReadGateInput {
+  if (!args.agentId) throw new Error('--agent-id is required.');
+  if (!args.peerId) throw new Error('--peer-id is required.');
+  if (!args.senderId) throw new Error('--sender-id is required.');
   return {
-    GatewayCtor,
-    agentId: AGENT_ID,
+    agentId: args.agentId,
     sourceAgentsDir: args.agentsDir,
     workspace,
     pluginsDir: args.pluginsDir,
@@ -191,17 +174,6 @@ function toGateInput(
     peerId: args.peerId,
     senderId: args.senderId,
     timeoutMs: args.timeoutMs,
-    memorySentinel: MEMORY_SENTINEL,
-    sessionSentinel: SESSION_SENTINEL,
-    localNoteSentinel: LOCAL_NOTE_SENTINEL,
-    expectedResponse: EXPECTED_RESPONSE,
-    sessionId: 'timur-agent-read-smoke-session',
-    sessionUserUuid: 'timur-agent-read-smoke-user',
-    sessionAssistantUuid: 'timur-agent-read-smoke-assistant',
-    inboundMessageId: 'timur-agent-memory-read-smoke-message',
-    senderName: 'Timur Agent Memory Read Smoke User',
-    noteFileName: 'memory-read-smoke.md',
-    memorySeedPath: 'memory/read-smoke/timur-agent-memory.md',
   };
 }
 
@@ -210,14 +182,14 @@ async function ensurePiRuntimeImportable(): Promise<void> {
   try {
     await dynamicImport(PI_PACKAGE_NAME);
   } catch (err) {
-    throw new Error(`Pi timur_agent memory-read smoke requires optional package ${PI_PACKAGE_NAME}. Original error: ${errorMessage(err)}`);
+    throw new Error(`Pi memory-read gate requires optional package ${PI_PACKAGE_NAME}. Original error: ${errorMessage(err)}`);
   }
 }
 
 function writeResult(
   stream: Pick<NodeJS.WriteStream, 'write'>,
   json: boolean,
-  result: PiTimurAgentMemoryReadSmokeResult,
+  result: PiMemoryReadGateCliResult,
 ): void {
   if (json) {
     stream.write(`${JSON.stringify(result)}\n`);
@@ -226,7 +198,8 @@ function writeResult(
 
   if (result.status === 'passed') {
     stream.write([
-      'Pi timur_agent memory-read smoke passed.',
+      'Pi memory-read gate passed.',
+      `agent: ${result.agentId}`,
       `sessionId: ${result.sessionId ?? '<none>'}`,
       `sentText: ${JSON.stringify(result.sentText)}`,
       `approvals: ${result.approvals}`,
@@ -236,7 +209,7 @@ function writeResult(
     return;
   }
 
-  stream.write(`Pi timur_agent memory-read smoke ${result.status}: ${result.error ?? 'unknown error'}\n`);
+  stream.write(`Pi memory-read gate ${result.status}: ${result.error ?? 'unknown error'}\n`);
 }
 
 function positiveInteger(value: string, name: string): number {
@@ -253,7 +226,7 @@ function requireValue(argv: string[], index: number, flag: string): string {
   return value;
 }
 
-function isSkippableSmokeError(error: string): boolean {
+function isSkippableGateError(error: string): boolean {
   return error.includes(PI_PACKAGE_NAME)
     || error.includes('Provider') && error.includes('credentials')
     || error.includes('auth');
@@ -265,25 +238,26 @@ function errorMessage(err: unknown): string {
 
 function usage(): string {
   return [
-    'Usage: pnpm runtime:pi-timur-agent-memory-read-smoke -- [--json] [--allow-skip]',
+    'Usage: pnpm runtime:pi-memory-read-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> [--json] [--allow-skip]',
     '',
     'Options:',
-    '  --agents-dir <path>   source agents directory containing timur_agent (default: agents)',
-    '  --plugins-dir <path>  plugins directory (default: plugins)',
-    '  --model <id>          Pi model id (default: runtime default)',
-    '  --auth-path <path>    Pi auth storage path',
-    '  --models-path <path>  Pi model registry storage path',
-    '  --peer-id <id>        fake Telegram peer id (default: operator peer)',
-    '  --sender-id <id>      fake Telegram sender id (default: operator peer)',
-    '  --timeout-ms <n>      dispatch timeout in ms (default: 120000)',
-    '  --keep-data           keep temp workspace for inspection',
-    '  --allow-skip          return success when optional Pi setup is unavailable',
-    '  --json                emit JSON',
+    '  --agent-id <id>      agent directory id under --agents-dir',
+    '  --agents-dir <path>  source agents directory (default: agents)',
+    '  --plugins-dir <path> plugins directory (default: plugins)',
+    '  --model <id>         Pi model id (default: runtime default)',
+    '  --auth-path <path>   Pi auth storage path',
+    '  --models-path <path> Pi model registry storage path',
+    '  --peer-id <id>       fake Telegram peer id',
+    '  --sender-id <id>     fake Telegram sender id',
+    '  --timeout-ms <n>     dispatch timeout in ms (default: 120000)',
+    '  --keep-data          keep temp workspace for inspection',
+    '  --allow-skip         return success when optional Pi setup is unavailable',
+    '  --json               emit JSON',
   ].join('\n');
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runPiTimurAgentMemoryReadSmokeCli(process.argv.slice(2))
+  runPiMemoryReadGateCli(process.argv.slice(2))
     .then((code) => {
       process.exitCode = code;
     })

@@ -62,7 +62,7 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [x] operator command smoke: `pnpm runtime:pi-timur-agent-operator-smoke -- --json --allow-skip`
   - Purpose: verify `/smoke`, `/help`, `/status`, `/scope`, `/tools`, `/memory`, `/learning`, `/plugins`, `/cron`, `/mcp`, and `/handoff` through fake Telegram DM dispatch before or alongside manual live Telegram use.
   - Result: passed. Covered the Pi `/smoke` runtime canary and deterministic Telegram operator readiness commands on the `default` account route.
-- [x] memory/session read smoke: `pnpm runtime:pi-timur-agent-memory-read-smoke -- --json --allow-skip`
+- [x] memory/session read gate: `pnpm runtime:pi-memory-read-gate -- --agent-id timur_agent --peer-id 48705953 --sender-id 48705953 --json --allow-skip`; compatibility alias: `pnpm runtime:pi-timur-agent-memory-read-smoke -- --json --allow-skip`
   - Purpose: verify `memory_search`, `session_search`, and `local_note_search` through Pi Gateway dispatch against a seeded temp `timur_agent` workspace.
   - Result: passed. Required read-only tools each had one started and one completed event, forbidden write/delivery/cron/admin/escalation/Buildroom/MCP tools had zero events, approval requests were `0`, and the response included `TIMUR_AGENT_MEMORY_READ_OK`.
 - [x] learning propose-only gate: `pnpm runtime:pi-learning-propose-gate -- --agent-id timur_agent --peer-id 48705953 --sender-id 48705953 --run-id timur-agent-learning-propose-smoke-run --json --allow-skip`; compatibility alias: `pnpm runtime:pi-timur-agent-learning-propose-smoke -- --json --allow-skip`

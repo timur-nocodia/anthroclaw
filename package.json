@@ -47,6 +47,7 @@
     "runtime:pi-timur-agent-mcp-file-transfer-smoke": "tsx src/cli/pi-timur-agent-mcp-file-transfer-smoke.ts",
     "runtime:pi-mcp-file-transfer-gate": "tsx src/cli/pi-mcp-file-transfer-gate.ts",
     "runtime:pi-timur-agent-memory-read-smoke": "tsx src/cli/pi-timur-agent-memory-read-smoke.ts",
+    "runtime:pi-memory-read-gate": "tsx src/cli/pi-memory-read-gate.ts",
     "runtime:pi-timur-agent-operator-smoke": "tsx src/cli/pi-timur-agent-operator-smoke.ts",
     "runtime:pi-telegram-lab-smoke": "tsx src/cli/pi-telegram-lab-smoke.ts",
     "runtime:pi-telegram-lab-operator-smoke": "tsx src/cli/pi-telegram-lab-operator-smoke.ts",
