@@ -62,6 +62,10 @@ function strField(payload: NotificationEventPayload, key: string): string {
   return typeof v === 'string' ? v : '';
 }
 
+function telegramCode(value: string): string {
+  return `\`${value.replace(/`/g, "'")}\``;
+}
+
 function formatPauseSummaryItems(payload: NotificationEventPayload): string {
   const items = payload.items;
   if (!Array.isArray(items) || items.length === 0) return '';
@@ -162,7 +166,7 @@ export function formatTelegram(
       return [
         `*Escalation requested* — \`${agentId}\``,
         peerKey ? `Peer: \`${peerKey}\`` : '',
-        note ? `_${note}_` : '',
+        note ? telegramCode(note) : '',
       ]
         .filter(Boolean)
         .join('\n');
