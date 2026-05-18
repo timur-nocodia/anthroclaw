@@ -2,7 +2,7 @@
 
 Date: 2026-05-17
 
-Status: tracked config points at the connected default Telegram bot; live operator command suite passed; controlled side-effect checks pending.
+Status: tracked config points at the connected default Telegram bot; live operator command suite passed; controlled side-effect smoke gates are closing by feature class.
 Owner: operator
 Rollback path: move `agents/timur_agent` off account `default`, restore `pi_telegram_lab` to account `default`, or set `config.yml` `runtime.headless.provider=claude-agent-sdk`.
 Risk: high
@@ -74,6 +74,9 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [x] messaging/media smoke: `pnpm runtime:pi-timur-agent-messaging-media-smoke -- --json`
   - Purpose: verify controlled `send_message` and `send_media` fanout through the `timur_agent` private operator route without live channel delivery.
   - Result: passed. `send_message` was allowed, `send_media` requested and received explicit approval, fake text/media sends each fired exactly once to `telegram/default/48705953`, account and thread context were preserved, media path traversal was blocked, and a paused peer suppressed an attempted `send_message` with no extra fake send.
+- [x] admin/config smoke: `pnpm runtime:pi-timur-agent-admin-config-smoke -- --json`
+  - Purpose: verify operator-admin/config tools on a temp `timur_agent` copy without mutating live config or ACL state.
+  - Result: passed. `show_config` read current sections with defaults, `manage_operator_console` and `manage_human_takeover` applied controlled self-target patches with two audit entries and two config backups, unauthorized cross-agent management was denied, and `access_control` listed pending, approved, listed approved, and revoked a temp sender with no live ACL changes.
 
 ## Manual Evidence
 - [x] controlled proactive notification canary
@@ -84,6 +87,8 @@ The tracked route uses the connected Telegram account `default`. The previous `p
   - Evidence: `pnpm runtime:pi-timur-agent-cron-notification-smoke -- --json` passed with static cron disabled, temp dynamic cron cleanup, operator-context delivery binding, and fake-only notification fanout.
 - [x] controlled messaging/media canary
   - Evidence: `pnpm runtime:pi-timur-agent-messaging-media-smoke -- --json` passed with fake-only `send_message` and `send_media` delivery, explicit `send_media` approval, operator peer/account/thread binding, path traversal denial, and paused-peer suppression. No real Telegram delivery was performed.
+- [x] controlled admin/config canary
+  - Evidence: `pnpm runtime:pi-timur-agent-admin-config-smoke -- --json` passed against a temp `timur_agent` copy with `show_config`, `manage_operator_console`, `manage_human_takeover`, config audit/backups, cross-agent denial, and temp-only `access_control` approve/revoke.
 - [x] live Telegram account switch to `default` is approved by operator
 - [x] first controlled live text turn returns expected behavior
   - Evidence: operator sent `/smoke` in Telegram DM at 2026-05-17 14:41 Asia/Almaty; the bot replied exactly `TIMUR_AGENT_LAB_OK`.
