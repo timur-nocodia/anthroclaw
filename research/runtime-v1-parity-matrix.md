@@ -23,6 +23,7 @@ Default Runtime v1 parity is green. Fleet-wide live parity is still in expansion
 | Feature contract coverage | Complete | `RUNTIME_FEATURE_CONTRACTS` covers all major runtime, Gateway, channel, tool, session, memory, learning, plugin, dashboard, observability, Buildroom, config, and ops surfaces. |
 | Default-runtime canary coverage | Complete | All default-runtime blocking contracts are mapped to at least one `RUNTIME_CANARY_SCENARIOS` entry. |
 | Generic side-effect gate harness | Complete | Ten provider-neutral gates cover messaging, media, notifications, cron notification, Buildroom handoff, admin/config, MCP/file-transfer, Honcho local, propose-only learning, and read-only memory; registry metadata, no-run plans, strict validation, dispatcher coverage, docs, and drift tests are in place. |
+| Fleet expansion progress view | Complete | `runtime:pi-expansion-status` combines multi-root audit output with `research/pi-expansion-packets` and reports closed/open/missing packet state plus next actions in human or JSON form. |
 | Pi default rollout | Complete | Pi is the default runtime after local, durable CI, live pull, Ring 1-4.5, rollback, and monitoring evidence. |
 | Low-risk live usage | Complete for `example` and `pi_telegram_lab` | Web UI, allowlisted Telegram DM, operator commands, and post-turn monitor evidence are closed. |
 | Business-critical dry-run coverage | Complete for `leads_agent` | Public escalation, plugin context, learning mode, dry-run, and monitor evidence are closed without live customer delivery. |
@@ -118,11 +119,12 @@ For each new production agent/channel/tool expansion:
 1. Run `runtime:pi-expansion-audit` against every exact live `agents-dir` root.
 2. Generate or update the expansion packet.
 3. Run `runtime:pi-expansion-audit -- --require-packets-dir research/pi-expansion-packets ...` so high/critical audited agents cannot remain packetless.
-4. Close automated evidence: relevant `smoke:pi-*`, safe dry-run, and `runtime:pi-monitor`.
-5. Close manual evidence: owner, rollback path, allowlisted route confirmation, and explicit go/no-go.
-6. Run exactly one controlled live turn for the riskiest side effect.
-7. Run post-expansion `runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`.
-8. Record the result in the packet and this matrix if it changes fleet status.
+4. Run `runtime:pi-expansion-status -- --packets-dir research/pi-expansion-packets ...` to get the machine-readable open/closed next-action list.
+5. Close automated evidence: relevant `smoke:pi-*`, safe dry-run, and `runtime:pi-monitor`.
+6. Close manual evidence: owner, rollback path, allowlisted route confirmation, and explicit go/no-go.
+7. Run exactly one controlled live turn for the riskiest side effect.
+8. Run post-expansion `runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`.
+9. Record the result in the packet and this matrix if it changes fleet status.
 
 ## Practical Answer
 

@@ -24,6 +24,7 @@
     "runtime:pi-monitor": "tsx src/cli/pi-monitor.ts",
     "runtime:pi-expansion-audit": "tsx src/cli/pi-expansion-audit.ts",
     "runtime:pi-expansion-packet": "tsx src/cli/pi-expansion-packet.ts",
+    "runtime:pi-expansion-status": "tsx src/cli/pi-expansion-status.ts",
     "runtime:pi-leads-agent-dry-run": "tsx src/cli/pi-leads-agent-dry-run.ts",
     "runtime:pi-content-sm-dry-run": "tsx src/cli/pi-content-sm-dry-run.ts",
     "runtime:pi-content-sm-preflight": "tsx src/cli/pi-content-sm-preflight.ts",
