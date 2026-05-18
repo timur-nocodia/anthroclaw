@@ -28,6 +28,7 @@
     "runtime:pi-leads-agent-dry-run": "tsx src/cli/pi-leads-agent-dry-run.ts",
     "runtime:pi-content-sm-dry-run": "tsx src/cli/pi-content-sm-dry-run.ts",
     "runtime:pi-content-sm-preflight": "tsx src/cli/pi-content-sm-preflight.ts",
+    "runtime:pi-telegram-group-preflight": "tsx src/cli/pi-telegram-group-preflight.ts",
     "runtime:pi-timur-agent-admin-config-smoke": "tsx src/cli/pi-timur-agent-admin-config-smoke.ts",
     "runtime:pi-admin-config-gate": "tsx src/cli/pi-admin-config-gate.ts",
     "runtime:pi-timur-agent-buildroom-handoff-smoke": "tsx src/cli/pi-timur-agent-buildroom-handoff-smoke.ts",

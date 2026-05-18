@@ -1,6 +1,6 @@
 # Pi Expansion Packet: project-manager
 
-Status: automated pre-live evidence passed; manual group/tool evidence pending.
+Status: generic group-route preflight passed; live tool evidence pending.
 Owner: Timur
 Rollback path: research/runtime-v1-migration-status.md
 Risk: high
@@ -34,11 +34,15 @@ Agent source: /Users/tyess/dev/anthroclaw-vibe-agents/agents
 - [x] smoke:pi-plugins-context: `pnpm smoke:pi-plugins-context -- --json`
   - Result: passed.
   - Covered: plugin loading/enabling, disabled-agent tool exclusion, plugin tool policy, hooks, context/compression, subagent tool disabling, bundled `file-transfer`, `lcm`, and `operator-console` plugin paths.
+- [x] generic Telegram group-route preflight: `pnpm runtime:pi-telegram-group-preflight -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agents-dir /Users/tyess/dev/anthroclaw-vibe-agents/agents --data-dir /Users/tyess/dev/openclaw-agents-sdk-clone/data --agent-id project-manager --confirm-account content_sm --confirm-peer -1003729315809 --confirm-topic 8 --json`
+  - Result: passed.
+  - Covered: multi-root audit with `coverageGap=false`, configured Telegram group route, explicit account/peer/topic confirmation, `mention_only=true`, and live runtime monitor with alerts `[]` and warnings `[]`.
 - [ ] runtime:pi-monitor after expansion: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
 
 ## Manual Evidence
 
-- [ ] allowlisted peer/thread confirmation
+- [x] allowlisted peer/thread confirmation
+  - Evidence: generic Telegram group-route preflight required explicit `--confirm-account`, `--confirm-peer`, and `--confirm-topic`; the configured `content_sm` mention-only Telegram group route matched those operator-supplied values.
 - [x] learning review remains propose-only or has operator approval evidence
   - Result: closed by config audit.
   - Evidence: tracked `agent.yml` has `learning.enabled=true` and `learning.mode=propose`; `runtime:pi-expansion-audit` reports `learningMode="propose"` for `project-manager`.

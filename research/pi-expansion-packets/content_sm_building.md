@@ -33,10 +33,11 @@ Agent source: `/Users/tyess/dev/anthroclaw-vibe-agents/agents`
   - Result: passed from live checkout `/Users/tyess/dev/openclaw-agents-sdk-clone`.
   - Window: 60 minutes, 0 failed/interrupted/stale, auth/model alerts 0, alerts `[]`, warnings `[]`.
   - Note: run count was 0, so this is a no-alert baseline only.
-- [x] pre-live-turn gate: `pnpm runtime:pi-content-sm-preflight -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agents-dir /Users/tyess/dev/anthroclaw-vibe-agents/agents --data-dir /Users/tyess/dev/openclaw-agents-sdk-clone/data --confirm-peer <operator-confirmed-peer> --confirm-topic <operator-confirmed-topic> --json`
+- [x] pre-live-turn compatibility gate: `pnpm runtime:pi-content-sm-preflight -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agents-dir /Users/tyess/dev/anthroclaw-vibe-agents/agents --data-dir /Users/tyess/dev/openclaw-agents-sdk-clone/data --confirm-peer <operator-confirmed-peer> --confirm-topic <operator-confirmed-topic> --json`
   - Purpose: combine multi-root audit, explicit operator peer/topic confirmation, safe fake-delivery dry-run, and live runtime monitor before any controlled live group turn.
   - Result: passed.
   - Checks: expansion audit passed with `coverageGap=false`, `risk=high`, `recommendedRing=ring4`; route confirmation passed for the mention-only `content_sm` Telegram group route and configured topics; safe dry-run passed with fake delivery only and temp cron cleanup; runtime monitor passed with alerts `[]` and warnings `[]`.
+  - Generic route preflight replacement for future runs: `pnpm runtime:pi-telegram-group-preflight -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agents-dir /Users/tyess/dev/anthroclaw-vibe-agents/agents --data-dir /Users/tyess/dev/openclaw-agents-sdk-clone/data --agent-id content_sm_building --confirm-account content_sm --confirm-peer <operator-confirmed-peer> --confirm-topic <operator-confirmed-topic> --json`.
 - [ ] runtime monitor after expansion: `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert`
 
 ## Manual Evidence
