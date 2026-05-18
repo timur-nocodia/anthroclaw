@@ -4,44 +4,42 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   createFailedAdminConfigGateResult,
+  DEFAULT_ADMIN_CONFIG_PENDING_SENDER_ID,
+  DEFAULT_ADMIN_CONFIG_UNAUTHORIZED_TARGET_ID,
   runAdminConfigGate,
   type AdminConfigGateInput,
   type AdminConfigGateResult,
 } from '../runtime/side-effect-gates/admin-config.js';
 
-const AGENT_ID = 'timur_agent';
-const DEFAULT_PEER_ID = '48705953';
-const DEFAULT_SESSION_KEY = `${AGENT_ID}:telegram:dm:${DEFAULT_PEER_ID}`;
-const PENDING_SENDER_ID = 'timur-agent-admin-config-pending';
-const UNAUTHORIZED_TARGET_ID = 'unauthorized_agent';
-
-interface PiTimurAgentAdminConfigSmokeArgs {
+interface PiAdminConfigGateArgs {
+  agentId?: string;
   agentsDir: string;
-  peerId: string;
-  sessionKey: string;
+  peerId?: string;
+  sessionKey?: string;
+  pendingSenderId: string;
+  unauthorizedTargetId: string;
   keepData: boolean;
   json: boolean;
   help: boolean;
 }
 
-interface PiTimurAgentAdminConfigSmokeDeps {
+interface PiAdminConfigGateDeps {
   makeWorkspace?: () => string;
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
   stderr?: Pick<NodeJS.WriteStream, 'write'>;
 }
 
-type PiTimurAgentAdminConfigSmokeResult = AdminConfigGateResult;
-
-export async function runPiTimurAgentAdminConfigSmokeCli(
+export async function runPiAdminConfigGateCli(
   argv: string[],
-  deps: PiTimurAgentAdminConfigSmokeDeps = {},
+  deps: PiAdminConfigGateDeps = {},
 ): Promise<number> {
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
-  let args: PiTimurAgentAdminConfigSmokeArgs;
+  let args: PiAdminConfigGateArgs;
 
   try {
-    args = parsePiTimurAgentAdminConfigSmokeArgs(argv);
+    args = parsePiAdminConfigGateArgs(argv);
+    validateArgs(args);
   } catch (err) {
     stderr.write(`${errorMessage(err)}\n${usage()}\n`);
     return 2;
@@ -52,7 +50,7 @@ export async function runPiTimurAgentAdminConfigSmokeCli(
     return 0;
   }
 
-  const workspace = deps.makeWorkspace?.() ?? mkdtempSync(join(tmpdir(), 'anthroclaw-pi-timur-agent-admin-config-'));
+  const workspace = deps.makeWorkspace?.() ?? mkdtempSync(join(tmpdir(), 'anthroclaw-pi-admin-config-gate-'));
   const input = toGateInput(args, workspace);
   try {
     const result = await runAdminConfigGate(input);
@@ -69,17 +67,11 @@ export async function runPiTimurAgentAdminConfigSmokeCli(
   }
 }
 
-export async function runPiTimurAgentAdminConfigSmoke(input: PiTimurAgentAdminConfigSmokeArgs & {
-  workspace: string;
-}): Promise<PiTimurAgentAdminConfigSmokeResult> {
-  return runAdminConfigGate(toGateInput(input, input.workspace));
-}
-
-export function parsePiTimurAgentAdminConfigSmokeArgs(argv: string[]): PiTimurAgentAdminConfigSmokeArgs {
-  const args: PiTimurAgentAdminConfigSmokeArgs = {
+export function parsePiAdminConfigGateArgs(argv: string[]): PiAdminConfigGateArgs {
+  const args: PiAdminConfigGateArgs = {
     agentsDir: process.env.OC_AGENTS_DIR ? resolve(process.env.OC_AGENTS_DIR) : resolve('agents'),
-    peerId: DEFAULT_PEER_ID,
-    sessionKey: DEFAULT_SESSION_KEY,
+    pendingSenderId: DEFAULT_ADMIN_CONFIG_PENDING_SENDER_ID,
+    unauthorizedTargetId: DEFAULT_ADMIN_CONFIG_UNAUTHORIZED_TARGET_ID,
     keepData: false,
     json: false,
     help: false,
@@ -94,6 +86,10 @@ export function parsePiTimurAgentAdminConfigSmokeArgs(argv: string[]): PiTimurAg
       case '-h':
         args.help = true;
         break;
+      case '--agent':
+      case '--agent-id':
+        args.agentId = requireValue(argv, ++i, arg);
+        break;
       case '--agents-dir':
         args.agentsDir = resolve(requireValue(argv, ++i, '--agents-dir'));
         break;
@@ -102,6 +98,14 @@ export function parsePiTimurAgentAdminConfigSmokeArgs(argv: string[]): PiTimurAg
         break;
       case '--session-key':
         args.sessionKey = requireValue(argv, ++i, '--session-key');
+        break;
+      case '--pending-sender-id':
+        args.pendingSenderId = requireValue(argv, ++i, '--pending-sender-id');
+        break;
+      case '--unauthorized-target-id':
+        args.unauthorizedTargetId = requireValue(argv, ++i, '--unauthorized-target-id');
+        break;
+      case '--dry-run':
         break;
       case '--keep-data':
         args.keepData = true;
@@ -117,22 +121,32 @@ export function parsePiTimurAgentAdminConfigSmokeArgs(argv: string[]): PiTimurAg
   return args;
 }
 
-function toGateInput(args: PiTimurAgentAdminConfigSmokeArgs, workspace: string): AdminConfigGateInput {
+function validateArgs(args: PiAdminConfigGateArgs): void {
+  if (args.help) return;
+  if (!args.agentId) throw new Error('--agent-id is required.');
+  if (!args.peerId) throw new Error('--peer-id is required.');
+  if (!args.sessionKey) throw new Error('--session-key is required.');
+}
+
+function toGateInput(args: PiAdminConfigGateArgs, workspace: string): AdminConfigGateInput {
+  if (!args.agentId) throw new Error('--agent-id is required.');
+  if (!args.peerId) throw new Error('--peer-id is required.');
+  if (!args.sessionKey) throw new Error('--session-key is required.');
   return {
-    agentId: AGENT_ID,
+    agentId: args.agentId,
     sourceAgentsDir: args.agentsDir,
     workspace,
     peerId: args.peerId,
     sessionKey: args.sessionKey,
-    pendingSenderId: PENDING_SENDER_ID,
-    unauthorizedTargetId: UNAUTHORIZED_TARGET_ID,
+    pendingSenderId: args.pendingSenderId,
+    unauthorizedTargetId: args.unauthorizedTargetId,
   };
 }
 
 function writeResult(
   stream: Pick<NodeJS.WriteStream, 'write'>,
   json: boolean,
-  result: PiTimurAgentAdminConfigSmokeResult,
+  result: AdminConfigGateResult,
 ): void {
   if (json) {
     stream.write(`${JSON.stringify(result)}\n`);
@@ -141,7 +155,8 @@ function writeResult(
 
   if (result.status === 'passed') {
     stream.write([
-      'Pi timur_agent admin/config smoke passed.',
+      'Pi admin/config gate passed.',
+      `agent: ${result.agentId}`,
       `permissions: ${JSON.stringify(result.permissions)}`,
       `config: ${JSON.stringify(result.config)}`,
       `accessControl: ${JSON.stringify(result.accessControl)}`,
@@ -150,7 +165,7 @@ function writeResult(
     return;
   }
 
-  stream.write(`Pi timur_agent admin/config smoke failed: ${result.error ?? 'unknown error'}\n`);
+  stream.write(`Pi admin/config gate failed: ${result.error ?? 'unknown error'}\n`);
 }
 
 function requireValue(argv: string[], index: number, flag: string): string {
@@ -165,19 +180,23 @@ function errorMessage(err: unknown): string {
 
 function usage(): string {
   return [
-    'Usage: pnpm runtime:pi-timur-agent-admin-config-smoke -- [--json]',
+    'Usage: pnpm runtime:pi-admin-config-gate -- --agent-id <id> --peer-id <id> --session-key <key> [options]',
     '',
     'Options:',
-    '  --agents-dir <path>  source agents directory containing timur_agent (default: agents)',
-    '  --peer-id <id>       expected private Telegram peer id (default: operator peer)',
-    '  --session-key <key>  fake operator session key for audit attribution',
-    '  --keep-data          keep temp workspace for inspection',
-    '  --json               emit JSON',
+    '  --agent-id <id>               agent directory id under --agents-dir',
+    '  --agents-dir <path>           source agents directory (default: agents)',
+    '  --peer-id <id>                expected private Telegram peer id',
+    '  --session-key <key>           fake operator session key for audit attribution',
+    '  --pending-sender-id <id>      temporary pending sender id',
+    '  --unauthorized-target-id <id> cross-agent target expected to be denied',
+    '  --dry-run                     accepted for gate CLI consistency; this gate is temp-only',
+    '  --keep-data                   keep temp workspace for inspection',
+    '  --json                        emit JSON',
   ].join('\n');
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runPiTimurAgentAdminConfigSmokeCli(process.argv.slice(2))
+  runPiAdminConfigGateCli(process.argv.slice(2))
     .then((code) => {
       process.exitCode = code;
     })
