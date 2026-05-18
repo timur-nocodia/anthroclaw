@@ -124,6 +124,63 @@ safety_profile: chat_like_openclaw
     expect(secondCode).toBe(1);
   });
 
+  it('can allow specific open evidence kinds while still failing on other open work', async () => {
+    root = mktemp('pi-expansion-status-agents-');
+    packetsRoot = mktemp('pi-expansion-status-packets-');
+    writeAgent(root, 'operator_agent', `
+routes:
+  - channel: telegram
+    scope: group
+safety_profile: chat_like_openclaw
+`);
+    writeAgent(root, 'manual_agent', `
+routes:
+  - channel: telegram
+    scope: group
+safety_profile: chat_like_openclaw
+`);
+    writePacket(packetsRoot, 'operator_agent', [
+      'Status: pre-live evidence pending',
+      '',
+      '- [ ] operator go/no-go for controlled group expansion',
+      '- [ ] runtime:pi-monitor after expansion: `pnpm runtime:pi-monitor -- --json`',
+      '',
+    ].join('\n'));
+    writePacket(packetsRoot, 'manual_agent', 'Status: ready_for_execution\n\n- [ ] manual packet review\n');
+
+    const allowedStdout = createWriter();
+    const allowedCode = await runPiExpansionStatusCli([
+      '--agents-dir', root,
+      '--packets-dir', packetsRoot,
+      '--agent', 'operator_agent',
+      '--json',
+      '--fail-on-open',
+      '--allow-open-kind', 'operatorApproval',
+      '--allow-open-kind', 'postExpansionMonitor',
+    ], { stdout: allowedStdout, stderr: createWriter() });
+    const blockedCode = await runPiExpansionStatusCli([
+      '--agents-dir', root,
+      '--packets-dir', packetsRoot,
+      '--json',
+      '--fail-on-open',
+      '--allow-open-kind', 'operatorApproval',
+      '--allow-open-kind', 'postExpansionMonitor',
+    ], { stdout: createWriter(), stderr: createWriter() });
+
+    expect(allowedCode).toBe(0);
+    expect(JSON.parse(allowedStdout.text())).toMatchObject({
+      status: 'attention',
+      summary: {
+        openEvidenceByKind: {
+          operatorApproval: 1,
+          postExpansionMonitor: 1,
+          manual: 0,
+        },
+      },
+    });
+    expect(blockedCode).toBe(1);
+  });
+
   it('prints only open agents with --open-only while preserving full summary', async () => {
     root = mktemp('pi-expansion-status-agents-');
     packetsRoot = mktemp('pi-expansion-status-packets-');
@@ -219,6 +276,8 @@ safety_profile: chat_like_openclaw
       '--json',
       '--open-only',
       '--fail-on-open',
+      '--allow-open-kind', 'operatorApproval',
+      '--allow-open-kind', 'postExpansionMonitor',
     ])).toMatchObject({
       agentsDir: '/tmp/agents',
       agentsDirs: ['/tmp/agents', '/tmp/live agents'],
@@ -227,7 +286,9 @@ safety_profile: chat_like_openclaw
       json: true,
       openOnly: true,
       failOnOpen: true,
+      allowedOpenKinds: ['operatorApproval', 'postExpansionMonitor'],
     });
+    expect(() => parsePiExpansionStatusArgs(['--allow-open-kind', 'unknown'])).toThrow(/Unknown open evidence kind/);
     expect(() => parsePiExpansionStatusArgs(['--wat'])).toThrow(/Unknown argument/);
   });
 });

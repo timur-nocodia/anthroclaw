@@ -20,12 +20,21 @@ type OpenEvidenceKind =
   | 'automated'
   | 'manual';
 
+const OPEN_EVIDENCE_KINDS: OpenEvidenceKind[] = [
+  'operatorApproval',
+  'postExpansionMonitor',
+  'liveAction',
+  'automated',
+  'manual',
+];
+
 interface PiExpansionStatusArgs {
   agentsDir: string;
   agentsDirs: string[];
   packetsDir: string;
   agent?: string;
   failOnOpen: boolean;
+  allowedOpenKinds: OpenEvidenceKind[];
   openOnly: boolean;
   json: boolean;
   help: boolean;
@@ -108,7 +117,7 @@ export async function runPiExpansionStatusCli(
     const result = buildPiExpansionStatus(args);
     const renderedResult = args.openOnly ? filterOpenAgents(result) : result;
     stdout.write(args.json ? `${JSON.stringify(renderedResult)}\n` : renderHuman(renderedResult));
-    return args.failOnOpen && result.status === 'attention' ? 1 : 0;
+    return shouldFailOnOpen(result, args) ? 1 : 0;
   } catch (err) {
     stderr.write(`${redactSecrets(message(err))}\n`);
     return 1;
@@ -121,6 +130,7 @@ export function parsePiExpansionStatusArgs(argv: string[]): PiExpansionStatusArg
     agentsDirs: [],
     packetsDir: resolve('research/pi-expansion-packets'),
     failOnOpen: false,
+    allowedOpenKinds: [],
     openOnly: false,
     json: false,
     help: false,
@@ -147,6 +157,9 @@ export function parsePiExpansionStatusArgs(argv: string[]): PiExpansionStatusArg
       case '--fail-on-open':
         args.failOnOpen = true;
         break;
+      case '--allow-open-kind':
+        args.allowedOpenKinds.push(parseOpenEvidenceKind(requireValue(argv, ++i, '--allow-open-kind')));
+        break;
       case '--open-only':
         args.openOnly = true;
         break;
@@ -166,6 +179,44 @@ export function parsePiExpansionStatusArgs(argv: string[]): PiExpansionStatusArg
 
   args.packetsDir = resolve(args.packetsDir);
   return args;
+}
+
+function parseOpenEvidenceKind(value: string): OpenEvidenceKind {
+  if (isOpenEvidenceKind(value)) return value;
+  throw new Error(`Unknown open evidence kind: ${value}. Expected one of: ${OPEN_EVIDENCE_KINDS.join(', ')}`);
+}
+
+function isOpenEvidenceKind(value: string): value is OpenEvidenceKind {
+  return (OPEN_EVIDENCE_KINDS as string[]).includes(value);
+}
+
+function shouldFailOnOpen(result: PiExpansionStatus, args: PiExpansionStatusArgs): boolean {
+  if (!args.failOnOpen || result.status !== 'attention') return false;
+  if (args.allowedOpenKinds.length === 0) return true;
+
+  const allowedKinds = new Set(args.allowedOpenKinds);
+  const disallowedOpenEvidence = OPEN_EVIDENCE_KINDS.some((kind) => (
+    result.summary.openEvidenceByKind[kind] > 0 && !allowedKinds.has(kind)
+  ));
+  if (disallowedOpenEvidence) return true;
+
+  const openEvidenceItems = result.summary.openEvidenceItems;
+  const openEvidenceOnly = (
+    result.gaps.auditErrors.length === 0
+    && !result.gaps.packetCoverageGap
+    && result.gaps.missingPackets.length === 0
+    && result.summary.packetMissing === 0
+    && result.summary.blockedAgents === 0
+    && result.summary.openAgents > 0
+    && openEvidenceItems > 0
+    && result.agents.every((agent) => (
+      agent.state === 'closed'
+      || agent.state === 'no_packet_required'
+      || (agent.state === 'evidence_open' && agent.packet.uncheckedItems > 0)
+    ))
+  );
+
+  return !openEvidenceOnly;
 }
 
 export function buildPiExpansionStatus(input: {
@@ -443,7 +494,7 @@ function message(err: unknown): string {
 
 function usage(): string {
   return [
-    'Usage: pnpm runtime:pi-expansion-status -- [--agents-dir <path>...] [--packets-dir <path>] [--agent <id>] [--json] [--open-only] [--fail-on-open]',
+    'Usage: pnpm runtime:pi-expansion-status -- [--agents-dir <path>...] [--packets-dir <path>] [--agent <id>] [--json] [--open-only] [--fail-on-open] [--allow-open-kind <kind>...]',
     '',
     'Summarizes post-default Pi fleet expansion state from runtime:pi-expansion-audit and expansion packets.',
     '',
@@ -453,6 +504,7 @@ function usage(): string {
     '  --agent <id>         summarize only one agent id',
     '  --open-only          print only agents with open packet/evidence work; summary still covers the full scan',
     '  --fail-on-open       exit 1 when any packet/evidence state is still open',
+    `  --allow-open-kind <kind> with --fail-on-open, exit 0 when the only open work is in allowed kinds (${OPEN_EVIDENCE_KINDS.join(', ')}); repeatable`,
     '  --json               print structured result',
   ].join('\n');
 }
