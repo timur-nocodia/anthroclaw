@@ -36,6 +36,7 @@
     "runtime:pi-timur-agent-honcho-local-smoke": "tsx src/cli/pi-timur-agent-honcho-local-smoke.ts",
     "runtime:pi-honcho-local-gate": "tsx src/cli/pi-honcho-local-gate.ts",
     "runtime:pi-timur-agent-learning-propose-smoke": "tsx src/cli/pi-timur-agent-learning-propose-smoke.ts",
+    "runtime:pi-learning-propose-gate": "tsx src/cli/pi-learning-propose-gate.ts",
     "runtime:pi-live-send-message-gate": "tsx src/cli/pi-live-send-message-gate.ts",
     "runtime:pi-live-send-media-gate": "tsx src/cli/pi-live-send-media-gate.ts",
     "runtime:pi-live-notification-gate": "tsx src/cli/pi-live-notification-gate.ts",
