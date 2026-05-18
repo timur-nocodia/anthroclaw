@@ -124,6 +124,7 @@ safety_profile: chat_like_openclaw
       status: 'attention',
       policy: {
         failOnOpen: false,
+        allowExternalOpen: false,
         exitCode: 0,
         passed: true,
         reason: 'fail-on-open disabled',
@@ -189,6 +190,7 @@ safety_profile: chat_like_openclaw
       },
       policy: {
         failOnOpen: true,
+        allowExternalOpen: false,
         allowedOpenKinds: ['operatorApproval', 'postExpansionMonitor'],
         exitCode: 0,
         passed: true,
@@ -206,6 +208,7 @@ safety_profile: chat_like_openclaw
     expect(blockedCode).toBe(1);
     expect(JSON.parse(blockedStdout.text())).toMatchObject({
       policy: {
+        allowExternalOpen: false,
         exitCode: 1,
         passed: false,
         reason: 'disallowed open evidence kinds remain',
@@ -219,6 +222,45 @@ safety_profile: chat_like_openclaw
             label: 'manual packet review',
           },
         ],
+      },
+    });
+  });
+
+  it('supports an external-open shorthand for operator approval and post-monitor evidence', async () => {
+    root = mktemp('pi-expansion-status-agents-');
+    packetsRoot = mktemp('pi-expansion-status-packets-');
+    writeAgent(root, 'operator_agent', `
+routes:
+  - channel: telegram
+    scope: group
+safety_profile: chat_like_openclaw
+`);
+    writePacket(packetsRoot, 'operator_agent', [
+      'Status: pre-live evidence pending',
+      '',
+      '- [ ] operator approval for group expansion',
+      '- [ ] post-expansion monitor: `pnpm runtime:pi-monitor -- --json`',
+      '',
+    ].join('\n'));
+
+    const stdout = createWriter();
+    const code = await runPiExpansionStatusCli([
+      '--agents-dir', root,
+      '--packets-dir', packetsRoot,
+      '--json',
+      '--fail-on-open',
+      '--allow-external-open',
+    ], { stdout, stderr: createWriter() });
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout.text())).toMatchObject({
+      policy: {
+        allowExternalOpen: true,
+        allowedOpenKinds: ['operatorApproval', 'postExpansionMonitor'],
+        exitCode: 0,
+        passed: true,
+        reason: 'only allowed open evidence kinds remain',
+        violations: [],
       },
     });
   });
@@ -315,6 +357,7 @@ safety_profile: chat_like_openclaw
     });
     expect(body.policy).toMatchObject({
       failOnOpen: false,
+      allowExternalOpen: false,
       exitCode: 0,
       passed: true,
     });
@@ -373,6 +416,7 @@ safety_profile: chat_like_openclaw
       '--json',
       '--open-only',
       '--fail-on-open',
+      '--allow-external-open',
       '--allow-open-kind', 'operatorApproval',
       '--allow-open-kind', 'postExpansionMonitor',
     ])).toMatchObject({
@@ -383,6 +427,7 @@ safety_profile: chat_like_openclaw
       json: true,
       openOnly: true,
       failOnOpen: true,
+      allowExternalOpen: true,
       allowedOpenKinds: ['operatorApproval', 'postExpansionMonitor'],
     });
     expect(() => parsePiExpansionStatusArgs(['--allow-open-kind', 'unknown'])).toThrow(/Unknown open evidence kind/);

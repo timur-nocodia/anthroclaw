@@ -28,12 +28,18 @@ const OPEN_EVIDENCE_KINDS: OpenEvidenceKind[] = [
   'manual',
 ];
 
+const EXTERNAL_OPEN_EVIDENCE_KINDS: OpenEvidenceKind[] = [
+  'operatorApproval',
+  'postExpansionMonitor',
+];
+
 interface PiExpansionStatusArgs {
   agentsDir: string;
   agentsDirs: string[];
   packetsDir: string;
   agent?: string;
   failOnOpen: boolean;
+  allowExternalOpen: boolean;
   allowedOpenKinds: OpenEvidenceKind[];
   openOnly: boolean;
   json: boolean;
@@ -95,6 +101,7 @@ interface PiExpansionStatus {
 
 interface PiExpansionStatusPolicy {
   failOnOpen: boolean;
+  allowExternalOpen: boolean;
   allowedOpenKinds: OpenEvidenceKind[];
   exitCode: 0 | 1;
   passed: boolean;
@@ -153,6 +160,7 @@ export function parsePiExpansionStatusArgs(argv: string[]): PiExpansionStatusArg
     agentsDirs: [],
     packetsDir: resolve('research/pi-expansion-packets'),
     failOnOpen: false,
+    allowExternalOpen: false,
     allowedOpenKinds: [],
     openOnly: false,
     json: false,
@@ -183,6 +191,9 @@ export function parsePiExpansionStatusArgs(argv: string[]): PiExpansionStatusArg
       case '--allow-open-kind':
         args.allowedOpenKinds.push(parseOpenEvidenceKind(requireValue(argv, ++i, '--allow-open-kind')));
         break;
+      case '--allow-external-open':
+        args.allowExternalOpen = true;
+        break;
       case '--open-only':
         args.openOnly = true;
         break;
@@ -200,6 +211,10 @@ export function parsePiExpansionStatusArgs(argv: string[]): PiExpansionStatusArg
     args.agentsDir = args.agentsDirs[0] ?? args.agentsDir;
   }
 
+  if (args.allowExternalOpen) {
+    args.allowedOpenKinds.push(...EXTERNAL_OPEN_EVIDENCE_KINDS);
+  }
+  args.allowedOpenKinds = dedupeOpenEvidenceKinds(args.allowedOpenKinds);
   args.packetsDir = resolve(args.packetsDir);
   return args;
 }
@@ -213,13 +228,18 @@ function isOpenEvidenceKind(value: string): value is OpenEvidenceKind {
   return (OPEN_EVIDENCE_KINDS as string[]).includes(value);
 }
 
+function dedupeOpenEvidenceKinds(values: OpenEvidenceKind[]): OpenEvidenceKind[] {
+  return OPEN_EVIDENCE_KINDS.filter((kind) => values.includes(kind));
+}
+
 function evaluatePiExpansionStatusPolicy(
   result: PiExpansionStatus,
-  args: Pick<PiExpansionStatusArgs, 'failOnOpen' | 'allowedOpenKinds'>,
+  args: Pick<PiExpansionStatusArgs, 'failOnOpen' | 'allowExternalOpen' | 'allowedOpenKinds'>,
 ): PiExpansionStatusPolicy {
   const allowedKinds = new Set(args.allowedOpenKinds);
   const base = {
     failOnOpen: args.failOnOpen,
+    allowExternalOpen: args.allowExternalOpen,
     allowedOpenKinds: [...args.allowedOpenKinds],
     disallowedOpenEvidenceByKind: emptyOpenEvidenceBreakdown(),
     violations: [] as PiExpansionStatusPolicyViolation[],
@@ -603,7 +623,7 @@ function renderHuman(result: PiExpansionStatus & { policy?: PiExpansionStatusPol
     `summary: total=${result.summary.totalAgents}, highOrCritical=${result.summary.highOrCriticalAgents}, closed=${result.summary.closedAgents}, open=${result.summary.openAgents}, packetMissing=${result.summary.packetMissing}, evidence=${result.summary.closedEvidenceItems}/${result.summary.totalEvidenceItems} (${result.summary.evidenceProgressPercent}%)`,
     `openEvidenceByKind: operatorApproval=${result.summary.openEvidenceByKind.operatorApproval}, postExpansionMonitor=${result.summary.openEvidenceByKind.postExpansionMonitor}, liveAction=${result.summary.openEvidenceByKind.liveAction}, automated=${result.summary.openEvidenceByKind.automated}, manual=${result.summary.openEvidenceByKind.manual}`,
     ...(result.policy
-      ? [`policy: passed=${result.policy.passed}, exitCode=${result.policy.exitCode}, reason=${result.policy.reason}, allowedOpenKinds=${result.policy.allowedOpenKinds.join(',') || 'none'}, violations=${result.policy.violations.length}`]
+      ? [`policy: passed=${result.policy.passed}, exitCode=${result.policy.exitCode}, reason=${result.policy.reason}, allowExternalOpen=${result.policy.allowExternalOpen}, allowedOpenKinds=${result.policy.allowedOpenKinds.join(',') || 'none'}, violations=${result.policy.violations.length}`]
       : []),
     '',
     ...result.agents.map((agent) => [
@@ -649,7 +669,7 @@ function message(err: unknown): string {
 
 function usage(): string {
   return [
-    'Usage: pnpm runtime:pi-expansion-status -- [--agents-dir <path>...] [--packets-dir <path>] [--agent <id>] [--json] [--open-only] [--fail-on-open] [--allow-open-kind <kind>...]',
+    'Usage: pnpm runtime:pi-expansion-status -- [--agents-dir <path>...] [--packets-dir <path>] [--agent <id>] [--json] [--open-only] [--fail-on-open] [--allow-open-kind <kind>...] [--allow-external-open]',
     '',
     'Summarizes post-default Pi fleet expansion state from runtime:pi-expansion-audit and expansion packets.',
     '',
@@ -660,6 +680,7 @@ function usage(): string {
     '  --open-only          print only agents with open packet/evidence work; summary still covers the full scan',
     '  --fail-on-open       exit 1 when any packet/evidence state is still open',
     `  --allow-open-kind <kind> with --fail-on-open, exit 0 when the only open work is in allowed kinds (${OPEN_EVIDENCE_KINDS.join(', ')}); repeatable`,
+    `  --allow-external-open with --fail-on-open, shorthand for ${EXTERNAL_OPEN_EVIDENCE_KINDS.join(' + ')}`,
     '  --json               print structured result',
   ].join('\n');
 }
