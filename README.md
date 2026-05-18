@@ -31,6 +31,8 @@ AnthroClaw is a local-first gateway for running multiple Claude-powered agents a
 
 The important part: AnthroClaw does **not** wrap Claude as a generic provider. User-facing LLM execution is routed through the **Claude Agent SDK / Claude Code path**. Permissions, hooks, sessions, checkpoints, subagents, skills, MCP tools, sandbox options, and retry/fallback behavior are intentionally aligned with the native SDK surface.
 
+Runtime replacement work is tracked as a provider-neutral Runtime v1 harness, not as one-off agent ports. New Pi/runtime migration code must follow [Runtime Migration Rules](docs/runtime-migration-rules.md): reusable primitives first, agent-specific evidence only as thin fixtures or expansion-packet documentation.
+
 If you want a personal assistant platform that feels like an operator console instead of a toy chatbot, this is the shape of it.
 
 ## What It Is
