@@ -13,3 +13,5 @@ Before adding any `runtime:pi-*` command, classify it:
 - **Temporary agent-specific script:** avoid by default; if unavoidable, mark it migration-only, keep it outside the core runtime path, and include its removal or generalization plan in the same PR.
 
 The migration target is not "make selected lab agents work on Pi". The target is a provider-neutral Runtime v1 harness that can create and run arbitrary configured agents with Agent SDK-equivalent semantics.
+
+Live side-effect evidence must use the [Runtime Side-Effect Gates](runtime-side-effect-gates.md) contract. The gate implementation describes the reusable capability; the concrete agent belongs in arguments, fixtures, expansion packets, and operator evidence.

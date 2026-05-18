@@ -46,7 +46,7 @@ Default Runtime v1 parity is green. Fleet-wide live parity is still in expansion
 | Runtime | 4 | L3-L4 | Headless, event stream, run handle, auth/model storage are canary-covered and default-live proven. |
 | Gateway | 4 | L4 | Runtime selection, dispatch, active control, and shutdown are covered by smoke/canary plus live rollout. |
 | Routing and channels | 3 | L4, with fleet exceptions | Web and Telegram DM are live-proven. Cron/heartbeat and controlled side effects are live-proven on `example`. WhatsApp/customer and group expansion remain per-agent gates. |
-| Tools and permissions | 5 | L4, with high-risk tools gated per agent | Built-in policy, approvals, file ownership, custom tools, external MCP proxy, `send_message`, `manage_cron`, and escalation have canary/live evidence. `send_media` and broad group fanout stay expansion-gated. |
+| Tools and permissions | 6 | L4, with high-risk tools gated per agent | Built-in policy, approvals, file ownership, custom tools, external MCP proxy, side-effect gate contract, `send_message`, `manage_cron`, and escalation have canary/live evidence. `send_media` and broad group fanout stay expansion-gated. |
 | Sessions and context | 3 | L2-L4 | Continuation and operator visibility are canary-covered; live session continuity is proven for selected flows. Deeper label/export UI parity remains non-blocking follow-up. |
 | Memory and learning | 3 | L2-L4 | Memory, learning, artifacts, LCM/plugin context are scripted-canary covered; `leads_agent` learning mode is audited as propose-only. |
 | Plugins | 4 | L2 | Registry, subagent runner, operator-console, LCM, and file-transfer are scripted-canary covered. Deeper live plugin workloads remain expansion-specific. |
@@ -72,6 +72,7 @@ Default Runtime v1 parity is green. Fleet-wide live parity is still in expansion
 | `routing.cron-heartbeat` | routing_channels | `pi.scheduled-buildroom` | L4 for controlled `example` cron/proactive flows | Production recurring jobs remain expansion-gated. |
 | `tools.builtin-tool-policy` | tools_permissions | `pi.workspace-tools-rewind`, `pi.gateway-channel-approval`, `pi.aggregate-real-auth`, `pi.public-escalation` | L4 | Keep exact denial feedback visible to the model. |
 | `tools.dynamic-dispatch-tools` | tools_permissions | `pi.gateway-channel-approval`, `pi.external-mcp-proxy`, `pi.scheduled-buildroom`, `pi.public-escalation` | L4 for selected tools | `send_media` and group fanout require live agent-specific proof. |
+| `tools.side-effect-gates` | tools_permissions | `src/runtime/__tests__/side-effect-gate.test.ts`; `docs/runtime-side-effect-gates.md` | L1 | Existing agent-specific live gates must migrate onto this generic contract before more side-effect classes are added. |
 | `tools.external-mcp-proxy` | tools_permissions | `pi.external-mcp-proxy` | L2 | Real network-backed external MCP calls remain per-agent expansion evidence. |
 | `tools.file-ownership` | tools_permissions | `pi.workspace-tools-rewind` | L3 | Cross-agent real worktrees remain Buildroom/worker expansion evidence. |
 | `tools.decisions-approvals` | tools_permissions | `pi.gateway-channel-approval`, `pi.aggregate-real-auth` | L3-L4 | Channel-specific approval UX differences should stay explicit. |
