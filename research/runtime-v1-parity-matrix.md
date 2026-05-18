@@ -18,7 +18,7 @@ It is intentionally stricter than "the default flip is done". The default Runtim
 
 Default Runtime v1 parity is green. Fleet-wide live parity is still in expansion mode.
 
-Current multi-root expansion status is 66/70 evidence items closed (94%), with 0 missing packets. The remaining 4 evidence items are live/manual gates for `content_sm_building` and `project-manager`; `runtime:pi-expansion-status -- --open-only` prints that working queue directly while preserving the full summary metrics.
+Current multi-root expansion status is 66/70 evidence items closed (94%), with 0 missing packets. The remaining 4 evidence items are live/manual gates for `content_sm_building` and `project-manager`; `runtime:pi-expansion-status -- --open-only` prints that working queue directly while preserving the full summary metrics. The open evidence breakdown is 2 operator approvals and 2 post-expansion monitors.
 
 | Scope | Status | Meaning |
 | --- | --- | --- |

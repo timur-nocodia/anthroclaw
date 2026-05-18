@@ -65,6 +65,13 @@ safety_profile: chat_like_openclaw
       openEvidenceItems: 1,
       totalEvidenceItems: 3,
       evidenceProgressPercent: 67,
+      openEvidenceByKind: {
+        operatorApproval: 0,
+        postExpansionMonitor: 0,
+        liveAction: 0,
+        automated: 0,
+        manual: 1,
+      },
     });
     expect(status.agents.find((agent) => agent.id === 'closed_agent')).toMatchObject({
       state: 'closed',
@@ -76,6 +83,9 @@ safety_profile: chat_like_openclaw
         uncheckedItems: 1,
         totalItems: 2,
         uncheckedLabels: ['manual evidence'],
+        uncheckedByKind: {
+          manual: 1,
+        },
       },
       nextActions: ['Resolve packet item: manual evidence'],
     });
@@ -150,8 +160,53 @@ safety_profile: chat_like_openclaw
       closedAgents: 1,
       openAgents: 1,
       totalEvidenceItems: 2,
+      openEvidenceByKind: {
+        manual: 1,
+      },
     });
     expect(body.agents.map((agent: { id: string }) => agent.id)).toEqual(['open_agent']);
+  });
+
+  it('classifies open evidence by operator approval, post-monitor, live action, automated, and manual work', () => {
+    root = mktemp('pi-expansion-status-agents-');
+    packetsRoot = mktemp('pi-expansion-status-packets-');
+    writeAgent(root, 'open_agent', `
+routes:
+  - channel: telegram
+    scope: group
+safety_profile: chat_like_openclaw
+`);
+    writePacket(packetsRoot, 'open_agent', [
+      'Status: pre-live evidence pending',
+      '',
+      '- [x] closed evidence',
+      '- [ ] operator go/no-go for controlled group expansion',
+      '- [ ] runtime:pi-monitor after expansion: `pnpm runtime:pi-monitor -- --json`',
+      '- [ ] controlled live group turn approved by product lead',
+      '- [ ] smoke:pi-external-mcp: `pnpm smoke:pi-external-mcp -- --json`',
+      '- [ ] manual packet review',
+      '',
+    ].join('\n'));
+
+    const status = buildPiExpansionStatus({
+      agentsDir: root,
+      agentsDirs: [root],
+      packetsDir: packetsRoot,
+    });
+
+    expect(status.summary).toMatchObject({
+      closedEvidenceItems: 1,
+      openEvidenceItems: 5,
+      totalEvidenceItems: 6,
+      openEvidenceByKind: {
+        operatorApproval: 1,
+        postExpansionMonitor: 1,
+        liveAction: 1,
+        automated: 1,
+        manual: 1,
+      },
+    });
+    expect(status.agents[0]?.packet.uncheckedByKind).toEqual(status.summary.openEvidenceByKind);
   });
 
   it('parses flags narrowly', () => {

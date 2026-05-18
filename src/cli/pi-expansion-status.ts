@@ -13,6 +13,13 @@ type ExpansionState =
   | 'closed'
   | 'no_packet_required';
 
+type OpenEvidenceKind =
+  | 'operatorApproval'
+  | 'postExpansionMonitor'
+  | 'liveAction'
+  | 'automated'
+  | 'manual';
+
 interface PiExpansionStatusArgs {
   agentsDir: string;
   agentsDirs: string[];
@@ -37,6 +44,7 @@ interface PacketSummary {
   uncheckedItems: number;
   totalItems: number;
   uncheckedLabels: string[];
+  uncheckedByKind: Record<OpenEvidenceKind, number>;
 }
 
 interface AgentExpansionStatus {
@@ -65,6 +73,7 @@ interface PiExpansionStatus {
     openEvidenceItems: number;
     totalEvidenceItems: number;
     evidenceProgressPercent: number;
+    openEvidenceByKind: Record<OpenEvidenceKind, number>;
   };
   agents: AgentExpansionStatus[];
   gaps: {
@@ -203,6 +212,10 @@ export function buildPiExpansionStatus(input: {
   const blockedAgents = agents.filter((agent) => agent.state === 'blocked');
   const totalEvidenceItems = agents.reduce((total, agent) => total + agent.packet.totalItems, 0);
   const closedEvidenceItems = agents.reduce((total, agent) => total + agent.packet.checkedItems, 0);
+  const openEvidenceByKind = agents.reduce(
+    (totals, agent) => addOpenEvidenceBreakdown(totals, agent.packet.uncheckedByKind),
+    emptyOpenEvidenceBreakdown(),
+  );
 
   return {
     status: audit.coverageGap || audit.packetCoverageGap || audit.errors.length > 0 || openAgents.length > 0
@@ -223,6 +236,7 @@ export function buildPiExpansionStatus(input: {
       evidenceProgressPercent: totalEvidenceItems === 0
         ? 100
         : Math.round((closedEvidenceItems / totalEvidenceItems) * 100),
+      openEvidenceByKind,
     },
     agents,
     gaps: {
@@ -249,10 +263,15 @@ function readPacketSummary(packetsDir: string, agentId: string): PacketSummary {
     uncheckedItems: 0,
     totalItems: 0,
     uncheckedLabels: [],
+    uncheckedByKind: emptyOpenEvidenceBreakdown(),
   };
   const body = readFileSync(path, 'utf8');
   const uncheckedLabels = parseUncheckedLabels(body);
   const checkedItems = parseCheckedCount(body);
+  const uncheckedByKind = uncheckedLabels.reduce((totals, label) => {
+    totals[classifyOpenEvidenceLabel(label)] += 1;
+    return totals;
+  }, emptyOpenEvidenceBreakdown());
   return {
     present: true,
     path,
@@ -261,7 +280,56 @@ function readPacketSummary(packetsDir: string, agentId: string): PacketSummary {
     uncheckedItems: uncheckedLabels.length,
     totalItems: checkedItems + uncheckedLabels.length,
     uncheckedLabels,
+    uncheckedByKind,
   };
+}
+
+function emptyOpenEvidenceBreakdown(): Record<OpenEvidenceKind, number> {
+  return {
+    operatorApproval: 0,
+    postExpansionMonitor: 0,
+    liveAction: 0,
+    automated: 0,
+    manual: 0,
+  };
+}
+
+function addOpenEvidenceBreakdown(
+  left: Record<OpenEvidenceKind, number>,
+  right: Record<OpenEvidenceKind, number>,
+): Record<OpenEvidenceKind, number> {
+  return {
+    operatorApproval: left.operatorApproval + right.operatorApproval,
+    postExpansionMonitor: left.postExpansionMonitor + right.postExpansionMonitor,
+    liveAction: left.liveAction + right.liveAction,
+    automated: left.automated + right.automated,
+    manual: left.manual + right.manual,
+  };
+}
+
+function classifyOpenEvidenceLabel(label: string): OpenEvidenceKind {
+  const normalized = label.toLowerCase();
+  if (
+    normalized.includes('operator go/no-go')
+    || normalized.includes('operator approval')
+    || normalized.includes('approved by operator')
+  ) return 'operatorApproval';
+  if (
+    normalized.includes('post-expansion monitor')
+    || normalized.includes('monitor after expansion')
+    || normalized.includes('runtime:pi-monitor after expansion')
+  ) return 'postExpansionMonitor';
+  if (
+    normalized.includes('controlled live')
+    || normalized.includes('live group')
+    || normalized.includes('live turn')
+  ) return 'liveAction';
+  if (
+    normalized.includes('pnpm ')
+    || normalized.includes('runtime:')
+    || normalized.includes('smoke:')
+  ) return 'automated';
+  return 'manual';
 }
 
 function parsePacketStatus(body: string): string | undefined {
@@ -335,6 +403,7 @@ function renderHuman(result: PiExpansionStatus): string {
     `agentsDirs: ${result.agentsDirs.join(', ')}`,
     `packetsDir: ${result.packetsDir}`,
     `summary: total=${result.summary.totalAgents}, highOrCritical=${result.summary.highOrCriticalAgents}, closed=${result.summary.closedAgents}, open=${result.summary.openAgents}, packetMissing=${result.summary.packetMissing}, evidence=${result.summary.closedEvidenceItems}/${result.summary.totalEvidenceItems} (${result.summary.evidenceProgressPercent}%)`,
+    `openEvidenceByKind: operatorApproval=${result.summary.openEvidenceByKind.operatorApproval}, postExpansionMonitor=${result.summary.openEvidenceByKind.postExpansionMonitor}, liveAction=${result.summary.openEvidenceByKind.liveAction}, automated=${result.summary.openEvidenceByKind.automated}, manual=${result.summary.openEvidenceByKind.manual}`,
     '',
     ...result.agents.map((agent) => [
       `${agent.id}: ${agent.state} (${agent.risk}/${agent.recommendedRing})`,
