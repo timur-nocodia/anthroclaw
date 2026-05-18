@@ -22,18 +22,19 @@ Every live side-effect gate must declare:
 
 ## Refactor Direction
 
-`live-send-message` and `live-send-media` are the first extracted gates. The reusable implementations live under `src/runtime/side-effect-gates/` and are runnable through:
+`live-send-message`, `live-send-media`, and `live-notification` are the first extracted gates. The reusable implementations live under `src/runtime/side-effect-gates/` and are runnable through:
 
 ```sh
 pnpm runtime:pi-live-send-message-gate -- --agent-id <id> --peer-id <peer> --dry-run --json
 pnpm runtime:pi-live-send-media-gate -- --agent-id <id> --peer-id <peer> --file-path <path> --allowed-file-root <root> --dry-run --json
+pnpm runtime:pi-live-notification-gate -- --agent-id <id> --peer-id <peer> --dry-run --json
 ```
 
-The old `pi-timur-agent-live-send-message` and `pi-timur-agent-live-send-media` commands remain only as compatibility/evidence aliases with `timur_agent` defaults. Existing migration CLIs such as `pi-timur-agent-live-notification` remain evidence until they are moved. New work should create or extend generic gates first, then bind a concrete agent through CLI args or expansion-packet fixtures.
+The old `pi-timur-agent-live-send-message`, `pi-timur-agent-live-send-media`, and `pi-timur-agent-live-notification` commands remain only as compatibility/evidence aliases with `timur_agent` defaults. New work should create or extend generic gates first, then bind a concrete agent through CLI args or expansion-packet fixtures.
 
 The desired end state is:
 
-1. `runtime:pi-live-gate -- --agent <id> --gate live-send-message ...`, or interim focused commands such as `runtime:pi-live-send-message-gate` and `runtime:pi-live-send-media-gate`
+1. `runtime:pi-live-gate -- --agent <id> --gate live-send-message ...`, or interim focused commands such as `runtime:pi-live-send-message-gate`, `runtime:pi-live-send-media-gate`, and `runtime:pi-live-notification-gate`
 2. expansion packets record the concrete command and operator approval
 3. agent-specific CLI names are gradually removed or reduced to thin aliases
 
