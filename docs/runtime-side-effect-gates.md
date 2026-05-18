@@ -22,7 +22,7 @@ Every live side-effect gate must declare:
 
 ## Refactor Direction
 
-`live-send-message`, `live-send-media`, `live-notification`, `cron-notification`, `buildroom-handoff`, and `admin-config` are the first extracted gates. The reusable implementations live under `src/runtime/side-effect-gates/` and are runnable through:
+`live-send-message`, `live-send-media`, `live-notification`, `cron-notification`, `buildroom-handoff`, `admin-config`, and `mcp-file-transfer` are the first extracted gates. The reusable implementations live under `src/runtime/side-effect-gates/` and are runnable through:
 
 ```sh
 pnpm runtime:pi-live-send-message-gate -- --agent-id <id> --peer-id <peer> --dry-run --json
@@ -31,13 +31,14 @@ pnpm runtime:pi-live-notification-gate -- --agent-id <id> --peer-id <peer> --dry
 pnpm runtime:pi-cron-notification-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --static-cron-id <id> --dynamic-cron-id <id> --json
 pnpm runtime:pi-buildroom-handoff-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json
 pnpm runtime:pi-admin-config-gate -- --agent-id <id> --peer-id <peer> --session-key <key> --json
+pnpm runtime:pi-mcp-file-transfer-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json
 ```
 
-The old `pi-timur-agent-live-send-message`, `pi-timur-agent-live-send-media`, `pi-timur-agent-live-notification`, `pi-timur-agent-cron-notification-smoke`, `pi-timur-agent-buildroom-handoff-smoke`, and `pi-timur-agent-admin-config-smoke` commands remain only as compatibility/evidence aliases with `timur_agent` defaults. New work should create or extend generic gates first, then bind a concrete agent through CLI args or expansion-packet fixtures.
+The old `pi-timur-agent-live-send-message`, `pi-timur-agent-live-send-media`, `pi-timur-agent-live-notification`, `pi-timur-agent-cron-notification-smoke`, `pi-timur-agent-buildroom-handoff-smoke`, `pi-timur-agent-admin-config-smoke`, and `pi-timur-agent-mcp-file-transfer-smoke` commands remain only as compatibility/evidence aliases with `timur_agent` defaults. New work should create or extend generic gates first, then bind a concrete agent through CLI args or expansion-packet fixtures.
 
 The desired end state is:
 
-1. `runtime:pi-live-gate -- --agent <id> --gate live-send-message ...`, or interim focused commands such as `runtime:pi-live-send-message-gate`, `runtime:pi-live-send-media-gate`, `runtime:pi-live-notification-gate`, `runtime:pi-cron-notification-gate`, `runtime:pi-buildroom-handoff-gate`, and `runtime:pi-admin-config-gate`
+1. `runtime:pi-live-gate -- --agent <id> --gate live-send-message ...`, or interim focused commands such as `runtime:pi-live-send-message-gate`, `runtime:pi-live-send-media-gate`, `runtime:pi-live-notification-gate`, `runtime:pi-cron-notification-gate`, `runtime:pi-buildroom-handoff-gate`, `runtime:pi-admin-config-gate`, and `runtime:pi-mcp-file-transfer-gate`
 2. expansion packets record the concrete command and operator approval
 3. agent-specific CLI names are gradually removed or reduced to thin aliases
 
