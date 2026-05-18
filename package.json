@@ -32,6 +32,7 @@
     "runtime:pi-timur-agent-cron-notification-smoke": "tsx src/cli/pi-timur-agent-cron-notification-smoke.ts",
     "runtime:pi-timur-agent-honcho-local-smoke": "tsx src/cli/pi-timur-agent-honcho-local-smoke.ts",
     "runtime:pi-timur-agent-learning-propose-smoke": "tsx src/cli/pi-timur-agent-learning-propose-smoke.ts",
+    "runtime:pi-timur-agent-live-send-media": "tsx src/cli/pi-timur-agent-live-send-media.ts",
     "runtime:pi-timur-agent-live-send-message": "tsx src/cli/pi-timur-agent-live-send-message.ts",
     "runtime:pi-timur-agent-messaging-media-smoke": "tsx src/cli/pi-timur-agent-messaging-media-smoke.ts",
     "runtime:pi-timur-agent-mcp-file-transfer-smoke": "tsx src/cli/pi-timur-agent-mcp-file-transfer-smoke.ts",
