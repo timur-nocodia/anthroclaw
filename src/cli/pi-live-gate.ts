@@ -24,6 +24,7 @@ interface PiLiveGateArgs {
   describe?: PiLiveGateId;
   gate?: PiLiveGateId;
   plan?: PiLiveGateId;
+  planAll: boolean;
   rest: string[];
   validateArgs?: PiLiveGateId;
   help: boolean;
@@ -83,6 +84,11 @@ export async function runPiLiveGateCli(
     stdout.write(args.json ? `${JSON.stringify(describePayload(gate), null, 2)}\n` : `${formatGateDescription(gate)}\n`);
     return 0;
   }
+  if (args.planAll) {
+    const catalog = buildRunPlanCatalog(args.strict);
+    stdout.write(args.json ? `${JSON.stringify(catalog, null, 2)}\n` : `${formatRunPlanCatalog(catalog)}\n`);
+    return catalog.status === 'ok' ? 0 : 2;
+  }
   if (args.plan) {
     const gate = findSideEffectGate(args.plan);
     if (!gate) {
@@ -117,6 +123,7 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
   const rest: string[] = [];
   let gate: PiLiveGateId | undefined;
   let plan: PiLiveGateId | undefined;
+  let planAll = false;
   let validateArgs: PiLiveGateId | undefined;
   let help = false;
   let json = false;
@@ -151,6 +158,10 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
       describe = parseGateId(arg.slice('--describe='.length));
       continue;
     }
+    if (arg === '--plan-all') {
+      planAll = true;
+      continue;
+    }
     if (arg === '--plan') {
       plan = parseGateId(requireValue(argv, ++i, '--plan'));
       continue;
@@ -178,7 +189,7 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
     rest.push(arg);
   }
 
-  return { describe, gate, plan, rest, validateArgs, help, json, list, strict };
+  return { describe, gate, plan, planAll, rest, validateArgs, help, json, list, strict };
 }
 
 function listPayload() {
@@ -221,6 +232,14 @@ function buildRunPlan(
         focused: ['pnpm', gate.focusedCommand, '--', ...argv],
       },
     },
+  };
+}
+
+function buildRunPlanCatalog(strict: boolean) {
+  const plans = SIDE_EFFECT_GATE_REGISTRY.map((gate) => buildRunPlan(gate, gate.execution.exampleArgs, strict));
+  return {
+    status: plans.every((plan) => plan.status === 'ok') ? 'ok' : 'failed',
+    plans,
   };
 }
 
@@ -272,6 +291,18 @@ function formatRunPlan(plan: ReturnType<typeof buildRunPlan>): string {
     `  unknownFlags: ${plan.validation.unknownFlags.join(', ')}`,
     `  aggregate: ${plan.run.packageScripts.aggregate.join(' ')}`,
     `  focused: ${plan.run.packageScripts.focused.join(' ')}`,
+  ].join('\n');
+}
+
+function formatRunPlanCatalog(catalog: ReturnType<typeof buildRunPlanCatalog>): string {
+  return [
+    `Pi live gate plans: ${catalog.status}`,
+    ...catalog.plans.map((plan) => [
+      `  ${plan.gate.id} - ${plan.gate.title}`,
+      `    status: ${plan.status}`,
+      `    aggregate: ${plan.run.packageScripts.aggregate.join(' ')}`,
+      `    focused: ${plan.run.packageScripts.focused.join(' ')}`,
+    ].join('\n')),
   ].join('\n');
 }
 
@@ -351,6 +382,7 @@ function usage(): string {
     'Usage: pnpm runtime:pi-live-gate -- --gate <gate-id> [gate options]',
     '       pnpm runtime:pi-live-gate -- --list [--json]',
     '       pnpm runtime:pi-live-gate -- --describe <gate-id> [--json]',
+    '       pnpm runtime:pi-live-gate -- --plan-all [--strict] [--json]',
     '       pnpm runtime:pi-live-gate -- --plan <gate-id> [gate options] [--strict] [--json]',
     '       pnpm runtime:pi-live-gate -- --validate-args <gate-id> [gate options] [--strict] [--json]',
     '',

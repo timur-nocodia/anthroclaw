@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PI_LIVE_GATE_IDS,
   parsePiLiveGateArgs,
   runPiLiveGateCli,
   type PiLiveGateId,
@@ -265,6 +266,45 @@ describe('Pi live gate dispatcher CLI', () => {
         missingFlags: ['peer-id', 'file-path', 'allowed-file-root'],
       },
     });
+  });
+
+  it('builds JSON run plans for every registered gate example without running gates', async () => {
+    const stdout = createWriter();
+    const stderr = createWriter();
+
+    const code = await runPiLiveGateCli(['--plan-all', '--json'], { stdout, stderr });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    const payload = JSON.parse(stdout.text()) as {
+      status: string;
+      plans: Array<{
+        status: string;
+        gate: { id: PiLiveGateId };
+        validation: { status: string; missingFlags: string[]; unknownFlags: string[] };
+        run: {
+          aggregateArgs: string[];
+          focusedArgs: string[];
+          packageScripts: {
+            aggregate: string[];
+            focused: string[];
+          };
+        };
+      }>;
+    };
+
+    expect(payload.status).toBe('ok');
+    expect(payload.plans.map((plan) => plan.gate.id)).toEqual(PI_LIVE_GATE_IDS);
+    expect(payload.plans.every((plan) => plan.status === 'ok')).toBe(true);
+    expect(payload.plans.every((plan) => plan.validation.status === 'ok')).toBe(true);
+    expect(payload.plans.every((plan) => plan.validation.missingFlags.length === 0)).toBe(true);
+    expect(payload.plans.every((plan) => plan.validation.unknownFlags.length === 0)).toBe(true);
+    for (const plan of payload.plans) {
+      expect(plan.run.aggregateArgs).toEqual(['--gate', plan.gate.id, ...plan.run.focusedArgs]);
+      expect(plan.run.packageScripts.aggregate).toEqual(['pnpm', 'runtime:pi-live-gate', '--', ...plan.run.aggregateArgs]);
+      expect(plan.run.packageScripts.focused.slice(0, 3)).toEqual(['pnpm', expect.stringMatching(/^runtime:pi-.+-gate$/), '--']);
+      expect(plan.run.packageScripts.focused).not.toContain('timur_agent');
+    }
   });
 
   it('reports missing required focused gate arguments', async () => {
