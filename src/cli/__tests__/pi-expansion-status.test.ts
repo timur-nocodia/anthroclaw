@@ -45,8 +45,8 @@ routes:
     scope: group
 safety_profile: chat_like_openclaw
 `);
-    writePacket(packetsRoot, 'closed_agent', 'Status: closed\n');
-    writePacket(packetsRoot, 'ready_agent', 'Status: ready_for_execution\n\n- [ ] manual evidence\n');
+    writePacket(packetsRoot, 'closed_agent', 'Status: closed\n\n- [x] closed evidence\n');
+    writePacket(packetsRoot, 'ready_agent', 'Status: ready_for_execution\n\n- [x] automated evidence\n- [ ] manual evidence\n');
 
     const status = buildPiExpansionStatus({
       agentsDir: root,
@@ -61,13 +61,22 @@ safety_profile: chat_like_openclaw
       closedAgents: 1,
       openAgents: 2,
       packetMissing: 1,
+      closedEvidenceItems: 2,
+      openEvidenceItems: 1,
+      totalEvidenceItems: 3,
+      evidenceProgressPercent: 67,
     });
     expect(status.agents.find((agent) => agent.id === 'closed_agent')).toMatchObject({
       state: 'closed',
     });
     expect(status.agents.find((agent) => agent.id === 'ready_agent')).toMatchObject({
       state: 'evidence_open',
-      packet: { uncheckedItems: 1, uncheckedLabels: ['manual evidence'] },
+      packet: {
+        checkedItems: 1,
+        uncheckedItems: 1,
+        totalItems: 2,
+        uncheckedLabels: ['manual evidence'],
+      },
       nextActions: ['Resolve packet item: manual evidence'],
     });
     expect(status.agents.find((agent) => agent.id === 'missing_packet_agent')).toMatchObject({

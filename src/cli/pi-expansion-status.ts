@@ -32,7 +32,9 @@ interface PacketSummary {
   present: boolean;
   path?: string;
   status?: string;
+  checkedItems: number;
   uncheckedItems: number;
+  totalItems: number;
   uncheckedLabels: string[];
 }
 
@@ -58,6 +60,10 @@ interface PiExpansionStatus {
     openAgents: number;
     packetMissing: number;
     blockedAgents: number;
+    closedEvidenceItems: number;
+    openEvidenceItems: number;
+    totalEvidenceItems: number;
+    evidenceProgressPercent: number;
   };
   agents: AgentExpansionStatus[];
   gaps: {
@@ -189,6 +195,8 @@ export function buildPiExpansionStatus(input: {
 
   const openAgents = agents.filter((agent) => agent.state !== 'closed' && agent.state !== 'no_packet_required');
   const blockedAgents = agents.filter((agent) => agent.state === 'blocked');
+  const totalEvidenceItems = agents.reduce((total, agent) => total + agent.packet.totalItems, 0);
+  const closedEvidenceItems = agents.reduce((total, agent) => total + agent.packet.checkedItems, 0);
 
   return {
     status: audit.coverageGap || audit.packetCoverageGap || audit.errors.length > 0 || openAgents.length > 0
@@ -203,6 +211,12 @@ export function buildPiExpansionStatus(input: {
       openAgents: openAgents.length,
       packetMissing: agents.filter((agent) => agent.state === 'packet_missing').length,
       blockedAgents: blockedAgents.length,
+      closedEvidenceItems,
+      openEvidenceItems: totalEvidenceItems - closedEvidenceItems,
+      totalEvidenceItems,
+      evidenceProgressPercent: totalEvidenceItems === 0
+        ? 100
+        : Math.round((closedEvidenceItems / totalEvidenceItems) * 100),
     },
     agents,
     gaps: {
@@ -216,14 +230,23 @@ export function buildPiExpansionStatus(input: {
 
 function readPacketSummary(packetsDir: string, agentId: string): PacketSummary {
   const path = resolve(packetsDir, `${agentId}.md`);
-  if (!existsSync(path)) return { present: false, uncheckedItems: 0, uncheckedLabels: [] };
+  if (!existsSync(path)) return {
+    present: false,
+    checkedItems: 0,
+    uncheckedItems: 0,
+    totalItems: 0,
+    uncheckedLabels: [],
+  };
   const body = readFileSync(path, 'utf8');
   const uncheckedLabels = parseUncheckedLabels(body);
+  const checkedItems = parseCheckedCount(body);
   return {
     present: true,
     path,
     status: parsePacketStatus(body),
+    checkedItems,
     uncheckedItems: uncheckedLabels.length,
+    totalItems: checkedItems + uncheckedLabels.length,
     uncheckedLabels,
   };
 }
@@ -237,6 +260,10 @@ function parseUncheckedLabels(body: string): string[] {
   return [...body.matchAll(/^- \[ \]\s+(.+)$/gm)]
     .map((match) => (match[1] ?? '').trim())
     .filter(Boolean);
+}
+
+function parseCheckedCount(body: string): number {
+  return (body.match(/^- \[x\]\s+/gmi) ?? []).length;
 }
 
 function classifyState(input: {
@@ -294,7 +321,7 @@ function renderHuman(result: PiExpansionStatus): string {
     `Pi expansion status ${result.status}.`,
     `agentsDirs: ${result.agentsDirs.join(', ')}`,
     `packetsDir: ${result.packetsDir}`,
-    `summary: total=${result.summary.totalAgents}, highOrCritical=${result.summary.highOrCriticalAgents}, closed=${result.summary.closedAgents}, open=${result.summary.openAgents}, packetMissing=${result.summary.packetMissing}`,
+    `summary: total=${result.summary.totalAgents}, highOrCritical=${result.summary.highOrCriticalAgents}, closed=${result.summary.closedAgents}, open=${result.summary.openAgents}, packetMissing=${result.summary.packetMissing}, evidence=${result.summary.closedEvidenceItems}/${result.summary.totalEvidenceItems} (${result.summary.evidenceProgressPercent}%)`,
     '',
     ...result.agents.map((agent) => [
       `${agent.id}: ${agent.state} (${agent.risk}/${agent.recommendedRing})`,

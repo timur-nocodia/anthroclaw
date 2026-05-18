@@ -18,6 +18,8 @@ It is intentionally stricter than "the default flip is done". The default Runtim
 
 Default Runtime v1 parity is green. Fleet-wide live parity is still in expansion mode.
 
+Current multi-root expansion status is 62/67 evidence items closed (93%), with 0 missing packets. The remaining 5 evidence items are live/manual gates for `content_sm_building` and `project-manager`.
+
 | Scope | Status | Meaning |
 | --- | --- | --- |
 | Feature contract coverage | Complete | `RUNTIME_FEATURE_CONTRACTS` covers all major runtime, Gateway, channel, tool, session, memory, learning, plugin, dashboard, observability, Buildroom, config, and ops surfaces. |
