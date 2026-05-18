@@ -127,6 +127,7 @@ safety_profile: chat_like_openclaw
         exitCode: 0,
         passed: true,
         reason: 'fail-on-open disabled',
+        violations: [],
       },
     });
     expect(secondCode).toBe(1);
@@ -199,6 +200,7 @@ safety_profile: chat_like_openclaw
           automated: 0,
           manual: 0,
         },
+        violations: [],
       },
     });
     expect(blockedCode).toBe(1);
@@ -210,8 +212,65 @@ safety_profile: chat_like_openclaw
         disallowedOpenEvidenceByKind: {
           manual: 1,
         },
+        violations: [
+          {
+            agentId: 'manual_agent',
+            kind: 'manual',
+            label: 'manual packet review',
+          },
+        ],
       },
     });
+  });
+
+  it('reports packet and open-state policy violations even when open evidence kinds are allowed', async () => {
+    root = mktemp('pi-expansion-status-agents-');
+    packetsRoot = mktemp('pi-expansion-status-packets-');
+    writeAgent(root, 'missing_packet_agent', `
+routes:
+  - channel: telegram
+    scope: group
+safety_profile: chat_like_openclaw
+`);
+    writeAgent(root, 'operator_review_agent', `
+routes:
+  - channel: telegram
+    scope: group
+safety_profile: chat_like_openclaw
+`);
+    writePacket(packetsRoot, 'operator_review_agent', 'Status: needs operator review\n\n- [x] automated evidence\n');
+
+    const stdout = createWriter();
+    const code = await runPiExpansionStatusCli([
+      '--agents-dir', root,
+      '--packets-dir', packetsRoot,
+      '--json',
+      '--fail-on-open',
+      '--allow-open-kind', 'operatorApproval',
+      '--allow-open-kind', 'postExpansionMonitor',
+    ], { stdout, stderr: createWriter() });
+
+    expect(code).toBe(1);
+    const body = JSON.parse(stdout.text());
+    expect(body).toMatchObject({
+      policy: {
+        exitCode: 1,
+        passed: false,
+        reason: 'non-evidence expansion blockers remain',
+      },
+    });
+    expect(body.policy.violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agentId: 'missing_packet_agent',
+        kind: 'packetMissing',
+        label: 'expansion packet is missing',
+      }),
+      expect.objectContaining({
+        agentId: 'operator_review_agent',
+        kind: 'openState',
+        label: 'agent expansion state is operator_review',
+      }),
+    ]));
   });
 
   it('prints only open agents with --open-only while preserving full summary', async () => {

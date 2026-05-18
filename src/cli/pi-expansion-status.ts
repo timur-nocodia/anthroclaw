@@ -100,6 +100,14 @@ interface PiExpansionStatusPolicy {
   passed: boolean;
   reason: string;
   disallowedOpenEvidenceByKind: Record<OpenEvidenceKind, number>;
+  violations: PiExpansionStatusPolicyViolation[];
+}
+
+interface PiExpansionStatusPolicyViolation {
+  agentId?: string;
+  kind: OpenEvidenceKind | 'auditError' | 'blocked' | 'packetMissing' | 'packetCoverageGap' | 'openState';
+  label: string;
+  path?: string;
 }
 
 type PiExpansionStatusCliOutput = PiExpansionStatus & {
@@ -209,10 +217,12 @@ function evaluatePiExpansionStatusPolicy(
   result: PiExpansionStatus,
   args: Pick<PiExpansionStatusArgs, 'failOnOpen' | 'allowedOpenKinds'>,
 ): PiExpansionStatusPolicy {
+  const allowedKinds = new Set(args.allowedOpenKinds);
   const base = {
     failOnOpen: args.failOnOpen,
     allowedOpenKinds: [...args.allowedOpenKinds],
     disallowedOpenEvidenceByKind: emptyOpenEvidenceBreakdown(),
+    violations: [] as PiExpansionStatusPolicyViolation[],
   };
 
   if (!args.failOnOpen) return {
@@ -234,9 +244,9 @@ function evaluatePiExpansionStatusPolicy(
     exitCode: 1,
     passed: false,
     reason: 'open expansion work remains',
+    violations: collectPolicyViolations(result),
   };
 
-  const allowedKinds = new Set(args.allowedOpenKinds);
   const disallowedOpenEvidenceByKind = OPEN_EVIDENCE_KINDS.reduce((totals, kind) => {
     totals[kind] = allowedKinds.has(kind) ? 0 : result.summary.openEvidenceByKind[kind];
     return totals;
@@ -248,6 +258,7 @@ function evaluatePiExpansionStatusPolicy(
     exitCode: 1,
     passed: false,
     reason: 'disallowed open evidence kinds remain',
+    violations: collectPolicyViolations(result, allowedKinds),
   };
 
   const openEvidenceItems = result.summary.openEvidenceItems;
@@ -271,6 +282,7 @@ function evaluatePiExpansionStatusPolicy(
     exitCode: 1,
     passed: false,
     reason: 'non-evidence expansion blockers remain',
+    violations: collectPolicyViolations(result, allowedKinds),
   };
 
   return {
@@ -279,6 +291,72 @@ function evaluatePiExpansionStatusPolicy(
     passed: true,
     reason: 'only allowed open evidence kinds remain',
   };
+}
+
+function collectPolicyViolations(
+  result: PiExpansionStatus,
+  allowedKinds?: Set<OpenEvidenceKind>,
+): PiExpansionStatusPolicyViolation[] {
+  const violations: PiExpansionStatusPolicyViolation[] = [];
+  for (const agent of result.agents) {
+    for (const label of agent.packet.uncheckedLabels) {
+      const kind = classifyOpenEvidenceLabel(label);
+      if (!allowedKinds?.has(kind)) {
+        violations.push({
+          agentId: agent.id,
+          kind,
+          label,
+          path: agent.packet.path,
+        });
+      }
+    }
+
+    if (agent.state === 'packet_missing') {
+      violations.push({
+        agentId: agent.id,
+        kind: 'packetMissing',
+        label: 'expansion packet is missing',
+      });
+    } else if (agent.state === 'blocked') {
+      violations.push({
+        agentId: agent.id,
+        kind: 'blocked',
+        label: agent.blockers.join('; ') || 'audit error blocks expansion',
+        path: agent.packet.path,
+      });
+    } else if (
+      agent.state !== 'closed'
+      && agent.state !== 'no_packet_required'
+      && agent.state !== 'evidence_open'
+    ) {
+      violations.push({
+        agentId: agent.id,
+        kind: 'openState',
+        label: `agent expansion state is ${agent.state}`,
+        path: agent.packet.path,
+      });
+    }
+  }
+
+  for (const err of result.gaps.auditErrors) {
+    violations.push({
+      agentId: err.agentId,
+      kind: 'auditError',
+      label: err.error,
+    });
+  }
+
+  for (const agentId of result.gaps.missingPackets) {
+    if (!violations.some((violation) => violation.kind === 'packetMissing' && violation.agentId === agentId)) {
+      violations.push({
+        agentId,
+        kind: 'packetCoverageGap',
+        label: 'required expansion packet is missing from packet coverage',
+      });
+    }
+  }
+
+  return violations;
 }
 
 export function buildPiExpansionStatus(input: {
@@ -525,7 +603,7 @@ function renderHuman(result: PiExpansionStatus & { policy?: PiExpansionStatusPol
     `summary: total=${result.summary.totalAgents}, highOrCritical=${result.summary.highOrCriticalAgents}, closed=${result.summary.closedAgents}, open=${result.summary.openAgents}, packetMissing=${result.summary.packetMissing}, evidence=${result.summary.closedEvidenceItems}/${result.summary.totalEvidenceItems} (${result.summary.evidenceProgressPercent}%)`,
     `openEvidenceByKind: operatorApproval=${result.summary.openEvidenceByKind.operatorApproval}, postExpansionMonitor=${result.summary.openEvidenceByKind.postExpansionMonitor}, liveAction=${result.summary.openEvidenceByKind.liveAction}, automated=${result.summary.openEvidenceByKind.automated}, manual=${result.summary.openEvidenceByKind.manual}`,
     ...(result.policy
-      ? [`policy: passed=${result.policy.passed}, exitCode=${result.policy.exitCode}, reason=${result.policy.reason}, allowedOpenKinds=${result.policy.allowedOpenKinds.join(',') || 'none'}`]
+      ? [`policy: passed=${result.policy.passed}, exitCode=${result.policy.exitCode}, reason=${result.policy.reason}, allowedOpenKinds=${result.policy.allowedOpenKinds.join(',') || 'none'}, violations=${result.policy.violations.length}`]
       : []),
     '',
     ...result.agents.map((agent) => [
@@ -543,6 +621,11 @@ function renderHuman(result: PiExpansionStatus & { policy?: PiExpansionStatusPol
   }
   if (result.gaps.skippedDirectories.length > 0) {
     lines.push('', 'Skipped directories:', ...result.gaps.skippedDirectories.map((entry) => `${entry.name}: ${entry.reason}`));
+  }
+  if (result.policy && result.policy.violations.length > 0) {
+    lines.push('', 'Policy violations:', ...result.policy.violations.map((violation) => (
+      `${violation.agentId ?? 'fleet'}: ${violation.kind}: ${violation.label}`
+    )));
   }
   return `${lines.join('\n')}\n`;
 }
