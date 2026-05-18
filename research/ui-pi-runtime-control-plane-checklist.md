@@ -202,23 +202,23 @@ This plan is intentionally broader than a rename. The source of truth must move 
 
 ### Phase 6 - Runtime page
 
-- [ ] Add `ui/app/(dashboard)/fleet/[serverId]/runtime/page.tsx`.
-- [ ] Add sidebar link.
-- [ ] Overview tab:
-  - [ ] status chips for harness/provider/readiness.
-  - [ ] agent provider distribution.
-  - [ ] recent runtime errors if available.
-- [ ] Gates tab:
-  - [ ] gate registry table.
-  - [ ] risk/approval badges.
-  - [ ] plan drawer or detail panel.
-- [ ] Expansion tab:
-  - [ ] progress card.
-  - [ ] open evidence table.
-  - [ ] policy state.
-  - [ ] packet links/paths.
-- [ ] Legacy tab:
-  - [ ] Claude auth compatibility panel.
+- [x] Add `ui/app/(dashboard)/fleet/[serverId]/runtime/page.tsx`.
+- [x] Add sidebar link.
+- [x] Overview tab:
+  - [x] status chips for harness/provider/readiness.
+  - [x] agent provider distribution.
+  - [x] recent runtime errors if available.
+- [x] Gates tab:
+  - [x] gate registry table.
+  - [x] risk/approval badges.
+  - [x] plan drawer or detail panel.
+- [x] Expansion tab:
+  - [x] progress card.
+  - [x] open evidence table.
+  - [x] policy state.
+  - [x] packet links/paths.
+- [x] Legacy tab:
+  - [x] Claude auth compatibility panel.
 
 ### Phase 7 - Agent page runtime parity
 

@@ -25,5 +25,7 @@ describe('<Sidebar /> Buildroom navigation', () => {
     const link = await screen.findByRole('link', { name: /buildroom/i });
     expect(link).toHaveAttribute('href', '/fleet/local/buildroom');
     expect(link).toHaveStyle({ color: 'var(--oc-accent)' });
+
+    expect(screen.getByRole('link', { name: /runtime/i })).toHaveAttribute('href', '/fleet/local/runtime');
   });
 });
