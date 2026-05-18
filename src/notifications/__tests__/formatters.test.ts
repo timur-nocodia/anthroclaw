@@ -101,14 +101,16 @@ describe('formatTelegram', () => {
     expect(msg).toContain('`wa:b:1`');
   });
 
-  it('escalation_needed — includes note', () => {
+  it('escalation_needed — preserves underscore markers in note', () => {
+    const note = 'TIMUR_AGENT_LIVE_NOTIFICATION_OK 2026-05-18T09:41:40Z';
     const msg = formatTelegram(
       'escalation_needed',
-      { agentId: 'amina', peerKey: 'wa:b:1', note: 'human review please' },
+      { agentId: 'amina', peerKey: 'wa:b:1', note },
       NOW,
     );
     expect(msg).toContain('*Escalation requested*');
-    expect(msg).toContain('human review please');
+    expect(msg).toContain(`\`${note}\``);
+    expect(msg).not.toContain(`_${note}_`);
   });
 
   it('older-than-today timestamp formats as MM-DD HH:mm', () => {
