@@ -2,7 +2,7 @@
 
 Date: 2026-05-18
 
-Status: tracked config points at the connected default Telegram bot; live operator command suite passed; controlled side-effect smoke gates are closed; one operator-approved live `send_message` action passed against the allowlisted operator DM.
+Status: tracked config points at the connected default Telegram bot; live operator command suite passed; controlled side-effect smoke gates are closed; operator-approved live `send_message` and `send_media` actions passed against the allowlisted operator DM.
 Owner: operator
 Rollback path: move `agents/timur_agent` off account `default`, restore `pi_telegram_lab` to account `default`, or set `config.yml` `runtime.headless.provider=claude-agent-sdk`.
 Risk: high
@@ -77,6 +77,9 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [x] operator-approved live `send_message` gate: `pnpm runtime:pi-timur-agent-live-send-message -- --confirm-live-send --json --marker "TIMUR_AGENT_LIVE_SEND_MESSAGE_OK 2026-05-18T09:19:55Z"`
   - Purpose: verify one real `send_message` delivery through the same tool path, constrained to `timur_agent` private Telegram DM `default/48705953`, after explicit operator approval.
   - Result: passed. The gate validated the private allowlist, DM route, MCP tool exposure, and `createCanUseTool()` permission; real Telegram delivery returned `messageId=181`; metrics recorded run `pi-live-send-c3bfa9af-d756-4501-856f-cb7044621bbe` with `send_message` started/completed and no failed tool events. Post-run monitor passed with alerts `[]` and warnings `[]`.
+- [x] operator-approved live `send_media` gate: `pnpm runtime:pi-timur-agent-live-send-media -- --confirm-live-send-media --json --caption "TIMUR_AGENT_LIVE_SEND_MEDIA_OK 2026-05-18T09:30:06Z"`
+  - Purpose: verify one real document delivery through the same `send_media` tool path, constrained to `timur_agent` private Telegram DM `default/48705953`, after explicit operator approval.
+  - Result: passed. The gate validated the private allowlist, DM route, MCP tool exposure, auto-resolved operator approval, and committed lab-file root binding under `agents/timur_agent/lab-files`; real Telegram document delivery returned `messageId=182`; metrics recorded run `pi-live-media-ebb4abe5-754e-4871-8b70-e3f114642406` with `send_media` started/completed and no failed tool events. Post-run monitor passed with alerts `[]` and warnings `[]`.
 - [x] admin/config smoke: `pnpm runtime:pi-timur-agent-admin-config-smoke -- --json`
   - Purpose: verify operator-admin/config tools on a temp `timur_agent` copy without mutating live config or ACL state.
   - Result: passed. `show_config` read current sections with defaults, `manage_operator_console` and `manage_human_takeover` applied controlled self-target patches with two audit entries and two config backups, unauthorized cross-agent management was denied, and `access_control` listed pending, approved, listed approved, and revoked a temp sender with no live ACL changes.
@@ -101,6 +104,8 @@ The tracked route uses the connected Telegram account `default`. The previous `p
   - Evidence: `pnpm runtime:pi-timur-agent-messaging-media-smoke -- --json` passed with fake-only `send_message` and `send_media` delivery, explicit `send_media` approval, operator peer/account/thread binding, path traversal denial, and paused-peer suppression. No real Telegram delivery was performed.
 - [x] controlled live `send_message` canary
   - Evidence: operator approved a live action on 2026-05-18. `pnpm runtime:pi-timur-agent-live-send-message -- --confirm-live-send --json --marker "TIMUR_AGENT_LIVE_SEND_MESSAGE_OK 2026-05-18T09:19:55Z"` delivered one real Telegram DM via `send_message` to `telegram/default/48705953`; Telegram returned `messageId=181`; `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert` passed with one succeeded run, diagnostics `run.sdk_started`, `run.tool_started`, `run.tool_completed`, `run.completed`, one started/completed tool pair, and no alerts or warnings.
+- [x] controlled live `send_media` canary
+  - Evidence: operator approved the next live media action on 2026-05-18. `pnpm runtime:pi-timur-agent-live-send-media -- --confirm-live-send-media --json --caption "TIMUR_AGENT_LIVE_SEND_MEDIA_OK 2026-05-18T09:30:06Z"` delivered one real Telegram document via `send_media` to `telegram/default/48705953`; Telegram returned `messageId=182`; `pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert` passed with two succeeded runs in the window, diagnostics `run.sdk_started`, `run.tool_started`, `run.tool_completed`, `run.completed`, two started/completed tool pairs, and no alerts or warnings.
 - [x] controlled admin/config canary
   - Evidence: `pnpm runtime:pi-timur-agent-admin-config-smoke -- --json` passed against a temp `timur_agent` copy with `show_config`, `manage_operator_console`, `manage_human_takeover`, config audit/backups, cross-agent denial, and temp-only `access_control` approve/revoke.
 - [x] controlled Buildroom handoff canary
