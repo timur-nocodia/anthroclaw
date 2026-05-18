@@ -2,7 +2,7 @@
 
 Date: 2026-05-17
 
-Status: tracked config points at the connected default Telegram bot; live operator command suite passed; controlled side-effect smoke gates are closing by feature class, including managed MCP onboarding and file-transfer.
+Status: tracked config points at the connected default Telegram bot; live operator command suite passed; controlled side-effect smoke gates are closed for the configured feature classes that can be proven without live side effects.
 Owner: operator
 Rollback path: move `agents/timur_agent` off account `default`, restore `pi_telegram_lab` to account `default`, or set `config.yml` `runtime.headless.provider=claude-agent-sdk`.
 Risk: high
@@ -83,6 +83,9 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [x] MCP/file-transfer smoke: `pnpm runtime:pi-timur-agent-mcp-file-transfer-smoke -- --json`
   - Purpose: verify managed `connect_mcp` onboarding and bundled file-transfer root policy without external MCP calls or live file writes.
   - Result: passed. Private Telegram DM attribution was forwarded into `connect_mcp`, group chat onboarding was rejected with `mcp_onboarding_requires_dm`, check/cancel lifecycle calls returned expected statuses, no hardcoded external MCP servers were configured, bundled file-transfer exposed list/fetch/write tools for temp roots derived from `agents/timur_agent/lab-files` and `research`, and an outside-root fetch was denied.
+- [x] Honcho local smoke: `pnpm runtime:pi-timur-agent-honcho-local-smoke -- --json`
+  - Purpose: verify the configured-but-disabled local Honcho contract without starting a local Honcho service, requiring an API key, or making network calls.
+  - Result: passed. The tracked config stayed `enabled=false`, `mode=tools`, `environment=local`, `base_url=http://localhost:8000`, `workspace_id=anthroclaw-timur-agent-lab`, and `max_retries=0`; startup planning skipped Honcho while disabled; no Honcho tools or context engine were exposed; a temp activation candidate registered the bundled Honcho engine, observe hook, and six tool names; `honcho_status` reported the local tools-mode config; session-scoped tools required a dispatch session key; tools-mode context assembly did not auto-inject context.
 
 ## Manual Evidence
 - [x] controlled proactive notification canary
@@ -99,6 +102,8 @@ The tracked route uses the connected Telegram account `default`. The previous `p
   - Evidence: `pnpm runtime:pi-timur-agent-buildroom-handoff-smoke -- --json` passed against temp Buildroom storage with sanitized session summary, parent-linked handoff signal, fail-closed uninitialized storage, and explicit no-approval/no-build authority.
 - [x] controlled MCP/file-transfer canary
   - Evidence: `pnpm runtime:pi-timur-agent-mcp-file-transfer-smoke -- --json` passed with managed onboarding attribution, DM-only rejection, no committed external MCP server config, temp-only file-transfer read/list/write, and outside-root denial.
+- [x] controlled Honcho local canary
+  - Evidence: `pnpm runtime:pi-timur-agent-honcho-local-smoke -- --json` passed with disabled-state startup gating, temp-only activation surface proof, local keyless config validation, dispatch-session requirement, no auto context injection in tools mode, and no network call.
 - [x] live Telegram account switch to `default` is approved by operator
 - [x] first controlled live text turn returns expected behavior
   - Evidence: operator sent `/smoke` in Telegram DM at 2026-05-17 14:41 Asia/Almaty; the bot replied exactly `TIMUR_AGENT_LAB_OK`.
