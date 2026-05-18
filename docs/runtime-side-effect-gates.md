@@ -48,6 +48,8 @@ pnpm runtime:pi-live-gate -- --gate live-send-message --agent-id <id> --peer-id 
 pnpm runtime:pi-live-gate -- --gate memory-read --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip
 ```
 
+The JSON list is the automation contract for dashboards and runners. Each gate entry includes `risk`, `action`, focused/compatibility commands, `execution.requiredFlags`, `execution.optionalFlags`, `execution.supportsDryRun`, `execution.safetyMode`, `execution.approval`, and generic `execution.exampleArgs`. It must not include concrete agent ids, peer ids, or operator secrets.
+
 The desired end state is:
 
 1. `runtime:pi-live-gate -- --gate <gate-id> --agent-id <id> ...`; focused commands such as `runtime:pi-live-send-message-gate`, `runtime:pi-live-send-media-gate`, `runtime:pi-live-notification-gate`, `runtime:pi-cron-notification-gate`, `runtime:pi-buildroom-handoff-gate`, `runtime:pi-admin-config-gate`, `runtime:pi-mcp-file-transfer-gate`, `runtime:pi-honcho-local-gate`, `runtime:pi-learning-propose-gate`, and `runtime:pi-memory-read-gate` remain as direct entrypoints and compatibility with existing evidence

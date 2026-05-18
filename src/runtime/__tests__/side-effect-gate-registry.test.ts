@@ -31,11 +31,44 @@ describe('side-effect gate registry', () => {
     for (const gate of SIDE_EFFECT_GATE_REGISTRY) {
       expect(gate.id).not.toContain('timur');
       expect(gate.focusedCommand).toMatch(/^runtime:pi-.+-gate$/);
+      expect(gate.execution.requiredFlags).toContain('agent-id');
+      expect(gate.execution.requiredFlags).toContain('peer-id');
+      expect(gate.execution.safetyMode).toMatch(/^(dry-run-first|temp-only|propose-only|read-only)$/);
+      expect(gate.execution.approval).toMatch(/^(required-for-live|operator-review|not-required-read-only)$/);
       expect(packageJson.scripts[gate.focusedCommand]).toBeTruthy();
       if (gate.compatibilityCommand) {
         expect(gate.compatibilityCommand).toContain('timur-agent');
         expect(packageJson.scripts[gate.compatibilityCommand]).toBeTruthy();
       }
+    }
+  });
+
+  it('declares execution hints for automation without agent-specific defaults', () => {
+    const byId = Object.fromEntries(SIDE_EFFECT_GATE_REGISTRY.map((gate) => [gate.id, gate]));
+
+    expect(byId['live-send-message']?.execution).toMatchObject({
+      requiredFlags: ['agent-id', 'peer-id'],
+      supportsDryRun: true,
+      safetyMode: 'dry-run-first',
+      approval: 'required-for-live',
+    });
+    expect(byId['live-send-media']?.execution.requiredFlags).toEqual([
+      'agent-id',
+      'peer-id',
+      'file-path',
+      'allowed-file-root',
+    ]);
+    expect(byId['memory-read']?.execution).toMatchObject({
+      requiredFlags: ['agent-id', 'peer-id', 'sender-id'],
+      supportsDryRun: false,
+      safetyMode: 'read-only',
+      approval: 'not-required-read-only',
+    });
+
+    for (const gate of SIDE_EFFECT_GATE_REGISTRY) {
+      expect(gate.execution.exampleArgs.join(' ')).not.toContain('timur_agent');
+      expect(gate.execution.exampleArgs).toContain('--agent-id');
+      expect(gate.execution.exampleArgs).toContain('<id>');
     }
   });
 

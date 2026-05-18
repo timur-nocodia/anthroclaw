@@ -57,11 +57,19 @@ describe('Pi live gate dispatcher CLI', () => {
         id: string;
         focusedCommand: string;
         aggregateDispatcher: boolean;
+        execution: {
+          requiredFlags: string[];
+          safetyMode: string;
+        };
       }>;
     };
     expect(payload.status).toBe('ok');
     expect(payload.gates.some((gate) => gate.id === 'memory-read')).toBe(true);
     expect(payload.gates.every((gate) => gate.aggregateDispatcher)).toBe(true);
+    expect(payload.gates.find((gate) => gate.id === 'live-send-message')?.execution).toMatchObject({
+      requiredFlags: ['agent-id', 'peer-id'],
+      safetyMode: 'dry-run-first',
+    });
   });
 
   it('dispatches to the selected gate runner', async () => {

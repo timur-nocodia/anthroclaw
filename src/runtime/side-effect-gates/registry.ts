@@ -6,6 +6,14 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
     aggregateDispatcher: true,
     risk: 'external_write',
     action: 'message.send',
+    execution: executionHints({
+      requiredFlags: ['agent-id', 'peer-id'],
+      optionalFlags: ['account-id', 'marker', 'dry-run', 'confirm-live-send', 'json'],
+      supportsDryRun: true,
+      safetyMode: 'dry-run-first',
+      approval: 'required-for-live',
+      exampleArgs: ['--agent-id', '<id>', '--peer-id', '<peer>', '--dry-run', '--json'],
+    }),
   },
   {
     id: 'live-send-media',
@@ -14,6 +22,21 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
     aggregateDispatcher: true,
     risk: 'external_write',
     action: 'message.send_media',
+    execution: executionHints({
+      requiredFlags: ['agent-id', 'peer-id', 'file-path', 'allowed-file-root'],
+      optionalFlags: ['account-id', 'caption', 'marker', 'dry-run', 'confirm-live-send', 'json'],
+      supportsDryRun: true,
+      safetyMode: 'dry-run-first',
+      approval: 'required-for-live',
+      exampleArgs: [
+        '--agent-id', '<id>',
+        '--peer-id', '<peer>',
+        '--file-path', '<path>',
+        '--allowed-file-root', '<root>',
+        '--dry-run',
+        '--json',
+      ],
+    }),
   },
   {
     id: 'live-notification',
@@ -22,6 +45,14 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
     aggregateDispatcher: true,
     risk: 'external_write',
     action: 'notification.emit',
+    execution: executionHints({
+      requiredFlags: ['agent-id', 'peer-id'],
+      optionalFlags: ['account-id', 'marker', 'dry-run', 'confirm-live-send', 'json'],
+      supportsDryRun: true,
+      safetyMode: 'dry-run-first',
+      approval: 'required-for-live',
+      exampleArgs: ['--agent-id', '<id>', '--peer-id', '<peer>', '--dry-run', '--json'],
+    }),
   },
   {
     id: 'cron-notification',
@@ -30,6 +61,21 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
     aggregateDispatcher: true,
     risk: 'scheduled_external_write',
     action: 'cron.notification',
+    execution: executionHints({
+      requiredFlags: ['agent-id', 'peer-id', 'sender-id', 'static-cron-id', 'dynamic-cron-id'],
+      optionalFlags: ['account-id', 'notification-marker', 'json'],
+      supportsDryRun: false,
+      safetyMode: 'temp-only',
+      approval: 'operator-review',
+      exampleArgs: [
+        '--agent-id', '<id>',
+        '--peer-id', '<peer>',
+        '--sender-id', '<sender>',
+        '--static-cron-id', '<id>',
+        '--dynamic-cron-id', '<id>',
+        '--json',
+      ],
+    }),
   },
   {
     id: 'buildroom-handoff',
@@ -38,6 +84,14 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
     aggregateDispatcher: true,
     risk: 'workspace_write',
     action: 'buildroom.handoff',
+    execution: executionHints({
+      requiredFlags: ['agent-id', 'peer-id', 'sender-id'],
+      optionalFlags: ['account-id', 'json'],
+      supportsDryRun: false,
+      safetyMode: 'temp-only',
+      approval: 'operator-review',
+      exampleArgs: ['--agent-id', '<id>', '--peer-id', '<peer>', '--sender-id', '<sender>', '--json'],
+    }),
   },
   {
     id: 'admin-config',
@@ -46,6 +100,14 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
     aggregateDispatcher: true,
     risk: 'config_write',
     action: 'admin.config',
+    execution: executionHints({
+      requiredFlags: ['agent-id', 'peer-id', 'session-key'],
+      optionalFlags: ['account-id', 'json'],
+      supportsDryRun: false,
+      safetyMode: 'temp-only',
+      approval: 'operator-review',
+      exampleArgs: ['--agent-id', '<id>', '--peer-id', '<peer>', '--session-key', '<key>', '--json'],
+    }),
   },
   {
     id: 'mcp-file-transfer',
@@ -54,6 +116,14 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
     aggregateDispatcher: true,
     risk: 'filesystem_write',
     action: 'mcp.file_transfer',
+    execution: executionHints({
+      requiredFlags: ['agent-id', 'peer-id', 'sender-id'],
+      optionalFlags: ['account-id', 'expect-root', 'json'],
+      supportsDryRun: false,
+      safetyMode: 'temp-only',
+      approval: 'operator-review',
+      exampleArgs: ['--agent-id', '<id>', '--peer-id', '<peer>', '--sender-id', '<sender>', '--json'],
+    }),
   },
   {
     id: 'honcho-local',
@@ -62,6 +132,14 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
     aggregateDispatcher: true,
     risk: 'local_service',
     action: 'honcho.memory',
+    execution: executionHints({
+      requiredFlags: ['agent-id', 'peer-id', 'expected-workspace-id'],
+      optionalFlags: ['account-id', 'json'],
+      supportsDryRun: false,
+      safetyMode: 'temp-only',
+      approval: 'operator-review',
+      exampleArgs: ['--agent-id', '<id>', '--peer-id', '<peer>', '--expected-workspace-id', '<workspace>', '--json'],
+    }),
   },
   {
     id: 'learning-propose',
@@ -70,6 +148,14 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
     aggregateDispatcher: true,
     risk: 'learning_proposal',
     action: 'learning.propose',
+    execution: executionHints({
+      requiredFlags: ['agent-id', 'peer-id', 'sender-id'],
+      optionalFlags: ['account-id', 'run-id', 'allow-skip', 'json'],
+      supportsDryRun: false,
+      safetyMode: 'propose-only',
+      approval: 'operator-review',
+      exampleArgs: ['--agent-id', '<id>', '--peer-id', '<peer>', '--sender-id', '<sender>', '--json', '--allow-skip'],
+    }),
   },
   {
     id: 'memory-read',
@@ -78,6 +164,14 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
     aggregateDispatcher: true,
     risk: 'read_only',
     action: 'memory.read',
+    execution: executionHints({
+      requiredFlags: ['agent-id', 'peer-id', 'sender-id'],
+      optionalFlags: ['account-id', 'allow-skip', 'json'],
+      supportsDryRun: false,
+      safetyMode: 'read-only',
+      approval: 'not-required-read-only',
+      exampleArgs: ['--agent-id', '<id>', '--peer-id', '<peer>', '--sender-id', '<sender>', '--json', '--allow-skip'],
+    }),
   },
 ] as const;
 
@@ -90,4 +184,20 @@ export function sideEffectGateIds(): SideEffectGateId[] {
 
 export function findSideEffectGate(id: string): SideEffectGateRegistryEntry | undefined {
   return SIDE_EFFECT_GATE_REGISTRY.find((gate) => gate.id === id);
+}
+
+type SideEffectGateSafetyMode = 'dry-run-first' | 'temp-only' | 'propose-only' | 'read-only';
+type SideEffectGateApprovalMode = 'required-for-live' | 'operator-review' | 'not-required-read-only';
+
+interface SideEffectGateExecutionHints {
+  requiredFlags: string[];
+  optionalFlags: string[];
+  supportsDryRun: boolean;
+  safetyMode: SideEffectGateSafetyMode;
+  approval: SideEffectGateApprovalMode;
+  exampleArgs: string[];
+}
+
+function executionHints(hints: SideEffectGateExecutionHints): SideEffectGateExecutionHints {
+  return hints;
 }
