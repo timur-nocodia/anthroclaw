@@ -11,39 +11,37 @@ import {
   type BuildroomHandoffGateResult,
 } from '../runtime/side-effect-gates/buildroom-handoff.js';
 
-const AGENT_ID = 'timur_agent';
-const ACCOUNT_ID = 'default';
-const DEFAULT_PEER_ID = '48705953';
-const DEFAULT_SENDER_ID = '48705953';
-const SOURCE_SESSION_ID = 'timur_agent:telegram:default:48705953:buildroom-smoke';
-
-interface PiTimurAgentBuildroomHandoffSmokeArgs {
+interface PiBuildroomHandoffGateArgs {
+  agentId?: string;
   agentsDir: string;
-  peerId: string;
-  senderId: string;
+  accountId: string;
+  peerId?: string;
+  senderId?: string;
+  roomId: string;
+  sourceSessionId?: string;
+  requestedAction: string;
   keepData: boolean;
   json: boolean;
   help: boolean;
 }
 
-interface PiTimurAgentBuildroomHandoffSmokeDeps {
+interface PiBuildroomHandoffGateDeps {
   makeWorkspace?: () => string;
   stdout?: Pick<NodeJS.WriteStream, 'write'>;
   stderr?: Pick<NodeJS.WriteStream, 'write'>;
 }
 
-type PiTimurAgentBuildroomHandoffSmokeResult = BuildroomHandoffGateResult;
-
-export async function runPiTimurAgentBuildroomHandoffSmokeCli(
+export async function runPiBuildroomHandoffGateCli(
   argv: string[],
-  deps: PiTimurAgentBuildroomHandoffSmokeDeps = {},
+  deps: PiBuildroomHandoffGateDeps = {},
 ): Promise<number> {
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
-  let args: PiTimurAgentBuildroomHandoffSmokeArgs;
+  let args: PiBuildroomHandoffGateArgs;
 
   try {
-    args = parsePiTimurAgentBuildroomHandoffSmokeArgs(argv);
+    args = parsePiBuildroomHandoffGateArgs(argv);
+    validateArgs(args);
   } catch (err) {
     stderr.write(`${errorMessage(err)}\n${usage()}\n`);
     return 2;
@@ -54,7 +52,7 @@ export async function runPiTimurAgentBuildroomHandoffSmokeCli(
     return 0;
   }
 
-  const workspace = deps.makeWorkspace?.() ?? mkdtempSync(join(tmpdir(), 'anthroclaw-pi-timur-agent-buildroom-handoff-'));
+  const workspace = deps.makeWorkspace?.() ?? mkdtempSync(join(tmpdir(), 'anthroclaw-pi-buildroom-handoff-gate-'));
   const input = toGateInput(args, workspace);
   try {
     const result = await runBuildroomHandoffGate(input);
@@ -71,17 +69,12 @@ export async function runPiTimurAgentBuildroomHandoffSmokeCli(
   }
 }
 
-export async function runPiTimurAgentBuildroomHandoffSmoke(input: PiTimurAgentBuildroomHandoffSmokeArgs & {
-  workspace: string;
-}): Promise<PiTimurAgentBuildroomHandoffSmokeResult> {
-  return runBuildroomHandoffGate(toGateInput(input, input.workspace));
-}
-
-export function parsePiTimurAgentBuildroomHandoffSmokeArgs(argv: string[]): PiTimurAgentBuildroomHandoffSmokeArgs {
-  const args: PiTimurAgentBuildroomHandoffSmokeArgs = {
+export function parsePiBuildroomHandoffGateArgs(argv: string[]): PiBuildroomHandoffGateArgs {
+  const args: PiBuildroomHandoffGateArgs = {
     agentsDir: process.env.OC_AGENTS_DIR ? resolve(process.env.OC_AGENTS_DIR) : resolve('agents'),
-    peerId: DEFAULT_PEER_ID,
-    senderId: DEFAULT_SENDER_ID,
+    accountId: 'default',
+    roomId: DEFAULT_BUILDROOM_ROOM_ID,
+    requestedAction: DEFAULT_BUILDROOM_REQUESTED_ACTION,
     keepData: false,
     json: false,
     help: false,
@@ -96,14 +89,32 @@ export function parsePiTimurAgentBuildroomHandoffSmokeArgs(argv: string[]): PiTi
       case '-h':
         args.help = true;
         break;
+      case '--agent':
+      case '--agent-id':
+        args.agentId = requireValue(argv, ++i, arg);
+        break;
       case '--agents-dir':
         args.agentsDir = resolve(requireValue(argv, ++i, '--agents-dir'));
+        break;
+      case '--account-id':
+        args.accountId = requireValue(argv, ++i, '--account-id');
         break;
       case '--peer-id':
         args.peerId = requireValue(argv, ++i, '--peer-id');
         break;
       case '--sender-id':
         args.senderId = requireValue(argv, ++i, '--sender-id');
+        break;
+      case '--room-id':
+        args.roomId = requireValue(argv, ++i, '--room-id');
+        break;
+      case '--source-session-id':
+        args.sourceSessionId = requireValue(argv, ++i, '--source-session-id');
+        break;
+      case '--requested-action':
+        args.requestedAction = requireValue(argv, ++i, '--requested-action');
+        break;
+      case '--dry-run':
         break;
       case '--keep-data':
         args.keepData = true;
@@ -119,24 +130,34 @@ export function parsePiTimurAgentBuildroomHandoffSmokeArgs(argv: string[]): PiTi
   return args;
 }
 
-function toGateInput(args: PiTimurAgentBuildroomHandoffSmokeArgs, workspace: string): BuildroomHandoffGateInput {
+function validateArgs(args: PiBuildroomHandoffGateArgs): void {
+  if (args.help) return;
+  if (!args.agentId) throw new Error('--agent-id is required.');
+  if (!args.peerId) throw new Error('--peer-id is required.');
+  if (!args.senderId) throw new Error('--sender-id is required.');
+}
+
+function toGateInput(args: PiBuildroomHandoffGateArgs, workspace: string): BuildroomHandoffGateInput {
+  if (!args.agentId) throw new Error('--agent-id is required.');
+  if (!args.peerId) throw new Error('--peer-id is required.');
+  if (!args.senderId) throw new Error('--sender-id is required.');
   return {
-    agentId: AGENT_ID,
+    agentId: args.agentId,
     sourceAgentsDir: args.agentsDir,
     workspace,
-    accountId: ACCOUNT_ID,
+    accountId: args.accountId,
     peerId: args.peerId,
     senderId: args.senderId,
-    roomId: DEFAULT_BUILDROOM_ROOM_ID,
-    sourceSessionId: SOURCE_SESSION_ID,
-    requestedAction: DEFAULT_BUILDROOM_REQUESTED_ACTION,
+    roomId: args.roomId,
+    sourceSessionId: args.sourceSessionId,
+    requestedAction: args.requestedAction,
   };
 }
 
 function writeResult(
   stream: Pick<NodeJS.WriteStream, 'write'>,
   json: boolean,
-  result: PiTimurAgentBuildroomHandoffSmokeResult,
+  result: BuildroomHandoffGateResult,
 ): void {
   if (json) {
     stream.write(`${JSON.stringify(result)}\n`);
@@ -145,7 +166,8 @@ function writeResult(
 
   if (result.status === 'passed') {
     stream.write([
-      'Pi timur_agent Buildroom handoff smoke passed.',
+      'Pi Buildroom handoff gate passed.',
+      `agent: ${result.agentId}`,
       `permissions: ${JSON.stringify(result.permissions)}`,
       `summary: ${JSON.stringify(result.summary)}`,
       `handoff: ${JSON.stringify(result.handoff)}`,
@@ -155,7 +177,7 @@ function writeResult(
     return;
   }
 
-  stream.write(`Pi timur_agent Buildroom handoff smoke failed: ${result.error ?? 'unknown error'}\n`);
+  stream.write(`Pi Buildroom handoff gate failed: ${result.error ?? 'unknown error'}\n`);
 }
 
 function requireValue(argv: string[], index: number, flag: string): string {
@@ -170,19 +192,25 @@ function errorMessage(err: unknown): string {
 
 function usage(): string {
   return [
-    'Usage: pnpm runtime:pi-timur-agent-buildroom-handoff-smoke -- [--json]',
+    'Usage: pnpm runtime:pi-buildroom-handoff-gate -- --agent-id <id> --peer-id <id> --sender-id <id> [options]',
     '',
     'Options:',
-    '  --agents-dir <path>  source agents directory containing timur_agent (default: agents)',
-    '  --peer-id <id>       expected private Telegram peer id (default: operator peer)',
-    '  --sender-id <id>     fake Telegram sender id (default: operator peer)',
-    '  --keep-data          keep temp workspace for inspection',
-    '  --json               emit JSON',
+    '  --agent-id <id>          agent directory id under --agents-dir',
+    '  --agents-dir <path>      source agents directory (default: agents)',
+    '  --account-id <id>        Telegram account id (default: default)',
+    '  --peer-id <id>           fake Telegram peer id',
+    '  --sender-id <id>         fake Telegram sender id',
+    '  --room-id <id>           Buildroom room id (default: anthroclaw-core)',
+    '  --source-session-id <id> source session id to bind in artifacts',
+    '  --requested-action <id>  handoff requested action (default: research_only)',
+    '  --dry-run                accepted for gate CLI consistency; this gate is temp-only',
+    '  --keep-data              keep temp workspace for inspection',
+    '  --json                   emit JSON',
   ].join('\n');
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runPiTimurAgentBuildroomHandoffSmokeCli(process.argv.slice(2))
+  runPiBuildroomHandoffGateCli(process.argv.slice(2))
     .then((code) => {
       process.exitCode = code;
     })
