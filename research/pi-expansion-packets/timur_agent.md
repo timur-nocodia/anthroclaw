@@ -77,6 +77,9 @@ The tracked route uses the connected Telegram account `default`. The previous `p
 - [x] admin/config smoke: `pnpm runtime:pi-timur-agent-admin-config-smoke -- --json`
   - Purpose: verify operator-admin/config tools on a temp `timur_agent` copy without mutating live config or ACL state.
   - Result: passed. `show_config` read current sections with defaults, `manage_operator_console` and `manage_human_takeover` applied controlled self-target patches with two audit entries and two config backups, unauthorized cross-agent management was denied, and `access_control` listed pending, approved, listed approved, and revoked a temp sender with no live ACL changes.
+- [x] Buildroom handoff smoke: `pnpm runtime:pi-timur-agent-buildroom-handoff-smoke -- --json`
+  - Purpose: verify sanitized Buildroom session-summary and handoff-signal tools on temp Buildroom storage without creating live Buildroom artifacts or granting execution authority.
+  - Result: passed. The temp room failed closed when uninitialized, then accepted one sanitized `session_summary` and one parent-linked `handoff_signal`; both used the dispatch-bound `sourceSessionId`, raw transcript inclusion stayed false, the summary could not approve work, the handoff requested `research_only`, and `authority.canApprove=false` plus `authority.canBuild=false`.
 
 ## Manual Evidence
 - [x] controlled proactive notification canary
@@ -89,6 +92,8 @@ The tracked route uses the connected Telegram account `default`. The previous `p
   - Evidence: `pnpm runtime:pi-timur-agent-messaging-media-smoke -- --json` passed with fake-only `send_message` and `send_media` delivery, explicit `send_media` approval, operator peer/account/thread binding, path traversal denial, and paused-peer suppression. No real Telegram delivery was performed.
 - [x] controlled admin/config canary
   - Evidence: `pnpm runtime:pi-timur-agent-admin-config-smoke -- --json` passed against a temp `timur_agent` copy with `show_config`, `manage_operator_console`, `manage_human_takeover`, config audit/backups, cross-agent denial, and temp-only `access_control` approve/revoke.
+- [x] controlled Buildroom handoff canary
+  - Evidence: `pnpm runtime:pi-timur-agent-buildroom-handoff-smoke -- --json` passed against temp Buildroom storage with sanitized session summary, parent-linked handoff signal, fail-closed uninitialized storage, and explicit no-approval/no-build authority.
 - [x] live Telegram account switch to `default` is approved by operator
 - [x] first controlled live text turn returns expected behavior
   - Evidence: operator sent `/smoke` in Telegram DM at 2026-05-17 14:41 Asia/Almaty; the bot replied exactly `TIMUR_AGENT_LAB_OK`.
