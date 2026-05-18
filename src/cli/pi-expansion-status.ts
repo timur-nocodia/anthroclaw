@@ -19,6 +19,7 @@ interface PiExpansionStatusArgs {
   packetsDir: string;
   agent?: string;
   failOnOpen: boolean;
+  openOnly: boolean;
   json: boolean;
   help: boolean;
 }
@@ -96,7 +97,8 @@ export async function runPiExpansionStatusCli(
 
   try {
     const result = buildPiExpansionStatus(args);
-    stdout.write(args.json ? `${JSON.stringify(result)}\n` : renderHuman(result));
+    const renderedResult = args.openOnly ? filterOpenAgents(result) : result;
+    stdout.write(args.json ? `${JSON.stringify(renderedResult)}\n` : renderHuman(renderedResult));
     return args.failOnOpen && result.status === 'attention' ? 1 : 0;
   } catch (err) {
     stderr.write(`${redactSecrets(message(err))}\n`);
@@ -110,6 +112,7 @@ export function parsePiExpansionStatusArgs(argv: string[]): PiExpansionStatusArg
     agentsDirs: [],
     packetsDir: resolve('research/pi-expansion-packets'),
     failOnOpen: false,
+    openOnly: false,
     json: false,
     help: false,
   };
@@ -134,6 +137,9 @@ export function parsePiExpansionStatusArgs(argv: string[]): PiExpansionStatusArg
         break;
       case '--fail-on-open':
         args.failOnOpen = true;
+        break;
+      case '--open-only':
+        args.openOnly = true;
         break;
       case '--json':
         args.json = true;
@@ -225,6 +231,13 @@ export function buildPiExpansionStatus(input: {
       auditErrors: audit.errors,
       skippedDirectories: audit.skippedDirectories,
     },
+  };
+}
+
+function filterOpenAgents(result: PiExpansionStatus): PiExpansionStatus {
+  return {
+    ...result,
+    agents: result.agents.filter((agent) => agent.state !== 'closed' && agent.state !== 'no_packet_required'),
   };
 }
 
@@ -361,7 +374,7 @@ function message(err: unknown): string {
 
 function usage(): string {
   return [
-    'Usage: pnpm runtime:pi-expansion-status -- [--agents-dir <path>...] [--packets-dir <path>] [--agent <id>] [--json] [--fail-on-open]',
+    'Usage: pnpm runtime:pi-expansion-status -- [--agents-dir <path>...] [--packets-dir <path>] [--agent <id>] [--json] [--open-only] [--fail-on-open]',
     '',
     'Summarizes post-default Pi fleet expansion state from runtime:pi-expansion-audit and expansion packets.',
     '',
@@ -369,6 +382,7 @@ function usage(): string {
     '  --agents-dir <path>  agents directory to scan; repeatable',
     '  --packets-dir <path> packet directory (default: research/pi-expansion-packets)',
     '  --agent <id>         summarize only one agent id',
+    '  --open-only          print only agents with open packet/evidence work; summary still covers the full scan',
     '  --fail-on-open       exit 1 when any packet/evidence state is still open',
     '  --json               print structured result',
   ].join('\n');

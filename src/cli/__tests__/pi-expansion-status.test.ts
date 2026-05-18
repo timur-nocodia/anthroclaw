@@ -114,6 +114,46 @@ safety_profile: chat_like_openclaw
     expect(secondCode).toBe(1);
   });
 
+  it('prints only open agents with --open-only while preserving full summary', async () => {
+    root = mktemp('pi-expansion-status-agents-');
+    packetsRoot = mktemp('pi-expansion-status-packets-');
+    writeAgent(root, 'closed_agent', `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["42"]
+safety_profile: chat_like_openclaw
+mcp_onboarding:
+  enabled: false
+`);
+    writeAgent(root, 'open_agent', `
+routes:
+  - channel: telegram
+    scope: group
+safety_profile: chat_like_openclaw
+`);
+    writePacket(packetsRoot, 'closed_agent', 'Status: closed\n\n- [x] closed evidence\n');
+    writePacket(packetsRoot, 'open_agent', 'Status: ready_for_execution\n\n- [ ] manual evidence\n');
+
+    const stdout = createWriter();
+    const code = await runPiExpansionStatusCli([
+      '--agents-dir', root,
+      '--packets-dir', packetsRoot,
+      '--json',
+      '--open-only',
+    ], { stdout, stderr: createWriter() });
+
+    expect(code).toBe(0);
+    const body = JSON.parse(stdout.text());
+    expect(body.summary).toMatchObject({
+      totalAgents: 2,
+      closedAgents: 1,
+      openAgents: 1,
+      totalEvidenceItems: 2,
+    });
+    expect(body.agents.map((agent: { id: string }) => agent.id)).toEqual(['open_agent']);
+  });
+
   it('parses flags narrowly', () => {
     expect(parsePiExpansionStatusArgs([
       '--',
@@ -122,6 +162,7 @@ safety_profile: chat_like_openclaw
       '--packets-dir', '/tmp/packets',
       '--agent', 'ops_agent',
       '--json',
+      '--open-only',
       '--fail-on-open',
     ])).toMatchObject({
       agentsDir: '/tmp/agents',
@@ -129,6 +170,7 @@ safety_profile: chat_like_openclaw
       packetsDir: '/tmp/packets',
       agent: 'ops_agent',
       json: true,
+      openOnly: true,
       failOnOpen: true,
     });
     expect(() => parsePiExpansionStatusArgs(['--wat'])).toThrow(/Unknown argument/);
