@@ -26,7 +26,7 @@ import {
   type WorkspaceSnapshotOptions,
 } from './workspace-snapshot.js';
 
-const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
+export const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 export const DEFAULT_PI_MODEL_ID = 'anthropic/claude-sonnet-4-6';
 
 export interface PiAgentSessionLike {

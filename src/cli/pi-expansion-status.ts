@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { auditPiExpansionReadiness } from './pi-expansion-audit.js';
 import { redactSecrets } from '../security/redact.js';
 
-type ExpansionState =
+export type ExpansionState =
   | 'blocked'
   | 'packet_missing'
   | 'pending_live_evidence'
@@ -13,7 +13,7 @@ type ExpansionState =
   | 'closed'
   | 'no_packet_required';
 
-type OpenEvidenceKind =
+export type OpenEvidenceKind =
   | 'operatorApproval'
   | 'postExpansionMonitor'
   | 'liveAction'
@@ -33,7 +33,7 @@ const EXTERNAL_OPEN_EVIDENCE_KINDS: OpenEvidenceKind[] = [
   'postExpansionMonitor',
 ];
 
-interface PiExpansionStatusArgs {
+export interface PiExpansionStatusArgs {
   agentsDir: string;
   agentsDirs: string[];
   packetsDir: string;
@@ -51,7 +51,7 @@ interface PiExpansionStatusDeps {
   stderr?: Pick<NodeJS.WriteStream, 'write'>;
 }
 
-interface PacketSummary {
+export interface PacketSummary {
   present: boolean;
   path?: string;
   status?: string;
@@ -62,7 +62,7 @@ interface PacketSummary {
   uncheckedByKind: Record<OpenEvidenceKind, number>;
 }
 
-interface AgentExpansionStatus {
+export interface AgentExpansionStatus {
   id: string;
   risk: string;
   recommendedRing: string;
@@ -73,7 +73,7 @@ interface AgentExpansionStatus {
   nextActions: string[];
 }
 
-interface PiExpansionStatus {
+export interface PiExpansionStatus {
   status: 'passed' | 'attention';
   agentsDirs: string[];
   packetsDir: string;
@@ -99,7 +99,7 @@ interface PiExpansionStatus {
   };
 }
 
-interface PiExpansionStatusPolicy {
+export interface PiExpansionStatusPolicy {
   failOnOpen: boolean;
   allowExternalOpen: boolean;
   allowedOpenKinds: OpenEvidenceKind[];
@@ -110,14 +110,14 @@ interface PiExpansionStatusPolicy {
   violations: PiExpansionStatusPolicyViolation[];
 }
 
-interface PiExpansionStatusPolicyViolation {
+export interface PiExpansionStatusPolicyViolation {
   agentId?: string;
   kind: OpenEvidenceKind | 'auditError' | 'blocked' | 'packetMissing' | 'packetCoverageGap' | 'openState';
   label: string;
   path?: string;
 }
 
-type PiExpansionStatusCliOutput = PiExpansionStatus & {
+export type PiExpansionStatusCliOutput = PiExpansionStatus & {
   policy: PiExpansionStatusPolicy;
 };
 
@@ -232,7 +232,7 @@ function dedupeOpenEvidenceKinds(values: OpenEvidenceKind[]): OpenEvidenceKind[]
   return OPEN_EVIDENCE_KINDS.filter((kind) => values.includes(kind));
 }
 
-function evaluatePiExpansionStatusPolicy(
+export function evaluatePiExpansionStatusPolicy(
   result: PiExpansionStatus,
   args: Pick<PiExpansionStatusArgs, 'failOnOpen' | 'allowExternalOpen' | 'allowedOpenKinds'>,
 ): PiExpansionStatusPolicy {
@@ -466,7 +466,7 @@ function withPolicy(result: PiExpansionStatus, policy: PiExpansionStatusPolicy):
   };
 }
 
-function filterOpenAgents<T extends PiExpansionStatus>(result: T): T {
+export function filterOpenAgents<T extends PiExpansionStatus>(result: T): T {
   return {
     ...result,
     agents: result.agents.filter((agent) => agent.state !== 'closed' && agent.state !== 'no_packet_required'),
