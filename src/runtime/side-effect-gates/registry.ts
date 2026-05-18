@@ -1,6 +1,9 @@
 export const SIDE_EFFECT_GATE_REGISTRY = [
   {
     id: 'live-send-message',
+    title: 'Live Send Message',
+    summary: 'Send an operator-approved text message to one configured peer.',
+    capabilityGroup: 'messaging',
     focusedCommand: 'runtime:pi-live-send-message-gate',
     compatibilityCommand: 'runtime:pi-timur-agent-live-send-message',
     aggregateDispatcher: true,
@@ -17,6 +20,9 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
   },
   {
     id: 'live-send-media',
+    title: 'Live Send Media',
+    summary: 'Send an operator-approved media file from an allowed local root to one configured peer.',
+    capabilityGroup: 'messaging',
     focusedCommand: 'runtime:pi-live-send-media-gate',
     compatibilityCommand: 'runtime:pi-timur-agent-live-send-media',
     aggregateDispatcher: true,
@@ -40,6 +46,9 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
   },
   {
     id: 'live-notification',
+    title: 'Live Notification',
+    summary: 'Emit an operator-approved notification to one configured peer.',
+    capabilityGroup: 'messaging',
     focusedCommand: 'runtime:pi-live-notification-gate',
     compatibilityCommand: 'runtime:pi-timur-agent-live-notification',
     aggregateDispatcher: true,
@@ -56,6 +65,9 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
   },
   {
     id: 'cron-notification',
+    title: 'Cron Notification',
+    summary: 'Exercise scheduled notification wiring in a controlled gate workspace.',
+    capabilityGroup: 'scheduling',
     focusedCommand: 'runtime:pi-cron-notification-gate',
     compatibilityCommand: 'runtime:pi-timur-agent-cron-notification-smoke',
     aggregateDispatcher: true,
@@ -79,6 +91,9 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
   },
   {
     id: 'buildroom-handoff',
+    title: 'Buildroom Handoff',
+    summary: 'Verify Buildroom handoff behavior against temporary workspace state.',
+    capabilityGroup: 'workspace',
     focusedCommand: 'runtime:pi-buildroom-handoff-gate',
     compatibilityCommand: 'runtime:pi-timur-agent-buildroom-handoff-smoke',
     aggregateDispatcher: true,
@@ -95,6 +110,9 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
   },
   {
     id: 'admin-config',
+    title: 'Admin Config',
+    summary: 'Verify admin/config mutation controls against copied temporary config.',
+    capabilityGroup: 'configuration',
     focusedCommand: 'runtime:pi-admin-config-gate',
     compatibilityCommand: 'runtime:pi-timur-agent-admin-config-smoke',
     aggregateDispatcher: true,
@@ -111,6 +129,9 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
   },
   {
     id: 'mcp-file-transfer',
+    title: 'MCP File Transfer',
+    summary: 'Verify managed MCP file-transfer roots in a temporary workspace.',
+    capabilityGroup: 'integration',
     focusedCommand: 'runtime:pi-mcp-file-transfer-gate',
     compatibilityCommand: 'runtime:pi-timur-agent-mcp-file-transfer-smoke',
     aggregateDispatcher: true,
@@ -127,6 +148,9 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
   },
   {
     id: 'honcho-local',
+    title: 'Honcho Local',
+    summary: 'Verify local Honcho memory integration without requiring a live external rollout.',
+    capabilityGroup: 'integration',
     focusedCommand: 'runtime:pi-honcho-local-gate',
     compatibilityCommand: 'runtime:pi-timur-agent-honcho-local-smoke',
     aggregateDispatcher: true,
@@ -143,6 +167,9 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
   },
   {
     id: 'learning-propose',
+    title: 'Learning Propose',
+    summary: 'Verify propose-only learning output without applying durable learning actions.',
+    capabilityGroup: 'learning',
     focusedCommand: 'runtime:pi-learning-propose-gate',
     compatibilityCommand: 'runtime:pi-timur-agent-learning-propose-smoke',
     aggregateDispatcher: true,
@@ -159,6 +186,9 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
   },
   {
     id: 'memory-read',
+    title: 'Memory Read',
+    summary: 'Verify read-only durable memory and session recall without write side effects.',
+    capabilityGroup: 'memory',
     focusedCommand: 'runtime:pi-memory-read-gate',
     compatibilityCommand: 'runtime:pi-timur-agent-memory-read-smoke',
     aggregateDispatcher: true,
@@ -173,7 +203,7 @@ export const SIDE_EFFECT_GATE_REGISTRY = [
       exampleArgs: ['--agent-id', '<id>', '--peer-id', '<peer>', '--sender-id', '<sender>', '--json', '--allow-skip'],
     }),
   },
-] as const;
+] as const satisfies readonly SideEffectGateRegistryEntrySpec[];
 
 export type SideEffectGateRegistryEntry = typeof SIDE_EFFECT_GATE_REGISTRY[number];
 export type SideEffectGateId = SideEffectGateRegistryEntry['id'];
@@ -188,6 +218,30 @@ export function findSideEffectGate(id: string): SideEffectGateRegistryEntry | un
 
 type SideEffectGateSafetyMode = 'dry-run-first' | 'temp-only' | 'propose-only' | 'read-only';
 type SideEffectGateApprovalMode = 'required-for-live' | 'operator-review' | 'not-required-read-only';
+type SideEffectGateCapabilityGroup =
+  | 'messaging'
+  | 'scheduling'
+  | 'workspace'
+  | 'configuration'
+  | 'integration'
+  | 'learning'
+  | 'memory';
+
+interface SideEffectGateMetadata {
+  title: string;
+  summary: string;
+  capabilityGroup: SideEffectGateCapabilityGroup;
+}
+
+interface SideEffectGateRegistryEntrySpec extends SideEffectGateMetadata {
+  id: string;
+  focusedCommand: string;
+  compatibilityCommand?: string;
+  aggregateDispatcher: boolean;
+  risk: string;
+  action: string;
+  execution: SideEffectGateExecutionHints;
+}
 
 interface SideEffectGateExecutionHints {
   requiredFlags: string[];

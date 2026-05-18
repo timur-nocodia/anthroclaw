@@ -30,6 +30,9 @@ describe('side-effect gate registry', () => {
 
     for (const gate of SIDE_EFFECT_GATE_REGISTRY) {
       expect(gate.id).not.toContain('timur');
+      expect(gate.title).toMatch(/\S/);
+      expect(gate.summary).toMatch(/\S/);
+      expect(gate.capabilityGroup).toMatch(/^(messaging|scheduling|workspace|configuration|integration|learning|memory)$/);
       expect(gate.focusedCommand).toMatch(/^runtime:pi-.+-gate$/);
       expect(gate.execution.requiredFlags).toContain('agent-id');
       expect(gate.execution.requiredFlags).toContain('peer-id');
@@ -52,6 +55,10 @@ describe('side-effect gate registry', () => {
       safetyMode: 'dry-run-first',
       approval: 'required-for-live',
     });
+    expect(byId['live-send-message']).toMatchObject({
+      title: 'Live Send Message',
+      capabilityGroup: 'messaging',
+    });
     expect(byId['live-send-media']?.execution.requiredFlags).toEqual([
       'agent-id',
       'peer-id',
@@ -63,6 +70,10 @@ describe('side-effect gate registry', () => {
       supportsDryRun: false,
       safetyMode: 'read-only',
       approval: 'not-required-read-only',
+    });
+    expect(byId['memory-read']).toMatchObject({
+      title: 'Memory Read',
+      capabilityGroup: 'memory',
     });
 
     for (const gate of SIDE_EFFECT_GATE_REGISTRY) {

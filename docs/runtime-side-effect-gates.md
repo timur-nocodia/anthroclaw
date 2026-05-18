@@ -52,7 +52,7 @@ pnpm runtime:pi-live-gate -- --gate live-send-message --agent-id <id> --peer-id 
 pnpm runtime:pi-live-gate -- --gate memory-read --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip
 ```
 
-The JSON list, single-gate description, and argument validation are the automation contract for dashboards and runners. Each gate entry includes `risk`, `action`, focused/compatibility commands, `execution.requiredFlags`, `execution.optionalFlags`, `execution.supportsDryRun`, `execution.safetyMode`, `execution.approval`, and generic `execution.exampleArgs`. It must not include concrete agent ids, peer ids, or operator secrets. `--validate-args` checks required flags and does not run the gate; add `--strict` to also reject flags outside the gate registry entry.
+The JSON list, single-gate description, and argument validation are the automation contract for dashboards and runners. Each gate entry includes `title`, `summary`, `capabilityGroup`, `risk`, `action`, focused/compatibility commands, `execution.requiredFlags`, `execution.optionalFlags`, `execution.supportsDryRun`, `execution.safetyMode`, `execution.approval`, and generic `execution.exampleArgs`. It must not include concrete agent ids, peer ids, or operator secrets. `--validate-args` checks required flags and does not run the gate; add `--strict` to also reject flags outside the gate registry entry.
 
 The desired end state is:
 

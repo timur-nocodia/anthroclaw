@@ -55,6 +55,8 @@ describe('Pi live gate dispatcher CLI', () => {
       status: string;
       gates: Array<{
         id: string;
+        title: string;
+        capabilityGroup: string;
         focusedCommand: string;
         aggregateDispatcher: boolean;
         execution: {
@@ -66,6 +68,10 @@ describe('Pi live gate dispatcher CLI', () => {
     expect(payload.status).toBe('ok');
     expect(payload.gates.some((gate) => gate.id === 'memory-read')).toBe(true);
     expect(payload.gates.every((gate) => gate.aggregateDispatcher)).toBe(true);
+    expect(payload.gates.find((gate) => gate.id === 'live-send-message')).toMatchObject({
+      title: 'Live Send Message',
+      capabilityGroup: 'messaging',
+    });
     expect(payload.gates.find((gate) => gate.id === 'live-send-message')?.execution).toMatchObject({
       requiredFlags: ['agent-id', 'peer-id'],
       safetyMode: 'dry-run-first',
@@ -81,6 +87,8 @@ describe('Pi live gate dispatcher CLI', () => {
     expect(code).toBe(0);
     expect(stderr.text()).toBe('');
     expect(stdout.text()).toContain('memory-read');
+    expect(stdout.text()).toContain('Memory Read');
+    expect(stdout.text()).toContain('group: memory');
     expect(stdout.text()).toContain('runtime:pi-memory-read-gate');
     expect(stdout.text()).toContain('not-required-read-only');
   });
@@ -97,6 +105,8 @@ describe('Pi live gate dispatcher CLI', () => {
       status: string;
       gate: {
         id: string;
+        title: string;
+        capabilityGroup: string;
         execution: {
           supportsDryRun: boolean;
           approval: string;
@@ -105,6 +115,10 @@ describe('Pi live gate dispatcher CLI', () => {
     };
     expect(payload.status).toBe('ok');
     expect(payload.gate.id).toBe('live-send-message');
+    expect(payload.gate).toMatchObject({
+      title: 'Live Send Message',
+      capabilityGroup: 'messaging',
+    });
     expect(payload.gate.execution).toMatchObject({
       supportsDryRun: true,
       approval: 'required-for-live',

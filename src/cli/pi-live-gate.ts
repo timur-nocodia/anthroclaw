@@ -179,7 +179,9 @@ function formatGateList(): string {
   return [
     'Pi live gates:',
     ...SIDE_EFFECT_GATE_REGISTRY.map((gate) => [
-      `  ${gate.id}`,
+      `  ${gate.id} - ${gate.title}`,
+      `    group: ${gate.capabilityGroup}`,
+      `    summary: ${gate.summary}`,
       `    action: ${gate.action}`,
       `    risk: ${gate.risk}`,
       `    focused: ${gate.focusedCommand}`,
@@ -190,7 +192,9 @@ function formatGateList(): string {
 
 function formatGateDescription(gate: NonNullable<ReturnType<typeof findSideEffectGate>>): string {
   return [
-    `Pi live gate: ${gate.id}`,
+    `Pi live gate: ${gate.id} - ${gate.title}`,
+    `  group: ${gate.capabilityGroup}`,
+    `  summary: ${gate.summary}`,
     `  action: ${gate.action}`,
     `  risk: ${gate.risk}`,
     `  focused: ${gate.focusedCommand}`,
