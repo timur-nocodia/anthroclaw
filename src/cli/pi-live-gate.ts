@@ -9,21 +9,15 @@ import { runPiLiveSendMediaGateCli } from './pi-live-send-media-gate.js';
 import { runPiLiveSendMessageGateCli } from './pi-live-send-message-gate.js';
 import { runPiMcpFileTransferGateCli } from './pi-mcp-file-transfer-gate.js';
 import { runPiMemoryReadGateCli } from './pi-memory-read-gate.js';
+import {
+  findSideEffectGate,
+  sideEffectGateIds,
+  type SideEffectGateId,
+} from '../runtime/side-effect-gates/registry.js';
 
-export const PI_LIVE_GATE_IDS = [
-  'live-send-message',
-  'live-send-media',
-  'live-notification',
-  'cron-notification',
-  'buildroom-handoff',
-  'admin-config',
-  'mcp-file-transfer',
-  'honcho-local',
-  'learning-propose',
-  'memory-read',
-] as const;
+export const PI_LIVE_GATE_IDS = sideEffectGateIds();
 
-export type PiLiveGateId = typeof PI_LIVE_GATE_IDS[number];
+export type PiLiveGateId = SideEffectGateId;
 
 interface PiLiveGateArgs {
   gate?: PiLiveGateId;
@@ -105,7 +99,7 @@ export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
 }
 
 function parseGateId(value: string): PiLiveGateId {
-  if ((PI_LIVE_GATE_IDS as readonly string[]).includes(value)) return value as PiLiveGateId;
+  if (findSideEffectGate(value)) return value as PiLiveGateId;
   throw new Error(`Unknown gate: ${value}`);
 }
 

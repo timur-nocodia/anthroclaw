@@ -22,7 +22,7 @@ Every live side-effect gate must declare:
 
 ## Refactor Direction
 
-`live-send-message`, `live-send-media`, `live-notification`, `cron-notification`, `buildroom-handoff`, `admin-config`, `mcp-file-transfer`, `honcho-local`, `learning-propose`, and `memory-read` are the first extracted gates. The reusable implementations live under `src/runtime/side-effect-gates/` and are runnable through:
+`live-send-message`, `live-send-media`, `live-notification`, `cron-notification`, `buildroom-handoff`, `admin-config`, `mcp-file-transfer`, `honcho-local`, `learning-propose`, and `memory-read` are the first extracted gates. The machine-readable gate list lives in `src/runtime/side-effect-gates/registry.ts`; add or rename gates there first, then wire the focused CLI and docs. The reusable implementations live under `src/runtime/side-effect-gates/` and are runnable through:
 
 ```sh
 pnpm runtime:pi-live-send-message-gate -- --agent-id <id> --peer-id <peer> --dry-run --json
