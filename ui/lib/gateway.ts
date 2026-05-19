@@ -7,18 +7,19 @@ const AGENTS_DIR = resolve(process.cwd(), '..', 'agents');
 const DATA_DIR = resolve(process.cwd(), '..', 'data');
 const OVERLAY_PATH = getOverlayPath(DATA_DIR);
 
-interface GatewaySingletonState {
+// Process-wide singleton state. Lives on globalThis so it survives Next.js
+// loading this module twice: once via instrumentation.ts and again via API routes.
+interface GatewayState {
   instance: Gateway | null;
   initPromise: Promise<Gateway> | null;
   startedAt: Date | null;
 }
 
 const GLOBAL_GATEWAY_KEY = Symbol.for('anthroclaw.ui.gateway-singleton');
+type GlobalWithGateway = typeof globalThis & { [GLOBAL_GATEWAY_KEY]?: GatewayState };
 
-function getGatewayState(): GatewaySingletonState {
-  const globalWithGateway = globalThis as typeof globalThis & {
-    [GLOBAL_GATEWAY_KEY]?: GatewaySingletonState;
-  };
+function getGatewayState(): GatewayState {
+  const globalWithGateway = globalThis as GlobalWithGateway;
   if (!globalWithGateway[GLOBAL_GATEWAY_KEY]) {
     globalWithGateway[GLOBAL_GATEWAY_KEY] = {
       instance: null,
@@ -26,7 +27,7 @@ function getGatewayState(): GatewaySingletonState {
       startedAt: null,
     };
   }
-  return globalWithGateway[GLOBAL_GATEWAY_KEY];
+  return globalWithGateway[GLOBAL_GATEWAY_KEY]!;
 }
 
 /**

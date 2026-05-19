@@ -56,6 +56,58 @@ export function toWhatsAppJid(id: string): string {
   return `${id}@s.whatsapp.net`;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Disconnect policy                                                  */
+/* ------------------------------------------------------------------ */
+
+// Codes where reconnecting cannot recover the session — operator must
+// re-pair from the WhatsApp app. Continuing to retry just spams the
+// server and pegs CPU (the bug that motivated this module's split).
+export const TERMINAL_DISCONNECT_CODES: ReadonlySet<number> = new Set<number>([
+  DisconnectReason.loggedOut,           // 401 — explicit logout
+  DisconnectReason.forbidden,           // 403 — server refused us
+  DisconnectReason.multideviceMismatch, // 411 — local keys diverged from server
+  DisconnectReason.connectionReplaced,  // 440 — another linked-device session took over
+  DisconnectReason.badSession,          // 500 — server says creds invalid
+]);
+
+export const RECONNECT_BACKOFF_MS: readonly number[] = [1000, 2000, 5000, 10000, 30000];
+export const MAX_RECONNECT_ATTEMPTS = 5;
+
+export type DisconnectDecision =
+  | { action: 'stop'; reason: 'manual' | 'terminal' | 'max_retries'; statusCode?: number; attempts?: number }
+  | { action: 'retry'; reason: 'backoff'; delayMs: number; nextAttempts: number; statusCode?: number };
+
+/**
+ * Decide what to do when a Baileys socket emits `connection === 'close'`.
+ * Pure function — no IO, no socket access — so it can be unit-tested without
+ * standing up a real WhatsApp connection. Caller is responsible for scheduling
+ * the actual reconnect via `setTimeout(delayMs)` and tracking `attempts`.
+ */
+export function handleDisconnect(opts: {
+  statusCode: number | undefined;
+  attempts: number;       // attempts already used (0 for the very first close)
+  manualTeardown: boolean;
+}): DisconnectDecision {
+  if (opts.manualTeardown) {
+    return { action: 'stop', reason: 'manual' };
+  }
+  if (opts.statusCode !== undefined && TERMINAL_DISCONNECT_CODES.has(opts.statusCode)) {
+    return { action: 'stop', reason: 'terminal', statusCode: opts.statusCode };
+  }
+  if (opts.attempts >= MAX_RECONNECT_ATTEMPTS) {
+    return { action: 'stop', reason: 'max_retries', statusCode: opts.statusCode, attempts: opts.attempts };
+  }
+  const idx = Math.min(opts.attempts, RECONNECT_BACKOFF_MS.length - 1);
+  return {
+    action: 'retry',
+    reason: 'backoff',
+    delayMs: RECONNECT_BACKOFF_MS[idx]!,
+    nextAttempts: opts.attempts + 1,
+    statusCode: opts.statusCode,
+  };
+}
+
 /**
  * Resolve `@lid` JIDs to their phone-number form before sending.
  *
@@ -117,6 +169,15 @@ export class WhatsAppChannel implements ChannelAdapter {
   // it, sock.logout() would trigger a close event which would immediately try
   // to reconnect the socket we just removed.
   private disconnectedAccounts = new Set<string>();
+  // Per-account reconnect bookkeeping. `attempts` is incremented every time we
+  // schedule a retry and reset to 0 on a successful `connection === 'open'`.
+  // `timers` lets us cancel a pending reconnect if the account is torn down.
+  private reconnectAttempts = new Map<string, number>();
+  private reconnectTimers = new Map<string, NodeJS.Timeout>();
+  // Accounts auto-paused by the disconnect policy (terminal code or max retries
+  // exhausted). They stay in the config but no socket is open until an operator
+  // re-pairs. Exposed via getAccountInfo() so the UI can flag them.
+  private pausedAccounts = new Map<string, { reason: string; statusCode?: number }>();
   // Channel-level event listeners (e.g., operator_outbound). Plain object
   // map keeps us off Node's EventEmitter to avoid 'error' default semantics.
   private listeners: { [E in keyof ChannelAdapterEvents]?: Set<(e: ChannelAdapterEvents[E]) => void> } = {};
@@ -232,6 +293,16 @@ export class WhatsAppChannel implements ChannelAdapter {
     }
 
     this.disconnectedAccounts.add(accountId);
+
+    // Cancel any pending reconnect for this account so we don't race
+    // disconnectAccount() against our own backoff timer.
+    const pendingTimer = this.reconnectTimers.get(accountId);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      this.reconnectTimers.delete(accountId);
+    }
+    this.reconnectAttempts.delete(accountId);
+    this.pausedAccounts.delete(accountId);
 
     const sock = this.sockets.get(accountId);
     if (sock) {
@@ -391,11 +462,17 @@ export class WhatsAppChannel implements ChannelAdapter {
   /* ---------- Account info (for web UI) ---------- */
 
   getAccountInfo(): { accountId: string; phone: string; status: string }[] {
-    return Object.keys(this.config.accounts).map((accountId) => ({
-      accountId,
-      phone: this.accountPhones.get(accountId) ?? '',
-      status: this.accountStatuses.get(accountId) ?? 'disconnected',
-    }));
+    return Object.keys(this.config.accounts).map((accountId) => {
+      const paused = this.pausedAccounts.get(accountId);
+      const status = paused
+        ? `paused:${paused.reason}${paused.statusCode ? `:${paused.statusCode}` : ''}`
+        : this.accountStatuses.get(accountId) ?? 'disconnected';
+      return {
+        accountId,
+        phone: this.accountPhones.get(accountId) ?? '',
+        status,
+      };
+    });
   }
 
   /* ---------- Internal ---------- */
@@ -438,18 +515,28 @@ export class WhatsAppChannel implements ChannelAdapter {
 
     const { state, saveCreds: rawSaveCreds } = await useMultiFileAuthState(authDir);
 
-    const saveCreds = async () => {
-      // Backup current creds before overwriting
-      if (fs.existsSync(credsPath)) {
-        try {
-          const raw = fs.readFileSync(credsPath, 'utf-8');
-          JSON.parse(raw);
-          fs.copyFileSync(credsPath, credsBackupPath);
-        } catch {
-          // don't overwrite backup with bad data
+    // Serialize saveCreds calls. Baileys can fire `creds.update` from multiple
+    // event handlers back-to-back during reconnect storms; if two writes hit
+    // creds.json in parallel the file can end up truncated to 0 bytes (we then
+    // restore from .bak above, which masks the symptom but eats CPU). A single
+    // promise chain guarantees one write completes before the next starts.
+    let saveCredsInFlight: Promise<void> = Promise.resolve();
+    const saveCreds = (): Promise<void> => {
+      const prev = saveCredsInFlight;
+      saveCredsInFlight = (async () => {
+        await prev.catch(() => {}); // queue behind, don't propagate prior errors
+        if (fs.existsSync(credsPath)) {
+          try {
+            const raw = fs.readFileSync(credsPath, 'utf-8');
+            JSON.parse(raw);
+            fs.copyFileSync(credsPath, credsBackupPath);
+          } catch {
+            // don't overwrite backup with bad data
+          }
         }
-      }
-      await rawSaveCreds();
+        await rawSaveCreds();
+      })();
+      return saveCredsInFlight;
     };
 
     const sock = makeWASocket({
@@ -479,6 +566,8 @@ export class WhatsAppChannel implements ChannelAdapter {
 
       if (connection === 'open') {
         this.accountStatuses.set(accountId, 'connected');
+        this.reconnectAttempts.delete(accountId);
+        this.pausedAccounts.delete(accountId);
         // Cache phone number from socket user info
         const phone = sock.user?.id?.split(':')[0] ?? sock.user?.id ?? '';
         if (phone) this.accountPhones.set(accountId, phone);
@@ -488,27 +577,48 @@ export class WhatsAppChannel implements ChannelAdapter {
       if (connection === 'close') {
         this.accountStatuses.set(accountId, 'disconnected');
 
-        // Account was explicitly torn down via disconnectAccount() — don't
-        // reconnect, regardless of whether the close came from logout() or
-        // from sock.end(). disconnectAccount() handles its own cleanup.
-        if (this.disconnectedAccounts.has(accountId)) {
-          this.sockets.delete(accountId);
-          return;
-        }
-
         const statusCode =
           (lastDisconnect?.error as any)?.output?.statusCode as number | undefined;
-        const loggedOut = statusCode === DisconnectReason.loggedOut;
 
-        if (loggedOut) {
-          logger.warn({ accountId }, 'whatsapp: logged out — will not reconnect');
+        const decision = handleDisconnect({
+          statusCode,
+          attempts: this.reconnectAttempts.get(accountId) ?? 0,
+          manualTeardown: this.disconnectedAccounts.has(accountId),
+        });
+
+        if (decision.action === 'stop') {
           this.sockets.delete(accountId);
+          if (decision.reason === 'manual') {
+            // disconnectAccount() handles its own cleanup; nothing else to do.
+            return;
+          }
+          this.reconnectAttempts.delete(accountId);
+          this.pausedAccounts.set(accountId, { reason: decision.reason, statusCode });
+          logger.warn(
+            { accountId, statusCode, reason: decision.reason, attempts: decision.attempts },
+            'whatsapp: reconnect halted — operator must re-pair this account',
+          );
           return;
         }
 
-        logger.info({ accountId, statusCode }, 'whatsapp: reconnecting…');
-        // Reconnect
-        void this.connectAccount(accountId, authDir, version);
+        // Schedule a delayed reconnect; track the timer so disconnectAccount()
+        // can cancel it.
+        this.reconnectAttempts.set(accountId, decision.nextAttempts);
+        logger.info(
+          { accountId, statusCode, delayMs: decision.delayMs, attempt: decision.nextAttempts },
+          'whatsapp: reconnecting…',
+        );
+        const timer = setTimeout(() => {
+          this.reconnectTimers.delete(accountId);
+          // Re-check manual-teardown — disconnectAccount() may have fired while
+          // we were waiting on the timer.
+          if (this.disconnectedAccounts.has(accountId)) return;
+          void this.connectAccount(accountId, authDir, version);
+        }, decision.delayMs);
+        // Don't hold the event loop open for a queued reconnect — without
+        // unref(), `pnpm test` and the gateway exit hang waiting on the timer.
+        if (typeof timer.unref === 'function') timer.unref();
+        this.reconnectTimers.set(accountId, timer);
       }
     });
 
