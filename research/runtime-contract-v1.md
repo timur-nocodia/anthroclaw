@@ -6,11 +6,11 @@ Date: 2026-05-18
 
 Runtime contract v0 answered a narrow question: can a candidate runtime replace the Claude Agent SDK loop for prompt, events, tools, interrupt, checkpoint, and Gateway control?
 
-Runtime contract v1 answers the production question: can a candidate runtime preserve **all AnthroClaw product surfaces** while AnthroClaw keeps ownership of the harness?
+Runtime contract v1 answers the production question: can Pi run AnthroClaw natively while preserving **all AnthroClaw product surfaces** and keeping AnthroClaw ownership of the harness?
 
 This document is intentionally broader than `src/runtime/contract.ts` v0 scenario scoring. The machine-readable source now has two layers:
 
-- `RUNTIME_CONTRACT_SCENARIOS`: compact candidate-comparison scenarios for Claude Agent SDK, Pi, and OpenCode.
+- `RUNTIME_CONTRACT_SCENARIOS`: compact historical/candidate-comparison scenarios for Claude Agent SDK, Pi, and OpenCode.
 - `RUNTIME_FEATURE_CONTRACTS`: full v1 feature atlas covering Gateway, channels, tools, permissions, sessions, memory, learning, plugins, dashboard/API, observability, Buildroom, config/auth, and smoke/CI.
 - `RUNTIME_CANARY_SCENARIOS`: smoke/canary evidence plan that maps Pi rollout scenarios back to feature contracts.
 
@@ -185,11 +185,11 @@ Phase 1 is complete when every feature contract has at least unit or integration
 
 ### Claude Agent SDK
 
-Claude Agent SDK remains a supported provider/fallback path, but it is no longer the product contract. Passing v1 now means no existing product feature regresses while Runtime v1 owns the harness boundary.
+Claude Agent SDK remains a supported provider/fallback path, but it is no longer the product contract or the compatibility target. Passing v1 means Pi-native Runtime v1 preserves AnthroClaw product behavior while Runtime v1 owns the harness boundary.
 
 ### Pi
 
-Pi is the primary migration candidate and current default runtime path. It has passed the compact v0 contract, Runtime v1 default rollout, and the generic side-effect gate harness; remaining work is expansion-specific live evidence for concrete agents, channels, and high-risk side effects.
+Pi is the primary runtime path. Runtime work should prefer Pi-native behavior plus AnthroClaw-owned sessions, tools, policy, memory, learning, plugins, dashboard, and observability over Claude Agent SDK emulation. Pi has passed the compact v0 contract, Runtime v1 default rollout, and the generic side-effect gate harness; remaining work is expansion-specific live evidence for concrete agents, channels, and high-risk side effects.
 
 ### OpenCode
 

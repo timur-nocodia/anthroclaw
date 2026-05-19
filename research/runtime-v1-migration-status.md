@@ -1,7 +1,8 @@
 # Runtime v1 OSS migration status
 
 This document tracks the open-source Agent SDK replacement work. It measures
-generic Runtime v1 harness coverage, not private production-agent rollout.
+Pi-native Runtime v1 harness coverage, not private production-agent rollout
+or 1:1 Claude Agent SDK compatibility.
 
 Private or personal agents are not migration exit criteria. Concrete agents may
 be used as local evidence fixtures, but public migration status must be stated
@@ -9,7 +10,8 @@ in terms of reusable runtime capabilities.
 
 ## Current State
 
-The OSS Runtime v1 migration is functionally complete for the generic harness:
+The OSS Runtime v1 migration is functionally complete for the Pi-native generic
+harness:
 
 - Runtime v1 contract exists and covers runtime selection, sessions, tools,
   memory, learning, plugins, dashboard/UI, Buildroom, config, observability,
@@ -23,14 +25,35 @@ The OSS Runtime v1 migration is functionally complete for the generic harness:
   local integration, learning-propose, and memory-read.
 - Runtime UI exposes status, model registry, gate registry, expansion status,
   fleet runtime health, and per-agent effective runtime metadata without using
-  Claude subscription auth as the primary path.
+  legacy Claude auth as the primary path.
+- Public OSS examples/docs no longer ship private rollout agent directories,
+  named private-agent migration flows, real Telegram peer ids, or local
+  operator filesystem paths.
+
+## Latest Acceptance Gate
+
+Last verified: 2026-05-19.
+
+- `pnpm test`: passed, 318 files / 2601 tests.
+- `pnpm exec tsc --noEmit`: passed.
+- `pnpm build`: passed.
+- `pnpm --dir ui build`: passed.
+- Fresh source-copy release smoke without `.git` metadata: passed.
+  - `pnpm install --frozen-lockfile`
+  - `npm run release:check`
+  - `pnpm vitest run src/runtime/__tests__/pi-native-copy.test.ts src/config/__tests__/schema-chat.test.ts src/security/profiles/__tests__/index.test.ts --reporter=dot`
+  - `pnpm build`
+  - `pnpm --dir ui build`
+- Public-surface scan: active OSS docs/examples/source are clean. Remaining
+  `chat_like_openclaw` hits are intentional legacy safety-profile aliases for
+  old configs.
 
 ## Phase Checklist
 
 | Phase | Status | Exit Criteria |
 | --- | --- | --- |
 | 0. Frame migration | Done | Replacement is defined as a Runtime v1 harness contract, not a provider swap. |
-| 1. Freeze Runtime v1 contract | Done | Generic contract scenarios cover the Agent SDK-equivalent feature surface. |
+| 1. Freeze Runtime v1 contract | Done | Generic contract scenarios cover the AnthroClaw product feature surface under Pi-native runtime ownership. |
 | 2. Runtime adapter boundary | Done | Provider SDK calls are behind runtime/headless adapter boundaries. |
 | 3. Pi adapter path | Done | Pi can satisfy the generic headless/runtime contract in tests and canaries. |
 | 4. OpenCode fallback path | Done | OpenCode remains available as an alternate runtime candidate. |
@@ -43,12 +66,15 @@ The OSS Runtime v1 migration is functionally complete for the generic harness:
 
 ## Remaining OSS Work
 
+No blocking OSS migration work remains for the generic Runtime v1/Pi harness.
+Ongoing maintenance rules:
+
 1. Keep only generic `runtime:pi-*` gates in `package.json`; do not add
    named-agent compatibility aliases.
 2. Keep expansion packets out of public migration status unless they are generic
    examples. Private production rollout evidence belongs outside OSS acceptance
    criteria.
-3. Maintain a repeatable OSS acceptance gate:
+3. Maintain the repeatable OSS acceptance gate:
    - `pnpm build`
    - `pnpm test`
    - runtime contract tests
@@ -56,10 +82,43 @@ The OSS Runtime v1 migration is functionally complete for the generic harness:
    - UI runtime control-plane tests
    - no named-agent public-surface scan
 
+## Release Candidate Readiness
+
+Recommended next release line: `v1.2.0` for the stable release, with
+`v1.2.0-rc.1` acceptable if we want one public pre-release after review.
+
+Release packaging checklist:
+
+- `CHANGELOG.md` contains explicit Runtime v1 / Pi-native migration notes.
+- README no longer presents the repository as archived after the v1.0.0
+  Claude Agent SDK-era release.
+- Version files remain synchronized and should be bumped only after the PR
+  worktree is clean:
+  - `package.json`
+  - `ui/package.json`
+  - `VERSION`
+- The final release commit should be created by `npm run release:minor` or an
+  explicit `node scripts/release.mjs 1.2.0` invocation after merge readiness.
+- Final pre-tag gate should include:
+  - `npm run release:check`
+  - `pnpm test`
+  - `pnpm exec tsc --noEmit`
+  - `pnpm build`
+  - `pnpm --dir ui build`
+  - fresh source-copy install/build smoke if publishing as stable instead of RC.
+
+## Pi-Native Migration Rule
+
+The target is not full Claude Agent SDK compatibility. Claude Agent SDK remains
+legacy fallback and historical evidence only. New work should prefer native Pi
+integration plus AnthroClaw-owned implementations for sessions, tools, policy,
+MCP, memory, learning, plugins, dashboard, and observability.
+
 ## Not OSS Migration Criteria
 
 These are deliberately excluded from OSS migration completion:
 
+- 1:1 Claude Agent SDK internal behavior.
 - Private operator approvals.
 - Live Telegram/WhatsApp delivery for named production agents.
 - Personal/lab agent expansion packets.

@@ -13,11 +13,11 @@ describe("LearningAdminApprovalsEditor", () => {
         initial={{
           notify: true,
           routes: [
-            { channel: "telegram", account_id: "main", peer_id: "48705953", thread_id: "10" },
+            { channel: "telegram", account_id: "main", peer_id: "123456789", thread_id: "10" },
           ],
           senders: {
             telegram: {
-              main: ["48705953", "111"],
+              main: ["123456789", "111"],
             },
           },
           notify_admin_for: ["learning_skill"],
@@ -26,8 +26,8 @@ describe("LearningAdminApprovalsEditor", () => {
     );
 
     expect(screen.getByText("Admin approval delivery")).toBeInTheDocument();
-    expect(screen.getByLabelText("Peer id")).toHaveValue("48705953");
-    expect(screen.getByLabelText("Sender ids")).toHaveValue("48705953, 111");
+    expect(screen.getByLabelText("Peer id")).toHaveValue("123456789");
+    expect(screen.getByLabelText("Sender ids")).toHaveValue("123456789, 111");
 
     fireEvent.change(screen.getByLabelText("Peer id"), { target: { value: "999" } });
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({

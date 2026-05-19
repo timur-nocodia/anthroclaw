@@ -1,43 +1,41 @@
 # AnthroClaw
 
-> **🪦 Archived as a reference implementation — v1.0.0 (The Funeral Release).**
-> Active development has ended. AnthroClaw started as an experiment in making Claude Code usable outside the terminal — Telegram, WhatsApp, web chat, with approvals, memory, tools, sessions, telemetry, and operator receipts. The experiment proved the direction is technically possible.
->
-> After Anthropic announced dedicated monthly Agent SDK / `claude -p` credits for paid Claude plans starting **June 15, 2026**, the original product wedge dissolved. That move is good for users, but it removes the urgency behind AnthroClaw as originally imagined.
->
-> This repository will remain public as a reference implementation, research artifact, snapshot of lessons learned while building around Claude Agent SDK, and archive of the product direction. No active roadmap is planned.
->
-> Thanks to everyone who looked at it, starred it, tested it, or gave feedback. Sometimes the right ending is a clean one. — [v1.0.0 release notes](https://github.com/timur-nocodia/anthroclaw/releases/tag/v1.0.0)
+Local-first control plane for Pi-backed agents in real chat channels: Telegram,
+WhatsApp, and web.
 
-Local-first control plane for Claude agents in real chat channels: Telegram, WhatsApp, and web.
+AnthroClaw originally shipped as a Claude Agent SDK experiment. The project has
+since moved to a Pi-native Runtime v1 architecture: AnthroClaw owns the harness,
+while provider adapters are replaceable implementation details. The legacy
+Claude path remains available only as fallback/diagnostics for existing
+installations.
 
 <p align="center">
   <img src="ui/public/anthroClaw-logo.svg" alt="AnthroClaw" width="116" />
 </p>
 
 <p align="center">
-  <strong>A Claude Agent SDK-native control plane for personal, multi-agent assistants.</strong>
+  <strong>A Pi-native control plane for personal, multi-agent assistants.</strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/timur-nocodia/anthroclaw/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-f59e0b.svg"></a>
   <img alt="Version" src="https://img.shields.io/github/package-json/v/timur-nocodia/anthroclaw?color=111827">
   <img alt="Node.js 22+" src="https://img.shields.io/badge/node-22%2B-3b82f6.svg">
-  <img alt="Claude Agent SDK native" src="https://img.shields.io/badge/Claude_Agent_SDK-native-111827.svg">
+  <img alt="Pi native runtime" src="https://img.shields.io/badge/runtime-Pi_native-111827.svg">
   <img alt="Telegram and WhatsApp" src="https://img.shields.io/badge/channels-Telegram_%2B_WhatsApp-10b981.svg">
 </p>
 
-AnthroClaw is a local-first gateway for running multiple Claude-powered agents across real chat channels, with a web control surface for sessions, agents, skills, channels, logs, fleet status, metrics, and deploy operations.
+AnthroClaw is a local-first gateway for running multiple Pi-backed agents across real chat channels, with a web control surface for sessions, agents, skills, channels, logs, fleet status, metrics, and deploy operations.
 
-The important part: AnthroClaw does **not** wrap Claude as a generic provider. User-facing LLM execution is routed through the **Claude Agent SDK / Claude Code path**. Permissions, hooks, sessions, checkpoints, subagents, skills, MCP tools, sandbox options, and retry/fallback behavior are intentionally aligned with the native SDK surface.
+The important part: AnthroClaw owns the harness. User-facing LLM execution is routed through the **Runtime v1 / Pi path** by default, while sessions, permissions, hooks, checkpoints, skills, MCP tools, channels, dashboard, memory, learning, and rollback remain AnthroClaw-owned product surfaces.
 
-Runtime replacement work is tracked as a provider-neutral Runtime v1 harness, not as one-off agent ports. New Pi/runtime migration code must follow [Runtime Migration Rules](docs/runtime-migration-rules.md): reusable primitives first, agent-specific evidence only as thin fixtures or expansion-packet documentation.
+Runtime replacement work is tracked as a Pi-native Runtime v1 harness, not as one-off agent ports or Claude Agent SDK 1:1 compatibility. New Pi/runtime migration code must follow [Runtime Migration Rules](docs/runtime-migration-rules.md): reusable primitives first, agent-specific evidence only as thin fixtures or expansion-packet documentation.
 
 If you want a personal assistant platform that feels like an operator console instead of a toy chatbot, this is the shape of it.
 
 ## What It Is
 
-AnthroClaw gives every agent its own workspace, prompt, skills, memory, tools, routes, policies, and runtime settings. The gateway receives messages from channels, routes them to the right agent, executes Claude through the Agent SDK, records sessions and telemetry, and exposes the whole system through a Next.js control UI.
+AnthroClaw gives every agent its own workspace, prompt, skills, memory, tools, routes, policies, and runtime settings. The gateway receives messages from channels, routes them to the right agent, executes the selected Pi model through Runtime v1, records sessions and telemetry, and exposes the whole system through a Next.js control UI.
 
 It is designed for one person or a small trusted team running their own assistant fleet.
 
@@ -49,18 +47,16 @@ Current first-class channels:
 
 Current first-class runtime:
 
-- Claude Agent SDK / Claude Code for user-facing LLM calls
+- Runtime v1 / Pi for user-facing LLM calls
+- Claude Agent SDK only as legacy fallback/diagnostics
 - OpenAI only for optional memory embeddings
-- Native `.claude/skills` layout
-- MCP tools and SDK `tool()` definitions
-- SDK SessionStore-backed sessions
-- SDK hooks, permissions, subagents, checkpoints, and partial events
+- Skills, MCP tools, sessions, hooks, permissions, subagents, checkpoints, and events through AnthroClaw-owned runtime contracts
 
 ## Why It Exists
 
 Most assistant frameworks become provider routers with a chat UI bolted on top. AnthroClaw is intentionally narrower and more opinionated:
 
-- **Native Claude execution** instead of generic LLM abstraction.
+- **Pi-native execution** with AnthroClaw-owned harness semantics.
 - **Agents as folders** instead of database-only configuration.
 - **Real channels** instead of a demo chat box.
 - **Persistent memory and sessions** instead of one-off prompts.
@@ -69,25 +65,25 @@ Most assistant frameworks become provider routers with a chat UI bolted on top. 
 
 ## Highlights
 
-### Claude Agent SDK-native runtime
+### Pi-native runtime
 
-AnthroClaw uses `@anthropic-ai/claude-agent-sdk` as the core execution surface. The runtime intentionally keeps SDK concepts visible:
+AnthroClaw uses Runtime v1 with Pi as the primary execution surface. The runtime intentionally keeps product concepts visible instead of copying provider SDK internals:
 
-- explicit SDK options and setting sources
-- SDK-native permission mode and tool allow/deny policy
-- SDK hooks for lifecycle and tool events
-- SDK SessionStore-backed session persistence
-- SDK checkpoints, rewind, fork, and session reads
-- SDK subagents with explicit capabilities
-- SDK-compatible `.claude/skills/*/SKILL.md`
+- explicit runtime, model, and provider settings
+- AnthroClaw permission mode and tool allow/deny policy
+- normalized lifecycle and tool events
+- AnthroClaw-owned session persistence
+- AnthroClaw checkpoints, rewind, fork, and session reads
+- portable subagents with explicit capabilities
+- runtime-neutral skills and MCP tools
 - prompt suggestions, partial messages, progress summaries, and hook events
 
 ### Safety profiles (4 profiles, secure-by-default)
 
 Every agent declares a `safety_profile` that controls system prompt mode, tool surface, sandbox defaults, allowlist shape, rate-limit floors, and approval flow:
 
-- **`chat_like_openclaw`** (default for new agents) — friendly conversational, all tools auto-allowed, wildcard allowlist OK, no sandbox. Pure-string system prompt with editable per-agent `personality` baseline. Best for personal single-user bots.
-- **`public`** — anonymous-user threat model. Read-only tools, no claude_code preset, no project settings, rate-limited.
+- **`chat_like_anthroclaw`** (default for new agents) — friendly conversational, all tools auto-allowed, wildcard allowlist OK, no sandbox. Pure-string system prompt with editable per-agent `personality` baseline. Best for personal single-user bots.
+- **`public`** — anonymous-user threat model. Read-only tools, no code-tool preset, no project settings, rate-limited.
 - **`trusted`** — known users with optional approval flow for destructive operations (Telegram inline buttons).
 - **`private`** — single-owner mode, exactly one peer per channel, all tools available with optional bypass.
 
@@ -95,7 +91,7 @@ Profile is required in `agent.yml`; missing → hard-fail at load. Migration hel
 
 ### Plugin framework
 
-First-class plugin system using the Claude Code plugin layout (`plugins/<name>/.claude-plugin/plugin.json`):
+First-class plugin system using the `.claude-plugin` manifest layout (`plugins/<name>/.claude-plugin/plugin.json`):
 
 - typed `register(ctx)` entrypoint with hooks, MCP tools, ContextEngine, and config schema
 - per-agent enablement via `agent.yml::plugins.<name>.enabled`
@@ -118,7 +114,7 @@ A first-party plugin (`plugins/lcm`) for **immutable per-agent context with hier
 
 ### Learning loop
 
-SDK-native headless reviewer that proposes memory or skill updates after agent runs:
+Runtime v1 headless reviewer that proposes memory or skill updates after agent runs:
 
 - triggers on `on_after_query` hook every N turns or after M tool calls
 - runs a separate review prompt against the run transcript (artifacts exported to `data/learning-artifacts/<agent>/<job>/`)
@@ -128,7 +124,7 @@ SDK-native headless reviewer that proposes memory or skill updates after agent r
 - Telegram renders inline buttons; WhatsApp and future text-only channels render `/learn approve CODE`, `/learn reject CODE`, and numbered replies
 - CLI to review/apply proposals: `pnpm learning`
 - dashboard Learning tab to inspect decisions, delivery attempts, audit history, and raw proposals
-- native learning skill at `.claude/skills/anthroclaw-learning/SKILL.md` for stable reviewer guidance
+- runtime-neutral learning skill at `.claude/skills/anthroclaw-learning/SKILL.md` for stable reviewer guidance
 
 ### Scheduled tasks (cron) as a runtime primitive
 
@@ -143,10 +139,10 @@ SDK-native headless reviewer that proposes memory or skill updates after agent r
 
 ### Heartbeat routines
 
-Per-agent `heartbeat` config plus `HEARTBEAT.md` adds a lightweight, SDK-native
+Per-agent `heartbeat` config plus `HEARTBEAT.md` adds a lightweight, Runtime v1
 wake loop for recurring agent work:
 
-- gateway reads due tasks from `HEARTBEAT.md` and sends a synthetic heartbeat turn through the normal Agent SDK path
+- gateway reads due tasks from `HEARTBEAT.md` and sends a synthetic heartbeat turn through the normal Runtime v1 path
 - optional workspace scripts can gate whether the model should wake and can feed fresh metrics/docs into the prompt
 - meaningful responses are delivered back to the last chat; `HEARTBEAT_OK` and `[SILENT]` stay quiet
 - Routines UI covers settings, `HEARTBEAT.md`, manual runs, last-target/status, and output preview
@@ -189,7 +185,7 @@ agents/
     soul.md            # persona (imported via @./)
     memory/            # daily memory + MEMORY.md long-term
     .claude/
-      skills/          # native Claude Code skill layout
+      skills/          # workspace skill layout
         my-skill/
           SKILL.md
 ```
@@ -225,7 +221,7 @@ Agents can search and write memory through MCP tools:
 
 AnthroClaw treats sessions as operational data, not hidden SDK internals:
 
-- persistent SDK sessions
+- persistent runtime sessions
 - transcript indexing
 - `session_search`
 - focused summaries
@@ -239,7 +235,7 @@ AnthroClaw treats sessions as operational data, not hidden SDK internals:
 
 Skills live in `.claude/skills`. They can be attached, detached, uploaded, cloned, inspected, and managed from the UI and tools.
 
-AnthroClaw keeps a thin compatibility/admin layer, but the canonical layout stays Claude-native.
+AnthroClaw keeps a thin compatibility/admin layer, but the canonical layout stays runtime-neutral.
 
 ### Control UI
 
@@ -248,9 +244,9 @@ The web UI gives you an operator-grade control surface:
 - fleet overview
 - agent list and editor
 - Test Chat with session controls
-- chat debug rail with SDK session, route decision, hook, and subagent runtime details
+- chat debug rail with runtime session, route decision, hook, and subagent runtime details
 - dedicated Sessions browser: list with search and filters (source / status / channel / labels / period), multi-select with shift-range, bulk delete and bulk tagging, per-session export (Markdown / raw JSONL), inline title and label editor with autocomplete, transcript renderer that mirrors live chat byte-for-byte (same tool-call cards), keyboard navigation with `?` cheatsheet
-- per-agent Runs tab for SDK run history and route decisions
+- per-agent Runs tab for runtime run history and route decisions
 - subagent visibility and scoped interrupt
 - channel pairing and routing
 - runtime metrics
@@ -268,7 +264,7 @@ Runtime metrics are persisted and surfaced in the UI:
 - active sessions
 - messages and tokens over 24h
 - model and tool usage
-- SDK run records with source/channel/session provenance
+- runtime run records with source/channel/session provenance
 - route decision history with outcomes, winning agent, access result, queue action, and candidates
 - session/tool/subagent lifecycle events
 - query latency
@@ -281,7 +277,7 @@ Runtime metrics are persisted and surfaced in the UI:
 
 - Node.js `>= 22`
 - `pnpm`
-- authenticated Claude Code CLI
+- Pi/provider credentials for the models you plan to use
 - Telegram bot token if using Telegram
 - WhatsApp pairing if using WhatsApp
 - optional OpenAI API key for memory embeddings
@@ -332,17 +328,16 @@ The UI is a Next.js app under `ui/`.
 For Linux server deployment (VPS, Hetzner, Fly.io, self-hosted) — see **[DOCKER.md](DOCKER.md)** for the full guide. Short version:
 
 ```bash
-# On the server, one-time auth (uses your Claude Max/Pro subscription):
-npm i -g @anthropic-ai/claude-code
-claude setup-token   # → CLAUDE_CODE_OAUTH_TOKEN
+# On the server, configure runtime provider auth:
+# use the Runtime UI or set provider env vars supported by your Pi model/provider
 
 # Deploy:
 git clone https://github.com/timur-nocodia/anthroclaw.git && cd anthroclaw
-cp .env.example .env   # add CLAUDE_CODE_OAUTH_TOKEN, TELEGRAM_BOT_TOKEN
+cp .env.example .env   # add TELEGRAM_BOT_TOKEN and runtime provider credentials
 docker compose up -d --build
 ```
 
-The container uses the SDK-native `CLAUDE_CODE_OAUTH_TOKEN` env var — Anthropic's official headless auth path. No Keychain mounts, no `~/.claude` bind, no separate API billing.
+The container reads runtime credentials from the configured Runtime v1/Pi provider storage or environment. Legacy Claude auth remains available only for fallback diagnostics.
 
 Docker is intended for Linux servers only. On macOS, run `pnpm dev` directly.
 
@@ -393,9 +388,9 @@ Minimal agent example (chat profile, single-user personal bot):
 model: claude-sonnet-4-6
 timezone: UTC
 
-# Required since 0.5.0. New agents default to chat_like_openclaw.
+# Required since 0.5.0. New agents default to chat_like_anthroclaw.
 # Run `pnpm migrate:safety-profile --apply` to add this to legacy configs.
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 
 # Optional: per-agent personality override (chat profile only).
 # Empty/missing = uses the project-wide CHAT_PERSONALITY_BASELINE.
@@ -466,7 +461,7 @@ For other profiles (`public`, `trusted`, `private`), see the [agent.yml referenc
 | `memory_search` | Search agent memory using FTS5 + optional vector retrieval |
 | `memory_write` | Write durable daily memory entries |
 | `memory_wiki` | Create, read, update, and delete wiki pages |
-| `session_search` | Search prior SDK session transcripts |
+| `session_search` | Search prior runtime session transcripts |
 | `send_message` | Send text back through configured channels (gateway-bound delivery in `public`) |
 | `send_media` | Send media files through channels |
 | `access_control` | Manage allowlists and pending access |
@@ -487,21 +482,22 @@ For other profiles (`public`, `trusted`, `private`), see the [agent.yml referenc
 | `lcm_status` | Context pressure metrics (tokens, depth, threshold, ratio) |
 | `lcm_doctor` | Health check + double-gated cleanup with automatic backup |
 
-### Built-in Claude Code tools (profile-gated)
+### Built-in runtime tools (profile-gated)
 
-`Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `LS`, `Bash`, `WebFetch`, `WebSearch`, `NotebookEdit`, `TodoWrite` — availability depends on `safety_profile`. `chat_like_openclaw` and `private` allow all; `trusted` requires approval for destructive; `public` allows only read-only set.
+`Read`, `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `LS`, `Bash`, `WebFetch`, `WebSearch`, `NotebookEdit`, `TodoWrite` — availability depends on `safety_profile`. `chat_like_anthroclaw` and `private` allow all; `trusted` requires approval for destructive; `public` allows only read-only set.
 
 ## Security Model
 
-AnthroClaw connects Claude to real tools, files, channels, and users. Treat inbound messages as untrusted input.
+AnthroClaw connects the selected Runtime v1 provider to real tools, files,
+channels, and users. Treat inbound messages as untrusted input.
 
 Core defaults and design goals:
 
 - unknown users should pair or be approved before an agent processes their messages
 - agent tools should be explicitly configured
-- dangerous Bash/file operations should route through SDK permission policy
+- dangerous Bash/file operations should route through AnthroClaw permission policy
 - context references are guarded by SSRF, prompt-injection, budget, and workspace-root checks
-- OpenAI is not used for user-facing agent LLM calls
+- user-facing agent LLM calls use the selected Runtime v1 / Pi provider configuration
 - remote/channel access should be reviewed before exposing an agent publicly
 - secrets belong in `.env`, not in `agent.yml`, prompts, skills, or commits
 
@@ -515,7 +511,7 @@ Before adding powerful tools to an agent, verify:
 
 Available profiles:
 
-- **`chat_like_openclaw`** (default) — friendly conversational, all tools, single-user.
+- **`chat_like_anthroclaw`** (default) — friendly conversational, all tools, single-user.
 - **`public`** — anonymous-user threat model, read-only tools, rate-limited.
 - **`trusted`** — known users, approval flow for destructive operations.
 - **`private`** — single owner, all tools, optional bypass.
@@ -550,7 +546,7 @@ See the [Safety Profiles section](docs/guide.md#safety-profiles) for how `safety
 │   ├── agent/
 │   ├── channels/
 │   ├── config/
-│   ├── learning/                # SDK-native learning loop (reviewer, store, applier)
+│   ├── learning/                # Runtime v1 learning loop (reviewer, store, applier)
 │   ├── memory/
 │   ├── metrics/
 │   ├── plugins/                 # Plugin loader + registry + ContextEngine
@@ -574,8 +570,8 @@ data/
 ├── auth.json                    # UI admin credentials
 ├── memory-db/{agent}.sqlite     # per-agent memory FTS5 + optional vectors
 ├── transcript-db/{agent}.sqlite # session transcript index
-├── session-mappings/{agent}.json # sessionKey ↔ SDK sessionId
-├── sdk-sessions/                # SDK SessionStore JSONL
+├── session-mappings/{agent}.json # sessionKey ↔ runtime sessionId
+├── runtime-sessions/            # runtime transcript store
 ├── lcm/lcm-db/{agent}.sqlite    # LCM plugin: messages + summary DAG
 ├── lcm/lcm-backups/             # LCM doctor backups
 ├── learning-artifacts/{agent}/  # learning loop run inputs (frozen)
@@ -637,9 +633,9 @@ Contributions are welcome, but AnthroClaw has a few strong rules because the run
 
 ### Contribution Principles
 
-- Keep Claude Agent SDK native behavior intact.
-- Do not add alternate user-facing LLM providers.
-- Do not hide SDK concepts behind generic abstractions when the SDK already provides the primitive.
+- Keep Runtime v1 / Pi behavior intact.
+- Keep provider additions behind the Runtime v1 contract and Runtime UI.
+- Do not copy provider SDK concepts into public product surfaces when AnthroClaw owns the primitive.
 - Do not introduce fake UI states, simulated success, or buttons without backend behavior.
 - Prefer small PRs with clear scope.
 - Add or update tests for behavior changes.
@@ -695,7 +691,7 @@ If in doubt, open an issue or draft PR before implementing a large change.
 
 ## Roadmap
 
-The SDK-native migration is complete; v0.5.0 added the plugin framework, LCM, safety profiles, learning loop, and gateway-managed scheduled tasks. Next useful work:
+The Pi-native Runtime v1 migration is complete; v0.5.0 added the plugin framework, LCM, safety profiles, learning loop, and gateway-managed scheduled tasks. Next useful work:
 
 - **`manage_cron` v2 — runtime primitive cleanup.** Move `deliver_to` out of the model-controlled tool input entirely; agent passes only `schedule + prompt + id?`. Closure-based per-dispatch tool factory replaces the AsyncLocalStorage approach so dispatch context propagates reliably across SDK stdio. Add explicit `expiry`, `durable`, `createdBy` fields to `DynamicCronJob`.
 - **Peer-isolated memory for `public` agents.** Currently memory is per-agent; for multi-tenant public bots this needs per-peer scoping.
@@ -710,20 +706,20 @@ The SDK-native migration is complete; v0.5.0 added the plugin framework, LCM, sa
 
 AnthroClaw is inspired by two projects:
 
-- [OpenClaw](https://github.com/openclaw/openclaw), for the broader idea of a personal assistant gateway.
+- Agent gateway research and production operator workflows that informed the Runtime v1 control-plane shape.
 - Hermes-style agent infrastructure patterns, especially around operational discipline, memory, sessions, routing, and runtime visibility.
 
-This repository is a separate implementation focused on a stricter Claude Agent SDK-native runtime and a smaller set of first-class channels.
+This repository is a separate implementation focused on a Pi-native Runtime v1 harness and a smaller set of first-class channels.
 
-The goal is not to support every provider and every surface. The goal is to make the Claude-native path excellent.
+The goal is not to support every provider and every surface. The goal is to make the Pi-native AnthroClaw path excellent.
 
-### Anthropic subscription usage
+### Runtime usage
 
-AnthroClaw is designed so user-facing LLM execution goes through the native Claude Agent SDK / Claude Code path, rather than a custom provider wrapper. That is intentional: it keeps the runtime aligned with Anthropic's native agent tooling and makes the project suitable for personal use with Anthropic subscription plans where that usage is allowed by Anthropic's current terms.
+AnthroClaw is designed so user-facing LLM execution goes through Runtime v1 with Pi by default. Claude Agent SDK is retained only as legacy fallback/diagnostics, not as the implementation target.
 
-OpenAI is only used for optional memory embeddings, not for user-facing agent responses.
+Provider API keys and model choices are configured through the Runtime UI/control plane. OpenAI may also be used for optional memory embeddings when configured.
 
-You should still review Anthropic's current plan terms for your own use case. AnthroClaw does not bypass login, hide usage, proxy other users through your account, or replace Claude Code with a disguised API client.
+You should still review current provider terms for your own use case. AnthroClaw does not bypass login, hide usage, or proxy other users through your account.
 
 ## License
 

@@ -283,9 +283,9 @@ Proves:
 
 Required checks:
 
-- public profile policy allows `mcp__leads_agent-tools__escalate`;
-- public profile policy denies an unknown `mcp__leads_agent-tools__*` plugin tool;
-- escalation tool writes exactly one `leads_agent` JSONL row;
+- public profile policy allows `mcp__customer_intake_agent-tools__escalate`;
+- public profile policy denies an unknown `mcp__customer_intake_agent-tools__*` plugin tool;
+- escalation tool writes exactly one `customer_intake_agent` JSONL row;
 - temporary workspace/data paths are removed unless `--keep-workspace` is requested.
 
 Evidence command:

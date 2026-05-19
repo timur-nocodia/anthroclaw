@@ -149,7 +149,7 @@ const SYSTEM_PROMPT_SEPARATOR = '\n\n─────────\n\n';
  * resolved CLAUDE.md (with @-imports already inlined) on top of the safety
  * profile's baseline:
  *
- *   - `chat_like_openclaw` → string: personality (custom from `agent.config.personality`
+ *   - `chat_like_anthroclaw` → string: personality (custom from `agent.config.personality`
  *     when provided, else `CHAT_PERSONALITY_BASELINE`) + separator + CLAUDE.md.
  *     With no CLAUDE.md, returns just the personality.
  *   - `public` (string mode) → string: `profile.systemPrompt.text` + separator
@@ -171,7 +171,7 @@ export function composeSystemPrompt(
     agentId: agent.id,
   });
 
-  if (profile.name === 'chat_like_openclaw') {
+  if (profile.name === 'chat_like_anthroclaw') {
     const customPersonality = agent.config.personality;
     const personality =
       typeof customPersonality === 'string' && customPersonality.trim().length > 0

@@ -12,7 +12,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 describe('<ClaudeAuthPanel />', () => {
   it('renders connected account status without exposing credential material', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
-      expect(String(input)).toContain('/api/fleet/local/claude-auth/status');
+      expect(String(input)).toContain('/api/fleet/local/runtime/legacy/claude/status');
       return jsonResponse({
         connected: true,
         email: 'operator@example.com',
@@ -21,14 +21,20 @@ describe('<ClaudeAuthPanel />', () => {
         runtimeHome: '/home/node',
         credentialFile: { exists: true, updatedAt: '2026-05-13T00:00:00.000Z' },
         pendingSession: null,
+        legacyRuntime: true,
+        runtimeRole: 'legacy-fallback',
+        provider: 'claude-agent-sdk',
       });
     }));
 
     render(<ClaudeAuthPanel serverId="local" />);
 
     expect(await screen.findByText('Connected')).toBeInTheDocument();
+    expect(screen.getByText('Legacy Claude fallback auth')).toBeInTheDocument();
     expect(screen.getByText('operator@example.com')).toBeInTheDocument();
     expect(screen.getByText('/home/node')).toBeInTheDocument();
+    expect(screen.queryByText(/Claude subscription auth/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /connect claude subscription/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/sk-ant/i)).not.toBeInTheDocument();
   });
 
@@ -41,6 +47,9 @@ describe('<ClaudeAuthPanel />', () => {
           runtimeHome: '/home/node',
           credentialFile: { exists: false },
           pendingSession: null,
+          legacyRuntime: true,
+          runtimeRole: 'legacy-fallback',
+          provider: 'claude-agent-sdk',
         });
       }
       if (url.endsWith('/start')) {
@@ -70,7 +79,7 @@ describe('<ClaudeAuthPanel />', () => {
 
     render(<ClaudeAuthPanel serverId="local" />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /connect claude subscription/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /connect legacy fallback/i }));
     expect(await screen.findByRole('link', { name: /open authorization page/i })).toHaveAttribute(
       'href',
       'https://claude.com/cai/oauth/authorize?state=[redacted]',
@@ -95,10 +104,19 @@ describe('<ClaudeAuthPanel />', () => {
           runtimeHome: '/home/node',
           credentialFile: { exists: true },
           pendingSession: null,
+          legacyRuntime: true,
+          runtimeRole: 'legacy-fallback',
+          provider: 'claude-agent-sdk',
         });
       }
       if (url.endsWith('/verify')) {
-        return jsonResponse({ ok: true, message: 'Claude runtime accepted a real query.' });
+        return jsonResponse({
+          ok: true,
+          message: 'Legacy Claude fallback accepted a real query.',
+          legacyRuntime: true,
+          runtimeRole: 'legacy-fallback',
+          provider: 'claude-agent-sdk',
+        });
       }
       if (url.endsWith('/restart-runtime')) {
         return jsonResponse({ restarted: true });
@@ -112,7 +130,7 @@ describe('<ClaudeAuthPanel />', () => {
     fireEvent.click(await screen.findByRole('button', { name: /verify/i }));
     expect(await screen.findByText(/accepted a real query/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /restart runtime/i }));
+    fireEvent.click(screen.getByRole('button', { name: /restart gateway runtime/i }));
     expect(await screen.findByText(/Runtime restarted/i)).toBeInTheDocument();
   });
 });

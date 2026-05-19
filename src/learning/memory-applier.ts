@@ -3,7 +3,12 @@ import type { MemoryEntryRecord, MemoryProvenance, MemoryReviewStatus } from '..
 import { metrics } from '../metrics/collector.js';
 import type { LearningActionRecord, LearningMode } from './types.js';
 
-export type LearningApplierSafetyProfile = 'public' | 'trusted' | 'private' | 'chat_like_openclaw';
+export type LearningApplierSafetyProfile =
+  | 'public'
+  | 'trusted'
+  | 'private'
+  | 'chat_like_anthroclaw'
+  | 'chat_like_openclaw';
 
 export interface ApplyMemoryCandidateParams {
   memoryStore: MemoryProvider;

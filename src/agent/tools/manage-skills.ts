@@ -23,7 +23,7 @@ function atomicWriteFile(targetPath: string, content: string): void {
 export function createManageSkillsTool(workspacePath: string): ToolDefinition {
   const sdkTool = tool(
     'manage_skills',
-    'Safely manage SDK-native project skills under .claude/skills. Supports read, create, update, and remove for SKILL.md only.',
+    'Safely manage workspace skills under .claude/skills. Supports read, create, update, and remove for SKILL.md only.',
     {
       action: z.enum(['read', 'create', 'update', 'remove']).describe('Operation to perform on a native project skill'),
       skill_name: z.string().describe('Skill directory name under .claude/skills'),

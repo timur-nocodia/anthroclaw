@@ -69,7 +69,7 @@ function callMirror(
 }
 
 describe('Gateway.mirrorCronSessionToUserKey — DM cron session continuity (Bug #1)', () => {
-  const agentId = 'amina';
+  const agentId = 'agent_alpha';
   const cronJobId = 'morning-briefing';
   const cronSessionKey = `${agentId}:cron:${cronJobId}`;
   const sdkSessionId = 'sdk-session-cron';

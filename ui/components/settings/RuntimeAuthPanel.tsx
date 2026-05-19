@@ -109,7 +109,7 @@ export function RuntimeAuthPanel({ serverId }: { serverId: string }) {
       </div>
 
       {legacyPrimary && (
-        <Notice tone="warn" text="Default provider is still legacy Claude Agent SDK. Runtime UI remains available, but Pi is not the active default for this gateway." />
+        <Notice tone="warn" text="Default provider is still the legacy fallback. Runtime UI remains available, but Pi is not the active default for this gateway." />
       )}
       {status?.pi?.lastError && <Notice tone="error" text={status.pi.lastError} />}
       {status?.gateway?.lastError && <Notice tone="error" text={status.gateway.lastError} />}

@@ -140,7 +140,7 @@ describe('canUseTool profile gating', () => {
       sessionContext: { peerId: '1', senderId: '1' },
     });
     const r = await can(
-      'mcp__leads_agent-tools__escalate',
+      'mcp__customer_intake_agent-tools__escalate',
       { summary: 'client requested all leads export', urgency: 'urgent' },
       { signal: new AbortController().signal, toolUseID: "test" } as any,
     );

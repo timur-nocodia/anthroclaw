@@ -67,8 +67,13 @@ import { Section } from "@/components/ui/section";
 import { WhereAgentListensSection } from "@/components/binding/WhereAgentListensSection";
 import {
   STATIC_RUNTIME_MODEL_OPTIONS,
+  type RuntimeModelOption,
   withCurrentRuntimeModelOption,
 } from "@/lib/runtime-models";
+import {
+  RuntimeModelPicker,
+  type RuntimeProviderOption,
+} from "@/components/runtime/RuntimeModelPicker";
 import {
   LearningAdminApprovalsEditor,
   type LearningAdminApprovalRoute,
@@ -97,7 +102,7 @@ interface AgentConfig {
   };
   thinking?: { type: string; budgetTokens?: number };
   effort?: string;
-  safety_profile?: 'public' | 'trusted' | 'private' | 'chat_like_openclaw';
+  safety_profile?: SafetyProfileValue | 'chat_like_openclaw';
   personality?: string;
   safety_overrides?: { allow_tools?: string[]; deny_tools?: string[]; permission_mode?: 'default' | 'bypass' };
   maxTurns?: number;
@@ -236,6 +241,14 @@ interface RuntimeStatus {
     packageAvailable?: boolean;
     authConfigured?: boolean;
     modelsConfigured?: boolean;
+  };
+}
+
+interface RuntimeProvidersResponse {
+  runtimeMode?: RuntimeProvider;
+  pi?: {
+    providers?: RuntimeProviderOption[];
+    models?: RuntimeModelOption[];
   };
 }
 
@@ -590,29 +603,36 @@ const THINKING_MODES = [
 ];
 
 const SAFETY_PROFILES = [
-  { value: "chat_like_openclaw", label: "chat — friendly conversational, all tools" },
+  { value: "chat_like_anthroclaw", label: "chat — friendly conversational, all tools" },
   { value: "public", label: "public — anonymous-user threat model" },
   { value: "trusted", label: "trusted — known users, TG approval for destructive" },
   { value: "private", label: "private — single owner, all tools, optional bypass" },
 ];
 
-const SAFETY_PROFILE_TOOLTIP: Record<'public' | 'trusted' | 'private' | 'chat_like_openclaw', string> = {
-  chat_like_openclaw:
+type SafetyProfileValue = 'public' | 'trusted' | 'private' | 'chat_like_anthroclaw';
+
+function normalizeSafetyProfile(value: AgentConfig['safety_profile']): SafetyProfileValue {
+  if (value === 'chat_like_openclaw' || !value) return 'chat_like_anthroclaw';
+  return value;
+}
+
+const SAFETY_PROFILE_TOOLTIP: Record<SafetyProfileValue, string> = {
+  chat_like_anthroclaw:
     "Personal/single-user mode. Warm conversational tone (not a CLI helper).\n" +
     "All tools allowed without approval. Wildcard allowlist OK. No sandbox.\n" +
     "Per-agent personality override editable below.\n" +
     "\n" +
-    "Use when: your personal Klavdia/Jarvis-style bot. Default for new agents.",
+    "Use when: a private personal assistant or single-user operator bot. Default for new agents.",
   public:
     "For bots that anyone can DM (open WhatsApp, public Telegram).\n" +
-    "Read-only tools only, no claude_code preset, no settings loaded.\n" +
+    "Read-only tools only, no code-tool preset, no settings loaded.\n" +
     "No interactive approval (channel may not support it).\n" +
     "Rate-limited to 30 msg/hour per peer (enforced).\n" +
     "\n" +
     "Use when: building a public lead-capture or info bot.",
   trusted:
     "For bots serving known users (allowlisted or paired). Not actively hostile.\n" +
-    "Claude Code preset, project .claude/ settings loaded.\n" +
+    "Runtime code-tool preset and project-local tool settings loaded.\n" +
     "Built-in code-edit tools (Write, Edit) require TG approval.\n" +
     "manage_cron, memory_write, send_media available.\n" +
     "Rate-limited to 100 msg/hour per peer.\n" +
@@ -624,7 +644,7 @@ const SAFETY_PROFILE_TOOLTIP: Record<'public' | 'trusted' | 'private' | 'chat_li
     "All tools available; Bash and WebFetch require TG approval by default.\n" +
     "Optional safety_overrides.permission_mode: bypass removes all approvals.\n" +
     "\n" +
-    "Use when: your personal Klavdia/Jarvis-style bot.",
+    "Use when: a private personal assistant or single-user operator bot.",
 };
 
 const SDK_PERMISSION_MODES = [
@@ -752,7 +772,7 @@ const QUEUE_MODE_OPTIONS: QueueModeOption[] = [
     label: "steer — interrupt the current run and restart",
     oneLiner: "Cancel the in-flight reply mid-stream; start a fresh run that includes the new message.",
     behavior:
-      "When a new message arrives during an active run, the SDK Query is interrupted (query.interrupt() + AbortController.abort()). The partial assistant output is discarded. A new run is started with the same session, picking up the latest user input.",
+      "When a new message arrives during an active run, the runtime run is interrupted and aborted. The partial assistant output is discarded. A new run is started with the same product session, picking up the latest user input.",
     whenToUse:
       "Live conversation where a correction or clarification matters more than the response in flight. The user expects the bot to listen and switch direction immediately.",
     caveats:
@@ -763,7 +783,7 @@ const QUEUE_MODE_OPTIONS: QueueModeOption[] = [
     label: "interrupt — cancel current and drop the new message",
     oneLiner: "Cancel the in-flight reply but discard the new message too — emergency stop.",
     behavior:
-      "Same interrupt as steer (Query.interrupt + abort), but the new message is dropped instead of restarting. The bot goes silent.",
+      "Same interrupt as steer, but the new message is dropped instead of restarting. The bot goes silent.",
     whenToUse:
       "Operator panic switch / debugging — when you want to stop the bot from continuing without it then jumping on the very message that triggered the stop.",
   },
@@ -840,9 +860,12 @@ function getEffectiveRuntimeProvider(
   return agent.runtime?.headless?.provider ?? defaultProvider ?? "pi";
 }
 
-function inferRuntimeModelSource(model: string | undefined): "pi" | "legacy" | "custom" | "runtime" {
+function inferRuntimeModelSource(
+  model: string | undefined,
+  provider: RuntimeProvider,
+): "pi" | "legacy" | "custom" | "runtime" {
   if (!model) return "runtime";
-  if (model.startsWith("claude-")) return "legacy";
+  if (model.startsWith("claude-")) return provider === "claude-agent-sdk" ? "legacy" : "pi";
   if (model.includes("/") || model.includes(":")) return "pi";
   return "custom";
 }
@@ -977,7 +1000,7 @@ export default function AgentEditorPage() {
     ? getEffectiveRuntimeProvider(agent, runtimeStatus?.defaultProvider)
     : runtimeStatus?.defaultProvider ?? "pi";
   const runtimeOverride = agent?.runtime?.headless?.provider;
-  const modelRuntime = agent ? inferRuntimeModelSource(agent.model) : "runtime";
+  const modelRuntime = agent ? inferRuntimeModelSource(agent.model, effectiveRuntimeProvider) : "runtime";
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -1228,7 +1251,7 @@ function ConfigTab({
     runtime: agent.runtime ?? {},
     thinking: agent.thinking ?? { type: "adaptive" as string, budgetTokens: undefined as number | undefined },
     effort: agent.effort ?? "high",
-    safety_profile: (agent.safety_profile ?? 'chat_like_openclaw') as 'public' | 'trusted' | 'private' | 'chat_like_openclaw',
+    safety_profile: normalizeSafetyProfile(agent.safety_profile),
     safety_overrides: agent.safety_overrides ?? {} as { allow_tools?: string[]; deny_tools?: string[]; permission_mode?: 'default' | 'bypass' },
     personality: agent.personality ?? '',
     maxTurns: agent.maxTurns ?? 0,
@@ -1314,11 +1337,32 @@ function ConfigTab({
   const [safetyValidationError, setSafetyValidationError] = useState<string | null>(null);
   const [safetyValidationWarnings, setSafetyValidationWarnings] = useState<string[]>([]);
   const [chatBaseline, setChatBaseline] = useState<string | null>(null);
+  const [runtimeProviders, setRuntimeProviders] = useState<RuntimeProviderOption[]>([]);
+  const [runtimeModels, setRuntimeModels] = useState<RuntimeModelOption[]>([]);
 
   useEffect(() => {
-    if (cfg.safety_profile !== 'chat_like_openclaw') return;
+    let cancelled = false;
+    fetch(`/api/fleet/${serverId}/runtime/providers`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: RuntimeProvidersResponse | null) => {
+        if (cancelled || !body?.pi) return;
+        setRuntimeProviders(body.pi.providers ?? []);
+        setRuntimeModels(body.pi.models ?? []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRuntimeProviders([]);
+        setRuntimeModels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [serverId]);
+
+  useEffect(() => {
+    if (cfg.safety_profile !== 'chat_like_anthroclaw') return;
     if (chatBaseline !== null) return;
-    fetch(`/api/fleet/${serverId}/security/profiles/chat_like_openclaw/baseline`)
+    fetch(`/api/fleet/${serverId}/security/profiles/chat_like_anthroclaw/baseline`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d?.baseline) setChatBaseline(d.baseline); })
       .catch(() => { /* silently fall back to "Loading default…" placeholder */ });
@@ -1655,7 +1699,7 @@ function ConfigTab({
   };
 
   const effectiveProvider = cfg.runtime.headless?.provider ?? runtimeStatus?.defaultProvider ?? "pi";
-  const modelSource = inferRuntimeModelSource(cfg.model);
+  const modelSource = inferRuntimeModelSource(cfg.model, effectiveProvider);
   const capabilityGroups = inferAgentCapabilityGroups(cfg);
 
   return (
@@ -1755,23 +1799,40 @@ function ConfigTab({
               </FormGrid>
             </div>
             <FormGrid>
-              <Field label="Model" tooltip="Runtime model id. Pi models use provider/model ids; legacy Claude Agent SDK bare ids remain available only for compatibility.">
-                <select
-                  value={cfg.model}
-                  onChange={(e) => update({ model: e.target.value })}
-                  className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
-                  style={{
-                    background: "var(--oc-bg3)",
-                    borderColor: "var(--oc-border)",
-                    color: "var(--color-foreground)",
-                  }}
-                >
-                  {withCurrentRuntimeModelOption(STATIC_RUNTIME_MODEL_OPTIONS, cfg.model).map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
+              <Field label="Model" tooltip="Runtime model id. Pi models use provider/model ids. Legacy bare ids remain available only when this agent explicitly uses the legacy provider.">
+                {effectiveProvider === "claude-agent-sdk" ? (
+                  <select
+                    value={cfg.model}
+                    onChange={(e) => update({ model: e.target.value })}
+                    className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
+                    style={{
+                      background: "var(--oc-bg3)",
+                      borderColor: "var(--oc-border)",
+                      color: "var(--color-foreground)",
+                    }}
+                  >
+                    {withCurrentRuntimeModelOption(STATIC_RUNTIME_MODEL_OPTIONS, cfg.model).map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <RuntimeModelPicker
+                    providers={runtimeProviders}
+                    models={withCurrentRuntimeModelOption(
+                      runtimeModels.length > 0
+                        ? runtimeModels
+                        : STATIC_RUNTIME_MODEL_OPTIONS.filter((m) => m.runtime === "pi"),
+                      cfg.model,
+                    )}
+                    value={cfg.model}
+                    onChange={(model) => update({ model })}
+                    onConfigureProvider={(provider) => {
+                      window.location.href = `/fleet/${serverId}/runtime?provider=${encodeURIComponent(provider)}`;
+                    }}
+                  />
+                )}
               </Field>
               <Field label="Timezone" tooltip="Agent's IANA timezone (e.g. Asia/Almaty, Europe/Moscow). Drives: (1) the date+time prefix injected on every turn, so the agent knows the correct weekday/hour; (2) cron job firing times; (3) timestamps in memory files and logs.">
                 <select
@@ -2102,7 +2163,7 @@ function ConfigTab({
                 <select
                   value={cfg.safety_profile}
                   onChange={(e) =>
-                    update({ safety_profile: e.target.value as 'public' | 'trusted' | 'private' | 'chat_like_openclaw' })
+                    update({ safety_profile: e.target.value as SafetyProfileValue })
                   }
                   className="h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
                   style={{
@@ -2130,14 +2191,14 @@ function ConfigTab({
                   </ul>
                 )}
               </Field>
-              {cfg.safety_profile === 'chat_like_openclaw' && (
+              {cfg.safety_profile === 'chat_like_anthroclaw' && (
                 <Field
                   label="Personality"
                   tooltip={
                     "Personality baseline for this agent. Empty = use profile default.\n" +
                     "Edits hot-reload (next message picks up new prompt without restart).\n" +
                     "\n" +
-                    "Tip: keep it under 100 words. The agent's CLAUDE.md is appended after this."
+                    "Tip: keep it under 100 words. The agent prompt file is appended after this."
                   }
                 >
                   <textarea
@@ -2267,7 +2328,7 @@ function ConfigTab({
           {/* Per-chat customization (formerly "Channel behavior") */}
           <Section
             title="Per-chat customization (optional)"
-            tooltip="Optional per-chat or per-topic context strings added to the agent's prompt for that specific peer or topic. Not the routing config — see 'Where this agent listens' above. Injected as fenced, untrusted context; does not replace CLAUDE.md or mutate SDK sessions."
+            tooltip="Optional per-chat or per-topic context strings added to the agent's prompt for that specific peer or topic. Not the routing config — see 'Where this agent listens' above. Injected as fenced, untrusted context; does not replace the agent prompt file or mutate runtime sessions."
             icon={<MessageSquare className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
             defaultCollapsed
           >
@@ -2741,8 +2802,9 @@ function ConfigTab({
 
 
           {/* Legacy runtime compatibility */}
-          <Section title="Legacy Claude Agent SDK compatibility"
-            tooltip="Compatibility-only controls used when this agent explicitly runs the legacy claude-agent-sdk provider."
+          {effectiveProvider === "claude-agent-sdk" && (
+          <Section title="Legacy fallback diagnostics"
+            tooltip="Compatibility-only controls used when this agent explicitly runs the legacy fallback provider."
             icon={<Key className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
             <div className="flex flex-col gap-4">
               <div
@@ -2760,11 +2822,11 @@ function ConfigTab({
                   </span>
                 </div>
                 <p className="text-[11.5px] leading-relaxed">
-                  These settings are passed through only for the legacy Claude Agent SDK provider. Runtime v1 + Pi remains the primary harness path.
+                  These settings are passed through only for the legacy fallback provider. Runtime v1 + Pi remains the primary harness path.
                 </p>
               </div>
               <FormGrid>
-                <Field label="Fallback model" tooltip="Legacy SDK fallbackModel. Used only inside the Claude Agent SDK query lifecycle, not as AnthroClaw-side provider routing.">
+                <Field label="Fallback model" tooltip="Legacy provider fallbackModel. Used only inside the fallback provider lifecycle, not as AnthroClaw-side provider routing.">
                   <select
                     value={cfg.sdk.fallbackModel || ""}
                     onChange={(e) => updateSdk({ fallbackModel: e.target.value })}
@@ -2777,7 +2839,7 @@ function ConfigTab({
                     ))}
                   </select>
                 </Field>
-                <Field label="Allowed built-in tools" tooltip="Legacy SDK built-in tools, comma-separated. Example: Read, Edit, Bash. Leave empty to use runtime defaults.">
+                <Field label="Allowed built-in tools" tooltip="Legacy fallback built-in tools, comma-separated. Example: Read, Edit, Bash. Leave empty to use runtime defaults.">
                   <input
                     value={arrayToCsv(cfg.sdk.allowedTools)}
                     onChange={(e) => updateSdk({ allowedTools: csvToArray(e.target.value) })}
@@ -2786,7 +2848,7 @@ function ConfigTab({
                     style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
                   />
                 </Field>
-                <Field label="Disallowed built-in tools" tooltip="Legacy SDK built-in tools to deny, comma-separated. Useful for explicit restrictions.">
+                <Field label="Disallowed built-in tools" tooltip="Legacy fallback built-in tools to deny, comma-separated. Useful for explicit restrictions.">
                   <input
                     value={arrayToCsv(cfg.sdk.disallowedTools)}
                     onChange={(e) => updateSdk({ disallowedTools: csvToArray(e.target.value) })}
@@ -2795,7 +2857,7 @@ function ConfigTab({
                     style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
                   />
                 </Field>
-                <Field label="Permission mode" tooltip="Legacy SDK permission mode. default keeps approvals/policy normal; dontAsk is stricter headless policy behavior.">
+                <Field label="Permission mode" tooltip="Legacy fallback permission mode. default keeps approvals/policy normal; dontAsk is stricter headless policy behavior.">
                   <select
                     value={cfg.sdk.permissions.mode}
                     onChange={(e) => updateSdkPermissions({ mode: e.target.value })}
@@ -2816,7 +2878,7 @@ function ConfigTab({
                     style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
                   />
                 </Field>
-                <Field label="Denied Bash patterns" tooltip="Shell command substrings blocked by the SDK permission hook. Comma-separated.">
+                <Field label="Denied Bash patterns" tooltip="Shell command substrings blocked by the runtime permission policy. Comma-separated.">
                   <input
                     value={arrayToCsv(cfg.sdk.permissions.denied_bash_patterns)}
                     onChange={(e) => updateSdkPermissions({ denied_bash_patterns: csvToArray(e.target.value) })}
@@ -2828,12 +2890,12 @@ function ConfigTab({
               </FormGrid>
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                <ToggleField label="Prompt suggestions" tooltip="Show SDK prompt_suggestion events as the next suggested message." checked={cfg.sdk.promptSuggestions} onChange={(checked) => updateSdk({ promptSuggestions: checked })} />
-                <ToggleField label="Progress summaries" tooltip="Surface SDK task_progress events in chat while work is running." checked={cfg.sdk.agentProgressSummaries} onChange={(checked) => updateSdk({ agentProgressSummaries: checked })} />
-                <ToggleField label="Partial messages" tooltip="Stream native partial message deltas when the SDK emits them." checked={cfg.sdk.includePartialMessages} onChange={(checked) => updateSdk({ includePartialMessages: checked })} />
-                <ToggleField label="Hook events" tooltip="Surface SDK hook lifecycle events in the chat debug rail." checked={cfg.sdk.includeHookEvents} onChange={(checked) => updateSdk({ includeHookEvents: checked })} />
-                <ToggleField label="File checkpoints" tooltip="Enable native SDK file checkpoint handles for rewind." checked={cfg.sdk.enableFileCheckpointing} onChange={(checked) => updateSdk({ enableFileCheckpointing: checked })} />
-                <ToggleField label="Sandbox" tooltip="Enable SDK sandbox options when available in the environment." checked={cfg.sdk.sandbox.enabled} onChange={(checked) => updateSdkSandbox({ enabled: checked })} />
+                <ToggleField label="Prompt suggestions" tooltip="Show runtime prompt suggestion events as the next suggested message." checked={cfg.sdk.promptSuggestions} onChange={(checked) => updateSdk({ promptSuggestions: checked })} />
+                <ToggleField label="Progress summaries" tooltip="Surface runtime task progress events in chat while work is running." checked={cfg.sdk.agentProgressSummaries} onChange={(checked) => updateSdk({ agentProgressSummaries: checked })} />
+                <ToggleField label="Partial messages" tooltip="Stream native partial message deltas when the runtime emits them." checked={cfg.sdk.includePartialMessages} onChange={(checked) => updateSdk({ includePartialMessages: checked })} />
+                <ToggleField label="Hook events" tooltip="Surface provider hook lifecycle events in the chat debug rail when the selected runtime exposes them." checked={cfg.sdk.includeHookEvents} onChange={(checked) => updateSdk({ includeHookEvents: checked })} />
+                <ToggleField label="File checkpoints" tooltip="Enable runtime file checkpoint handles for rewind when the selected provider supports them." checked={cfg.sdk.enableFileCheckpointing} onChange={(checked) => updateSdk({ enableFileCheckpointing: checked })} />
+                <ToggleField label="Sandbox" tooltip="Enable runtime sandbox options when available in the environment." checked={cfg.sdk.sandbox.enabled} onChange={(checked) => updateSdkSandbox({ enabled: checked })} />
               </div>
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -2868,7 +2930,7 @@ function ConfigTab({
                   <input
                     value={arrayToCsv(cfg.sdk.sandbox.filesystem.allowWrite)}
                     onChange={(e) => updateSdkSandboxFilesystem({ allowWrite: csvToArray(e.target.value) })}
-                    placeholder="agents/example, /tmp/openclaw"
+                    placeholder="agents/example, /tmp/anthroclaw"
                     className="h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
                     style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
                   />
@@ -2891,6 +2953,7 @@ function ConfigTab({
               </div>
             </div>
           </Section>
+          )}
 
 
           {/* Hooks */}
@@ -2943,7 +3006,7 @@ function ConfigTab({
 
           {/* Advanced */}
           <Section title="Advanced"
-            tooltip="Power-user settings: sub-agent delegation and SDK-native orchestration boundaries."
+            tooltip="Power-user settings: sub-agent delegation and Runtime v1 orchestration boundaries."
             icon={<Terminal className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}>
             <div className="flex flex-col gap-3.5">
               <Field label="Subagents" tooltip="Other agents this one can delegate subtasks to. For example, one agent talks to the user while another does research.">
@@ -2954,7 +3017,7 @@ function ConfigTab({
                   style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }} />
               </Field>
               <FormGrid>
-                <Field label="Max spawn depth" tooltip="SDK delegation surface policy. 0 disables direct subagent exposure, 1 allows direct subagents, 2 allows nested subagents.">
+                <Field label="Max spawn depth" tooltip="Runtime delegation policy. 0 disables direct subagent exposure, 1 allows direct subagents, 2 allows nested subagents.">
                   <input
                     type="number"
                     value={cfg.subagents.max_spawn_depth}
@@ -2968,7 +3031,7 @@ function ConfigTab({
                     style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}
                   />
                 </Field>
-                <Field label="Conflict mode" tooltip="Soft records sibling file ownership conflicts and allows them. Strict denies conflicting writes through SDK permission hooks.">
+                <Field label="Conflict mode" tooltip="Soft records sibling file ownership conflicts and allows them. Strict denies conflicting writes through runtime permission policy.">
                   <select
                     value={cfg.subagents.conflict_mode}
                     onChange={(e) => update({
@@ -3011,7 +3074,7 @@ function ConfigTab({
                           {subagentId}
                         </div>
                         <FormGrid>
-                          <Field label="Role kind" tooltip="Policy label used in the SDK Agent tool description. Explorer and worker are AnthroClaw policy hints, not custom runtimes.">
+                          <Field label="Role kind" tooltip="Policy label used in delegated-agent tool descriptions. Explorer and worker are AnthroClaw policy hints, not custom runtimes.">
                             <select
                               value={role.kind ?? "custom"}
                               onChange={(e) => updateRole({ kind: e.target.value as "explorer" | "worker" | "custom" })}
@@ -3503,7 +3566,7 @@ function RoutinesTab({ serverId, agentId, agent }: { serverId: string; agentId: 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-sm font-semibold" style={{ color: "var(--color-foreground)" }}>Routines</h2>
-          <p className="text-xs" style={{ color: "var(--oc-text-muted)" }}>Heartbeat wakes the agent through the SDK path and runs due tasks from HEARTBEAT.md.</p>
+          <p className="text-xs" style={{ color: "var(--oc-text-muted)" }}>Heartbeat wakes the agent through the selected runtime and runs due tasks from HEARTBEAT.md.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => void loadHeartbeat()}>
@@ -4819,7 +4882,7 @@ function RunsTab({ serverId, agentId }: { serverId: string; agentId: string }) {
             Runtime observability
           </h2>
           <p className="mt-1 text-[11.5px]" style={{ color: "var(--oc-text-muted)" }}>
-            Native SDK run records and gateway route decisions for this agent.
+            Runtime run records and gateway route decisions for this agent.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -4876,14 +4939,14 @@ function RunsTab({ serverId, agentId }: { serverId: string; agentId: string }) {
             <div className="flex items-center gap-2">
               <Clock className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />
               <span className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
-                SDK runs
+                Runtime runs
               </span>
             </div>
             <RuntimePill>{runs.length}</RuntimePill>
           </div>
           <div className="flex flex-col divide-y" style={{ borderColor: "var(--oc-border)" }}>
             {runs.length === 0 ? (
-              <EmptyRuntimeState text="No SDK runs recorded for this filter." />
+              <EmptyRuntimeState text="No runtime runs recorded for this filter." />
             ) : (
               runs.map((run) => (
                 <RunRow

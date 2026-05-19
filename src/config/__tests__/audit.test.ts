@@ -14,23 +14,23 @@ describe('ConfigAuditLog', () => {
   it('appends a JSONL entry per write with snake_case keys', async () => {
     const log = createConfigAuditLog({ auditDir: dir });
     await log.append({
-      callerAgent: 'klavdia',
-      callerSession: 'telegram:control:dm:48705953',
-      targetAgent: 'amina',
+      callerAgent: 'operator_agent',
+      callerSession: 'telegram:control:dm:123456789',
+      targetAgent: 'agent_alpha',
       section: 'notifications',
       action: 'add_subscription',
       prev: null,
       new: { event: 'peer_pause_started', route: 'operator' },
       source: 'chat',
     });
-    const file = readFileSync(join(dir, 'amina.jsonl'), 'utf-8');
+    const file = readFileSync(join(dir, 'agent_alpha.jsonl'), 'utf-8');
     const lines = file.trim().split('\n');
     expect(lines).toHaveLength(1);
     const entry = JSON.parse(lines[0]);
     expect(entry).toMatchObject({
-      caller_agent: 'klavdia',
-      caller_session: 'telegram:control:dm:48705953',
-      target_agent: 'amina',
+      caller_agent: 'operator_agent',
+      caller_session: 'telegram:control:dm:123456789',
+      target_agent: 'agent_alpha',
       section: 'notifications',
       action: 'add_subscription',
       source: 'chat',
@@ -42,8 +42,8 @@ describe('ConfigAuditLog', () => {
     const log = createConfigAuditLog({ auditDir: dir, maxFileBytes: 200, maxFiles: 3 });
     for (let i = 0; i < 10; i++) {
       await log.append({
-        callerAgent: 'klavdia',
-        targetAgent: 'amina',
+        callerAgent: 'operator_agent',
+        targetAgent: 'agent_alpha',
         section: 'notifications',
         action: 'noop',
         prev: null,
@@ -51,7 +51,7 @@ describe('ConfigAuditLog', () => {
         source: 'chat',
       });
     }
-    const files = readdirSync(dir).filter((f) => f.startsWith('amina.jsonl'));
+    const files = readdirSync(dir).filter((f) => f.startsWith('agent_alpha.jsonl'));
     expect(files.length).toBeGreaterThan(1);
     expect(files.length).toBeLessThanOrEqual(3);
   });
@@ -62,7 +62,7 @@ describe('ConfigAuditLog', () => {
     for (let i = 0; i < 5; i++) {
       await log.append({
         callerAgent: 'k',
-        targetAgent: 'amina',
+        targetAgent: 'agent_alpha',
         section: 'human_takeover',
         action: 'noop',
         prev: null,
@@ -71,7 +71,7 @@ describe('ConfigAuditLog', () => {
       });
       now += 1000;
     }
-    const recent = await log.readRecent('amina', { limit: 3 });
+    const recent = await log.readRecent('agent_alpha', { limit: 3 });
     expect(recent).toHaveLength(3);
     expect(recent[0].new).toMatchObject({ i: 4 });
   });
@@ -80,7 +80,7 @@ describe('ConfigAuditLog', () => {
     const log = createConfigAuditLog({ auditDir: dir });
     await log.append({
       callerAgent: 'k',
-      targetAgent: 'amina',
+      targetAgent: 'agent_alpha',
       section: 'notifications',
       action: 'noop',
       prev: null,
@@ -89,14 +89,14 @@ describe('ConfigAuditLog', () => {
     });
     await log.append({
       callerAgent: 'k',
-      targetAgent: 'amina',
+      targetAgent: 'agent_alpha',
       section: 'human_takeover',
       action: 'noop',
       prev: null,
       new: { i: 1 },
       source: 'chat',
     });
-    const ht = await log.readRecent('amina', { section: 'human_takeover' });
+    const ht = await log.readRecent('agent_alpha', { section: 'human_takeover' });
     expect(ht).toHaveLength(1);
     expect(ht[0].new).toMatchObject({ i: 1 });
   });
@@ -109,7 +109,7 @@ describe('ConfigAuditLog', () => {
   it('readRecent skips malformed lines and entries with invalid section', async () => {
     // Hand-craft a log file with a mix of valid + corrupt + tampered lines.
     // The deserializer must drop bad rows rather than coerce them.
-    const path = join(dir, 'amina.jsonl');
+    const path = join(dir, 'agent_alpha.jsonl');
     appendFileSync(
       path,
       [
@@ -117,7 +117,7 @@ describe('ConfigAuditLog', () => {
         JSON.stringify({
           ts: '2026-05-01T10:00:00.000Z',
           caller_agent: 'k',
-          target_agent: 'amina',
+          target_agent: 'agent_alpha',
           section: 'human_takeover',
           action: 'noop',
           prev: null,
@@ -130,7 +130,7 @@ describe('ConfigAuditLog', () => {
         JSON.stringify({
           ts: '2026-05-01T10:00:01.000Z',
           caller_agent: 'k',
-          target_agent: 'amina',
+          target_agent: 'agent_alpha',
           section: 'evil_payload',
           action: 'noop',
           prev: null,
@@ -143,7 +143,7 @@ describe('ConfigAuditLog', () => {
         JSON.stringify({
           ts: '2026-05-01T10:00:03.000Z',
           caller_agent: 'k',
-          target_agent: 'amina',
+          target_agent: 'agent_alpha',
           section: 'notifications',
           action: 'noop',
           prev: null,
@@ -155,7 +155,7 @@ describe('ConfigAuditLog', () => {
       'utf-8',
     );
     const log = createConfigAuditLog({ auditDir: dir });
-    const entries = await log.readRecent('amina');
+    const entries = await log.readRecent('agent_alpha');
     expect(entries).toHaveLength(2);
     expect(entries.map((e) => (e.new as { i: number }).i).sort()).toEqual([1, 3]);
     expect(entries.every((e) => e.section === 'human_takeover' || e.section === 'notifications')).toBe(true);

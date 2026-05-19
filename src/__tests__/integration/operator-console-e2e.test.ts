@@ -50,7 +50,7 @@ interface PluginContextShape {
  *     into the test runner.
  */
 
-describe('operator-console e2e (klavdia → amina)', () => {
+describe('operator-console e2e (operator_agent → agent_alpha)', () => {
   it('peer_pause: operator agent pauses a managed agent peer via the live gateway store', async () => {
     const gw = new Gateway() as unknown as {
       peerPauseStore: ReturnType<typeof createPeerPauseStore>;
@@ -77,12 +77,12 @@ describe('operator-console e2e (klavdia → amina)', () => {
       runSubagent: vi.fn(async () => ''),
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
       getAgentConfig: (id: string) => {
-        if (id === 'klavdia') {
+        if (id === 'operator_agent') {
           return {
             plugins: {
               'operator-console': {
                 enabled: true,
-                manages: ['amina'],
+                manages: ['agent_alpha'],
                 capabilities: ['peer_pause', 'delegate', 'list_peers', 'peer_summary', 'escalate'],
               },
             },
@@ -106,21 +106,21 @@ describe('operator-console e2e (klavdia → amina)', () => {
 
     const result = await peerPauseTool!.handler(
       {
-        target_agent_id: 'amina',
+        target_agent_id: 'agent_alpha',
         peer: { channel: 'whatsapp', account_id: 'business', peer_id: '37120@s.whatsapp.net' },
         action: 'pause',
         ttl_minutes: 60,
       },
-      { agentId: 'klavdia' },
+      { agentId: 'operator_agent' },
     );
     const body = JSON.parse(result.content[0].text) as Record<string, unknown>;
     expect(body.ok).toBe(true);
 
     // Verify the pause hit the live gateway pause store.
-    const list = gw.peerPauseStore.list('amina');
+    const list = gw.peerPauseStore.list('agent_alpha');
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       peerKey: 'whatsapp:business:37120@s.whatsapp.net',
       reason: 'manual',
       source: 'mcp:operator-console',
@@ -139,11 +139,11 @@ describe('operator-console e2e (klavdia → amina)', () => {
     gw.globalConfig = {};
 
     // Stubbed Agent with the minimal interface dispatchSyntheticInbound + queryAgent reach.
-    const aminaStub = {
-      id: 'amina',
+    const agentAlphaStub = {
+      id: 'agent_alpha',
       memoryStore: { textSearch: vi.fn(() => []) },
     };
-    gw.agents = new Map([['amina', aminaStub as unknown]]);
+    gw.agents = new Map([['agent_alpha', agentAlphaStub as unknown]]);
 
     // Replace queryAgent with a spy. dispatchSyntheticInbound's own code
     // uses `this.queryAgent` — we patch the method on the instance.
@@ -167,12 +167,12 @@ describe('operator-console e2e (klavdia → amina)', () => {
       runSubagent: vi.fn(async () => ''),
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
       getAgentConfig: (id: string) => {
-        if (id === 'klavdia') {
+        if (id === 'operator_agent') {
           return {
             plugins: {
               'operator-console': {
                 enabled: true,
-                manages: ['amina'],
+                manages: ['agent_alpha'],
                 capabilities: ['peer_pause', 'delegate', 'list_peers', 'peer_summary', 'escalate'],
               },
             },
@@ -197,11 +197,11 @@ describe('operator-console e2e (klavdia → amina)', () => {
 
     const result = await delegateTool!.handler(
       {
-        target_agent_id: 'amina',
+        target_agent_id: 'agent_alpha',
         peer: { channel: 'whatsapp', account_id: 'business', peer_id: '37120@s.whatsapp.net' },
         instruction: 'find out a convenient time for a call',
       },
-      { agentId: 'klavdia' },
+      { agentId: 'operator_agent' },
     );
     const body = JSON.parse(result.content[0].text) as Record<string, unknown>;
     expect(body.ok).toBe(true);
@@ -209,7 +209,7 @@ describe('operator-console e2e (klavdia → amina)', () => {
     expect(typeof body.target_session_id).toBe('string');
 
     // Verify gateway-side wiring: dispatchSyntheticInbound was called with
-    // the wrapped instruction, targeting amina.
+    // the wrapped instruction, targeting agent_alpha.
     expect(dispatchSpy).toHaveBeenCalledOnce();
     const arg = dispatchSpy.mock.calls[0][0] as {
       targetAgentId: string;
@@ -217,7 +217,7 @@ describe('operator-console e2e (klavdia → amina)', () => {
       peerId: string;
       text: string;
     };
-    expect(arg.targetAgentId).toBe('amina');
+    expect(arg.targetAgentId).toBe('agent_alpha');
     expect(arg.channel).toBe('whatsapp');
     expect(arg.peerId).toBe('37120@s.whatsapp.net');
     expect(arg.text).toContain('[Operator delegation]');
@@ -231,7 +231,7 @@ describe('operator-console e2e (klavdia → amina)', () => {
       unknown,
       { channel: string; accountId: string; peerId: string; senderId: string; text: string },
     ];
-    expect(callArgs[0]).toBe(aminaStub);
+    expect(callArgs[0]).toBe(agentAlphaStub);
     expect(callArgs[1]).toMatchObject({
       channel: 'whatsapp',
       accountId: 'business',
@@ -263,7 +263,7 @@ describe('operator-console e2e (klavdia → amina)', () => {
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
       getAgentConfig: () => ({
         plugins: {
-          'operator-console': { enabled: true, manages: ['amina'] },
+          'operator-console': { enabled: true, manages: ['agent_alpha'] },
         },
       }),
       getGlobalConfig: () => ({
@@ -285,7 +285,7 @@ describe('operator-console e2e (klavdia → amina)', () => {
         action: 'pause',
         ttl_minutes: 5,
       },
-      { agentId: 'klavdia' },
+      { agentId: 'operator_agent' },
     );
     const body = JSON.parse(r.content[0].text) as Record<string, unknown>;
     expect(body.error).toMatch(/not authorized/i);

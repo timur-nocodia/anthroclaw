@@ -1,55 +1,69 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
   ChevronRight,
   Cpu,
-  FileText,
-  Gauge,
   KeyRound,
   Layers3,
   Loader2,
+  Play,
   RefreshCcw,
+  RotateCcw,
+  Save,
+  Settings2,
   ShieldCheck,
-  TableProperties,
+  SlidersHorizontal,
   TerminalSquare,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClaudeAuthPanel } from "@/components/settings/ClaudeAuthPanel";
+import {
+  RuntimeModelPicker,
+  type RuntimeProviderOption,
+} from "@/components/runtime/RuntimeModelPicker";
+import {
+  STATIC_RUNTIME_MODEL_OPTIONS,
+  withCurrentRuntimeModelOption,
+  type RuntimeModelOption,
+} from "@/lib/runtime-models";
 
-type TabId = "overview" | "gates" | "expansion" | "legacy";
+type TabId = "setup" | "providers" | "models" | "test" | "advanced";
+type RuntimeMode = "pi" | "claude-agent-sdk" | "opencode";
+type RuntimeIcon = React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
 
-interface RuntimeStatus {
-  harness?: { id?: string };
-  defaultProvider?: string;
-  legacyProviders?: string[];
+interface RuntimeProviderAccount extends RuntimeProviderOption {
+  authSource: string | null;
+  authLabel: string | null;
+  modelCount: number;
+  defaultForInstance: boolean;
+  supportsApiKey: boolean;
+}
+
+interface RuntimeProvidersResponse {
+  status?: "ok";
+  runtimeMode?: RuntimeMode;
+  defaultModel?: string;
   pi?: {
     packageName?: string;
     packageAvailable?: boolean;
-    defaultModel?: string;
-    authPath?: string | null;
+    packageVersion?: string | null;
+    authPath?: string;
+    modelsPath?: string;
     authConfigured?: boolean;
-    modelsPath?: string | null;
-    modelsConfigured?: boolean;
-    lastError?: string | null;
-  };
-  agents?: {
-    total?: number;
-    byEffectiveProvider?: Record<string, number>;
-  };
-  gateway?: {
-    uptime?: number | null;
-    activeSessions?: number | null;
+    availableModelCount?: number;
+    modelCount?: number;
+    providers?: RuntimeProviderAccount[];
+    models?: RuntimeModelOption[];
     lastError?: string | null;
   };
   legacy?: {
-    claudeAgentSdk?: {
-      present?: boolean;
-      primary?: boolean;
-    };
+    visible?: boolean;
+    primary?: boolean;
   };
 }
 
@@ -59,16 +73,11 @@ interface RuntimeGate {
   summary: string;
   capabilityGroup: string;
   focusedCommand: string;
-  aggregateDispatcher: boolean;
   risk: string;
-  action: string;
   execution: {
-    requiredFlags: string[];
-    optionalFlags: string[];
     supportsDryRun: boolean;
-    safetyMode: string;
     approval: string;
-    exampleArgs: string[];
+    safetyMode: string;
   };
 }
 
@@ -77,141 +86,82 @@ interface RuntimeGateRegistry {
   gates?: RuntimeGate[];
 }
 
-interface RuntimeModelOption {
-  id: string;
-  label?: string;
-  provider?: string;
-  runtime?: string;
-}
-
-interface RuntimeModelGroup {
-  id: string;
-  title: string;
-  enabled: boolean;
-  compatibility?: boolean;
-  source?: {
-    kind?: string;
-    modelsPath?: string | null;
-    modelsConfigured?: boolean;
-    error?: string | null;
-  };
-  models: RuntimeModelOption[];
-}
-
-interface RuntimeModels {
-  defaultProvider?: string;
-  defaultModel?: string;
-  groups?: RuntimeModelGroup[];
-  options?: RuntimeModelOption[];
-}
-
-type OpenEvidenceKind = "operatorApproval" | "postExpansionMonitor" | "liveAction" | "automated" | "manual";
-
-interface ExpansionAgent {
-  id: string;
-  risk: string;
-  recommendedRing: string;
-  agentsDir: string;
-  state: string;
-  blockers: string[];
-  nextActions: string[];
-  packet: {
-    present: boolean;
-    path?: string;
-    status?: string;
-    checkedItems: number;
-    uncheckedItems: number;
-    totalItems: number;
-    uncheckedLabels: string[];
-    uncheckedByKind: Record<OpenEvidenceKind, number>;
-  };
-}
-
 interface ExpansionStatus {
   status?: "passed" | "attention";
-  agentsDirs?: string[];
-  packetsDir?: string;
   summary?: {
     totalAgents: number;
-    highOrCriticalAgents: number;
     closedAgents: number;
     openAgents: number;
-    packetMissing: number;
-    blockedAgents: number;
-    closedEvidenceItems: number;
+    evidenceProgressPercent: number;
     openEvidenceItems: number;
     totalEvidenceItems: number;
-    evidenceProgressPercent: number;
-    openEvidenceByKind: Record<OpenEvidenceKind, number>;
-  };
-  agents?: ExpansionAgent[];
-  gaps?: {
-    packetCoverageGap: boolean;
-    missingPackets: string[];
-    auditErrors: Array<{ agentId: string; error: string }>;
-    skippedDirectories: Array<{ agentsDir: string; name: string; reason: string }>;
   };
   policy?: {
-    failOnOpen: boolean;
-    allowExternalOpen: boolean;
-    allowedOpenKinds: OpenEvidenceKind[];
-    exitCode: 0 | 1;
     passed: boolean;
     reason: string;
-    disallowedOpenEvidenceByKind: Record<OpenEvidenceKind, number>;
-    violations: Array<{ agentId?: string; kind: string; label: string; path?: string }>;
   };
 }
 
-interface RuntimePageData {
-  status: RuntimeStatus | null;
-  gates: RuntimeGateRegistry | null;
-  expansion: ExpansionStatus | null;
-  models: RuntimeModels | null;
+interface ProviderTestResult {
+  ok: boolean;
+  provider: string;
+  model: string | null;
+  configured: boolean;
+  available: boolean;
+  message: string;
 }
 
-const TABS: Array<{ id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { id: "overview", label: "Overview", icon: Gauge },
-  { id: "gates", label: "Gates", icon: ShieldCheck },
-  { id: "expansion", label: "Expansion", icon: TableProperties },
-  { id: "legacy", label: "Legacy", icon: KeyRound },
-];
+interface RuntimeTurnResult {
+  ok: boolean;
+  text: string;
+  sessionId: string | null;
+  model: string;
+}
 
-const OPEN_KIND_ORDER: OpenEvidenceKind[] = [
-  "operatorApproval",
-  "postExpansionMonitor",
-  "liveAction",
-  "automated",
-  "manual",
+const TABS: Array<{ id: TabId; label: string; icon: RuntimeIcon }> = [
+  { id: "setup", label: "Setup", icon: SlidersHorizontal },
+  { id: "providers", label: "Providers", icon: KeyRound },
+  { id: "models", label: "Models", icon: Layers3 },
+  { id: "test", label: "Test turn", icon: Play },
+  { id: "advanced", label: "Advanced", icon: TerminalSquare },
 ];
 
 export default function RuntimePage() {
   const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const serverId = (params?.serverId as string) || "local";
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
-  const [data, setData] = useState<RuntimePageData>({
-    status: null,
-    gates: null,
-    expansion: null,
-    models: null,
-  });
+  const providerFromQuery = searchParams.get("provider");
+
+  const [activeTab, setActiveTab] = useState<TabId>(providerFromQuery ? "providers" : "setup");
+  const [runtime, setRuntime] = useState<RuntimeProvidersResponse | null>(null);
+  const [gates, setGates] = useState<RuntimeGateRegistry | null>(null);
+  const [expansion, setExpansion] = useState<ExpansionStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>("pi");
+  const [defaultModel, setDefaultModel] = useState("anthropic/claude-sonnet-4-6");
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   const base = useMemo(() => `/api/fleet/${serverId}/runtime`, [serverId]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [status, gates, expansion, models] = await Promise.all([
-        fetchJson<RuntimeStatus>(`${base}/status`),
-        fetchJson<RuntimeGateRegistry>(`${base}/gates`),
-        fetchJson<ExpansionStatus>(`${base}/expansion-status`),
-        fetchJson<RuntimeModels>(`${base}/models`),
+      const [providersRes, gatesRes, expansionRes] = await Promise.all([
+        fetchJson<RuntimeProvidersResponse>(`${base}/providers`),
+        fetchJson<RuntimeGateRegistry>(`${base}/gates`).catch(() => null),
+        fetchJson<ExpansionStatus>(`${base}/expansion-status`).catch(() => null),
       ]);
-      setData({ status, gates, expansion, models });
+      setRuntime(providersRes);
+      setGates(gatesRes);
+      setExpansion(expansionRes);
+      setRuntimeMode(providersRes.runtimeMode ?? "pi");
+      setDefaultModel(providersRes.defaultModel ?? "anthropic/claude-sonnet-4-6");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Runtime data is unavailable.");
+      setError(err instanceof Error ? err.message : "Runtime setup is unavailable.");
     } finally {
       setLoading(false);
     }
@@ -221,35 +171,91 @@ export default function RuntimePage() {
     void load();
   }, [load]);
 
-  const piReady = isPiReady(data.status);
-  const legacyPrimary = data.status?.legacy?.claudeAgentSdk?.primary === true;
+  useEffect(() => {
+    if (providerFromQuery) setActiveTab("providers");
+  }, [providerFromQuery]);
+
+  const providers = runtime?.pi?.providers ?? [];
+  const models = withCurrentRuntimeModelOption(
+    runtime?.pi?.models?.length ? runtime.pi.models : STATIC_RUNTIME_MODEL_OPTIONS.filter((m) => m.runtime === "pi"),
+    defaultModel,
+  );
+  const piReady = Boolean(
+    runtime?.runtimeMode === "pi" &&
+    runtime?.pi?.packageAvailable &&
+    runtime?.pi?.authConfigured &&
+    (runtime?.pi?.availableModelCount ?? 0) > 0,
+  );
+  const legacyMode = runtime?.runtimeMode === "claude-agent-sdk";
+
+  const saveRuntimeConfig = async () => {
+    setSavingConfig(true);
+    setError("");
+    try {
+      await requestJson(`${base}/config`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          runtimeMode,
+          defaultModel,
+        }),
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save runtime config.");
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const restartGateway = async () => {
+    setRestarting(true);
+    setError("");
+    try {
+      await requestJson(`/api/fleet/${serverId}/gateway/restart`, { method: "POST" });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to restart gateway.");
+    } finally {
+      setRestarting(false);
+    }
+  };
 
   return (
-    <main className="flex min-h-full flex-col" style={{ background: "var(--oc-bg0)" }}>
+    <main
+      data-testid="runtime-page-shell"
+      className="h-full overflow-auto"
+      style={{ background: "var(--oc-bg0)", scrollbarGutter: "stable" }}
+    >
       <header
-        className="flex flex-col gap-3 border-b px-4 py-4 md:flex-row md:items-center md:justify-between"
+        className="flex flex-col gap-3 border-b px-4 py-4 md:flex-row md:items-start md:justify-between"
         style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
       >
-        <div>
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-[18px] font-semibold" style={{ color: "var(--color-foreground)" }}>
-              Runtime
+              Runtime setup
             </h1>
             <StatusPill
-              tone={piReady ? "ok" : legacyPrimary ? "warn" : "error"}
-              icon={piReady ? CheckCircle2 : legacyPrimary ? ShieldCheck : AlertTriangle}
+              tone={piReady ? "ok" : legacyMode ? "warn" : "error"}
+              icon={piReady ? CheckCircle2 : legacyMode ? ShieldCheck : AlertTriangle}
             >
-              {loading ? "loading" : piReady ? "pi ready" : legacyPrimary ? "legacy primary" : "needs setup"}
+              {loading ? "loading" : piReady ? "Pi ready" : legacyMode ? "Legacy fallback mode" : "Needs setup"}
             </StatusPill>
           </div>
-          <p className="mt-1 max-w-[820px] text-[12px] leading-5" style={{ color: "var(--oc-text-dim)" }}>
-            Runtime v1 control plane for provider readiness, side-effect gates, expansion evidence, and legacy compatibility.
+          <p className="mt-1 max-w-[760px] text-[12px] leading-5" style={{ color: "var(--oc-text-dim)" }}>
+            Configure the runtime harness for this instance. In Pi mode, provider keys, model choice, and test turns live here.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
-          Refresh
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
+            Refresh
+          </Button>
+          <Button variant="outline" size="sm" onClick={restartGateway} disabled={restarting}>
+            {restarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+            Restart gateway
+          </Button>
+        </div>
       </header>
 
       <section className="border-b px-4 pt-3" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg0)" }}>
@@ -277,352 +283,628 @@ export default function RuntimePage() {
         </div>
       </section>
 
-      <section className="flex-1 px-4 py-4">
+      <section data-testid="runtime-page-content" className="px-4 py-4">
         {error && <Notice tone="error" text={error} />}
-        {activeTab === "overview" && <OverviewTab data={data} loading={loading} />}
-        {activeTab === "gates" && <GatesTab gates={data.gates?.gates ?? []} loading={loading} />}
-        {activeTab === "expansion" && <ExpansionTab expansion={data.expansion} loading={loading} />}
-        {activeTab === "legacy" && (
-          <Panel title="Claude Agent SDK compatibility" icon={KeyRound}>
-            <ClaudeAuthPanel serverId={serverId} />
-          </Panel>
+        {activeTab === "setup" && (
+          <SetupTab
+            runtime={runtime}
+            providers={providers}
+            models={models}
+            runtimeMode={runtimeMode}
+            defaultModel={defaultModel}
+            setRuntimeMode={setRuntimeMode}
+            setDefaultModel={setDefaultModel}
+            saveRuntimeConfig={saveRuntimeConfig}
+            savingConfig={savingConfig}
+            piReady={piReady}
+            openProviders={() => setActiveTab("providers")}
+            openAdvanced={() => setActiveTab("advanced")}
+          />
+        )}
+        {activeTab === "providers" && (
+          <ProvidersTab
+            base={base}
+            providers={providers}
+            selectedProvider={providerFromQuery}
+            defaultModel={defaultModel}
+            reload={load}
+          />
+        )}
+        {activeTab === "models" && (
+          <ModelsTab
+            providers={providers}
+            models={models}
+            value={defaultModel}
+            onChange={setDefaultModel}
+            save={saveRuntimeConfig}
+            saving={savingConfig}
+            openProviders={() => setActiveTab("providers")}
+          />
+        )}
+        {activeTab === "test" && (
+          <TestTurnTab base={base} providers={providers} models={models} defaultModel={defaultModel} />
+        )}
+        {activeTab === "advanced" && (
+          <AdvancedTab
+            serverId={serverId}
+            runtime={runtime}
+            gates={gates}
+            expansion={expansion}
+            goToSettings={() => router.push(`/fleet/${serverId}/settings`)}
+          />
         )}
       </section>
     </main>
   );
 }
 
-function OverviewTab({ data, loading }: { data: RuntimePageData; loading: boolean }) {
-  const status = data.status;
-  const models = data.models;
-  const providerCounts = Object.entries(status?.agents?.byEffectiveProvider ?? {});
-  const maxProviderCount = Math.max(1, ...providerCounts.map(([, count]) => count));
-  const modelGroups = models?.groups ?? [];
-
-  return (
-    <div className="grid gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
-      <div className="grid min-w-0 gap-3">
-        <div className="grid gap-3 md:grid-cols-3">
-          <Metric label="Harness" value={status?.harness?.id ?? "runtime-v1"} icon={Cpu} loading={loading} />
-          <Metric label="Provider" value={status?.defaultProvider ?? "---"} icon={Layers3} loading={loading} warn={status?.defaultProvider !== "pi"} />
-          <Metric label="Agents" value={String(status?.agents?.total ?? 0)} icon={Gauge} loading={loading} />
-        </div>
-        <Panel title="Pi readiness" icon={CheckCircle2}>
-          <div className="grid gap-2 md:grid-cols-2">
-            <InfoRow label="Package" value={status?.pi?.packageName ?? "---"} state={status?.pi?.packageAvailable ? "ok" : "warn"} />
-            <InfoRow label="Default model" value={status?.pi?.defaultModel ?? "---"} />
-            <InfoRow label="Auth path" value={status?.pi?.authPath ?? "---"} state={status?.pi?.authConfigured ? "ok" : "warn"} wide />
-            <InfoRow label="Models path" value={status?.pi?.modelsPath ?? "---"} state={status?.pi?.modelsConfigured ? "ok" : "warn"} wide />
-          </div>
-          {status?.pi?.lastError && <Notice tone="error" text={status.pi.lastError} compact />}
-          {status?.gateway?.lastError && <Notice tone="error" text={status.gateway.lastError} compact />}
-        </Panel>
-        <Panel title="Agent provider distribution" icon={Layers3}>
-          {providerCounts.length === 0 ? (
-            <Empty text="No agent provider data yet." />
-          ) : (
-            <div className="grid gap-2">
-              {providerCounts.map(([provider, count]) => (
-                <BarRow key={provider} label={provider} value={count} max={maxProviderCount} />
-              ))}
-            </div>
-          )}
-        </Panel>
-      </div>
-      <Panel title="Runtime model registry" icon={TerminalSquare}>
-        <div className="mb-3 grid gap-2">
-          <InfoRow label="Default model" value={models?.defaultModel ?? "---"} />
-          <InfoRow label="Default provider" value={models?.defaultProvider ?? "---"} state={models?.defaultProvider === "pi" ? "ok" : "warn"} />
-        </div>
-        <div className="grid gap-2">
-          {modelGroups.length === 0 ? (
-            <Empty text="No model registry data loaded." />
-          ) : (
-            modelGroups.map((group) => (
-              <div key={group.id} className="rounded-md border px-3 py-2.5" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-[12px] font-semibold" style={{ color: "var(--color-foreground)" }}>
-                      {group.title}
-                    </div>
-                    <div className="mt-0.5 text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
-                      {group.source?.kind ?? "runtime"} source · {group.models.length} model(s)
-                    </div>
-                  </div>
-                  <StatusPill tone={group.compatibility ? "warn" : group.enabled ? "ok" : "neutral"}>
-                    {group.compatibility ? "legacy" : group.enabled ? "enabled" : "available"}
-                  </StatusPill>
-                </div>
-                {group.source?.error && <Notice tone="error" text={group.source.error} compact />}
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {group.models.slice(0, 6).map((model) => (
-                    <span
-                      key={model.id}
-                      className="rounded-[4px] border px-2 py-1 text-[11px]"
-                      style={{ borderColor: "var(--oc-border)", color: "var(--oc-text-dim)", fontFamily: "var(--oc-mono)" }}
-                    >
-                      {model.id}
-                    </span>
-                  ))}
-                  {group.models.length > 6 && (
-                    <span className="px-2 py-1 text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
-                      +{group.models.length - 6} more
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </Panel>
-    </div>
-  );
-}
-
-function GatesTab({ gates, loading }: { gates: RuntimeGate[]; loading: boolean }) {
-  const [selectedId, setSelectedId] = useState("");
-  const selectedGate = useMemo(() => {
-    if (gates.length === 0) return null;
-    return gates.find((gate) => gate.id === selectedId) ?? gates[0] ?? null;
-  }, [gates, selectedId]);
-
-  useEffect(() => {
-    if (!selectedId && gates[0]) setSelectedId(gates[0].id);
-  }, [gates, selectedId]);
-
-  return (
-    <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-      <Panel title="Side-effect gate registry" icon={ShieldCheck} pad={false}>
-        {loading && gates.length === 0 ? (
-          <LoadingRows />
-        ) : gates.length === 0 ? (
-          <div className="p-3"><Empty text="No side-effect gates registered." /></div>
-        ) : (
-          <div className="overflow-auto">
-            <table className="w-full min-w-[760px] text-left text-[12px]">
-              <thead>
-                <tr style={{ color: "var(--oc-text-muted)", borderBottom: "1px solid var(--oc-border)" }}>
-                  <Th>Gate</Th>
-                  <Th>Capability</Th>
-                  <Th>Risk</Th>
-                  <Th>Approval</Th>
-                  <Th>Dry run</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {gates.map((gate) => {
-                  const active = selectedGate?.id === gate.id;
-                  return (
-                    <tr
-                      key={gate.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setSelectedId(gate.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") setSelectedId(gate.id);
-                      }}
-                      style={{
-                        borderBottom: "1px solid var(--oc-border)",
-                        background: active ? "var(--oc-accent-soft)" : undefined,
-                      }}
-                    >
-                      <Td>
-                        <div className="font-semibold" style={{ color: active ? "var(--oc-accent)" : "var(--color-foreground)" }}>
-                          {gate.title}
-                        </div>
-                        <div className="mt-0.5 font-mono text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
-                          {gate.id}
-                        </div>
-                      </Td>
-                      <Td>{gate.capabilityGroup}</Td>
-                      <Td><RiskBadge risk={gate.risk} /></Td>
-                      <Td>{gate.execution.approval}</Td>
-                      <Td>{gate.execution.supportsDryRun ? "supported" : "not supported"}</Td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
-      <Panel title="Plan detail" icon={TerminalSquare}>
-        {selectedGate ? (
-          <div className="grid gap-3">
-            <div>
-              <div className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
-                {selectedGate.title}
-              </div>
-              <p className="mt-1 text-[12px] leading-5" style={{ color: "var(--oc-text-dim)" }}>
-                {selectedGate.summary}
-              </p>
-            </div>
-            <div className="grid gap-2">
-              <InfoRow label="Focused command" value={selectedGate.focusedCommand} />
-              <InfoRow label="Action" value={selectedGate.action} />
-              <InfoRow label="Safety mode" value={selectedGate.execution.safetyMode} state="ok" />
-              <InfoRow label="Approval" value={selectedGate.execution.approval} state="warn" />
-            </div>
-            <FlagList title="Required flags" flags={selectedGate.execution.requiredFlags} />
-            <FlagList title="Optional flags" flags={selectedGate.execution.optionalFlags} />
-            <FlagList title="Example args" flags={selectedGate.execution.exampleArgs} />
-            <Notice tone="warn" text="This UI view is plan-only. Live gate execution stays disabled until a separate approval flow is implemented." compact />
-          </div>
-        ) : (
-          <Empty text="Select a gate to inspect its dry-run plan metadata." />
-        )}
-      </Panel>
-    </div>
-  );
-}
-
-function ExpansionTab({ expansion, loading }: { expansion: ExpansionStatus | null; loading: boolean }) {
-  const summary = expansion?.summary;
-  const agents = expansion?.agents ?? [];
-  const progress = summary?.evidenceProgressPercent ?? 0;
-
-  return (
-    <div className="grid gap-3 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-      <div className="grid gap-3">
-        <Panel title="Expansion progress" icon={Gauge}>
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <div className="text-[28px] font-semibold" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
-                {loading && !summary ? "---" : `${progress}%`}
-              </div>
-              <div className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
-                {summary ? `${summary.closedEvidenceItems}/${summary.totalEvidenceItems} evidence items closed` : "Evidence status is loading."}
-              </div>
-            </div>
-            <StatusPill tone={expansion?.status === "passed" ? "ok" : "warn"}>
-              {expansion?.status ?? "loading"}
-            </StatusPill>
-          </div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full" style={{ background: "var(--oc-bg3)" }}>
-            <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, progress))}%`, background: "var(--oc-accent)" }} />
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <InfoRow label="Open agents" value={String(summary?.openAgents ?? 0)} state={(summary?.openAgents ?? 0) === 0 ? "ok" : "warn"} />
-            <InfoRow label="Missing packets" value={String(summary?.packetMissing ?? 0)} state={(summary?.packetMissing ?? 0) === 0 ? "ok" : "warn"} />
-            <InfoRow label="Packets dir" value={expansion?.packetsDir ?? "---"} wide />
-            <InfoRow label="Agents dirs" value={(expansion?.agentsDirs ?? []).join(", ") || "---"} wide />
-          </div>
-        </Panel>
-        <Panel title="Policy state" icon={ShieldCheck}>
-          <div className="grid gap-2">
-            <InfoRow label="Policy passed" value={expansion?.policy?.passed ? "yes" : "no"} state={expansion?.policy?.passed ? "ok" : "warn"} />
-            <InfoRow label="Exit code" value={String(expansion?.policy?.exitCode ?? "---")} />
-            <InfoRow label="Allowed open kinds" value={(expansion?.policy?.allowedOpenKinds ?? []).join(", ") || "---"} wide />
-            <InfoRow label="Reason" value={expansion?.policy?.reason ?? "---"} wide />
-          </div>
-          {(expansion?.policy?.violations ?? []).length > 0 && (
-            <div className="mt-3 grid gap-1.5">
-              {expansion?.policy?.violations.slice(0, 6).map((violation, index) => (
-                <Notice key={`${violation.kind}-${index}`} tone="warn" text={`${violation.kind}: ${violation.label}`} compact />
-              ))}
-            </div>
-          )}
-        </Panel>
-        <Panel title="Open evidence by kind" icon={FileText}>
-          <div className="grid gap-2">
-            {OPEN_KIND_ORDER.map((kind) => (
-              <BarRow
-                key={kind}
-                label={kind}
-                value={summary?.openEvidenceByKind?.[kind] ?? 0}
-                max={Math.max(1, summary?.openEvidenceItems ?? 0)}
-              />
-            ))}
-          </div>
-        </Panel>
-      </div>
-      <Panel title="Packet evidence queue" icon={TableProperties} pad={false}>
-        {loading && agents.length === 0 ? (
-          <LoadingRows />
-        ) : agents.length === 0 ? (
-          <div className="p-3"><Empty text="No expansion evidence queue items." /></div>
-        ) : (
-          <div className="overflow-auto">
-            <table className="w-full min-w-[860px] text-left text-[12px]">
-              <thead>
-                <tr style={{ color: "var(--oc-text-muted)", borderBottom: "1px solid var(--oc-border)" }}>
-                  <Th>Agent</Th>
-                  <Th>State</Th>
-                  <Th>Risk</Th>
-                  <Th>Evidence</Th>
-                  <Th>Packet</Th>
-                  <Th>Next action</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {agents.map((agent) => (
-                  <tr key={`${agent.agentsDir}-${agent.id}`} style={{ borderBottom: "1px solid var(--oc-border)" }}>
-                    <Td>
-                      <div className="font-semibold" style={{ color: "var(--color-foreground)" }}>{agent.id}</div>
-                      <div className="mt-0.5 font-mono text-[11px]" style={{ color: "var(--oc-text-muted)" }}>{agent.recommendedRing}</div>
-                    </Td>
-                    <Td>{agent.state}</Td>
-                    <Td><RiskBadge risk={agent.risk} /></Td>
-                    <Td>{agent.packet.checkedItems}/{agent.packet.totalItems}</Td>
-                    <Td>
-                      <span className="block max-w-[220px] truncate font-mono text-[11px]" title={agent.packet.path ?? "missing"}>
-                        {agent.packet.path ?? "missing"}
-                      </span>
-                    </Td>
-                    <Td>
-                      <span className="block max-w-[320px] truncate" title={agent.nextActions[0] ?? ""}>
-                        {agent.nextActions[0] ?? "---"}
-                      </span>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
-    </div>
-  );
-}
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  const data = await res.json();
-  if (!res.ok) {
-    const record = typeof data === "object" && data !== null ? data as Record<string, unknown> : {};
-    throw new Error(String(record.message ?? record.error ?? `Request failed: ${url}`));
-  }
-  return data as T;
-}
-
-function isPiReady(status: RuntimeStatus | null): boolean {
-  return Boolean(
-    status?.defaultProvider === "pi"
-    && status?.pi?.packageAvailable
-    && status?.pi?.authConfigured
-    && status?.pi?.modelsConfigured,
-  );
-}
-
-function Panel({
-  title,
-  icon: Icon,
-  pad = true,
-  children,
+function SetupTab({
+  runtime,
+  providers,
+  models,
+  runtimeMode,
+  defaultModel,
+  setRuntimeMode,
+  setDefaultModel,
+  saveRuntimeConfig,
+  savingConfig,
+  piReady,
+  openProviders,
+  openAdvanced,
 }: {
-  title: string;
-  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
-  pad?: boolean;
-  children: React.ReactNode;
+  runtime: RuntimeProvidersResponse | null;
+  providers: RuntimeProviderAccount[];
+  models: RuntimeModelOption[];
+  runtimeMode: RuntimeMode;
+  defaultModel: string;
+  setRuntimeMode: (mode: RuntimeMode) => void;
+  setDefaultModel: (model: string) => void;
+  saveRuntimeConfig: () => void;
+  savingConfig: boolean;
+  piReady: boolean;
+  openProviders: () => void;
+  openAdvanced: () => void;
+}) {
+  const configuredProviders = providers.filter((p) => p.configured);
+  const modeIsPi = runtimeMode === "pi";
+
+  return (
+    <div className="grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+      <div className="grid min-w-0 gap-3">
+        <div className="grid gap-3 md:grid-cols-4">
+          <Metric label="Runtime mode" value={runtime?.runtimeMode ?? "---"} icon={Cpu} tone={modeIsPi ? "ok" : "warn"} />
+          <Metric label="Pi package" value={runtime?.pi?.packageVersion ?? (runtime?.pi?.packageAvailable ? "installed" : "missing")} icon={Settings2} tone={runtime?.pi?.packageAvailable ? "ok" : "error"} />
+          <Metric label="Providers" value={`${configuredProviders.length}/${providers.length}`} icon={KeyRound} tone={configuredProviders.length > 0 ? "ok" : "warn"} />
+          <Metric label="Models" value={String(runtime?.pi?.availableModelCount ?? 0)} icon={Layers3} tone={(runtime?.pi?.availableModelCount ?? 0) > 0 ? "ok" : "warn"} />
+        </div>
+
+        <Panel title="Instance runtime" icon={SlidersHorizontal}>
+          <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.65fr)_minmax(320px,1fr)]">
+            <div>
+              <FieldLabel label="Runtime mode" />
+              <div className="mt-1 grid gap-1.5">
+                <ModeButton
+                  active={runtimeMode === "pi"}
+                  title="Pi"
+                  desc="Use Pi as the primary agentic harness for this instance."
+                  onClick={() => setRuntimeMode("pi")}
+                />
+                <ModeButton
+                  active={runtimeMode === "claude-agent-sdk"}
+                  title="Legacy fallback"
+                  desc="Compatibility rollback provider. Use only when Pi is unavailable."
+                  onClick={() => setRuntimeMode("claude-agent-sdk")}
+                />
+              </div>
+            </div>
+            <div>
+              <RuntimeModelPicker
+                providers={providers}
+                models={models}
+                value={defaultModel}
+                onChange={setDefaultModel}
+                label="Default model"
+                onConfigureProvider={openProviders}
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm" onClick={saveRuntimeConfig} disabled={savingConfig}>
+                  {savingConfig ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  Save runtime
+                </Button>
+                <Button variant="outline" size="sm" onClick={openProviders}>
+                  <KeyRound className="h-3.5 w-3.5" />
+                  Configure providers
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel title="Setup checklist" icon={CheckCircle2}>
+          <ChecklistItem ok={runtime?.runtimeMode === "pi"} label="Instance default runtime is Pi" />
+          <ChecklistItem ok={Boolean(runtime?.pi?.packageAvailable)} label={`${runtime?.pi?.packageName ?? "Pi package"} is installed and importable`} />
+          <ChecklistItem ok={Boolean(runtime?.pi?.authConfigured)} label="At least one Pi provider has credentials" />
+          <ChecklistItem ok={(runtime?.pi?.availableModelCount ?? 0) > 0} label="Authenticated providers expose available models" />
+          <ChecklistItem ok={piReady} label="Instance is ready for Pi LLM turns" />
+        </Panel>
+      </div>
+
+      <div className="grid gap-3">
+        <Panel title="What this controls" icon={Zap}>
+          <div className="space-y-2 text-[12px] leading-5" style={{ color: "var(--oc-text-dim)" }}>
+            <p>
+              Runtime mode is instance-wide. Agents inherit it unless their own config overrides the provider.
+            </p>
+            <p>
+              Pi provider keys are stored in Pi auth storage, not in this repository. The YAML config stores only runtime mode and model defaults.
+            </p>
+          </div>
+        </Panel>
+
+        {modeIsPi ? (
+          <Panel title="Pi storage" icon={KeyRound}>
+            <InfoRow label="Auth storage" value={runtime?.pi?.authPath ?? "---"} />
+            <InfoRow label="Models file" value={runtime?.pi?.modelsPath ?? "---"} />
+            {runtime?.pi?.lastError && <Notice tone="error" text={runtime.pi.lastError} compact />}
+          </Panel>
+        ) : (
+          <Panel title="Compatibility mode" icon={ShieldCheck}>
+            <Notice
+              tone="warn"
+              text="This instance is not in Pi mode. Legacy fallback controls are available only in Advanced."
+              compact
+            />
+            <Button variant="outline" size="sm" onClick={openAdvanced}>
+              Open Advanced
+            </Button>
+          </Panel>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProvidersTab({
+  base,
+  providers,
+  selectedProvider,
+  defaultModel,
+  reload,
+}: {
+  base: string;
+  providers: RuntimeProviderAccount[];
+  selectedProvider: string | null;
+  defaultModel: string;
+  reload: () => Promise<void>;
+}) {
+  const [keys, setKeys] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [result, setResult] = useState<Record<string, ProviderTestResult | string>>({});
+
+  const saveKey = async (provider: string) => {
+    setBusy((prev) => ({ ...prev, [provider]: true }));
+    setResult((prev) => ({ ...prev, [provider]: "" }));
+    try {
+      await requestJson(`${base}/providers/${encodeURIComponent(provider)}/credentials`, {
+        method: "POST",
+        body: JSON.stringify({ apiKey: keys[provider] ?? "" }),
+      });
+      setKeys((prev) => ({ ...prev, [provider]: "" }));
+      await reload();
+      setResult((prev) => ({
+        ...prev,
+        [provider]: {
+          ok: true,
+          provider,
+          model: null,
+          configured: true,
+          available: true,
+          message: "Provider key saved.",
+        },
+      }));
+    } catch (err) {
+      setResult((prev) => ({ ...prev, [provider]: err instanceof Error ? err.message : "Failed to save provider key." }));
+    } finally {
+      setBusy((prev) => ({ ...prev, [provider]: false }));
+    }
+  };
+
+  const deleteKey = async (provider: string) => {
+    setBusy((prev) => ({ ...prev, [provider]: true }));
+    try {
+      await requestJson(`${base}/providers/${encodeURIComponent(provider)}/credentials`, { method: "DELETE" });
+      await reload();
+      setResult((prev) => ({ ...prev, [provider]: "Provider credentials removed." }));
+    } catch (err) {
+      setResult((prev) => ({ ...prev, [provider]: err instanceof Error ? err.message : "Failed to remove provider credentials." }));
+    } finally {
+      setBusy((prev) => ({ ...prev, [provider]: false }));
+    }
+  };
+
+  const testProvider = async (provider: string) => {
+    setBusy((prev) => ({ ...prev, [provider]: true }));
+    try {
+      const data = await requestJson<ProviderTestResult>(`${base}/providers/${encodeURIComponent(provider)}/test`, {
+        method: "POST",
+        body: JSON.stringify({ model: defaultModel }),
+      });
+      setResult((prev) => ({ ...prev, [provider]: data }));
+    } catch (err) {
+      setResult((prev) => ({ ...prev, [provider]: err instanceof Error ? err.message : "Provider test failed." }));
+    } finally {
+      setBusy((prev) => ({ ...prev, [provider]: false }));
+    }
+  };
+
+  return (
+    <div className="grid gap-3">
+      <SectionIntro
+        title="Pi provider accounts"
+        text="Add provider credentials once, then use those providers anywhere a Pi model is selected."
+      />
+      <div className="grid gap-3 xl:grid-cols-2">
+        {providers.map((provider) => (
+          <ProviderPanel
+            key={provider.id}
+            provider={provider}
+            highlighted={provider.id === selectedProvider}
+            apiKey={keys[provider.id] ?? ""}
+            setApiKey={(value) => setKeys((prev) => ({ ...prev, [provider.id]: value }))}
+            busy={Boolean(busy[provider.id])}
+            result={result[provider.id]}
+            save={() => void saveKey(provider.id)}
+            remove={() => void deleteKey(provider.id)}
+            test={() => void testProvider(provider.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ModelsTab({
+  providers,
+  models,
+  value,
+  onChange,
+  save,
+  saving,
+  openProviders,
+}: {
+  providers: RuntimeProviderAccount[];
+  models: RuntimeModelOption[];
+  value: string;
+  onChange: (model: string) => void;
+  save: () => void;
+  saving: boolean;
+  openProviders: () => void;
+}) {
+  const grouped = groupModels(models);
+  return (
+    <div className="grid gap-3 xl:grid-cols-[minmax(0,0.85fr)_minmax(360px,1fr)]">
+      <Panel title="Default model" icon={Layers3}>
+        <RuntimeModelPicker
+          providers={providers}
+          models={models}
+          value={value}
+          onChange={onChange}
+          label="Instance default model"
+          onConfigureProvider={openProviders}
+        />
+        <div className="mt-3 flex gap-2">
+          <Button size="sm" onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Save default
+          </Button>
+          <Button variant="outline" size="sm" onClick={openProviders}>
+            <KeyRound className="h-3.5 w-3.5" />
+            Provider keys
+          </Button>
+        </div>
+      </Panel>
+      <Panel title="Available Pi models" icon={Cpu}>
+        <div className="grid max-h-[520px] gap-2 overflow-auto pr-1">
+          {grouped.map(([provider, providerModels]) => (
+            <div key={provider} className="rounded-md border p-2.5" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[12px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+                  {providers.find((p) => p.id === provider)?.label ?? provider}
+                </span>
+                <span className="text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
+                  {providerModels.length} models
+                </span>
+              </div>
+              <div className="grid gap-1">
+                {providerModels.slice(0, 18).map((model) => (
+                  <button
+                    key={model.id}
+                    type="button"
+                    onClick={() => onChange(model.id)}
+                    className="flex items-center justify-between gap-2 rounded px-2 py-1 text-left text-[11.5px]"
+                    style={{
+                      background: value === model.id ? "var(--oc-accent-soft)" : "transparent",
+                      color: value === model.id ? "var(--oc-accent)" : "var(--oc-text-dim)",
+                    }}
+                  >
+                    <span className="truncate">{model.label ?? model.id}</span>
+                    {value === model.id && <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function TestTurnTab({
+  base,
+  providers,
+  models,
+  defaultModel,
+}: {
+  base: string;
+  providers: RuntimeProviderAccount[];
+  models: RuntimeModelOption[];
+  defaultModel: string;
+}) {
+  const [model, setModel] = useState(defaultModel);
+  const [prompt, setPrompt] = useState("Reply exactly: ANTHROCLAW_PI_RUNTIME_TEST_OK");
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<RuntimeTurnResult | string | null>(null);
+
+  useEffect(() => setModel(defaultModel), [defaultModel]);
+
+  const run = async () => {
+    setRunning(true);
+    setResult(null);
+    try {
+      setResult(await requestJson<RuntimeTurnResult>(`${base}/test`, {
+        method: "POST",
+        body: JSON.stringify({ model, prompt, timeoutMs: 120000 }),
+      }));
+    } catch (err) {
+      setResult(err instanceof Error ? err.message : "Runtime test failed.");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-3 xl:grid-cols-[minmax(0,0.8fr)_minmax(360px,1fr)]">
+      <Panel title="Run a Pi test turn" icon={Play}>
+        <RuntimeModelPicker providers={providers} models={models} value={model} onChange={setModel} />
+        <div className="mt-3">
+          <FieldLabel label="Prompt" />
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            className="mt-1 h-28 w-full resize-none rounded-md border p-2 text-xs outline-none"
+            style={{
+              background: "var(--oc-bg3)",
+              borderColor: "var(--oc-border)",
+              color: "var(--color-foreground)",
+              fontFamily: "var(--oc-mono)",
+            }}
+          />
+        </div>
+        <div className="mt-3">
+          <Button size="sm" onClick={run} disabled={running || !model || !prompt.trim()}>
+            {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            Run test turn
+          </Button>
+        </div>
+      </Panel>
+      <Panel title="Result" icon={TerminalSquare}>
+        {!result && (
+          <p className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>
+            The test uses the same configured Pi runtime path as the gateway. Tools are disabled for this check.
+          </p>
+        )}
+        {typeof result === "string" && <Notice tone="error" text={result} compact />}
+        {result && typeof result !== "string" && (
+          <div className="grid gap-2">
+            <InfoRow label="Model" value={result.model} />
+            <InfoRow label="Session" value={result.sessionId ?? "---"} />
+            <pre
+              className="max-h-[360px] overflow-auto rounded-md border p-3 text-[12px]"
+              style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)", color: "var(--color-foreground)" }}
+            >
+              {result.text}
+            </pre>
+          </div>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+function AdvancedTab({
+  serverId,
+  runtime,
+  gates,
+  expansion,
+  goToSettings,
+}: {
+  serverId: string;
+  runtime: RuntimeProvidersResponse | null;
+  gates: RuntimeGateRegistry | null;
+  expansion: ExpansionStatus | null;
+  goToSettings: () => void;
 }) {
   return (
-    <section className="min-w-0 rounded-md border" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}>
-      <div className="flex items-center gap-2 border-b px-3 py-2.5" style={{ borderColor: "var(--oc-border)" }}>
-        <Icon className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />
-        <h2 className="text-[12.5px] font-semibold" style={{ color: "var(--color-foreground)" }}>{title}</h2>
+    <div className="grid gap-3 xl:grid-cols-2">
+      <Panel title="Legacy fallback diagnostics" icon={ShieldCheck}>
+        {runtime?.runtimeMode === "pi" && (
+          <Notice
+            tone="warn"
+            text="This instance is in Pi mode. Legacy fallback controls are shown only here for rollback and compatibility work."
+            compact
+          />
+        )}
+        <div className="mt-3">
+          <ClaudeAuthPanel serverId={serverId} />
+        </div>
+      </Panel>
+      <Panel title="Raw configuration" icon={Settings2}>
+        <p className="text-[12px] leading-5" style={{ color: "var(--oc-text-dim)" }}>
+          Raw YAML remains available for low-level instance settings. Runtime mode, Pi providers, and model defaults should be changed through this Runtime setup page.
+        </p>
+        <div className="mt-3">
+          <Button variant="outline" size="sm" onClick={goToSettings}>
+            Open Settings YAML
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </Panel>
+      <Panel title="Side-effect gates" icon={ShieldCheck}>
+        <div className="grid max-h-[360px] gap-2 overflow-auto pr-1">
+          {(gates?.gates ?? []).slice(0, 14).map((gate) => (
+            <div key={gate.id} className="rounded-md border p-2" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-[11.5px]" style={{ color: "var(--color-foreground)" }}>{gate.id}</span>
+                <span className="text-[10.5px]" style={{ color: "var(--oc-text-muted)" }}>{gate.risk}</span>
+              </div>
+              <p className="mt-1 text-[11.5px] leading-4" style={{ color: "var(--oc-text-muted)" }}>{gate.summary}</p>
+            </div>
+          ))}
+        </div>
+      </Panel>
+      <Panel title="Expansion evidence" icon={Layers3}>
+        <div className="grid gap-2">
+          <InfoRow label="Status" value={expansion?.status ?? "---"} />
+          <InfoRow label="Evidence progress" value={expansion?.summary ? `${expansion.summary.evidenceProgressPercent}%` : "---"} />
+          <InfoRow label="Policy" value={expansion?.policy?.reason ?? "---"} />
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function ProviderPanel({
+  provider,
+  highlighted,
+  apiKey,
+  setApiKey,
+  busy,
+  result,
+  save,
+  remove,
+  test,
+}: {
+  provider: RuntimeProviderAccount;
+  highlighted: boolean;
+  apiKey: string;
+  setApiKey: (value: string) => void;
+  busy: boolean;
+  result: ProviderTestResult | string | undefined;
+  save: () => void;
+  remove: () => void;
+  test: () => void;
+}) {
+  const ok = provider.configured && provider.availableModelCount > 0;
+  return (
+    <section
+      className="rounded-md border p-3"
+      style={{
+        borderColor: highlighted ? "var(--oc-accent)" : "var(--oc-border)",
+        background: highlighted ? "var(--oc-accent-soft)" : "var(--oc-bg1)",
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+              {provider.label}
+            </h2>
+            <StatusPill tone={ok ? "ok" : provider.configured ? "warn" : "error"} icon={ok ? CheckCircle2 : AlertTriangle}>
+              {ok ? "ready" : provider.configured ? "credentials saved" : "missing key"}
+            </StatusPill>
+          </div>
+          <p className="mt-1 text-[11.5px]" style={{ color: "var(--oc-text-muted)" }}>
+            {provider.availableModelCount}/{provider.modelCount} models available
+            {provider.authSource ? ` via ${provider.authSource}` : ""}
+          </p>
+        </div>
+        {provider.defaultForInstance && (
+          <span className="rounded px-1.5 py-px text-[10px] font-medium" style={{ border: "1px solid var(--oc-border)", color: "var(--oc-accent)" }}>
+            default
+          </span>
+        )}
       </div>
-      <div className={pad ? "p-3" : ""}>{children}</div>
+
+      <div className="mt-3 grid gap-2">
+        <div>
+          <FieldLabel label="API key" />
+          <input
+            type="password"
+            autoComplete="off"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={provider.configured ? "Paste a new key to replace existing credentials" : "Paste provider API key"}
+            className="mt-1 h-8 w-full rounded-[5px] border px-2 text-xs outline-none"
+            style={{ background: "var(--oc-bg3)", borderColor: "var(--oc-border)", color: "var(--color-foreground)" }}
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={save} disabled={busy || !apiKey.trim()}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Save key
+          </Button>
+          <Button variant="outline" size="sm" onClick={test} disabled={busy}>
+            <Play className="h-3.5 w-3.5" />
+            Test
+          </Button>
+          {provider.configured && (
+            <Button variant="outline" size="sm" onClick={remove} disabled={busy}>
+              Remove
+            </Button>
+          )}
+        </div>
+        {result && (
+          typeof result === "string"
+            ? <Notice tone={result.toLowerCase().includes("failed") ? "error" : "warn"} text={result} compact />
+            : <Notice tone={result.ok ? "ok" : "warn"} text={result.message} compact />
+        )}
+      </div>
     </section>
+  );
+}
+
+function ModeButton({
+  active,
+  title,
+  desc,
+  onClick,
+}: {
+  active: boolean;
+  title: string;
+  desc: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-md border p-2.5 text-left transition-colors"
+      style={{
+        borderColor: active ? "var(--oc-accent)" : "var(--oc-border)",
+        background: active ? "var(--oc-accent-soft)" : "var(--oc-bg2)",
+      }}
+    >
+      <div className="flex items-center gap-2">
+        {active ? <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} /> : <Cpu className="h-3.5 w-3.5" style={{ color: "var(--oc-text-muted)" }} />}
+        <span className="text-[12px] font-semibold" style={{ color: active ? "var(--oc-accent)" : "var(--color-foreground)" }}>
+          {title}
+        </span>
+      </div>
+      <p className="mt-1 text-[11.5px] leading-4" style={{ color: "var(--oc-text-muted)" }}>
+        {desc}
+      </p>
+    </button>
   );
 }
 
@@ -630,76 +912,72 @@ function Metric({
   label,
   value,
   icon: Icon,
-  loading,
-  warn,
+  tone = "neutral",
 }: {
   label: string;
   value: string;
-  icon: React.ComponentType<{ className?: string }>;
-  loading: boolean;
-  warn?: boolean;
+  icon: RuntimeIcon;
+  tone?: "ok" | "warn" | "error" | "neutral";
 }) {
+  const color = tone === "ok" ? "var(--oc-green)" : tone === "warn" ? "var(--oc-yellow)" : tone === "error" ? "var(--oc-red)" : "var(--oc-text-muted)";
   return (
     <div className="rounded-md border p-3" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}>
-      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
-        <Icon className="h-3.5 w-3.5" />
+      <div className="flex items-center gap-2 text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
+        <Icon className="h-3.5 w-3.5" style={{ color }} />
         {label}
       </div>
-      <div className="mt-2 flex items-center gap-2">
-        <div className="min-w-0 truncate text-[20px] font-semibold" style={{ color: warn ? "var(--oc-yellow)" : "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>
-          {loading ? "---" : value}
-        </div>
+      <div className="mt-1 truncate font-mono text-[15px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+        {value}
       </div>
     </div>
   );
 }
 
-function InfoRow({
-  label,
-  value,
-  state = "neutral",
-  wide,
+function Panel({
+  title,
+  icon: Icon,
+  children,
 }: {
-  label: string;
-  value: string;
-  state?: "ok" | "warn" | "neutral";
-  wide?: boolean;
+  title: string;
+  icon: RuntimeIcon;
+  children: React.ReactNode;
 }) {
-  const Icon = state === "ok" ? CheckCircle2 : state === "warn" ? AlertTriangle : ChevronRight;
-  const color = state === "ok" ? "var(--oc-green)" : state === "warn" ? "var(--oc-yellow)" : "var(--oc-text-muted)";
   return (
-    <div className={wide ? "rounded-md border px-3 py-2 sm:col-span-2" : "rounded-md border px-3 py-2"} style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}>
-      <div className="mb-1 flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
-        <Icon className="h-3 w-3" style={{ color }} />
-        {label}
+    <section className="rounded-md border p-3" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}>
+      <div className="mb-3 flex items-center gap-2">
+        <Icon className="h-4 w-4" style={{ color: "var(--oc-accent)" }} />
+        <h2 className="text-[13px] font-semibold" style={{ color: "var(--color-foreground)" }}>
+          {title}
+        </h2>
       </div>
-      <div className="break-all font-mono text-[12px]" style={{ color: "var(--color-foreground)" }}>{value}</div>
+      {children}
+    </section>
+  );
+}
+
+function ChecklistItem({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-2 border-b py-2 last:border-b-0" style={{ borderColor: "var(--oc-border)" }}>
+      {ok ? <CheckCircle2 className="h-4 w-4" style={{ color: "var(--oc-green)" }} /> : <AlertTriangle className="h-4 w-4" style={{ color: "var(--oc-yellow)" }} />}
+      <span className="text-[12px]" style={{ color: "var(--color-foreground)" }}>{label}</span>
     </div>
   );
 }
 
-function BarRow({ label, value, max }: { label: string; value: number; max: number }) {
-  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid items-center gap-2" style={{ gridTemplateColumns: "minmax(0,1fr) 54px" }}>
-      <div className="min-w-0">
-        <div className="truncate text-[11.5px]" style={{ color: "var(--color-foreground)", fontFamily: "var(--oc-mono)" }}>{label}</div>
-        <div className="mt-1 h-1.5 overflow-hidden rounded-full" style={{ background: "var(--oc-bg3)" }}>
-          <div className="h-full rounded-full" style={{ width: `${Math.max(value > 0 ? 4 : 0, pct)}%`, background: "var(--oc-accent)" }} />
-        </div>
-      </div>
-      <div className="text-right text-[11.5px]" style={{ color: "var(--oc-text-dim)", fontFamily: "var(--oc-mono)" }}>{value}</div>
+    <div className="rounded-md border px-3 py-2" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg2)" }}>
+      <div className="text-[10.5px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>{label}</div>
+      <div className="mt-1 break-all font-mono text-[11.5px]" style={{ color: "var(--color-foreground)" }}>{value}</div>
     </div>
   );
 }
 
-function RiskBadge({ risk }: { risk: string }) {
-  const high = risk === "high" || risk === "critical";
-  const medium = risk === "medium";
+function FieldLabel({ label }: { label: string }) {
   return (
-    <StatusPill tone={high ? "error" : medium ? "warn" : "neutral"}>
-      {risk}
-    </StatusPill>
+    <label className="text-[11px] font-medium uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>
+      {label}
+    </label>
   );
 }
 
@@ -708,76 +986,77 @@ function StatusPill({
   icon: Icon,
   children,
 }: {
-  tone: "ok" | "warn" | "error" | "neutral";
-  icon?: React.ComponentType<{ className?: string }>;
+  tone: "ok" | "warn" | "error";
+  icon: RuntimeIcon;
   children: React.ReactNode;
 }) {
-  const color = tone === "ok"
-    ? "var(--oc-green)"
-    : tone === "warn"
-      ? "var(--oc-yellow)"
-      : tone === "error"
-        ? "var(--oc-red)"
-        : "var(--oc-text-muted)";
+  const color = tone === "ok" ? "var(--oc-green)" : tone === "warn" ? "var(--oc-yellow)" : "var(--oc-red)";
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium" style={{ borderColor: color, color }}>
-      {Icon && <Icon className="h-3 w-3" />}
+    <span className="inline-flex items-center gap-1 rounded px-1.5 py-px text-[10.5px] font-medium" style={{ border: `1px solid ${color}`, color }}>
+      <Icon className="h-3 w-3" />
       {children}
     </span>
   );
 }
 
-function FlagList({ title, flags }: { title: string; flags: string[] }) {
+function SectionIntro({ title, text }: { title: string; text: string }) {
   return (
     <div>
-      <div className="mb-1.5 text-[11px] uppercase tracking-[0.4px]" style={{ color: "var(--oc-text-muted)" }}>{title}</div>
-      {flags.length === 0 ? (
-        <div className="text-[12px]" style={{ color: "var(--oc-text-muted)" }}>---</div>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {flags.map((flag) => (
-            <span key={flag} className="rounded-[4px] border px-2 py-1 font-mono text-[11px]" style={{ borderColor: "var(--oc-border)", color: "var(--oc-text-dim)" }}>
-              {flag}
-            </span>
-          ))}
-        </div>
-      )}
+      <h2 className="text-[14px] font-semibold" style={{ color: "var(--color-foreground)" }}>{title}</h2>
+      <p className="mt-1 text-[12px]" style={{ color: "var(--oc-text-muted)" }}>{text}</p>
     </div>
   );
 }
 
-function Notice({ tone, text, compact }: { tone: "warn" | "error"; text: string; compact?: boolean }) {
-  const color = tone === "error" ? "var(--oc-red)" : "var(--oc-yellow)";
+function Notice({ tone, text, compact }: { tone: "ok" | "warn" | "error"; text: string; compact?: boolean }) {
+  const color = tone === "ok" ? "var(--oc-green)" : tone === "error" ? "var(--oc-red)" : "var(--oc-yellow)";
+  const Icon = tone === "ok" ? CheckCircle2 : AlertTriangle;
   return (
-    <div className={`flex items-start gap-2 rounded-md border ${compact ? "mt-2 px-2.5 py-2 text-[11.5px]" : "mb-3 px-3 py-2 text-xs"}`} style={{ borderColor: color, color, background: "var(--oc-bg1)" }}>
-      {tone === "error" ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5" /> : <ShieldCheck className="mt-0.5 h-3.5 w-3.5" />}
+    <div className={`flex items-start gap-2 rounded-md border px-3 ${compact ? "py-2" : "mb-3 py-2.5"} text-xs`} style={{ borderColor: color, color, background: "var(--oc-bg1)" }}>
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span>{text}</span>
     </div>
   );
 }
 
-function Empty({ text }: { text: string }) {
-  return (
-    <div className="rounded-md px-3 py-5 text-center text-[12px]" style={{ color: "var(--oc-text-muted)", background: "var(--oc-bg2)" }}>
-      {text}
-    </div>
-  );
+function groupModels(models: RuntimeModelOption[]): Array<[string, RuntimeModelOption[]]> {
+  const byProvider = new Map<string, RuntimeModelOption[]>();
+  for (const model of models) {
+    const provider = providerFromModel(model.id) || model.provider || "other";
+    byProvider.set(provider, [...(byProvider.get(provider) ?? []), model]);
+  }
+  return Array.from(byProvider.entries()).sort(([a], [b]) => a.localeCompare(b));
 }
 
-function LoadingRows() {
-  return (
-    <div className="grid gap-2 p-3">
-      {[0, 1, 2].map((item) => (
-        <div key={item} className="h-10 animate-pulse rounded-md" style={{ background: "var(--oc-bg2)" }} />
-      ))}
-    </div>
-  );
+function providerFromModel(model: string): string {
+  const slash = model.indexOf("/");
+  if (slash > 0) return model.slice(0, slash);
+  if (model.startsWith("claude-")) return "anthropic";
+  return "";
 }
 
-function Th({ children }: { children: React.ReactNode }) {
-  return <th className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.4px]">{children}</th>;
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  const body = await res.json().catch(() => null) as { message?: string; error?: string } | T | null;
+  if (!res.ok) {
+    const message = body && typeof body === "object" && "message" in body
+      ? body.message
+      : body && typeof body === "object" && "error" in body ? body.error : `Request failed (${res.status})`;
+    throw new Error(message ?? `Request failed (${res.status})`);
+  }
+  return body as T;
 }
 
-function Td({ children }: { children: React.ReactNode }) {
-  return <td className="px-3 py-2 align-top" style={{ color: "var(--oc-text-dim)" }}>{children}</td>;
+async function requestJson<T = unknown>(url: string, init: RequestInit): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
+  const res = await fetch(url, { ...init, headers });
+  const body = await res.json().catch(() => null) as { message?: string; error?: string } | T | null;
+  if (!res.ok) {
+    const message = body && typeof body === "object" && "message" in body
+      ? body.message
+      : body && typeof body === "object" && "error" in body ? body.error : `Request failed (${res.status})`;
+    throw new Error(message ?? `Request failed (${res.status})`);
+  }
+  return body as T;
 }

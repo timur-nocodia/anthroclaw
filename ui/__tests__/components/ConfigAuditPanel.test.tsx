@@ -26,9 +26,9 @@ function jsonResponse(body: unknown): Response {
 const SAMPLE_ENTRIES: AuditEntry[] = [
   {
     ts: "2026-05-01T12:00:00.000Z",
-    callerAgent: "klavdia",
+    callerAgent: "operator_agent",
     callerSession: "telegram:control:dm:1",
-    targetAgent: "klavdia",
+    targetAgent: "operator_agent",
     section: "notifications",
     action: "notifications.add_route",
     prev: null,
@@ -38,7 +38,7 @@ const SAMPLE_ENTRIES: AuditEntry[] = [
   {
     ts: "2026-05-01T11:00:00.000Z",
     callerAgent: "ui",
-    targetAgent: "klavdia",
+    targetAgent: "operator_agent",
     section: "human_takeover",
     action: "ui_save_human_takeover",
     prev: { enabled: false },
@@ -47,8 +47,8 @@ const SAMPLE_ENTRIES: AuditEntry[] = [
   },
   {
     ts: "2026-05-01T10:00:00.000Z",
-    callerAgent: "klavdia",
-    targetAgent: "klavdia",
+    callerAgent: "operator_agent",
+    targetAgent: "operator_agent",
     section: "human_takeover",
     action: "human_takeover.set_enabled",
     prev: { enabled: true },
@@ -79,17 +79,17 @@ describe("ConfigAuditPanel", () => {
   it("fetches /api/agents/[id]/config-audit?limit=50 on mount", async () => {
     const fm = fetchMock(SAMPLE_ENTRIES);
     vi.stubGlobal("fetch", fm);
-    render(<ConfigAuditPanel agentId="klavdia" />);
+    render(<ConfigAuditPanel agentId="operator_agent" />);
     await waitFor(() => expect(fm).toHaveBeenCalled());
     const calls = (fm as unknown as { mock: { calls: unknown[][] } }).mock.calls;
     const url = String(calls[0][0]);
-    expect(url).toContain("/api/agents/klavdia/config-audit");
+    expect(url).toContain("/api/agents/operator_agent/config-audit");
     expect(url).toContain("limit=50");
   });
 
   it("renders all entries newest-first", async () => {
     vi.stubGlobal("fetch", fetchMock(SAMPLE_ENTRIES));
-    render(<ConfigAuditPanel agentId="klavdia" />);
+    render(<ConfigAuditPanel agentId="operator_agent" />);
     await waitFor(() => {
       expect(screen.getByTestId("audit-entry-0")).toBeInTheDocument();
     });
@@ -106,19 +106,19 @@ describe("ConfigAuditPanel", () => {
 
   it("renders source labels: chat (callerAgent) and UI", async () => {
     vi.stubGlobal("fetch", fetchMock(SAMPLE_ENTRIES));
-    render(<ConfigAuditPanel agentId="klavdia" />);
+    render(<ConfigAuditPanel agentId="operator_agent" />);
     await waitFor(() =>
       expect(screen.getByTestId("audit-source-0")).toBeInTheDocument(),
     );
     expect(screen.getByTestId("audit-source-0").textContent).toMatch(
-      /chat \(klavdia\)/,
+      /chat \(operator_agent\)/,
     );
     expect(screen.getByTestId("audit-source-1").textContent).toMatch(/UI/);
   });
 
   it("displays prev and new JSON in dedicated <pre> blocks", async () => {
     vi.stubGlobal("fetch", fetchMock(SAMPLE_ENTRIES));
-    render(<ConfigAuditPanel agentId="klavdia" />);
+    render(<ConfigAuditPanel agentId="operator_agent" />);
     await waitFor(() =>
       expect(screen.getByTestId("audit-prev-1")).toBeInTheDocument(),
     );
@@ -133,7 +133,7 @@ describe("ConfigAuditPanel", () => {
   it("section filter narrows results", async () => {
     const fm = fetchMock(SAMPLE_ENTRIES);
     vi.stubGlobal("fetch", fm);
-    render(<ConfigAuditPanel agentId="klavdia" />);
+    render(<ConfigAuditPanel agentId="operator_agent" />);
     await waitFor(() =>
       expect(screen.getByTestId("audit-entry-0")).toBeInTheDocument(),
     );
@@ -157,7 +157,7 @@ describe("ConfigAuditPanel", () => {
 
   it("shows empty-state when no entries", async () => {
     vi.stubGlobal("fetch", fetchMock([]));
-    render(<ConfigAuditPanel agentId="klavdia" />);
+    render(<ConfigAuditPanel agentId="operator_agent" />);
     await waitFor(() =>
       expect(screen.getByText(/No config changes yet/i)).toBeInTheDocument(),
     );
@@ -168,7 +168,7 @@ describe("ConfigAuditPanel", () => {
       "fetch",
       vi.fn(async () => new Response("bad", { status: 500 })),
     );
-    render(<ConfigAuditPanel agentId="klavdia" />);
+    render(<ConfigAuditPanel agentId="operator_agent" />);
     await waitFor(() => {
       expect(screen.getByText(/HTTP 500/)).toBeInTheDocument();
     });

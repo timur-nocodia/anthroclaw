@@ -26,8 +26,8 @@ routes:
   - channel: telegram
     scope: dm
 allowlist:
-  telegram: ["48705953"]
-safety_profile: chat_like_openclaw
+  telegram: ["123456789"]
+safety_profile: chat_like_anthroclaw
 mcp_onboarding:
   enabled: false
 learning:
@@ -52,7 +52,7 @@ routes:
   - channel: telegram
     scope: group
     topics: ["8"]
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 mcp_tools:
   - manage_cron
 cron:
@@ -145,13 +145,13 @@ mcp_tools:
 routes:
   - channel: telegram
     scope: dm
-    peers: ["48705953"]
-safety_profile: chat_like_openclaw
+    peers: ["123456789"]
+safety_profile: chat_like_anthroclaw
 mcp_onboarding:
   enabled: false
 `);
-    mkdirSync(join(root, 'amina', 'credentials'), { recursive: true });
-    writeFileSync(join(root, 'amina', 'credentials', 'mcp:test.enc'), 'encrypted', 'utf8');
+    mkdirSync(join(root, 'agent_alpha', 'credentials'), { recursive: true });
+    writeFileSync(join(root, 'agent_alpha', 'credentials', 'mcp:test.enc'), 'encrypted', 'utf8');
     const stdout = createWriter();
     const stderr = createWriter();
 
@@ -169,7 +169,7 @@ mcp_onboarding:
       coverageGap: true,
       expectedAgentsMissing: ['public_agent'],
       skippedDirectories: [
-        { name: 'amina', reason: 'missing agent.yml' },
+        { name: 'agent_alpha', reason: 'missing agent.yml' },
       ],
     });
   });
@@ -181,8 +181,8 @@ mcp_onboarding:
 routes:
   - channel: telegram
     scope: dm
-    peers: ["48705953"]
-safety_profile: chat_like_openclaw
+    peers: ["123456789"]
+safety_profile: chat_like_anthroclaw
 mcp_onboarding:
   enabled: false
 `);
@@ -230,8 +230,8 @@ mcp_tools:
 routes:
   - channel: telegram
     scope: dm
-    peers: ["48705953"]
-safety_profile: chat_like_openclaw
+    peers: ["123456789"]
+safety_profile: chat_like_anthroclaw
 mcp_onboarding:
   enabled: false
 `);
@@ -255,7 +255,7 @@ mcp_onboarding:
 routes:
   - channel: telegram
     scope: group
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 mcp_tools:
   - manage_cron
 `);
@@ -263,8 +263,8 @@ mcp_tools:
 routes:
   - channel: telegram
     scope: dm
-    peers: ["48705953"]
-safety_profile: chat_like_openclaw
+    peers: ["123456789"]
+safety_profile: chat_like_anthroclaw
 mcp_onboarding:
   enabled: false
 `);
@@ -290,7 +290,7 @@ mcp_onboarding:
 routes:
   - channel: telegram
     scope: group
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 mcp_tools:
   - manage_cron
 `);

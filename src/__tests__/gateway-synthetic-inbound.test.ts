@@ -34,9 +34,9 @@ function setupGateway(agentId: string) {
 
 describe('Gateway.dispatchSyntheticInbound', () => {
   it('defaults sender labels to operator-console for backwards compatibility', async () => {
-    const { gw, calls } = setupGateway('amina');
+    const { gw, calls } = setupGateway('agent_alpha');
     await gw.dispatchSyntheticInbound({
-      targetAgentId: 'amina',
+      targetAgentId: 'agent_alpha',
       channel: 'telegram',
       peerId: '123',
       text: 'hi',
@@ -52,9 +52,9 @@ describe('Gateway.dispatchSyntheticInbound', () => {
   });
 
   it('honours overridden sender labels and tags raw.synthetic accordingly', async () => {
-    const { gw, calls } = setupGateway('amina');
+    const { gw, calls } = setupGateway('agent_alpha');
     await gw.dispatchSyntheticInbound({
-      targetAgentId: 'amina',
+      targetAgentId: 'agent_alpha',
       channel: 'telegram',
       peerId: '123',
       text: '[system] mcp_connected: notion',
@@ -72,9 +72,9 @@ describe('Gateway.dispatchSyntheticInbound', () => {
   });
 
   it('merges caller-provided meta into raw alongside the synthetic tag', async () => {
-    const { gw, calls } = setupGateway('amina');
+    const { gw, calls } = setupGateway('agent_alpha');
     await gw.dispatchSyntheticInbound({
-      targetAgentId: 'amina',
+      targetAgentId: 'agent_alpha',
       channel: 'whatsapp',
       peerId: '37120@s.whatsapp.net',
       text: '[system] mcp_connect_failed: notion',

@@ -450,9 +450,9 @@ describe('resolveDisplayConfig — toolProgress defaults by safety profile', () 
     expect(resolveDisplayConfig('whatsapp', 'trusted').toolProgress).toBe('new');
   });
 
-  it('returns "new" for private and chat_like_openclaw profiles', () => {
+  it('returns "new" for private and chat_like_anthroclaw profiles', () => {
     expect(resolveDisplayConfig('telegram', 'private').toolProgress).toBe('new');
-    expect(resolveDisplayConfig('telegram', 'chat_like_openclaw').toolProgress).toBe('new');
+    expect(resolveDisplayConfig('telegram', 'chat_like_anthroclaw').toolProgress).toBe('new');
   });
 });
 
@@ -1769,7 +1769,7 @@ You should see in chat:
 
 - [ ] **Step 5: Verify a `safety_profile: public` agent stays silent**
 
-Repeat steps 3-4 with Roman or Amina. You should see only the answer, no bubble.
+Repeat steps 3-4 with a public-profile fixture or customer assistant. You should see only the answer, no bubble.
 
 - [ ] **Step 6: Verify cleanup**
 
@@ -1801,7 +1801,7 @@ gh pr create --title "feat: tool-progress observability bubble (Hermes-style)" -
 
 Brings Hermes-style tool-call observability to AnthroClaw: a single editable Telegram/WhatsApp message that grows line-by-line as the agent calls tools — emoji-tagged, throttled, deduped, reset on content arrival.
 
-- Default ON for trusted/private/chat_like_openclaw agents.
+- Default ON for trusted/private/chat_like_anthroclaw agents.
 - Default OFF for `safety_profile: public` (customer-facing).
 - Fully exposed in the agent Config UI + global Settings defaults.
 - All wiring uses the existing SDK hooks bridge (`PreToolUse` / `PostToolUseFailure`) — no `@anthropic-ai/sdk` imports, no custom orchestration loop.

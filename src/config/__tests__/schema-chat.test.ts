@@ -6,7 +6,15 @@ const baseConfig = {
 };
 
 describe('AgentYmlSchema chat extensions', () => {
-  it('accepts safety_profile=chat_like_openclaw', () => {
+  it('accepts safety_profile=chat_like_anthroclaw', () => {
+    const result = AgentYmlSchema.safeParse({
+      ...baseConfig,
+      safety_profile: 'chat_like_anthroclaw',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('keeps legacy safety_profile=chat_like_openclaw configs valid', () => {
     const result = AgentYmlSchema.safeParse({
       ...baseConfig,
       safety_profile: 'chat_like_openclaw',
@@ -17,7 +25,7 @@ describe('AgentYmlSchema chat extensions', () => {
   it('accepts optional personality string', () => {
     const result = AgentYmlSchema.safeParse({
       ...baseConfig,
-      safety_profile: 'chat_like_openclaw',
+      safety_profile: 'chat_like_anthroclaw',
       personality: 'You are warm and chatty.',
     });
     expect(result.success).toBe(true);
@@ -29,7 +37,7 @@ describe('AgentYmlSchema chat extensions', () => {
   it('personality field is optional (undefined when missing)', () => {
     const result = AgentYmlSchema.safeParse({
       ...baseConfig,
-      safety_profile: 'chat_like_openclaw',
+      safety_profile: 'chat_like_anthroclaw',
     });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -40,7 +48,7 @@ describe('AgentYmlSchema chat extensions', () => {
   it('rejects non-string personality', () => {
     const result = AgentYmlSchema.safeParse({
       ...baseConfig,
-      safety_profile: 'chat_like_openclaw',
+      safety_profile: 'chat_like_anthroclaw',
       personality: 42,
     });
     expect(result.success).toBe(false);

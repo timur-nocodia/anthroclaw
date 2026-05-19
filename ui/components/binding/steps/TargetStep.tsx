@@ -93,7 +93,7 @@ function DmSubFlow({
             type="text"
             value={dmAllowlistInput}
             onChange={(e) => onDmAllowlistChange(e.target.value)}
-            placeholder="48705953, 12345678"
+            placeholder="123456789, 987654321"
             data-testid="binding-target-dm-allowlist-input"
             className="h-7 w-full rounded-[5px] border px-2 text-xs"
             style={{
@@ -106,7 +106,7 @@ function DmSubFlow({
             className="text-[11px]"
             style={{ color: "var(--oc-text-muted)" }}
           >
-            Telegram user IDs are numbers like <code>48705953</code>. You can
+            Telegram user IDs are numbers like <code>123456789</code>. You can
             find them with @userinfobot.
           </span>
         </div>

@@ -14,7 +14,7 @@ describe('NativeAgentRuntimeAdapter', () => {
     mockedQuery.mockReset();
   });
 
-  it('starts Builder through native SDK query with bounded Buildroom options', async () => {
+  it('starts Builder through the configured runtime adapter with bounded Buildroom options', async () => {
     const close = vi.fn();
     mockedQuery.mockReturnValue({
       [Symbol.asyncIterator]: () => asyncEvents([
@@ -95,4 +95,3 @@ describe('NativeAgentRuntimeAdapter', () => {
 async function* asyncEvents(events: Array<Record<string, unknown>>) {
   for (const event of events) yield event;
 }
-

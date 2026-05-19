@@ -57,7 +57,7 @@ describe('POST /api/notifications/test', () => {
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { POST } = await import('@/app/api/notifications/test/route');
     const req = jsonRequest('/api/notifications/test', {
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       message: 'hello operator',
     });
     const res = await POST(req);
@@ -68,7 +68,7 @@ describe('POST /api/notifications/test', () => {
     expect(gw.notificationsEmitter!.emit).toHaveBeenCalledOnce();
     const call = gw.notificationsEmitter!.emit.mock.calls[0] as unknown as [string, Record<string, unknown>];
     expect(call[0]).toBe('escalation_needed');
-    expect(call[1].agentId).toBe('amina');
+    expect(call[1].agentId).toBe('agent_alpha');
     expect(call[1].message).toBe('hello operator');
     expect(call[1].test).toBe(true);
   });
@@ -78,7 +78,7 @@ describe('POST /api/notifications/test', () => {
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { POST } = await import('@/app/api/notifications/test/route');
     const req = jsonRequest('/api/notifications/test', {
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       event: 'peer_pause_started',
     });
     const res = await POST(req);
@@ -91,7 +91,7 @@ describe('POST /api/notifications/test', () => {
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { POST } = await import('@/app/api/notifications/test/route');
     const req = jsonRequest('/api/notifications/test', {
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       event: 'totally_unknown',
     });
     const res = await POST(req);
@@ -113,7 +113,7 @@ describe('POST /api/notifications/test', () => {
       getGateway: vi.fn().mockResolvedValue({ notificationsEmitter: null }),
     }));
     const { POST } = await import('@/app/api/notifications/test/route');
-    const req = jsonRequest('/api/notifications/test', { agentId: 'amina' });
+    const req = jsonRequest('/api/notifications/test', { agentId: 'agent_alpha' });
     const res = await POST(req);
     expect(res.status).toBe(503);
   });
@@ -124,7 +124,7 @@ describe('POST /api/notifications/test', () => {
       getGateway: vi.fn().mockResolvedValue(makeFakeGateway()),
     }));
     const { POST } = await import('@/app/api/notifications/test/route');
-    const req = jsonRequest('/api/notifications/test', { agentId: 'amina' });
+    const req = jsonRequest('/api/notifications/test', { agentId: 'agent_alpha' });
     const res = await POST(req);
     expect(res.status).toBe(401);
   });

@@ -76,19 +76,19 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
     }));
     const { GET } = await import('@/app/api/agents/[agentId]/config-audit/route');
     const req = new NextRequest(
-      new URL('/api/agents/klavdia/config-audit', 'http://localhost'),
+      new URL('/api/agents/operator_agent/config-audit', 'http://localhost'),
     );
-    const res = await GET(req, { params: Promise.resolve({ agentId: 'klavdia' }) });
+    const res = await GET(req, { params: Promise.resolve({ agentId: 'operator_agent' }) });
     expect(res.status).toBe(401);
   });
 
   it('returns entries newest-first', async () => {
     const gw = makeFakeGateway({
-      klavdia: [
+      operator_agent: [
         {
           ts: '2026-05-01T10:00:00.000Z',
-          callerAgent: 'klavdia',
-          targetAgent: 'klavdia',
+          callerAgent: 'operator_agent',
+          targetAgent: 'operator_agent',
           section: 'notifications',
           action: 'notifications.set_enabled',
           prev: { enabled: false },
@@ -98,7 +98,7 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
         {
           ts: '2026-05-01T11:00:00.000Z',
           callerAgent: 'ui',
-          targetAgent: 'klavdia',
+          targetAgent: 'operator_agent',
           section: 'human_takeover',
           action: 'ui_save_human_takeover',
           prev: { enabled: false },
@@ -110,9 +110,9 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { GET } = await import('@/app/api/agents/[agentId]/config-audit/route');
     const req = new NextRequest(
-      new URL('/api/agents/klavdia/config-audit', 'http://localhost'),
+      new URL('/api/agents/operator_agent/config-audit', 'http://localhost'),
     );
-    const res = await GET(req, { params: Promise.resolve({ agentId: 'klavdia' }) });
+    const res = await GET(req, { params: Promise.resolve({ agentId: 'operator_agent' }) });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { entries: PersistedEntry[] };
     expect(body.entries).toHaveLength(2);
@@ -122,11 +122,11 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
 
   it('respects the limit query param', async () => {
     const gw = makeFakeGateway({
-      klavdia: [
+      operator_agent: [
         {
           ts: '2026-05-01T10:00:00.000Z',
-          callerAgent: 'klavdia',
-          targetAgent: 'klavdia',
+          callerAgent: 'operator_agent',
+          targetAgent: 'operator_agent',
           section: 'notifications',
           action: 'notifications.set_enabled',
           prev: null,
@@ -135,8 +135,8 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
         },
         {
           ts: '2026-05-01T11:00:00.000Z',
-          callerAgent: 'klavdia',
-          targetAgent: 'klavdia',
+          callerAgent: 'operator_agent',
+          targetAgent: 'operator_agent',
           section: 'human_takeover',
           action: 'human_takeover.set_enabled',
           prev: null,
@@ -145,8 +145,8 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
         },
         {
           ts: '2026-05-01T12:00:00.000Z',
-          callerAgent: 'klavdia',
-          targetAgent: 'klavdia',
+          callerAgent: 'operator_agent',
+          targetAgent: 'operator_agent',
           section: 'operator_console',
           action: 'operator_console.update',
           prev: null,
@@ -158,9 +158,9 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { GET } = await import('@/app/api/agents/[agentId]/config-audit/route');
     const req = new NextRequest(
-      new URL('/api/agents/klavdia/config-audit?limit=1', 'http://localhost'),
+      new URL('/api/agents/operator_agent/config-audit?limit=1', 'http://localhost'),
     );
-    const res = await GET(req, { params: Promise.resolve({ agentId: 'klavdia' }) });
+    const res = await GET(req, { params: Promise.resolve({ agentId: 'operator_agent' }) });
     const body = (await res.json()) as { entries: PersistedEntry[] };
     expect(body.entries).toHaveLength(1);
     expect(body.entries[0].ts).toBe('2026-05-01T12:00:00.000Z');
@@ -168,11 +168,11 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
 
   it('filters by section query param', async () => {
     const gw = makeFakeGateway({
-      klavdia: [
+      operator_agent: [
         {
           ts: '2026-05-01T10:00:00.000Z',
-          callerAgent: 'klavdia',
-          targetAgent: 'klavdia',
+          callerAgent: 'operator_agent',
+          targetAgent: 'operator_agent',
           section: 'notifications',
           action: 'notifications.set_enabled',
           prev: null,
@@ -181,8 +181,8 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
         },
         {
           ts: '2026-05-01T11:00:00.000Z',
-          callerAgent: 'klavdia',
-          targetAgent: 'klavdia',
+          callerAgent: 'operator_agent',
+          targetAgent: 'operator_agent',
           section: 'human_takeover',
           action: 'human_takeover.set_enabled',
           prev: null,
@@ -195,11 +195,11 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
     const { GET } = await import('@/app/api/agents/[agentId]/config-audit/route');
     const req = new NextRequest(
       new URL(
-        '/api/agents/klavdia/config-audit?section=notifications',
+        '/api/agents/operator_agent/config-audit?section=notifications',
         'http://localhost',
       ),
     );
-    const res = await GET(req, { params: Promise.resolve({ agentId: 'klavdia' }) });
+    const res = await GET(req, { params: Promise.resolve({ agentId: 'operator_agent' }) });
     const body = (await res.json()) as { entries: PersistedEntry[] };
     expect(body.entries).toHaveLength(1);
     expect(body.entries[0].section).toBe('notifications');
@@ -207,11 +207,11 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
 
   it('ignores unknown section values (returns all entries)', async () => {
     const gw = makeFakeGateway({
-      klavdia: [
+      operator_agent: [
         {
           ts: '2026-05-01T10:00:00.000Z',
-          callerAgent: 'klavdia',
-          targetAgent: 'klavdia',
+          callerAgent: 'operator_agent',
+          targetAgent: 'operator_agent',
           section: 'notifications',
           action: 'notifications.set_enabled',
           prev: null,
@@ -223,9 +223,9 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { GET } = await import('@/app/api/agents/[agentId]/config-audit/route');
     const req = new NextRequest(
-      new URL('/api/agents/klavdia/config-audit?section=bogus', 'http://localhost'),
+      new URL('/api/agents/operator_agent/config-audit?section=bogus', 'http://localhost'),
     );
-    const res = await GET(req, { params: Promise.resolve({ agentId: 'klavdia' }) });
+    const res = await GET(req, { params: Promise.resolve({ agentId: 'operator_agent' }) });
     const body = (await res.json()) as { entries: PersistedEntry[] };
     expect(body.entries).toHaveLength(1);
   });
@@ -249,9 +249,9 @@ describe('GET /api/agents/[agentId]/config-audit', () => {
     }));
     const { GET } = await import('@/app/api/agents/[agentId]/config-audit/route');
     const req = new NextRequest(
-      new URL('/api/agents/klavdia/config-audit', 'http://localhost'),
+      new URL('/api/agents/operator_agent/config-audit', 'http://localhost'),
     );
-    const res = await GET(req, { params: Promise.resolve({ agentId: 'klavdia' }) });
+    const res = await GET(req, { params: Promise.resolve({ agentId: 'operator_agent' }) });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { entries: PersistedEntry[] };
     expect(body.entries).toEqual([]);

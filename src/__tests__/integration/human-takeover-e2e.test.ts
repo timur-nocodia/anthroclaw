@@ -35,7 +35,7 @@ import type { AgentYml } from '../../config/schema.js';
 const peerKey = 'whatsapp:business:37120@s.whatsapp.net';
 const peerId = '37120@s.whatsapp.net';
 
-const aminaConfig = {
+const agentAlphaConfig = {
   human_takeover: { enabled: true, pause_ttl_minutes: 30 },
   routes: [{ channel: 'whatsapp', account: 'business' }],
 } as unknown as AgentYml;
@@ -62,20 +62,20 @@ describe('human_takeover end-to-end', () => {
 
     const gw = new Gateway() as any;
     gw.peerPauseStore = createPeerPauseStore({ filePath: ':memory:', clock: () => clock });
-    gw.routeTable = RouteTable.build([{ id: 'amina', config: aminaConfig }]);
+    gw.routeTable = RouteTable.build([{ id: 'agent_alpha', config: agentAlphaConfig }]);
     // Stubbed Agent — only the methods dispatch() reaches between the pause
     // gate and queryAgent need to exist; everything else is bypassed by the
     // default `session_policy: 'never'` and lack of slash-commands.
     const stubAgent = {
-      id: 'amina',
-      config: aminaConfig,
+      id: 'agent_alpha',
+      config: agentAlphaConfig,
       incrementMessageCount: vi.fn(),
       getSessionId: vi.fn(() => undefined),
       getSessionModel: vi.fn(() => undefined),
       clearSession: vi.fn(),
       isSessionResetDue: vi.fn(() => false),
     };
-    gw.agents = new Map([['amina', stubAgent]]);
+    gw.agents = new Map([['agent_alpha', stubAgent]]);
     gw.accessControl = { check: () => ({ allowed: true }), tryCode: () => false };
     gw.profileRateLimiters = new Map();
     gw.hookEmitters = new Map();
@@ -102,7 +102,7 @@ describe('human_takeover end-to-end', () => {
       messageTimestamp: 1700000000,
     });
 
-    const pauseStatus = gw.peerPauseStore.isPaused('amina', peerKey);
+    const pauseStatus = gw.peerPauseStore.isPaused('agent_alpha', peerKey);
     expect(pauseStatus.paused).toBe(true);
     expect(pauseStatus.expired).toBe(false);
 
@@ -115,7 +115,7 @@ describe('human_takeover end-to-end', () => {
     }
     expect(queryAgent).not.toHaveBeenCalled();
     // Pause is preserved (not cleared by a non-expired check).
-    expect(gw.peerPauseStore.list('amina')).toHaveLength(1);
+    expect(gw.peerPauseStore.list('agent_alpha')).toHaveLength(1);
 
     // ─── Step 3: advance the clock past TTL ────────────────────────
     clock = t0 + 31 * 60_000;
@@ -128,7 +128,7 @@ describe('human_takeover end-to-end', () => {
       // may fail on later stubbed paths (session, heartbeat). The
       // observable signal we care about is the cleared pause.
     }
-    expect(gw.peerPauseStore.list('amina')).toEqual([]);
+    expect(gw.peerPauseStore.list('agent_alpha')).toEqual([]);
     // Positive assertion: dispatch progressed past the pause gate exactly
     // once after expiry — i.e. the pause was the only reason it had been
     // skipped before, and now the agent path is reached.
@@ -141,8 +141,8 @@ describe('human_takeover end-to-end', () => {
 
     const gw = new Gateway() as any;
     gw.peerPauseStore = createPeerPauseStore({ filePath: ':memory:', clock: () => clock });
-    gw.routeTable = RouteTable.build([{ id: 'amina', config: aminaConfig }]);
-    gw.agents = new Map([['amina', { id: 'amina', config: aminaConfig }]]);
+    gw.routeTable = RouteTable.build([{ id: 'agent_alpha', config: agentAlphaConfig }]);
+    gw.agents = new Map([['agent_alpha', { id: 'agent_alpha', config: agentAlphaConfig }]]);
 
     const wa = new WhatsAppChannel({
       accounts: { business: { auth_dir: '/tmp/x' } },
@@ -155,7 +155,7 @@ describe('human_takeover end-to-end', () => {
       message: { conversation: 'first' },
       messageTimestamp: 1,
     });
-    const first = gw.peerPauseStore.isPaused('amina', peerKey).entry;
+    const first = gw.peerPauseStore.isPaused('agent_alpha', peerKey).entry;
 
     clock = t0 + 10 * 60_000;
     wa.__test_handleFromMe('business', {
@@ -163,7 +163,7 @@ describe('human_takeover end-to-end', () => {
       message: { conversation: 'second' },
       messageTimestamp: 2,
     });
-    const second = gw.peerPauseStore.isPaused('amina', peerKey).entry;
+    const second = gw.peerPauseStore.isPaused('agent_alpha', peerKey).entry;
 
     expect(second.extendedCount).toBe(1);
     expect(Date.parse(second.expiresAt)).toBeGreaterThan(Date.parse(first.expiresAt));
@@ -172,8 +172,8 @@ describe('human_takeover end-to-end', () => {
   it('reactions/protocol envelopes do NOT trigger pause', () => {
     const gw = new Gateway() as any;
     gw.peerPauseStore = createPeerPauseStore({ filePath: ':memory:' });
-    gw.routeTable = RouteTable.build([{ id: 'amina', config: aminaConfig }]);
-    gw.agents = new Map([['amina', { id: 'amina', config: aminaConfig }]]);
+    gw.routeTable = RouteTable.build([{ id: 'agent_alpha', config: agentAlphaConfig }]);
+    gw.agents = new Map([['agent_alpha', { id: 'agent_alpha', config: agentAlphaConfig }]]);
 
     const wa = new WhatsAppChannel({
       accounts: { business: { auth_dir: '/tmp/x' } },
@@ -192,6 +192,6 @@ describe('human_takeover end-to-end', () => {
       messageTimestamp: 1,
     });
 
-    expect(gw.peerPauseStore.list('amina')).toEqual([]);
+    expect(gw.peerPauseStore.list('agent_alpha')).toEqual([]);
   });
 });

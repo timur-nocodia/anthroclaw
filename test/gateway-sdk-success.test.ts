@@ -39,7 +39,7 @@ function createQueryForPrompt(prompt: unknown) {
         result: JSON.stringify({
           candidates: [{
             kind: 'decision',
-            text: 'The team chose SDK-native memory review.',
+            text: 'The team chose Runtime v1 memory review.',
             confidence: 0.91,
             reason: 'The run discussed it.',
           }],
@@ -1071,7 +1071,7 @@ pairing:
     const botDir = join(agentsDir, 'pi-path-policy-bot');
     mkdirSync(botDir);
     writeAgentYml(botDir, `
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 routes:
   - channel: telegram
     scope: dm
@@ -1647,7 +1647,7 @@ memory_extraction:
       async sendTyping() {},
     });
 
-    await gw.dispatch(makeMsg({ text: 'remember that we chose SDK-native memory review' }));
+    await gw.dispatch(makeMsg({ text: 'remember that we chose Runtime v1 memory review' }));
 
     expect(sent).toEqual(['SDK says hi']);
     // v1.1.7: confidence 0.91 >= default threshold (0.6) → stored as approved
@@ -1715,7 +1715,7 @@ memory_extraction:
       async sendTyping() {},
     });
 
-    await gw.dispatch(makeMsg({ text: 'remember that we chose SDK-native memory review' }));
+    await gw.dispatch(makeMsg({ text: 'remember that we chose Runtime v1 memory review' }));
 
     const pending = await waitForCandidateMemory(gw, 'review-bot', 'pending');
     expect(pending).toHaveLength(1);

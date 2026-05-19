@@ -35,6 +35,13 @@ describe('headless runtime config helpers', () => {
           pi: {
             auth_path: '/secure/pi-auth.json',
             models_path: '/secure/pi-models.json',
+            max_output_tokens: 1024,
+            provider_max_output_tokens: {
+              openrouter: 512,
+            },
+            model_max_output_tokens: {
+              'openrouter/qwen/qwen3.6-max-preview': 192,
+            },
           },
         },
       },
@@ -46,6 +53,13 @@ describe('headless runtime config helpers', () => {
         pi: {
           authStoragePath: '/secure/pi-auth.json',
           modelsPath: '/secure/pi-models.json',
+          maxOutputTokens: 1024,
+          providerMaxOutputTokens: {
+            openrouter: 512,
+          },
+          modelMaxOutputTokens: {
+            'openrouter/qwen/qwen3.6-max-preview': 192,
+          },
         },
       },
     });

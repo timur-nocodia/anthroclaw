@@ -33,7 +33,7 @@ describe('controlled live turn side-effect gate', () => {
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(join(agentDir, 'agent.yml'), [
       'model: test-model',
-      'safety_profile: chat_like_openclaw',
+      'safety_profile: chat_like_anthroclaw',
       'routes:',
       '  - channel: telegram',
       '    scope: group',
@@ -147,7 +147,7 @@ describe('controlled live turn side-effect gate', () => {
     const agentDir = join(agentsDir, agentId);
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(join(agentDir, 'agent.yml'), [
-      'safety_profile: chat_like_openclaw',
+      'safety_profile: chat_like_anthroclaw',
       'routes:',
       '  - channel: telegram',
       '    scope: group',

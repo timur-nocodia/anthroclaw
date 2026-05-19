@@ -27,7 +27,7 @@ routes:
     peers: ["-1003729315809"]
     topics: ["8"]
     mention_only: true
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 mcp_tools: [manage_cron]
 `);
     const stdout = createWriter();
@@ -38,7 +38,7 @@ mcp_tools: [manage_cron]
       '--agent-id', 'group-agent',
       '--account-id', 'content_sm',
       '--peer-id', '-1003729315809',
-      '--sender-id', '48705953',
+      '--sender-id', '123456789',
       '--thread-id', '8',
       '--cron-id', 'group-agent-scheduled-work',
       '--json',
@@ -108,7 +108,7 @@ mcp_tools: [memory_search]
       '--agent-id', 'group-agent',
       '--account-id', 'content_sm',
       '--peer-id', '-100',
-      '--sender-id', '48705953',
+      '--sender-id', '123456789',
       '--thread-id', '8',
       '--cron-id', 'work',
       '--cron-schedule', '0 9 * * *',
@@ -120,7 +120,7 @@ mcp_tools: [memory_search]
       agentId: 'group-agent',
       accountId: 'content_sm',
       peerId: '-100',
-      senderId: '48705953',
+      senderId: '123456789',
       threadId: '8',
       cronId: 'work',
       cronSchedule: '0 9 * * *',

@@ -25,14 +25,14 @@ function getHandler(tool: unknown) {
 describe('send_message — pause suppression', () => {
   it('suppresses send when peer is paused mid-generation', async () => {
     const store = createPeerPauseStore({ filePath: ':memory:' });
-    store.pause('amina', 'whatsapp:business:37120@s.whatsapp.net', {
+    store.pause('agent_alpha', 'whatsapp:business:37120@s.whatsapp.net', {
       ttlMinutes: 30,
       reason: 'operator_takeover',
       source: 'wa',
     });
     const { adapter, sendText } = makeFakeAdapter();
     const tool = createSendMessageTool(() => adapter, {
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       peerPauseStore: store,
     });
 
@@ -58,7 +58,7 @@ describe('send_message — pause suppression', () => {
     const store = createPeerPauseStore({ filePath: ':memory:' });
     const { adapter, sendText } = makeFakeAdapter();
     const tool = createSendMessageTool(() => adapter, {
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       peerPauseStore: store,
     });
 
@@ -79,14 +79,14 @@ describe('send_message — pause suppression', () => {
 
   it('does NOT suppress when pause is for a different agent', async () => {
     const store = createPeerPauseStore({ filePath: ':memory:' });
-    store.pause('larry', 'whatsapp:business:37120@s.whatsapp.net', {
+    store.pause('secondary_agent', 'whatsapp:business:37120@s.whatsapp.net', {
       ttlMinutes: 30,
       reason: 'operator_takeover',
       source: 'wa',
     });
     const { adapter, sendText } = makeFakeAdapter();
     const tool = createSendMessageTool(() => adapter, {
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       peerPauseStore: store,
     });
 
@@ -95,7 +95,7 @@ describe('send_message — pause suppression', () => {
       channel: 'whatsapp',
       account_id: 'business',
       peer_id: '37120@s.whatsapp.net',
-      text: 'send for amina',
+      text: 'send for agent_alpha',
     });
 
     expect(sendText).toHaveBeenCalledOnce();
@@ -105,7 +105,7 @@ describe('send_message — pause suppression', () => {
     const t0 = Date.UTC(2026, 4, 1, 12, 0, 0);
     let clock = t0;
     const store = createPeerPauseStore({ filePath: ':memory:', clock: () => clock });
-    store.pause('amina', 'whatsapp:business:37120@s.whatsapp.net', {
+    store.pause('agent_alpha', 'whatsapp:business:37120@s.whatsapp.net', {
       ttlMinutes: 30,
       reason: 'operator_takeover',
       source: 'wa',
@@ -114,7 +114,7 @@ describe('send_message — pause suppression', () => {
 
     const { adapter, sendText } = makeFakeAdapter();
     const tool = createSendMessageTool(() => adapter, {
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       peerPauseStore: store,
     });
 
@@ -135,7 +135,7 @@ describe('send_message — pause suppression', () => {
     // skip the pause check (fail-open) and emit a warning so the gap is
     // observable rather than silent.
     const store = createPeerPauseStore({ filePath: ':memory:' });
-    store.pause('amina', 'whatsapp:business:37120@s.whatsapp.net', {
+    store.pause('agent_alpha', 'whatsapp:business:37120@s.whatsapp.net', {
       ttlMinutes: 30,
       reason: 'operator_takeover',
       source: 'wa',
@@ -144,7 +144,7 @@ describe('send_message — pause suppression', () => {
     const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const { adapter, sendText } = makeFakeAdapter();
     const tool = createSendMessageTool(() => adapter, {
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       peerPauseStore: store,
     });
 
@@ -173,7 +173,7 @@ describe('send_message — pause suppression', () => {
     const store = createPeerPauseStore({ filePath: ':memory:' });
     const { adapter, sendText } = makeFakeAdapter();
     const tool = createSendMessageTool(() => adapter, {
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       peerPauseStore: store,
       dispatchContext: { channel: 'whatsapp', accountId: 'business' },
     });

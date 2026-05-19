@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildSdkOptions } from '../options.js';
-import { chatLikeOpenclawProfile } from '../../security/profiles/chat-like-openclaw.js';
+import { chatLikeAnthroclawProfile } from '../../security/profiles/chat-like-anthroclaw.js';
 import type { Agent } from '../../agent/agent.js';
 
 function makeAgentStub(workspaceDir: string): Agent {
@@ -11,7 +11,7 @@ function makeAgentStub(workspaceDir: string): Agent {
   return {
     id: 'test-agent',
     workspacePath: workspaceDir,
-    safetyProfile: chatLikeOpenclawProfile,
+    safetyProfile: chatLikeAnthroclawProfile,
     config: { model: 'claude-sonnet-4-6', sdk: undefined },
     mcpServer: { name: 'test-tools' },
     tools: [],

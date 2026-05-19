@@ -184,7 +184,7 @@ describe('GET/PATCH /api/buildroom/config', () => {
       },
       operators: [
         {
-          id: 'telegram_user:48705953',
+          id: 'telegram_user:123456789',
           commandRoutes: ['cli:local', 'telegram_chat:-1003931616911'],
           approvalRoutes: ['cli:local'],
         },
@@ -210,7 +210,7 @@ describe('GET/PATCH /api/buildroom/config', () => {
         },
         operators: [
           {
-            id: 'telegram_user:48705953',
+            id: 'telegram_user:123456789',
             commandRoutes: ['cli:local', 'telegram_chat:-1003931616911'],
           },
         ],

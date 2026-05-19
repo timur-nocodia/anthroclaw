@@ -6,13 +6,13 @@ describe('formatCronDeliveryContract', () => {
     const text = formatCronDeliveryContract({
       channel: 'telegram',
       accountId: 'content_sm',
-      peerId: '48705953',
+      peerId: '123456789',
     });
 
     expect(text).toContain('<cron-delivery-contract>');
     expect(text).toContain('channel=telegram');
     expect(text).toContain('account_id=content_sm');
-    expect(text).toContain('peer_id=48705953');
+    expect(text).toContain('peer_id=123456789');
     expect(text).toContain('AnthroClaw will deliver your final assistant response');
     expect(text).toContain('Do not call send_message or send_media');
     expect(text).toContain('Return only the message text');

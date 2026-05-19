@@ -255,7 +255,7 @@ escalate(message, priority?: 'low'|'medium'|'high')
 
 The right native primitive is **synthesized inbound**, same path as `CronScheduler` synthetic messages:
 
-1. Operator agent (e.g. Klavdia) calls `delegate_to_peer({ target: 'amina', peer: {...}, instruction: '...' })`.
+1. Operator agent (e.g. Operator Assistant) calls `delegate_to_peer({ target: 'customer_agent', peer: {...}, instruction: '...' })`.
 2. Tool builds a synthetic `InboundMessage` for the target's session, with body wrapped as: `[Operator delegation] Find out from this peer: <instruction>`.
 3. Gateway dispatches it through the target agent's normal flow (target's persona, target's memory, target's tools).
 4. Target agent composes a real outbound message via `send_message` to the original peer.
@@ -401,18 +401,18 @@ ui/
 ## Wire-up — full example config
 
 ```yaml
-# agents/klavdia/agent.yml — operator side
-id: klavdia
-safety_profile: chat_like_openclaw
+# agents/operator_agent/agent.yml — operator side
+id: operator_agent
+safety_profile: chat_like_anthroclaw
 routes:
   - { channel: telegram, account_id: control, scope: dm }
 allowlist:
-  telegram: ["48705953"]
+  telegram: ["<telegram-peer-id>"]
 
 plugins:
   operator-console:
     enabled: true
-    manages: [amina]
+    manages: [customer_agent]
     capabilities: [peer_pause, delegate, list_peers, peer_summary]
 
 mcp_tools:
@@ -423,9 +423,9 @@ mcp_tools:
 ```
 
 ```yaml
-# agents/amina/agent.yml — managed side
-id: amina
-safety_profile: chat_like_openclaw
+# agents/customer_agent/agent.yml — managed side
+id: customer_agent
+safety_profile: chat_like_anthroclaw
 routes:
   - { channel: whatsapp, account_id: business, scope: dm }
 allowlist:
@@ -439,7 +439,7 @@ human_takeover:
 notifications:
   enabled: true
   routes:
-    operator: { channel: telegram, account_id: control, peer_id: "48705953" }
+    operator: { channel: telegram, account_id: control, peer_id: "<telegram-peer-id>" }
   subscriptions:
     - { event: peer_pause_started, route: operator }
     - { event: peer_pause_summary_daily, route: operator, schedule: "0 9 * * *" }

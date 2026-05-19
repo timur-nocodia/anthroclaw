@@ -1,8 +1,8 @@
 # AnthroClaw — Full Guide
 
-A Claude Agent SDK-native control plane for personal, multi-agent assistants. AnthroClaw deploys AI agents to Telegram and WhatsApp with memory, skills, cron jobs, access control, fleet management, and a Web UI.
+A Pi-native control plane for personal, multi-agent assistants. AnthroClaw deploys AI agents to Telegram and WhatsApp with memory, skills, cron jobs, access control, fleet management, and a Web UI.
 
-AnthroClaw is inspired by OpenClaw and Hermes-style agent infrastructure, but it is a separate implementation. Primary LLM execution goes through `@anthropic-ai/claude-agent-sdk`, so Claude calls use the native Claude Code / Agent SDK path. OpenAI is optional and used only for memory embeddings when configured.
+AnthroClaw is a Runtime v1 agent gateway with Pi as the default LLM execution path. The old Claude provider is retained only as legacy fallback/diagnostics, and OpenAI is optional for memory embeddings when configured.
 
 ---
 
@@ -28,7 +28,7 @@ AnthroClaw is inspired by OpenClaw and Hermes-style agent infrastructure, but it
    - [Managing Access via Chat](#managing-access-via-chat)
 7. [Safety Profiles](#safety-profiles)
    - [Which profile do I want?](#which-profile-do-i-want)
-   - [`chat_like_openclaw`](#chat_like_openclaw)
+   - [`chat_like_anthroclaw`](#chat_like_anthroclaw)
    - [`public`](#public)
    - [`trusted`](#trusted)
    - [`private`](#private)
@@ -100,15 +100,9 @@ AnthroClaw is inspired by OpenClaw and Hermes-style agent infrastructure, but it
 
 ### Prerequisites
 
-- **Node.js >= 22** (required by the SDK)
+- **Node.js >= 22**
 - **pnpm** (recommended) or npm
-- **Claude Code CLI** authenticated — the SDK uses OAuth from Claude Code, no API key needed
-  ```bash
-  # Install Claude Code CLI if not already installed
-  npm install -g @anthropic-ai/claude-code
-  # Authenticate
-  claude login
-  ```
+- **Pi/provider credentials** for the models you plan to use. Configure them from the Runtime page, or through provider environment variables supported by your Pi model/provider.
 - **Telegram Bot Token** — get one from [@BotFather](https://t.me/BotFather) on Telegram
 
 ### Steps
@@ -133,7 +127,7 @@ npx tsx src/index.ts
 
 After starting, you should see logs like:
 ```
-Claude Agent SDK initialized
+Runtime initialized
 Loaded agent: example
 Telegram bot started polling (username: your_bot_name)
 Gateway started
@@ -165,7 +159,7 @@ EXA_API_KEY=...                           # For web_search_exa tool
 LOG_LEVEL=info                            # debug | info | warn | error
 ```
 
-**Important:** The SDK authenticates via OAuth from Claude Code CLI. You do NOT need an `ANTHROPIC_API_KEY` — just make sure `claude login` has been run on the machine.
+**Important:** primary agent calls use Runtime v1 with Pi. Configure provider credentials through Runtime settings; do not commit API keys or auth storage files.
 
 ### Global Config (config.yml)
 
@@ -224,7 +218,7 @@ agents/
 │   ├── agent.yml           # Required: agent configuration
 │   ├── CLAUDE.md           # Required: system prompt
 │   ├── soul.md             # Optional: persona (included via @include)
-│   ├── .claude/            # SDK-native project settings and skills
+│   ├── .claude/            # workspace settings and skills
 │   │   └── skills/
 │   │       └── my-skill/
 │   │           └── SKILL.md
@@ -244,9 +238,9 @@ model: claude-sonnet-4-6                  # Claude model to use
                                           # Options: claude-sonnet-4-6, claude-opus-4-6, etc.
 
 # ─── Safety Profile (required) ───────────────────────────
-safety_profile: chat_like_openclaw         # chat_like_openclaw | public | trusted | private
+safety_profile: chat_like_anthroclaw         # chat_like_anthroclaw | public | trusted | private
 
-# Optional. Only used by chat_like_openclaw; overrides its warm baseline.
+# Optional. Only used by chat_like_anthroclaw; overrides its warm baseline.
 # personality: |
 #   You are a calm, warm personal assistant. Be direct, practical, and human.
 
@@ -279,7 +273,7 @@ allowlist:
 # Which tools this agent can use. Only enabled tools are available.
 mcp_tools:
   - memory_search                         # Search durable memory (FTS5 + vector)
-  - session_search                        # Search prior SDK session transcripts
+  - session_search                        # Search prior runtime session transcripts
   - memory_write                          # Write to daily memory file
   - memory_wiki                           # CRUD for wiki pages
   - send_message                          # Send text to any channel
@@ -330,7 +324,7 @@ queue_mode: collect                       # What happens when a new message arri
 #   review_interval_turns: 10
 
 # ─── Heartbeat Routines ─────────────────────────────────
-# Periodic SDK-native wake loop that reads HEARTBEAT.md.
+# Periodic Runtime v1 wake loop that reads HEARTBEAT.md.
 # heartbeat:
 #   enabled: true
 #   every: 10m                              # 10m, 1h, 1d, 1w
@@ -396,7 +390,7 @@ group_sessions: shared                    # shared | per_user
 ### CLAUDE.md — System Prompt
 
 System-prompt handling is profile-aware. `public`, `trusted`, and `private`
-agents use profile defaults plus the agent's prompt files. `chat_like_openclaw`
+agents use profile defaults plus the agent's prompt files. `chat_like_anthroclaw`
 uses a pure-string prompt: the profile's warm personality baseline (or the
 agent's `personality` override) plus `CLAUDE.md`.
 
@@ -416,7 +410,7 @@ Each `@./filename.md` pulls in the content of that file from the same directory.
 
 - `soul.md` — personality, communication style
 - `user-context.md` — who the user is, preferences
-- `.claude/skills/*/SKILL.md` — SDK-native project skills discovered from project settings
+- `.claude/skills/*/SKILL.md` — workspace skills discovered from project settings
 
 **The SDK re-reads CLAUDE.md on every query**, so changes take effect immediately without restart.
 
@@ -538,7 +532,7 @@ Media Enrichment (audio transcription, PDF text)
   ↓
 Hooks: on_message_received, on_before_query
   ↓
-Agent Query (Claude SDK)
+Runtime Agent Run
   ↓
 Hooks: on_after_query
   ↓
@@ -682,7 +676,7 @@ access, unsupported overrides, or an invalid allowlist shape.
 Who talks to this bot? ──┤        ┌─ exactly 1 person, no approval prompts ──→ private
                          │        │
                          └─ NO ───┤
-                                  │  ┌─ small group, trust each other ──→ chat_like_openclaw
+                                  │  ┌─ small group, trust each other ──→ chat_like_anthroclaw
                                   └──┤
                                      └─ team / known users, want guardrails ──→ trusted
 ```
@@ -692,15 +686,15 @@ Quick comparison:
 | Profile               | Audience              | Read-only tools | Edit/Write           | Bash | Approval prompts | Rate limit  | System prompt source                |
 | --------------------- | --------------------- | --------------- | -------------------- | ---- | ---------------- | ----------- | ----------------------------------- |
 | `public`              | Anonymous strangers   | yes             | NO (hard-blocked)    | NO   | none (auto-deny) | 30/hr/peer  | profile baseline + `CLAUDE.md`      |
-| `trusted`             | Known multi-user team | yes             | yes, behind approval | NO   | interactive      | 100/hr/peer | `claude_code` preset + `CLAUDE.md`  |
-| `chat_like_openclaw`  | Personal / small      | yes             | yes                  | yes  | none (auto-allow)| none        | warm baseline + `CLAUDE.md`         |
-| `private`             | Single owner          | yes             | yes                  | yes  | interactive      | none        | `claude_code` preset + `CLAUDE.md`  |
+| `trusted`             | Known multi-user team | yes             | yes, behind approval | NO   | interactive      | 100/hr/peer | runtime code-tool preset + `CLAUDE.md` |
+| `chat_like_anthroclaw`  | Personal / small      | yes             | yes                  | yes  | none (auto-allow)| none        | warm baseline + `CLAUDE.md`         |
+| `private`             | Single owner          | yes             | yes                  | yes  | interactive      | none        | runtime code-tool preset + `CLAUDE.md` |
 
 The two "personal" profiles differ:
-- `chat_like_openclaw` — friendly conversational tone, sandbox off, zero approval prompts. Allowlist can be `["*"]`. Ergonomic.
-- `private` — full Claude Code preset (skills, plan mode, all dynamic sections), exactly 1 peer per channel, destructive tools prompt for approval unless `permission_mode: bypass` is set. Stricter.
+- `chat_like_anthroclaw` — friendly conversational tone, sandbox off, zero approval prompts. Allowlist can be `["*"]`. Ergonomic.
+- `private` — full runtime code-tool preset (skills, plan mode, all dynamic sections), exactly 1 peer per channel, destructive tools prompt for approval unless `permission_mode: bypass` is set. Stricter.
 
-If you want "just my own bot, no friction" → `chat_like_openclaw`. If you want "single-owner power-user setup with explicit approval gates" → `private`.
+If you want "just my own bot, no friction" → `chat_like_anthroclaw`. If you want "single-owner power-user setup with explicit approval gates" → `private`.
 
 Common overrides apply to any profile:
 
@@ -708,12 +702,12 @@ Common overrides apply to any profile:
 safety_overrides:
   allow_tools:
     - manage_cron                   # opens specific tools, logs WARN
-  permission_mode: bypass           # valid for chat_like_openclaw/private only
+  permission_mode: bypass           # valid for chat_like_anthroclaw/private only
   sandbox:
     allowUnsandboxedCommands: true
 ```
 
-### `chat_like_openclaw`
+### `chat_like_anthroclaw`
 
 The default for newly scaffolded agents. Use this for personal / small-circle bots where every allowed peer is trusted.
 
@@ -728,7 +722,7 @@ The default for newly scaffolded agents. Use this for personal / small-circle bo
 Minimal `agent.yml`:
 
 ```yaml
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 model: claude-sonnet-4-6
 timezone: Asia/Almaty
 
@@ -799,7 +793,7 @@ For known users — allowlisted users, paired users, internal teams, or private 
 - **Approval flow:** interactive — destructive tools (`Write`, `Edit`, `MultiEdit`, `WebFetch`, `manage_*`) prompt the user via Telegram inline buttons before running
 - **Sandbox:** on, no unsandboxed commands
 - **Allowlist:** specific peers required; wildcard `["*"]` rejected (use `public` for that)
-- **System prompt:** `claude_code` preset (with dynamic sections excluded) + `CLAUDE.md` appended (since v0.9.0)
+- **System prompt:** runtime code-tool preset (with dynamic sections excluded) + `CLAUDE.md` appended
 - **Rate limit floor:** 100 messages/hour/peer
 
 Minimal `agent.yml`:
@@ -833,7 +827,7 @@ For a single-owner assistant — your personal bot with everything wired up.
 - **Approval flow:** interactive by default — destructive tools prompt for approval; set `safety_overrides.permission_mode: bypass` to skip prompts
 - **Sandbox:** on by default; can be turned off via override
 - **Allowlist:** **must contain exactly one peer per configured channel** (validator rejects 0 or 2+)
-- **System prompt:** `claude_code` preset (full, with dynamic sections) + `CLAUDE.md` appended (since v0.9.0)
+- **System prompt:** runtime code-tool preset (full, with dynamic sections) + `CLAUDE.md` appended
 - **Rate limit:** none
 
 Minimal `agent.yml`:
@@ -868,13 +862,13 @@ mcp_tools:
 
 **"I want a public lead-capture bot for my landing page"** → `public` + `pairing.mode: open` + `allowlist.telegram: ["*"]`. Add `mcp_tools: [memory_search, memory_wiki, send_message]` (read-only). Anyone can DM, no approval friction, the bot can answer questions and take leads but cannot write/exec/web-fetch. See [`public`](#public) above for the full minimal yaml.
 
-**"I want a personal assistant just for me, no friction"** → `chat_like_openclaw` + your Telegram ID in `allowlist`. No approval prompts, all tools available. See [`chat_like_openclaw`](#chat_like_openclaw).
+**"I want a personal assistant just for me, no friction"** → `chat_like_anthroclaw` + your Telegram ID in `allowlist`. No approval prompts, all tools available. See [`chat_like_anthroclaw`](#chat_like_anthroclaw).
 
 **"I want a personal assistant with explicit approval gates"** → `private` + your Telegram ID in `allowlist`. Tools that mutate state will ask for approval before running. Don't set `permission_mode: bypass`.
 
 **"I want a team bot for our company group chat"** → `trusted` + the group ID in `routes.peers` + every team member's user ID in `allowlist.telegram`. Edit-style tools require approval, `Bash` is hard-blocked. See [`trusted`](#trusted).
 
-**"I want my personal bot to be able to run shell commands"** → `chat_like_openclaw` (auto-allow) or `private` (with `permission_mode: bypass`). `Bash` is hard-blocked in `public` and `trusted` and cannot be re-enabled via `safety_overrides`.
+**"I want my personal bot to be able to run shell commands"** → `chat_like_anthroclaw` (auto-allow) or `private` (with `permission_mode: bypass`). `Bash` is hard-blocked in `public` and `trusted` and cannot be re-enabled via `safety_overrides`.
 
 **"I want a public bot that can also remember information"** → `public` + `mcp_tools: [memory_search, memory_wiki]`. Memory writes are not allowed under `public`; only the bot's owner (in another agent under `private`/`trusted`) can populate memory; the public bot reads it.
 
@@ -897,7 +891,7 @@ pnpm migrate:safety-profile --apply   # writes agent.yml and creates .bak files
 
 The inference helper suggests:
 
-- `chat_like_openclaw` for wildcard allowlists, `permission_mode: bypass`, or
+- `chat_like_anthroclaw` for wildcard allowlists, `permission_mode: bypass`, or
   empty personal configs
 - `private` for single-peer personal configs
 - `trusted` for known-user multi-peer agents
@@ -925,7 +919,7 @@ Next session → agent uses `memory_search` for durable notes/facts and `session
   → memory/summaries/2026-04.md
   ↓
 memory_search → finds in daily files, wiki, and saved summaries (all in FTS5 index)
-session_search → finds prior SDK session transcript snippets grouped by session
+session_search → finds prior runtime session transcript snippets grouped by session
 ```
 
 ### Three Layers
@@ -983,7 +977,7 @@ Use `memory_search` for durable facts, decisions, wiki pages, and saved summarie
 session_search(query: "hook bridge permissions", max_sessions: 3, max_snippets_per_session: 2)
 ```
 
-`session_search` indexes prior SDK session transcripts from the local session store and returns compact `<memory-context>` snippets grouped by session. It is for historical conversation recall, not for persistent note-taking.
+`session_search` indexes prior runtime session transcripts from the local session store and returns compact `<memory-context>` snippets grouped by session. It is for historical conversation recall, not for persistent note-taking.
 
 Finds fragments across all indexed files — daily, wiki, and monthly summaries.
 
@@ -1011,7 +1005,7 @@ Source files are NOT deleted — they remain as archive.
 
 ## Skills
 
-Skills are stored once in the instance catalog under `data/skill-catalog/`, then attached to an agent by materializing a copy into `agents/{agent}/.claude/skills/`. Claude Agent SDK sees only the project-local `.claude/skills` copy at runtime.
+Skills are stored once in the instance catalog under `data/skill-catalog/`, then attached to an agent by materializing a copy into `agents/{agent}/.claude/skills/`. Runtime v1 treats that project-local skills copy as AnthroClaw-owned context for the selected provider.
 
 ```
 agents/my-agent/.claude/skills/
@@ -1027,7 +1021,7 @@ agents/my-agent/.claude/skills/
 
 **Primary mechanism:**
 
-1. **SDK-native project loading** — the runtime passes `settingSources: ['project']`, so Claude Code loads project `CLAUDE.md` plus `.claude/*` settings and skills directly from the workspace.
+1. **Workspace skill loading** — the runtime loads project `CLAUDE.md` plus `.claude/*` settings and skills from the workspace through AnthroClaw-owned context assembly.
 
 **Compatibility/admin mechanism:**
 
@@ -1080,7 +1074,7 @@ Each tool must be explicitly enabled in `agent.yml` under `mcp_tools`. Only enab
 | Tool | Purpose | Requires |
 |------|---------|----------|
 | `memory_search` | Search memory (FTS5 + vector) | — |
-| `session_search` | Search prior SDK session transcripts grouped by session | — |
+| `session_search` | Search prior runtime session transcripts grouped by session | — |
 | `memory_write` | Write to daily file + index | — |
 | `memory_wiki` | CRUD for wiki pages | — |
 | `send_message` | Send text to any channel | — |
@@ -1224,7 +1218,7 @@ Buffer follow-ups; answer them **one by one, in arrival order**, after the curre
 
 Cancel the in-flight reply mid-stream; **start a fresh run** that includes the new message. The partial assistant output is discarded.
 
-**Behavior** — when a new message arrives during an active run, the SDK Query is interrupted via `query.interrupt()` and the dispatch's `AbortController` is aborted. A new run starts with the same session, picking up the latest user input.
+**Behavior** — when a new message arrives during an active run, the runtime run is interrupted and the dispatch's `AbortController` is aborted. A new run starts with the same product session, picking up the latest user input.
 
 **When to use** — live conversation where a correction or clarification matters more than the response in flight. The user expects the bot to listen and switch direction immediately.
 
@@ -1245,11 +1239,11 @@ The `debounce_ms` setting (default `1500`) operates **before** the queue. Messag
 - Three rapid messages within 1.5s → one debounced inbound → one turn (regardless of mode).
 - Two messages with a 5-second gap → two separate inbounds. The second one hits queue logic and `queue_mode` decides what happens.
 
-### Native SDK steering vs. our implementation
+### Runtime steering
 
-The Claude Agent SDK supports a native streaming-input mode where new `SDKUserMessage` objects can be pushed into an active `Query` without a restart. AnthroClaw is aware of this (`src/sdk/active-input.ts`) but currently runs in `fallback_interrupt_restart` mode — `steer` is implemented as interrupt-and-restart, not native steering. The fallback is documented and tested; the native path is gated on `features.sdk_active_input` and additional integration work.
+AnthroClaw currently runs `steer` as interrupt-and-restart through the Runtime v1 control path. Provider-native streaming-input features are treated as optional adapter capabilities, not product requirements.
 
-`collect` and `serial` are independent of this — they sit at the channel/transport layer (buffering inbound messages from Telegram/WhatsApp before the SDK is involved) and work the same regardless of how `steer` is wired underneath.
+`collect` and `serial` are independent of this — they sit at the channel/transport layer, buffering inbound messages from Telegram/WhatsApp before the runtime is involved.
 
 ### Quick decision
 
@@ -1284,17 +1278,17 @@ hooks:
 | Event | When it fires | Payload fields |
 |-------|--------------|----------------|
 | `on_message_received` | After routing resolves, before query | `agentId, senderId, channel, text` |
-| `on_before_query` | Right before Claude SDK call | `agentId, sessionKey, prompt` |
+| `on_before_query` | Right before the runtime call | `agentId, sessionKey, prompt` |
 | `on_after_query` | After agent response | `agentId, sessionKey, response` |
 | `on_session_reset` | When /newsession is used | `agentId, sessionKey` |
 | `on_cron_fire` | When a cron job executes | `agentId, jobId` |
-| `on_tool_use` | SDK tool invocation starts | tool metadata and request context |
-| `on_tool_result` | SDK tool invocation completes | tool output and request context |
-| `on_tool_error` | SDK tool invocation fails | tool error and request context |
-| `on_permission_request` | SDK asks for approval | permission payload |
-| `on_sdk_notification` | Claude SDK emits notification | notification payload |
-| `on_subagent_start` | SDK subagent run starts | subagent id, type, parent session |
-| `on_subagent_stop` | SDK subagent run stops | subagent id, status, parent session |
+| `on_tool_use` | Runtime tool invocation starts | tool metadata and request context |
+| `on_tool_result` | Runtime tool invocation completes | tool output and request context |
+| `on_tool_error` | Runtime tool invocation fails | tool error and request context |
+| `on_permission_request` | Runtime asks for approval | permission payload |
+| `on_sdk_notification` | Legacy fallback notification event | notification payload |
+| `on_subagent_start` | Runtime subagent run starts | subagent id, type, parent session |
+| `on_subagent_stop` | Runtime subagent run stops | subagent id, status, parent session |
 
 ### Webhook Hooks
 
@@ -1348,8 +1342,8 @@ The gateway watches the `agents/` directory for changes using `fs.watch`:
 |---------|----------------|
 | `agent.yml` | **No — Hot Reload** |
 | New/deleted agent folder | **No — Hot Reload** |
-| `CLAUDE.md` or @include files | No — SDK reads on each query |
-| Attached/detached skill in `.claude/skills/` | No — SDK reads project skills on query |
+| `CLAUDE.md` or @include files | No — runtime context is assembled on each run |
+| Attached/detached skill in `.claude/skills/` | No — runtime context reads project skills on demand |
 | Updated `.claude/skills/*/SKILL.md` | No — read on demand |
 | `config.yml` | **Yes** |
 | `.env` | **Yes** |
@@ -1372,8 +1366,8 @@ Examples:
 
 ### Session Lifecycle
 
-- SDK transcripts are persisted via `FileSessionStore` to `data/sdk-sessions/{base64url(workspacePath)}/{base64url(sessionId)}/main.jsonl` (append-only JSONL of every user/assistant/tool entry)
-- `sessionKey ↔ sessionId` mapping is persisted to `data/session-mappings/{agentId}.json` on every change and reloaded on startup, so gateway restarts (deploys, container recreate, OOM) resume the same SDK session with full transcript intact
+- Runtime transcripts are persisted under the configured session store as append-only JSONL of every user/assistant/tool entry.
+- `sessionKey ↔ sessionId` mapping is persisted to `data/session-mappings/{agentId}.json` on every change and reloaded on startup, so gateway restarts (deploys, container recreate, OOM) resume the same runtime session with full transcript intact
 - Memory files (`agents/{id}/memory/...`) are preserved across restarts independently
 - `/newsession` → auto-summary → clear (drops the in-memory mapping; the JSONL stays on disk and remains visible in the Sessions UI)
 
@@ -1514,12 +1508,12 @@ learning:
       routes:
         - channel: telegram
           account_id: main
-          peer_id: "48705953"
+          peer_id: "peer-operator"
           # thread_id: "123"      # optional forum topic/thread id
       senders:
         telegram:
           main:
-            - "48705953"
+            - "peer-operator"
       notify_admin_for:
         - learning_skill
         - curator_action
@@ -1799,7 +1793,7 @@ Agent: manage_cron(action: "toggle", id: "weekly-report", enabled: false)
 Heartbeat routines are gateway-managed periodic wakes for an agent. They do not
 use Anthropic's hosted scheduled-task runtime. AnthroClaw reads the agent's
 `HEARTBEAT.md`, selects due tasks, sends a synthetic heartbeat turn through the
-same Claude Agent SDK query path as normal chat, and then delivers the final
+same Runtime v1 query path as normal chat, and then delivers the final
 assistant response through the Gateway.
 
 ### Enable
@@ -1930,7 +1924,7 @@ notifications:
     operator:
       channel: telegram
       account_id: control
-      peer_id: "48705953"
+      peer_id: "peer-operator"
   subscriptions:
     - { event: peer_pause_started, route: operator }
     - { event: peer_pause_ended, route: operator }
@@ -1954,11 +1948,11 @@ tools. Permission via manager-side `manages: [...] | "*"` whitelist. Tools
 auto-namespaced as `operator-console_<tool>`.
 
 ```yaml
-# agents/klavdia/agent.yml — operator side
+# agents/operator_agent/agent.yml — operator side
 plugins:
   operator-console:
     enabled: true
-    manages: [amina]                  # or '*' for super-admin
+    manages: [support_agent]                  # or '*' for super-admin
     capabilities:
       - peer_pause
       - delegate
@@ -2058,7 +2052,7 @@ Agent settings page gains a **Handoff** tab between **Routines** and
 - **Config audit** (`ConfigAuditPanel`) — timeline of every config change
   with section filter, source tag (chat / ui), prev → new diff.
 
-Each card shows a "Last modified … via chat (klavdia)" indicator pulled from
+Each card shows a "Last modified … via chat (operator_agent)" indicator pulled from
 the audit log.
 
 API endpoints (all behind `withAuth()`):
@@ -2077,8 +2071,8 @@ API endpoints (all behind `withAuth()`):
 A complete agent.yml for a managed lead-bot using all three subsystems:
 
 ```yaml
-id: amina
-safety_profile: chat_like_openclaw
+id: support_agent
+safety_profile: chat_like_anthroclaw
 routes:
   - { channel: whatsapp, account_id: business, scope: dm }
 allowlist:
@@ -2091,29 +2085,29 @@ human_takeover:
 notifications:
   enabled: true
   routes:
-    operator: { channel: telegram, account_id: control, peer_id: "48705953" }
+    operator: { channel: telegram, account_id: control, peer_id: "peer-operator" }
   subscriptions:
     - { event: peer_pause_started, route: operator }
     - { event: peer_pause_summary_daily, route: operator, schedule: "0 9 * * *" }
 ```
 
-The matching operator agent (Klavdia in Telegram) opts into the management
-plugin and the four self-config tools — the operator can then say "set up
-notifications to me" or "pause Amina for +371…" entirely in chat, no YAML
+The matching operator agent opts into the management plugin and the four
+self-config tools — the operator can then say "set up
+notifications to me" or "pause Support Agent for +371…" entirely in chat, no YAML
 edits required:
 
 ```yaml
-id: klavdia
-safety_profile: chat_like_openclaw
+id: operator_agent
+safety_profile: chat_like_anthroclaw
 routes:
   - { channel: telegram, account_id: control, scope: dm }
 allowlist:
-  telegram: ["48705953"]
+  telegram: ["peer-operator"]
 
 plugins:
   operator-console:
     enabled: true
-    manages: [amina]
+    manages: [support_agent]
 
 mcp_tools:
   - operator-console_peer_pause
@@ -2162,7 +2156,7 @@ subagents:
   allow: ["helper-agent", "research-agent"]
 ```
 
-The SDK creates an `AgentDefinition` for each subagent using their `CLAUDE.md` as the prompt and their MCP tools. The primary agent decides when to delegate.
+Runtime v1 creates delegated-agent definitions using each subagent's prompt context and MCP tools. The primary agent decides when to delegate.
 
 **Requirement:** the subagent must also be a valid agent in `agents/`.
 
@@ -2351,7 +2345,7 @@ cron:
     prompt: "Check if all services are healthy. If everything is fine, respond with [SILENT]. If something is wrong, describe the problem."
     deliver_to:
       channel: telegram
-      peer_id: "48705953"
+      peer_id: "peer-operator"
     enabled: true
 ```
 
@@ -2367,9 +2361,9 @@ API errors are classified into a structured taxonomy with intelligent recovery a
 
 | Reason | HTTP Status | Recovery |
 |--------|------------|----------|
-| `Auth` | 401, 403 | Fail the SDK run |
-| `Billing` | 402 | Fail the SDK run |
-| `RateLimit` | 429 | SDK/native retry behavior |
+| `Auth` | 401, 403 | Fail the runtime run |
+| `Billing` | 402 | Fail the runtime run |
+| `RateLimit` | 429 | Runtime/provider retry behavior |
 | `Overloaded` | 503, 529 | Backoff |
 | `ServerError` | 500, 502 | Retry |
 | `Timeout` | — | Retry |
@@ -2402,14 +2396,14 @@ Each classified error carries hints:
 
 ---
 
-## Native SDK Auth & Retries
+## Runtime v1 Provider Auth & Retries
 
-The main runtime is intentionally strict-native:
+The main runtime is Runtime v1 first:
 
-1. All primary model calls go through `@anthropic-ai/claude-agent-sdk`.
-2. Authentication is whatever the SDK natively uses in the current environment.
-3. Retry behavior is whatever the SDK natively decides for a single query lifecycle.
-4. Model fallback in the main runtime is limited to native `sdk.fallbackModel`.
+1. Primary model calls go through the configured Runtime v1 provider, Pi by default.
+2. Authentication is managed through Runtime provider credentials.
+3. Retry behavior is owned by the selected provider plus AnthroClaw runtime policy.
+4. Legacy Claude fallback auth is diagnostics/fallback only.
 
 `config.yml` no longer uses `credentials.anthropic` for key rotation in the main agent runtime. If that legacy block is still present, it is ignored by the current config parser.
 
@@ -2590,13 +2584,13 @@ Fork the current session to explore a different direction without losing the ori
 
 ### How It Works
 
-Session branching now uses native Claude Agent SDK session forking:
+Session branching uses Runtime v1 session controls:
 - the source session stays untouched
-- the fork receives its own SDK `session_id`
+- the fork receives its own runtime session id when the runtime exposes one
 - session inspection and fork controls are available through the Web UI/API session surfaces
 - useful for "what if" exploration without carrying risk into the main thread
 
-The old local `SessionBranchManager` registry has been removed. Branching is now described only in terms of SDK `forkSession`.
+Branching is described in terms of AnthroClaw session controls, with provider-native fork support used only when available.
 
 ---
 
@@ -2641,7 +2635,7 @@ Cached map of reachable channels/contacts for name-to-ID resolution.
 ### Features
 
 - **Fuzzy lookup**: `directory.lookup("john")` → finds contacts matching "john"
-- **Exact resolve**: `directory.resolve("48705953")` → finds by peer ID
+- **Exact resolve**: `directory.resolve("peer-operator")` → finds by peer ID
 - **Platform filter**: `directory.list("telegram")` → only Telegram contacts
 - **Staleness tracking**: `directory.staleMs` → time since last refresh
 
@@ -2661,7 +2655,7 @@ Diagnostic checks for validating your setup.
 | Data directory | Exists and writable |
 | Agents directory | Exists with agent subdirectories |
 | Config file | Valid and parseable |
-| Native SDK auth | Claude Code OAuth credentials or `CLAUDE_CODE_OAUTH_TOKEN` available |
+| Runtime provider auth | Pi/provider credentials are configured and redacted in diagnostics |
 | Learning admin approvals | Admin approval routes have matching sender allowlists |
 | Memory store | SQLite database exists |
 | Rate limits | Persistence file exists |
@@ -2725,7 +2719,7 @@ Built-in pricing for Claude models:
 
 ## Runtime Observability
 
-AnthroClaw records runtime provenance around the native Claude Agent SDK call without replacing or patching the SDK.
+AnthroClaw records runtime provenance around Runtime v1 calls without letting provider-specific event shapes leak into product surfaces.
 
 ### What's Persisted
 
@@ -2748,13 +2742,13 @@ For inbound channel messages, the gateway also stores a route decision:
 - access result and reason, when applicable
 - queue action and session key, when applicable
 
-This is an observability layer only. Claude execution still goes through `@anthropic-ai/claude-agent-sdk`.
+This is an observability layer only. User-facing execution goes through Runtime v1 / Pi by default.
 
 ### UI Surfaces
 
-- **Chat debug rail**: shows the selected SDK session transcript summary, latest run provenance, linked route decision, hook events, and subagent runs.
-- **Agent → Runs tab**: shows recent SDK runs and route decisions for the agent, with filters for run status and route outcome.
-- **Session selector**: shows SDK session title/preview/provenance when available.
+- **Chat debug rail**: shows the selected runtime session transcript summary, latest run provenance, linked route decision, hook events, and subagent runs.
+- **Agent -> Runs tab**: shows recent runtime runs and route decisions for the agent, with filters for run status and route outcome.
+- **Session selector**: shows runtime session title/preview/provenance when available.
 
 ### API Surfaces
 
@@ -2775,20 +2769,20 @@ GET /api/fleet/:serverId/routing/decisions?agentId=:agentId&limit=50
 
 ## Prompt Caching
 
-Uses native Claude Agent SDK prompt-caching behavior where the active profile
-allows a stable cacheable prefix.
+Uses provider/runtime prompt-caching behavior when the selected Pi provider and
+active profile allow a stable cacheable prefix.
 
 ### Current Behavior
 
 The runtime does not maintain its own prompt-cache engine. It relies on the
-Agent SDK's built-in caching for the prompt shape selected by
+selected provider/runtime caching behavior for the prompt shape selected by
 `safety_profile`.
 
-- `chat_like_openclaw` uses a pure-string prompt: profile baseline or
+- `chat_like_anthroclaw` uses a pure-string prompt: profile baseline or
   `personality`, then `CLAUDE.md`.
 - `public` uses a custom constrained prompt and avoids project settings.
-- `trusted` and `private` can use the Claude Code preset and project settings
-  when profile validation allows it.
+- `trusted` and `private` can use richer project context when profile
+  validation allows it.
 
 Dynamic context such as memory paths, channel/session metadata, and plugin
 assembled context is kept outside the globally stable profile baseline where
@@ -2796,8 +2790,8 @@ possible.
 
 ### Benefits
 
-- stays fully inside the native Claude Agent SDK path
-- improves cacheability of the default Claude Code system prompt across sessions
+- stays inside the Runtime v1 / Pi path
+- improves cacheability of stable system prompt prefixes across sessions
 - avoids a custom `cache_control` orchestration layer in our runtime
 - exposes real cache-read usage through runtime metrics instead of assuming hits
 
@@ -2845,7 +2839,7 @@ gateway runtime in-process. Persistent state is mounted from the host:
 | `./data` | `/app/data` | SQLite stores, sessions, rate limits, WhatsApp auth, learning artifacts |
 | `./agents` | `/app/agents` | Agent configs, prompts, native skills |
 | `./config.yml` | `/app/config.yml:ro` | Base gateway config |
-| `/home/ubuntu/.claude` | `/home/node/.claude` | Optional Claude Code OAuth credentials |
+| `/home/ubuntu/.claude` | `/home/node/.claude` | Optional legacy fallback credentials |
 
 ```bash
 git clone https://github.com/timur-nocodia/anthroclaw.git
@@ -2861,9 +2855,9 @@ The compose file binds UI traffic to `127.0.0.1:${UI_PORT:-3000}:3000`; put
 nginx/Caddy in front for TLS and public access.
 
 The image includes bubblewrap/socat and runs with the Docker capabilities
-needed for the Claude Agent SDK sandbox. Do not remove the compose
+needed for sandboxed runtime tool execution. Do not remove the compose
 `cap_add`, `security_opt`, or `user: "0:0"` settings unless you have verified
-SDK tool execution inside the container.
+tool execution inside the container.
 
 ### Updating a Server
 
@@ -2926,7 +2920,7 @@ npx tsx src/index.ts /etc/anthroclaw/config.yml /etc/anthroclaw/agents /var/lib/
 Send a message to [@userinfobot](https://t.me/userinfobot).
 
 **Q: How do I change the agent's personality?**
-Edit `CLAUDE.md` or the @include files (soul.md, etc.). No restart needed — SDK reads on each query.
+Edit `CLAUDE.md` or the @include files (soul.md, etc.). No restart needed — Runtime v1 assembles prompt context on each run.
 
 **Q: Does the agent remember past conversations?**
 Yes — via `memory_search`. Daily files are indexed automatically. `/newsession` saves a summary. Old files are consolidated by the dreaming system.
@@ -2962,10 +2956,10 @@ Add `quick_commands` to `agent.yml`. Hot reload picks it up. Type `/name` in cha
 In your cron prompt, add: "If everything is OK, respond with [SILENT]". The agent's response is logged but not delivered. Errors always deliver.
 
 **Q: Can I use multiple API keys?**
-Not through the main runtime config anymore. Primary agent calls now rely on native Claude Code / Agent SDK authentication and retry behavior only.
+Yes. Configure provider credentials through Runtime settings. Primary agent calls use Runtime v1 / Pi provider auth; legacy Claude auth is fallback diagnostics only.
 
 **Q: How do I diagnose setup issues?**
-Use `runDiagnostics()` from `src/cli/doctor.ts`. It checks Node version, directories, native SDK auth, learning admin approval allowlists, dependencies, and database integrity.
+Use `runDiagnostics()` from `src/cli/doctor.ts`. It checks Node version, directories, runtime/provider auth, learning admin approval allowlists, dependencies, and database integrity.
 
 **Q: What security measures are built in?**
 Secret redaction (API keys masked in logs), file write safety (denylist for sensitive paths), SSRF protection (blocks private networks), prompt injection scanning (detects override attempts in context files), PII redaction (hashes user IDs in logs).
@@ -2977,7 +2971,7 @@ Yes — set `group_sessions: per_user` in `agent.yml`. Each group member gets an
 
 ## Plugin Framework
 
-AnthroClaw supports plugins in the [Claude Code Plugin Spec](https://docs.claude.com/en/docs/claude-code/plugins) format. Plugins extend the gateway with new MCP tools, lifecycle hooks, context engines (compress/assemble), and slash commands — without breaking the native Agent SDK runtime.
+AnthroClaw supports plugins through the `.claude-plugin` manifest layout. Plugins extend the gateway with new MCP tools, lifecycle hooks, context engines (compress/assemble), and slash commands without breaking Runtime v1 / Pi execution.
 
 ### Plugin layout
 
@@ -3025,7 +3019,7 @@ export async function register(ctx: PluginContext): Promise<PluginInstance> {
 
 The MCP tool handler receives `(input, ctx: McpToolContext)` where `ctx.agentId` identifies the calling agent — plugins maintaining per-agent state resolve it at invocation time.
 
-The `runSubagent(opts)` method on `ctx` is the **only** sanctioned LLM path — it wraps Agent SDK's `query()` with `tools: []`, `canUseTool: deny`, and a 60s default timeout. Plugins MUST NOT import `@anthropic-ai/sdk` or `@anthropic-ai/claude-agent-sdk` directly. A contract test enforces this.
+The `runSubagent(opts)` method on `ctx` is the **only** sanctioned LLM path — it routes through Runtime v1 with no tool exposure by default and a 60s timeout. Plugins MUST NOT import provider SDKs directly. A contract test enforces this.
 
 ### Per-agent enable
 

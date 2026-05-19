@@ -45,7 +45,7 @@ Worse: the only knob in the schema is `auto_compress.threshold_messages` (`src/c
 
 ### Problem 3 — The "Auto-compress (tokens)" UI field is silently broken
 
-`ui/app/(dashboard)/fleet/[serverId]/agents/[agentId]/page.tsx:1661-1674` renders a number input bound to `cfg.auto_compress: number`. On save (`page.tsx:1482-1535`), `auto_compress` is **not** destructured separately — it stays in the `rest` payload as a bare number, which the PUT handler stringifies into YAML as `auto_compress: 40000`. Schema validation in `updateAgentConfig` rejects this (it expects an object `{enabled, threshold_messages}`). The error is swallowed by `catch { /* silently fail */ }` at `page.tsx:1531-1533`. No agent on disk has ever been successfully saved with this field — all three existing `auto_compress` blocks (`leads_agent`, `content_sm_building`, `example`) were hand-written.
+`ui/app/(dashboard)/fleet/[serverId]/agents/[agentId]/page.tsx:1661-1674` renders a number input bound to `cfg.auto_compress: number`. On save (`page.tsx:1482-1535`), `auto_compress` is **not** destructured separately — it stays in the `rest` payload as a bare number, which the PUT handler stringifies into YAML as `auto_compress: 40000`. Schema validation in `updateAgentConfig` rejects this (it expects an object `{enabled, threshold_messages}`). The error is swallowed by `catch { /* silently fail */ }` at `page.tsx:1531-1533`. No agent on disk has ever been successfully saved with this field — all three existing `auto_compress` blocks (`customer_intake_agent`, `group_content_agent`, `example`) were hand-written.
 
 ### Why a redesign rather than three separate fixes
 
@@ -674,7 +674,7 @@ If the crash happens after the new session's first query started but before comp
 ## Migration timeline
 
 1. **Phase 1 — Add new path, keep old as fallback.** New `compact` schema field reads. New `CoreCompactor` wired in. `auto_compress` legacy path stays callable but unused if `compact.enabled !== false`. Tested in dev, not deployed yet.
-2. **Phase 2 — Cut over.** Three existing agents (`leads_agent`, `content_sm_building`, `example`) keep their `auto_compress` blocks; gateway's read-time migration silently maps them to the new shape. Deployed to production.
+2. **Phase 2 — Cut over.** Three existing agents (`customer_intake_agent`, `group_content_agent`, `example`) keep their `auto_compress` blocks; gateway's read-time migration silently maps them to the new shape. Deployed to production.
 3. **Phase 3 — Sunset legacy.** After two stable releases, remove the `auto_compress` legacy parser. Agents still on disk with the old shape get a warning at boot and a `migrateLegacyCompact` rewrite passes through `agent-config-writer` (comment-preserving).
 
 ## Open questions to revisit during planning

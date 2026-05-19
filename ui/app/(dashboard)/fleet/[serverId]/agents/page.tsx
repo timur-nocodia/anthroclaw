@@ -39,6 +39,10 @@ import {
   withCurrentRuntimeModelOption,
   type RuntimeModelOption,
 } from "@/lib/runtime-models";
+import {
+  RuntimeModelPicker,
+  type RuntimeProviderOption,
+} from "@/components/runtime/RuntimeModelPicker";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -66,6 +70,14 @@ interface RuntimeModelsResponse {
   options?: RuntimeModelOption[];
 }
 
+interface RuntimeProvidersResponse {
+  defaultModel?: string;
+  pi?: {
+    providers?: RuntimeProviderOption[];
+    models?: RuntimeModelOption[];
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /*  Main                                                               */
 /* ------------------------------------------------------------------ */
@@ -77,6 +89,7 @@ export default function AgentsListPage() {
 
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [runtimeModels, setRuntimeModels] = useState<RuntimeModelsResponse | null>(null);
+  const [runtimeProviders, setRuntimeProviders] = useState<RuntimeProvidersResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
 
@@ -119,6 +132,16 @@ export default function AgentsListPage() {
       .catch(() => setRuntimeModels(null));
   }, [serverId]);
 
+  useEffect(() => {
+    fetch(`/api/fleet/${serverId}/runtime/providers`)
+      .then((r) => r.json())
+      .then((data: RuntimeProvidersResponse) => {
+        setRuntimeProviders(data);
+        if (data.defaultModel) setNewModel(data.defaultModel);
+      })
+      .catch(() => setRuntimeProviders(null));
+  }, [serverId]);
+
   const filtered = agents.filter(
     (a) =>
       a.id.toLowerCase().includes(q.toLowerCase()) ||
@@ -128,9 +151,12 @@ export default function AgentsListPage() {
   const totalRoutes = agents.reduce((n, a) => n + (a.routes?.length ?? 0), 0);
   const defaultProvider = runtimeModels?.defaultProvider ?? "pi";
   const modelOptions = withCurrentRuntimeModelOption(
-    runtimeModels?.options?.length ? runtimeModels.options : STATIC_RUNTIME_MODEL_OPTIONS,
+    runtimeProviders?.pi?.models?.length
+      ? runtimeProviders.pi.models
+      : runtimeModels?.options?.length ? runtimeModels.options : STATIC_RUNTIME_MODEL_OPTIONS,
     newModel,
   );
+  const providerOptions = runtimeProviders?.pi?.providers ?? [];
 
   const handleCreate = async () => {
     if (!newId) return;
@@ -468,7 +494,7 @@ export default function AgentsListPage() {
           <DialogHeader>
             <DialogTitle>New agent</DialogTitle>
             <DialogDescription>
-              Creates{" "}
+              Creates a Pi-native Runtime v1 agent at{" "}
               <span style={{ fontFamily: "var(--oc-mono)" }}>
                 agents/{newId || "<id>"}/agent.yml
               </span>{" "}
@@ -509,30 +535,18 @@ export default function AgentsListPage() {
               </p>
             </div>
             <div>
-              <label
-                className="text-[11px] uppercase tracking-[0.4px]"
-                style={{ color: "var(--oc-text-muted)" }}
-              >
-                Model
-              </label>
-              <select
+              <RuntimeModelPicker
+                providers={providerOptions}
+                models={modelOptions}
                 value={newModel}
-                onChange={(e) => setNewModel(e.target.value)}
-                className="mt-1 h-8 w-full cursor-pointer rounded-[5px] border px-2 text-xs"
-                style={{
-                  background: "var(--oc-bg3)",
-                  borderColor: "var(--oc-border)",
-                  color: "var(--color-foreground)",
+                onChange={setNewModel}
+                onConfigureProvider={(provider) => {
+                  setCreateOpen(false);
+                  router.push(`/fleet/${serverId}/runtime?provider=${encodeURIComponent(provider)}`);
                 }}
-              >
-                {modelOptions.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
+              />
               <p className="mt-1 text-[11px]" style={{ color: "var(--oc-text-muted)" }}>
-                Runtime model registry. Legacy Claude ids remain compatibility-only.
+                Models come from the Runtime v1 / Pi provider registry. New agents write an explicit Pi runtime override.
               </p>
             </div>
             <div>
@@ -569,7 +583,7 @@ export default function AgentsListPage() {
                       style={{ color: "var(--oc-text-muted)" }}
                     >
                       {t === "blank"
-                        ? "Minimal runtime-ready files"
+                        ? "Minimal Pi-native runtime files"
                         : "Copy from example agent"}
                     </span>
                   </button>
@@ -635,6 +649,7 @@ function effectiveProvider(
 function ProviderBadge({ provider }: { provider: "claude-agent-sdk" | "pi" | "opencode" }) {
   const isPi = provider === "pi";
   const isLegacy = provider === "claude-agent-sdk";
+  const label = isLegacy ? "legacy fallback" : provider;
   return (
     <span
       className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-px text-[10px] font-medium"
@@ -653,7 +668,7 @@ function ProviderBadge({ provider }: { provider: "claude-agent-sdk" | "pi" | "op
       }}
     >
       <Cpu className="h-2.5 w-2.5" />
-      {provider}
+      {label}
     </span>
   );
 }

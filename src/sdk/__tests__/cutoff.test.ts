@@ -341,12 +341,12 @@ describe('buildAllowedToolNames', () => {
 
   it('includes glob for agent.mcpServer.name when present', () => {
     const agent = {
-      id: 'klavdia',
+      id: 'operator_agent',
       config: { mcp_tools: ['memory_search'], external_mcp_servers: undefined },
-      mcpServer: { name: 'klavdia-tools' },
+      mcpServer: { name: 'operator_agent-tools' },
     } as unknown as Agent;
     const names = buildAllowedToolNames(agent);
-    expect(names).toContain('mcp__klavdia-tools__*');
+    expect(names).toContain('mcp__operator_agent-tools__*');
     expect(names).toContain('memory_search');
   });
 });
@@ -368,13 +368,13 @@ describe('agentToolGate', () => {
 
   it('allows tools under the agent\'s own in-process SDK MCP server prefix', async () => {
     const agent = {
-      id: 'klavdia',
+      id: 'operator_agent',
       config: { mcp_tools: ['memory_search'], external_mcp_servers: undefined },
-      mcpServer: { name: 'klavdia-tools' },
+      mcpServer: { name: 'operator_agent-tools' },
     } as unknown as Agent;
     const gate = agentToolGate(agent);
-    expect((await gate('mcp__klavdia-tools__memory_search', {}, {} as any)).behavior).toBe('allow');
-    expect((await gate('mcp__klavdia-tools__send_message', {}, {} as any)).behavior).toBe('allow');
+    expect((await gate('mcp__operator_agent-tools__memory_search', {}, {} as any)).behavior).toBe('allow');
+    expect((await gate('mcp__operator_agent-tools__send_message', {}, {} as any)).behavior).toBe('allow');
   });
 
   it('allows tools matching mcp__<server>__* for each external_mcp_servers entry', async () => {

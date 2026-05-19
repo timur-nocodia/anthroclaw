@@ -9,8 +9,8 @@ import {
 
 const bothChannels: WizardAccountsConfig = {
   telegram: {
-    main: { username: "clowwy_personal_bot" },
-    content_sm: { username: "clowwy_bot" },
+    main: { username: "example_personal_bot" },
+    content_sm: { username: "example_bot" },
   },
   whatsapp: { humanrobot: {} },
 };
@@ -69,8 +69,8 @@ describe("BindingWizardDialog — Channel + Account steps", () => {
       "binding-account-select",
     ) as HTMLSelectElement;
     const optionLabels = Array.from(select.options).map((o) => o.textContent);
-    expect(optionLabels).toContain("clowwy_personal_bot (main)");
-    expect(optionLabels).toContain("clowwy_bot (content_sm)");
+    expect(optionLabels).toContain("example_personal_bot (main)");
+    expect(optionLabels).toContain("example_bot (content_sm)");
   });
 
   it("Step 2 auto-advances when only one account is configured", () => {

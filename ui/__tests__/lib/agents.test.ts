@@ -107,13 +107,16 @@ describe('createAgent', () => {
     const raw = readFileSync(join(dir, 'agent.yml'), 'utf-8');
     expect(raw).toContain('anthropic/claude-sonnet-4-6');
     expect(raw).not.toContain('model: claude-sonnet-4-6');
+    expect(raw).toContain('provider: pi');
   });
 
   it('creates example template with mcp_tools', () => {
     agentsModule.createAgent('example-bot', 'claude-opus-4', 'example');
 
     const raw = readFileSync(join(agentsDir(), 'example-bot', 'agent.yml'), 'utf-8');
-    expect(raw).toContain('claude-opus-4');
+    expect(raw).toContain('anthropic/claude-opus-4');
+    expect(raw).not.toContain('model: claude-opus-4');
+    expect(raw).toContain('provider: pi');
     expect(raw).toContain('memory_search');
   });
 

@@ -13,6 +13,7 @@ import { AgentYmlSchema } from '@backend/config/schema.js';
 import { getDefaultProfile } from '@backend/security/profiles/index.js';
 
 const AGENTS_DIR = resolve(process.cwd(), '..', 'agents');
+const DEFAULT_PI_AGENT_MODEL = 'anthropic/claude-sonnet-4-6';
 
 // ─── Error classes ───────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ export function listAgents(): AgentSummary[] {
 
       results.push({
         id: entry.name,
-        model: (parsed.model as string) ?? 'anthropic/claude-sonnet-4-6',
+        model: (parsed.model as string) ?? DEFAULT_PI_AGENT_MODEL,
         runtime: readRuntimeOverride(parsed),
         description: parsed.description as string | undefined,
         routes,
@@ -287,7 +288,8 @@ export function setAgentHeartbeatConfig(
 }
 
 /**
- * Create a new agent directory with agent.yml, CLAUDE.md, memory/, .claude/skills/.
+ * Create a new Pi-native Runtime v1 agent directory with runtime config,
+ * prompt context, memory storage, and the AnthroClaw skill catalog mount.
  */
 export function createAgent(
   id: string,
@@ -305,12 +307,17 @@ export function createAgent(
   mkdirSync(join(dir, 'memory'), { recursive: true });
   mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
 
-  const agentModel = model ?? 'anthropic/claude-sonnet-4-6';
+  const agentModel = normalizePiModelId(model);
   const valueSafeDefaults = createValueSafeDefaults(id);
 
   if (template === 'example') {
     const config = {
       model: agentModel,
+      runtime: {
+        headless: {
+          provider: 'pi',
+        },
+      },
       safety_profile: getDefaultProfile(),
       timezone: 'UTC',
       routes: [{ channel: 'telegram', scope: 'dm' }],
@@ -343,6 +350,11 @@ export function createAgent(
     // blank template
     const config = {
       model: agentModel,
+      runtime: {
+        headless: {
+          provider: 'pi',
+        },
+      },
       safety_profile: getDefaultProfile(),
       routes: [{ channel: 'telegram', scope: 'dm' }],
       ...valueSafeDefaults,
@@ -350,6 +362,14 @@ export function createAgent(
     writeFileSync(join(dir, 'agent.yml'), stringifyYaml(config), 'utf-8');
     writeFileSync(join(dir, 'CLAUDE.md'), `# ${id}\n`, 'utf-8');
   }
+}
+
+function normalizePiModelId(model: string | undefined): string {
+  const trimmed = model?.trim();
+  if (!trimmed) return DEFAULT_PI_AGENT_MODEL;
+  if (trimmed.includes('/') || trimmed.includes(':')) return trimmed;
+  if (trimmed.startsWith('claude-')) return `anthropic/${trimmed}`;
+  return trimmed;
 }
 
 function createValueSafeDefaults(agentId: string): Record<string, unknown> {

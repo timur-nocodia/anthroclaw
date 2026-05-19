@@ -29,6 +29,13 @@ export function headlessRuntimeOptionsFromConfig(
   const piOptions: NonNullable<HeadlessRuntimeResolverOptions['pi']> = {};
   if (piConfig.auth_path) piOptions.authStoragePath = piConfig.auth_path;
   if (piConfig.models_path) piOptions.modelsPath = piConfig.models_path;
+  if (piConfig.max_output_tokens) piOptions.maxOutputTokens = piConfig.max_output_tokens;
+  if (piConfig.provider_max_output_tokens) {
+    piOptions.providerMaxOutputTokens = piConfig.provider_max_output_tokens;
+  }
+  if (piConfig.model_max_output_tokens) {
+    piOptions.modelMaxOutputTokens = piConfig.model_max_output_tokens;
+  }
 
   if (Object.keys(piOptions).length === 0) return base;
   return {

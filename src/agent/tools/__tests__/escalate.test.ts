@@ -119,23 +119,23 @@ describe('escalate tool', () => {
   });
 
   it('different agentIds from factory closure write to different files', async () => {
-    const a = createEscalateTool('amina');
-    const b = createEscalateTool('klavdia');
+    const a = createEscalateTool('agent_alpha');
+    const b = createEscalateTool('operator_agent');
 
-    await getHandler(a)({ summary: 'from amina' }, {});
-    await getHandler(b)({ summary: 'from klavdia' }, {});
+    await getHandler(a)({ summary: 'from agent_alpha' }, {});
+    await getHandler(b)({ summary: 'from operator_agent' }, {});
 
-    const aPath = join(dir, 'escalations', 'amina.jsonl');
-    const bPath = join(dir, 'escalations', 'klavdia.jsonl');
+    const aPath = join(dir, 'escalations', 'agent_alpha.jsonl');
+    const bPath = join(dir, 'escalations', 'operator_agent.jsonl');
     expect(existsSync(aPath)).toBe(true);
     expect(existsSync(bPath)).toBe(true);
 
     const aEv = JSON.parse(readFileSync(aPath, 'utf-8').trim());
     const bEv = JSON.parse(readFileSync(bPath, 'utf-8').trim());
-    expect(aEv.agentId).toBe('amina');
-    expect(aEv.summary).toBe('from amina');
-    expect(bEv.agentId).toBe('klavdia');
-    expect(bEv.summary).toBe('from klavdia');
+    expect(aEv.agentId).toBe('agent_alpha');
+    expect(aEv.summary).toBe('from agent_alpha');
+    expect(bEv.agentId).toBe('operator_agent');
+    expect(bEv.summary).toBe('from operator_agent');
   });
 
   it('happy path with only required summary works (zod default applies via SDK; handler tolerates missing urgency)', async () => {

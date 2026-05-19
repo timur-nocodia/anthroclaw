@@ -40,6 +40,9 @@ interface ClaudeAuthStatus {
   credentialFile?: ClaudeAuthCredentialFile;
   error?: string | null;
   pendingSession?: ClaudeAuthSessionPublic | null;
+  legacyRuntime?: boolean;
+  runtimeRole?: "legacy-fallback";
+  provider?: "claude-agent-sdk";
 }
 
 interface CompleteResponse {
@@ -57,7 +60,7 @@ interface VerifyResponse {
 }
 
 export function ClaudeAuthPanel({ serverId }: { serverId: string }) {
-  const base = useMemo(() => `/api/fleet/${serverId}/claude-auth`, [serverId]);
+  const base = useMemo(() => `/api/fleet/${serverId}/runtime/legacy/claude`, [serverId]);
   const [status, setStatus] = useState<ClaudeAuthStatus | null>(null);
   const [session, setSession] = useState<ClaudeAuthSessionPublic | null>(null);
   const [code, setCode] = useState("");
@@ -71,11 +74,11 @@ export function ClaudeAuthPanel({ serverId }: { serverId: string }) {
     try {
       const res = await fetch(`${base}/status`);
       const data = await res.json() as ClaudeAuthStatus;
-      if (!res.ok) throw new Error(data.error ?? "Claude auth status is unavailable.");
+      if (!res.ok) throw new Error(data.error ?? "Legacy Claude fallback status is unavailable.");
       setStatus(data);
       setSession(data.pendingSession ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Claude auth status is unavailable.");
+      setError(err instanceof Error ? err.message : "Legacy Claude fallback status is unavailable.");
     } finally {
       setLoading(false);
     }
@@ -93,10 +96,10 @@ export function ClaudeAuthPanel({ serverId }: { serverId: string }) {
     try {
       const res = await fetch(`${base}/start`, { method: "POST" });
       const data = await res.json() as ClaudeAuthSessionPublic & { message?: string };
-      if (!res.ok) throw new Error(data.message ?? "Claude login could not start.");
+      if (!res.ok) throw new Error(data.message ?? "Legacy Claude fallback login could not start.");
       setSession(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Claude login could not start.");
+      setError(err instanceof Error ? err.message : "Legacy Claude fallback login could not start.");
     } finally {
       setAction(null);
     }
@@ -114,13 +117,13 @@ export function ClaudeAuthPanel({ serverId }: { serverId: string }) {
         body: JSON.stringify({ sessionId: session.sessionId, code }),
       });
       const data = await res.json() as CompleteResponse;
-      if (!res.ok || !data.ok) throw new Error(data.error ?? "Claude login did not complete.");
+      if (!res.ok || !data.ok) throw new Error(data.error ?? "Legacy Claude fallback login did not complete.");
       setStatus(data.status ?? status);
       setSession(null);
       setCode("");
-      setMessage(data.restarted ? "Runtime restarted after Claude auth update." : "Claude auth updated.");
+      setMessage(data.restarted ? "Runtime restarted after legacy fallback auth update." : "Legacy fallback auth updated.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Claude login did not complete.");
+      setError(err instanceof Error ? err.message : "Legacy Claude fallback login did not complete.");
     } finally {
       setAction(null);
     }
@@ -136,9 +139,9 @@ export function ClaudeAuthPanel({ serverId }: { serverId: string }) {
       });
       setSession(null);
       setCode("");
-      setMessage("Pending Claude login cancelled.");
+      setMessage("Pending legacy fallback login cancelled.");
     } catch {
-      setError("Pending Claude login could not be cancelled.");
+      setError("Pending legacy fallback login could not be cancelled.");
     } finally {
       setAction(null);
     }
@@ -151,10 +154,10 @@ export function ClaudeAuthPanel({ serverId }: { serverId: string }) {
     try {
       const res = await fetch(`${base}/verify`, { method: "POST" });
       const data = await res.json() as VerifyResponse;
-      if (!res.ok || !data.ok) throw new Error(data.message ?? "Claude verification failed.");
+      if (!res.ok || !data.ok) throw new Error(data.message ?? "Legacy Claude fallback verification failed.");
       setMessage(data.message);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Claude verification failed.");
+      setError(err instanceof Error ? err.message : "Legacy Claude fallback verification failed.");
     } finally {
       setAction(null);
     }
@@ -188,11 +191,11 @@ export function ClaudeAuthPanel({ serverId }: { serverId: string }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <SectionTitle>Claude subscription auth</SectionTitle>
+            <SectionTitle>Legacy Claude fallback auth</SectionTitle>
             <StatusBadge connected={connected} loading={loading} />
           </div>
           <div className="mt-1 max-w-[620px] text-[11.5px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
-            Connects the Claude Code runtime used by agent turns. Auth is stored in the service runtime home, not in root shell history or repository files.
+            Compatibility-only auth for the legacy fallback provider. Pi mode does not require this; use Runtime providers for normal agent turns.
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => void loadStatus()} disabled={loading || action !== null}>
@@ -202,9 +205,9 @@ export function ClaudeAuthPanel({ serverId }: { serverId: string }) {
       </div>
 
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-        <InfoCell label="Account" value={status?.email ?? (connected ? "connected" : "not connected")} />
-        <InfoCell label="Subscription" value={status?.subscriptionType ?? "---"} />
-        <InfoCell label="Auth method" value={status?.authMethod ?? "---"} />
+        <InfoCell label="Legacy account" value={status?.email ?? (connected ? "connected" : "not connected")} />
+        <InfoCell label="Legacy plan" value={status?.subscriptionType ?? "---"} />
+        <InfoCell label="Legacy auth method" value={status?.authMethod ?? "---"} />
         <InfoCell label="Credentials" value={credentialsLabel} warn={!status?.credentialFile?.exists} />
         <InfoCell label="Runtime home" value={status?.runtimeHome ?? "---"} wide />
         <InfoCell label="CLI command" value={status?.cliCommand ?? "claude"} />
@@ -274,7 +277,7 @@ export function ClaudeAuthPanel({ serverId }: { serverId: string }) {
       <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={() => void startLogin()} disabled={action !== null || Boolean(session)}>
           {action === "start" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
-          Connect Claude subscription
+          Connect legacy fallback
         </Button>
         <Button variant="outline" size="sm" onClick={() => void verify()} disabled={action !== null || !connected}>
           {action === "verify" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
@@ -282,7 +285,7 @@ export function ClaudeAuthPanel({ serverId }: { serverId: string }) {
         </Button>
         <Button variant="outline" size="sm" onClick={() => void restartRuntime()} disabled={action !== null}>
           {action === "restart" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-          Restart runtime
+          Restart gateway runtime
         </Button>
       </div>
     </div>

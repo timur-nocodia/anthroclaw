@@ -53,7 +53,7 @@ src/session/compact/
 - [ ] **Step 1: Create worktree off main**
 
 ```bash
-cd /Users/tyess/dev/openclaw-agents-sdk-clone
+cd /path/to/anthroclaw
 git worktree add -b feat/compact-redesign ../anthroclaw-compact-redesign main
 cd ../anthroclaw-compact-redesign
 pnpm install
@@ -958,7 +958,7 @@ describe('buildPostCompactPrompt', () => {
       ...base,
       recentTurns: [],
       newUserMessage: 'next',
-      senderLabel: 'timur',
+      senderLabel: 'operator',
     });
     expect(p).toContain(`<post-compact-summary boundary-id="${base.boundaryId}">`);
     expect(p).toContain('</post-compact-summary>');
@@ -973,7 +973,7 @@ describe('buildPostCompactPrompt', () => {
         { role: 'assistant', content: 'b' },
       ],
       newUserMessage: 'next',
-      senderLabel: 'timur',
+      senderLabel: 'operator',
     });
     expect(p).toContain('<recent-turns>');
     expect(p).toContain('[user]: a');
@@ -986,7 +986,7 @@ describe('buildPostCompactPrompt', () => {
       ...base,
       recentTurns: [],
       newUserMessage: 'next',
-      senderLabel: 'timur',
+      senderLabel: 'operator',
     });
     expect(p).not.toContain('<recent-turns>');
   });
@@ -996,9 +996,9 @@ describe('buildPostCompactPrompt', () => {
       ...base,
       recentTurns: [],
       newUserMessage: 'привет',
-      senderLabel: 'timur',
+      senderLabel: 'operator',
     });
-    expect(p.endsWith('[timur]: привет')).toBe(true);
+    expect(p.endsWith('[operator]: привет')).toBe(true);
   });
 
   it('preserves session context header verbatim at the start', () => {

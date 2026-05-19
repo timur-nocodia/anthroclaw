@@ -17,7 +17,7 @@ interface PauseEntry {
 
 function entry(p: Partial<PauseEntry>): PauseEntry {
   return {
-    agentId: "amina",
+    agentId: "agent_alpha",
     peerKey: "whatsapp:business:1",
     pausedAt: "2026-05-01T00:00:00Z",
     expiresAt: "2026-05-01T01:00:00Z",
@@ -64,20 +64,20 @@ beforeEach(() => {
 describe("ActivePausesTable", () => {
   it("renders empty state when there are no pauses", async () => {
     installFetchMock();
-    on("GET", /\/api\/agents\/amina\/pauses$/, { pauses: [] });
-    render(<ActivePausesTable agentId="amina" refreshIntervalMs={0} />);
+    on("GET", /\/api\/agents\/agent_alpha\/pauses$/, { pauses: [] });
+    render(<ActivePausesTable agentId="agent_alpha" refreshIntervalMs={0} />);
     await waitFor(() => expect(screen.getByText(/no active pauses/i)).toBeInTheDocument());
   });
 
   it("renders rows for each pause", async () => {
     installFetchMock();
-    on("GET", /\/api\/agents\/amina\/pauses$/, {
+    on("GET", /\/api\/agents\/agent_alpha\/pauses$/, {
       pauses: [
         entry({ peerKey: "whatsapp:business:1" }),
         entry({ peerKey: "whatsapp:business:2", expiresAt: null }),
       ],
     });
-    render(<ActivePausesTable agentId="amina" refreshIntervalMs={0} />);
+    render(<ActivePausesTable agentId="agent_alpha" refreshIntervalMs={0} />);
     await waitFor(() => expect(screen.getByTestId("pause-row-whatsapp:business:1")).toBeInTheDocument());
     expect(screen.getByTestId("pause-row-whatsapp:business:2")).toBeInTheDocument();
     expect(screen.getByText("indefinite")).toBeInTheDocument();
@@ -88,7 +88,7 @@ describe("ActivePausesTable", () => {
     let listCount = 0;
     routes.push({
       method: "GET",
-      matcher: /\/api\/agents\/amina\/pauses$/,
+      matcher: /\/api\/agents\/agent_alpha\/pauses$/,
       handler: () => {
         listCount += 1;
         const body = listCount === 1 ? { pauses: [entry({ peerKey: "whatsapp:business:1" })] } : { pauses: [] };
@@ -98,9 +98,9 @@ describe("ActivePausesTable", () => {
         });
       },
     });
-    on("DELETE", /\/api\/agents\/amina\/pauses\/.+$/, { ok: true, was_paused: true });
+    on("DELETE", /\/api\/agents\/agent_alpha\/pauses\/.+$/, { ok: true, was_paused: true });
 
-    render(<ActivePausesTable agentId="amina" refreshIntervalMs={0} />);
+    render(<ActivePausesTable agentId="agent_alpha" refreshIntervalMs={0} />);
     await waitFor(() =>
       expect(screen.getByTestId("pause-row-whatsapp:business:1")).toBeInTheDocument(),
     );
@@ -112,14 +112,14 @@ describe("ActivePausesTable", () => {
   it("shows an error when fetch fails", async () => {
     const fetchMock = vi.fn(async () => new Response("oops", { status: 500 }));
     vi.stubGlobal("fetch", fetchMock);
-    render(<ActivePausesTable agentId="amina" refreshIntervalMs={0} />);
+    render(<ActivePausesTable agentId="agent_alpha" refreshIntervalMs={0} />);
     await waitFor(() => expect(screen.getByText(/HTTP 500/i)).toBeInTheDocument());
   });
 
   it("Refresh button triggers a re-fetch", async () => {
     const fetchMock = installFetchMock();
-    on("GET", /\/api\/agents\/amina\/pauses$/, { pauses: [] });
-    render(<ActivePausesTable agentId="amina" refreshIntervalMs={0} />);
+    on("GET", /\/api\/agents\/agent_alpha\/pauses$/, { pauses: [] });
+    render(<ActivePausesTable agentId="agent_alpha" refreshIntervalMs={0} />);
     await waitFor(() => expect(screen.getByText(/no active pauses/i)).toBeInTheDocument());
     const initialCalls = fetchMock.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: /refresh/i }));

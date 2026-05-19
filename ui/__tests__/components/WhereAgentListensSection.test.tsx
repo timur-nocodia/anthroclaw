@@ -9,7 +9,7 @@ import {
 
 const ACCOUNTS = {
   telegram: {
-    content_sm: { username: "clowwy_bot" },
+    content_sm: { username: "example_bot" },
   },
   whatsapp: { humanrobot: {} },
 };

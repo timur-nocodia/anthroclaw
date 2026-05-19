@@ -9,7 +9,7 @@ describe('formatTelegram', () => {
     const msg = formatTelegram(
       'peer_pause_started',
       {
-        agentId: 'amina',
+        agentId: 'agent_alpha',
         peerKey: 'whatsapp:business:37120@s.whatsapp.net',
         expiresAt: '2026-05-01T12:30:00Z',
         timezone: 'Asia/Almaty', // +5h → 17:30
@@ -17,7 +17,7 @@ describe('formatTelegram', () => {
       NOW,
     );
     expect(msg).toContain('*Auto-pause*');
-    expect(msg).toContain('`amina`');
+    expect(msg).toContain('`agent_alpha`');
     expect(msg).toContain('`whatsapp:business:37120@s.whatsapp.net`');
     expect(msg).toContain('17:30');
   });
@@ -25,7 +25,7 @@ describe('formatTelegram', () => {
   it('peer_pause_started — UTC fallback when timezone missing', () => {
     const msg = formatTelegram(
       'peer_pause_started',
-      { agentId: 'amina', peerKey: 'wa:b:1', expiresAt: '2026-05-01T12:30:00Z' },
+      { agentId: 'agent_alpha', peerKey: 'wa:b:1', expiresAt: '2026-05-01T12:30:00Z' },
       NOW,
     );
     expect(msg).toContain('12:30');
@@ -35,7 +35,7 @@ describe('formatTelegram', () => {
     const msg = formatTelegram(
       'peer_pause_ended',
       {
-        agentId: 'amina',
+        agentId: 'agent_alpha',
         peerKey: 'wa:b:1',
         endedAt: '2026-05-01T12:30:00Z',
         reason: 'ttl_expired',
@@ -50,7 +50,7 @@ describe('formatTelegram', () => {
   it('peer_pause_intervened_during_generation — explains suppression', () => {
     const msg = formatTelegram(
       'peer_pause_intervened_during_generation',
-      { agentId: 'amina', peerKey: 'wa:b:1', at: '2026-05-01T12:01:00Z' },
+      { agentId: 'agent_alpha', peerKey: 'wa:b:1', at: '2026-05-01T12:01:00Z' },
       NOW,
     );
     expect(msg).toContain('*Intervention suppressed*');
@@ -62,7 +62,7 @@ describe('formatTelegram', () => {
     const msg = formatTelegram(
       'peer_pause_summary_daily',
       {
-        agentId: 'amina',
+        agentId: 'agent_alpha',
         activePauses: 2,
         items: [
           { peerKey: 'wa:b:1', extendedCount: 3 },
@@ -83,7 +83,7 @@ describe('formatTelegram', () => {
   it('agent_error — shows error message in code fence', () => {
     const msg = formatTelegram(
       'agent_error',
-      { agentId: 'amina', message: 'rate_limit_exceeded', at: '2026-05-01T12:01:00Z' },
+      { agentId: 'agent_alpha', message: 'rate_limit_exceeded', at: '2026-05-01T12:01:00Z' },
       NOW,
     );
     expect(msg).toContain('*Agent error*');
@@ -93,7 +93,7 @@ describe('formatTelegram', () => {
   it('iteration_budget_exhausted — shows turns', () => {
     const msg = formatTelegram(
       'iteration_budget_exhausted',
-      { agentId: 'amina', peerKey: 'wa:b:1', turns: 30 },
+      { agentId: 'agent_alpha', peerKey: 'wa:b:1', turns: 30 },
       NOW,
     );
     expect(msg).toContain('*Iteration budget exhausted*');
@@ -105,7 +105,7 @@ describe('formatTelegram', () => {
     const note = 'TIMUR_AGENT_LIVE_NOTIFICATION_OK 2026-05-18T09:41:40Z';
     const msg = formatTelegram(
       'escalation_needed',
-      { agentId: 'amina', peerKey: 'wa:b:1', note },
+      { agentId: 'agent_alpha', peerKey: 'wa:b:1', note },
       NOW,
     );
     expect(msg).toContain('*Escalation requested*');
@@ -116,7 +116,7 @@ describe('formatTelegram', () => {
   it('older-than-today timestamp formats as MM-DD HH:mm', () => {
     const msg = formatTelegram(
       'peer_pause_started',
-      { agentId: 'amina', peerKey: 'wa:b:1', expiresAt: '2026-04-29T08:30:00Z' },
+      { agentId: 'agent_alpha', peerKey: 'wa:b:1', expiresAt: '2026-04-29T08:30:00Z' },
       NOW,
     );
     expect(msg).toMatch(/04-29 08:30/);
@@ -127,12 +127,12 @@ describe('formatPlain', () => {
   it('peer_pause_started — no markdown markers, contains key fields', () => {
     const msg = formatPlain(
       'peer_pause_started',
-      { agentId: 'amina', peerKey: 'wa:b:1', expiresAt: '2026-05-01T12:30:00Z' },
+      { agentId: 'agent_alpha', peerKey: 'wa:b:1', expiresAt: '2026-05-01T12:30:00Z' },
       NOW,
     );
     expect(msg).not.toContain('*');
     expect(msg).not.toContain('`');
-    expect(msg).toContain('amina');
+    expect(msg).toContain('agent_alpha');
     expect(msg).toContain('wa:b:1');
     expect(msg).toContain('12:30');
   });
@@ -140,19 +140,19 @@ describe('formatPlain', () => {
   it('peer_pause_ended — plain output without code fences', () => {
     const msg = formatPlain(
       'peer_pause_ended',
-      { agentId: 'amina', peerKey: 'wa:b:1', endedAt: '2026-05-01T12:30:00Z', reason: 'manual' },
+      { agentId: 'agent_alpha', peerKey: 'wa:b:1', endedAt: '2026-05-01T12:30:00Z', reason: 'manual' },
       NOW,
     );
     expect(msg).not.toContain('`');
     expect(msg).toContain('manual');
-    expect(msg).toContain('amina');
+    expect(msg).toContain('agent_alpha');
   });
 
   it('peer_pause_summary_daily — bullets without markdown bold', () => {
     const msg = formatPlain(
       'peer_pause_summary_daily',
       {
-        agentId: 'amina',
+        agentId: 'agent_alpha',
         activePauses: 1,
         items: [{ peerKey: 'wa:b:1', extendedCount: 2 }],
       },

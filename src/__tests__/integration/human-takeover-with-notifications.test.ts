@@ -20,12 +20,12 @@ import type { AgentYml } from '../../config/schema.js';
 const peerKey = 'whatsapp:business:37120@s.whatsapp.net';
 const peerId = '37120@s.whatsapp.net';
 
-const aminaConfig = {
+const agentAlphaConfig = {
   human_takeover: { enabled: true, pause_ttl_minutes: 30 },
   routes: [{ channel: 'whatsapp', account: 'business' }],
   notifications: {
     enabled: true,
-    routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+    routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
     subscriptions: [
       { event: 'peer_pause_started', route: 'operator' },
       { event: 'peer_pause_ended', route: 'operator' },
@@ -69,17 +69,17 @@ function buildGateway(sendMessage: ReturnType<typeof vi.fn>, clock: () => number
     sendMessage: sendMessage as unknown as Parameters<typeof createNotificationsEmitter>[0]['sendMessage'],
     peerPauseStore: gw.peerPauseStore,
   });
-  gw.routeTable = RouteTable.build([{ id: 'amina', config: aminaConfig }]);
+  gw.routeTable = RouteTable.build([{ id: 'agent_alpha', config: agentAlphaConfig }]);
   const stubAgent = {
-    id: 'amina',
-    config: aminaConfig,
+    id: 'agent_alpha',
+    config: agentAlphaConfig,
     incrementMessageCount: vi.fn(),
     getSessionId: vi.fn(() => undefined),
     getSessionModel: vi.fn(() => undefined),
     clearSession: vi.fn(),
     isSessionResetDue: vi.fn(() => false),
   };
-  gw.agents = new Map([['amina', stubAgent]]);
+  gw.agents = new Map([['agent_alpha', stubAgent]]);
   gw.accessControl = { check: () => ({ allowed: true }), tryCode: () => false };
   gw.profileRateLimiters = new Map();
   gw.hookEmitters = new Map();
@@ -88,7 +88,7 @@ function buildGateway(sendMessage: ReturnType<typeof vi.fn>, clock: () => number
 
   // Subscribe agent to its notifications config — same call that Gateway.start()
   // makes for each loaded agent.
-  gw.notificationsEmitter.subscribeAgent('amina', aminaConfig.notifications as never);
+  gw.notificationsEmitter.subscribeAgent('agent_alpha', agentAlphaConfig.notifications as never);
   return gw;
 }
 
@@ -118,11 +118,11 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
     expect(startedCall[0]).toMatchObject({
       channel: 'telegram',
       account_id: 'control',
-      peer_id: '48705953',
+      peer_id: '123456789',
     });
     expect(startedCall[1]).toContain('Auto-pause');
     expect(startedCall[1]).toContain(peerKey);
-    expect(startedCall[2]).toMatchObject({ event: 'peer_pause_started', agentId: 'amina' });
+    expect(startedCall[2]).toMatchObject({ event: 'peer_pause_started', agentId: 'agent_alpha' });
 
     // ─── Step 2: TTL expires → next inbound triggers peer_pause_ended ─
     clock = t0 + 31 * 60_000;
@@ -137,9 +137,9 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
     const endedCall = sendMessage.mock.calls[1]!;
     expect(endedCall[1]).toContain('Pause ended');
     expect(endedCall[1]).toContain(peerKey);
-    expect(endedCall[2]).toMatchObject({ event: 'peer_pause_ended', agentId: 'amina' });
+    expect(endedCall[2]).toMatchObject({ event: 'peer_pause_ended', agentId: 'agent_alpha' });
     // Pause cleared.
-    expect(gw.peerPauseStore.list('amina')).toEqual([]);
+    expect(gw.peerPauseStore.list('agent_alpha')).toEqual([]);
   });
 
   it('extend re-emits peer_pause_started with extended:true (subscribers can choose to filter)', async () => {
@@ -178,8 +178,8 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
       sendMessage: sendMessage as unknown as Parameters<typeof createNotificationsEmitter>[0]['sendMessage'],
       peerPauseStore,
     });
-    notificationsEmitter.subscribeAgent('amina', aminaConfig.notifications as never);
-    peerPauseStore.pause('amina', peerKey, {
+    notificationsEmitter.subscribeAgent('agent_alpha', agentAlphaConfig.notifications as never);
+    peerPauseStore.pause('agent_alpha', peerKey, {
       ttlMinutes: 30,
       reason: 'operator_takeover',
       source: 'whatsapp:business:fromMe',
@@ -188,7 +188,7 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
     const { createSendMessageTool } = await import('../../agent/tools/send-message.js');
     const fakeAdapter = { sendText: vi.fn(), sendMedia: vi.fn(), name: 'whatsapp' } as unknown as ChannelAdapter;
     const tool = createSendMessageTool(() => fakeAdapter, {
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       peerPauseStore,
       notificationsEmitter,
     });
@@ -210,7 +210,7 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
     await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
     expect(sendMessage.mock.calls[0]![2]).toMatchObject({
       event: 'peer_pause_intervened_during_generation',
-      agentId: 'amina',
+      agentId: 'agent_alpha',
     });
     expect(sendMessage.mock.calls[0]![1]).toContain('Intervention suppressed');
   });
@@ -245,26 +245,26 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
     ]);
 
     await gw.deliverNotification(
-      { channel: 'telegram', account_id: 'control', peer_id: '48705953' },
-      '*Auto-pause* — `amina`',
-      { event: 'peer_pause_started', agentId: 'amina' },
+      { channel: 'telegram', account_id: 'control', peer_id: '123456789' },
+      '*Auto-pause* — `agent_alpha`',
+      { event: 'peer_pause_started', agentId: 'agent_alpha' },
     );
     // accountId here is the SendOptions field on ChannelAdapter.sendText —
     // a different shape from NotificationRoute (which is snake_case).
     expect(tgSend).toHaveBeenCalledWith(
-      '48705953',
-      '*Auto-pause* — `amina`',
+      '123456789',
+      '*Auto-pause* — `agent_alpha`',
       expect.objectContaining({ accountId: 'control', parseMode: 'markdown' }),
     );
 
     await gw.deliverNotification(
       { channel: 'whatsapp', account_id: 'business', peer_id: '37120@s.whatsapp.net' },
-      'Auto-pause — amina',
-      { event: 'peer_pause_started', agentId: 'amina' },
+      'Auto-pause — agent_alpha',
+      { event: 'peer_pause_started', agentId: 'agent_alpha' },
     );
     expect(waSend).toHaveBeenCalledWith(
       '37120@s.whatsapp.net',
-      'Auto-pause — amina',
+      'Auto-pause — agent_alpha',
       expect.objectContaining({ accountId: 'business', parseMode: 'plain' }),
     );
   });
@@ -274,10 +274,10 @@ describe('human_takeover with notifications — Stage 1 + Stage 2 wired', () => 
     const emitter = createNotificationsEmitter({
       sendMessage: sendMessage as unknown as Parameters<typeof createNotificationsEmitter>[0]['sendMessage'],
     });
-    emitter.subscribeAgent('amina', aminaConfig.notifications as never);
-    emitter.subscribeAgent('amina', aminaConfig.notifications as never);
+    emitter.subscribeAgent('agent_alpha', agentAlphaConfig.notifications as never);
+    emitter.subscribeAgent('agent_alpha', agentAlphaConfig.notifications as never);
     await emitter.emit('peer_pause_started', {
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       peerKey,
       expiresAt: '2026-05-01T12:30:00Z',
     });

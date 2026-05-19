@@ -69,4 +69,4 @@ The desired end state is:
 2. expansion packets record the concrete command and operator approval
 3. agent-specific CLI names are gradually removed or reduced to thin aliases
 
-This keeps Agent SDK parity at the harness boundary: any configured agent can use the same gate contract when its route, tools, and safety policy allow the action.
+This keeps side effects Pi-native at the harness boundary: any configured agent can use the same gate contract when its route, tools, and safety policy allow the action.

@@ -190,7 +190,7 @@ Evidence:
 
 Blockers found:
 - Pi Web UI session continuation did not preserve conversational context when the returned Pi session id was reused.
-- Pi Gateway filesystem policy allowed an absolute read outside the agent workspace through the `chat_like_openclaw` path.
+- Pi Gateway filesystem policy allowed an absolute read outside the agent workspace through the `chat_like_anthroclaw` path.
 - Pi streamed duplicated partial text chunks in the observed response.
 
 Fix verification:

@@ -19,7 +19,7 @@ function makeAgent(config: Partial<AgentYml['heartbeat']>, heartbeatContent?: st
     writeFileSync(join(workspacePath, HEARTBEAT_FILENAME), heartbeatContent, 'utf-8');
   }
   return {
-    id: 'klavdia',
+    id: 'operator_agent',
     workspacePath,
     config: {
       safety_profile: 'trusted',
@@ -87,7 +87,7 @@ tasks:
     prompt: Prepare standup.
 `);
     const store = makeStore();
-    store.markTaskRun('klavdia', 'standup', 'ok', 10_000);
+    store.markTaskRun('operator_agent', 'standup', 'ok', 10_000);
     let calls = 0;
     const runner = new HeartbeatRunner({
       listAgents: () => [agent],
@@ -133,13 +133,13 @@ tasks:
     await runner.runDue('manual');
     runner.stop();
 
-    expect(request?.sessionKey).toBe('klavdia:heartbeat:700000');
-    expect(request?.runId).toBe('heartbeat-klavdia-700000');
+    expect(request?.sessionKey).toBe('operator_agent:heartbeat:700000');
+    expect(request?.runId).toBe('heartbeat-operator_agent-700000');
     expect(request?.taskNames).toEqual(['standup']);
     expect(request?.prompt).toContain('Operational notes stay in context.');
     expect(request?.prompt).toContain('Prepare standup from metrics.');
-    expect(store.getAgent('klavdia').tasks.standup?.lastStatus).toBe('ok');
-    expect(store.getAgent('klavdia').lastDeliveredHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(store.getAgent('operator_agent').tasks.standup?.lastStatus).toBe('ok');
+    expect(store.getAgent('operator_agent').lastDeliveredHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('uses the stable heartbeat session when isolation is disabled', async () => {
@@ -166,8 +166,8 @@ tasks:
     await runner.runDue('manual');
     runner.stop();
 
-    expect(sessionKey).toBe('klavdia:heartbeat');
-    expect(store.getAgent('klavdia').tasks.check?.lastStatus).toBe('skipped');
+    expect(sessionKey).toBe('operator_agent:heartbeat');
+    expect(store.getAgent('operator_agent').tasks.check?.lastStatus).toBe('skipped');
   });
 
   it('resolves the last delivery target when configured', async () => {
@@ -178,9 +178,9 @@ tasks:
     prompt: Remind the user.
 `);
     const store = makeStore();
-    store.recordTarget('klavdia', {
+    store.recordTarget('operator_agent', {
       channel: 'telegram',
-      peer_id: '48705953',
+      peer_id: '123456789',
       account_id: 'default',
       thread_id: '11',
     });
@@ -202,7 +202,7 @@ tasks:
 
     expect(request?.target).toEqual({
       channel: 'telegram',
-      peer_id: '48705953',
+      peer_id: '123456789',
       account_id: 'default',
       thread_id: '11',
     });
@@ -216,7 +216,7 @@ tasks:
     prompt: Prepare standup.
 `);
     const store = makeStore();
-    store.markTaskRun('klavdia', 'standup', 'ok', 10_000);
+    store.markTaskRun('operator_agent', 'standup', 'ok', 10_000);
     let calls = 0;
     const runner = new HeartbeatRunner({
       listAgents: () => [agent],
@@ -230,7 +230,7 @@ tasks:
     });
 
     runner.start();
-    const result = await runner.runNow('klavdia');
+    const result = await runner.runNow('operator_agent');
     runner.stop();
 
     expect(calls).toBe(1);
@@ -311,7 +311,7 @@ console.log(JSON.stringify({ wakeAgent: false }));
     runner.stop();
 
     expect(calls).toBe(0);
-    expect(store.getAgent('klavdia').tasks.metrics?.lastStatus).toBe('skipped');
+    expect(store.getAgent('operator_agent').tasks.metrics?.lastStatus).toBe('skipped');
     expect(historyStore.listRuns()[0]?.status).toBe('skipped_wake_gate');
   });
 });

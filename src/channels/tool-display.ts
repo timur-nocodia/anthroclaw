@@ -1,5 +1,5 @@
 const TOOL_EMOJI: Record<string, string> = {
-  // Built-in Claude Code tools
+  // Built-in runtime/provider tools
   Bash: '💻',
   Read: '📖',
   Write: '✏️',

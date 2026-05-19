@@ -27,7 +27,7 @@ routes:
   - channel: telegram
     scope: dm
     peers: ["42"]
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 mcp_onboarding:
   enabled: false
 `);
@@ -35,7 +35,7 @@ mcp_onboarding:
 routes:
   - channel: telegram
     scope: group
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 mcp_tools:
   - manage_cron
 `);
@@ -43,7 +43,7 @@ mcp_tools:
 routes:
   - channel: telegram
     scope: group
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 `);
     writePacket(packetsRoot, 'closed_agent', 'Status: closed\n\n- [x] closed evidence\n');
     writePacket(packetsRoot, 'ready_agent', 'Status: ready_for_execution\n\n- [x] automated evidence\n- [ ] manual evidence\n');
@@ -102,7 +102,7 @@ safety_profile: chat_like_openclaw
 routes:
   - channel: telegram
     scope: group
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 `);
     writePacket(packetsRoot, 'ready_agent', 'Status: ready_for_execution\n');
 
@@ -141,13 +141,13 @@ safety_profile: chat_like_openclaw
 routes:
   - channel: telegram
     scope: group
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 `);
     writeAgent(root, 'manual_agent', `
 routes:
   - channel: telegram
     scope: group
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 `);
     writePacket(packetsRoot, 'operator_agent', [
       'Status: pre-live evidence pending',
@@ -233,7 +233,7 @@ safety_profile: chat_like_openclaw
 routes:
   - channel: telegram
     scope: group
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 `);
     writePacket(packetsRoot, 'operator_agent', [
       'Status: pre-live evidence pending',
@@ -272,13 +272,13 @@ safety_profile: chat_like_openclaw
 routes:
   - channel: telegram
     scope: group
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 `);
     writeAgent(root, 'operator_review_agent', `
 routes:
   - channel: telegram
     scope: group
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 `);
     writePacket(packetsRoot, 'operator_review_agent', 'Status: needs operator review\n\n- [x] automated evidence\n');
 
@@ -323,7 +323,7 @@ routes:
   - channel: telegram
     scope: dm
     peers: ["42"]
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 mcp_onboarding:
   enabled: false
 `);
@@ -331,7 +331,7 @@ mcp_onboarding:
 routes:
   - channel: telegram
     scope: group
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 `);
     writePacket(packetsRoot, 'closed_agent', 'Status: closed\n\n- [x] closed evidence\n');
     writePacket(packetsRoot, 'open_agent', 'Status: ready_for_execution\n\n- [ ] manual evidence\n');
@@ -371,7 +371,7 @@ safety_profile: chat_like_openclaw
 routes:
   - channel: telegram
     scope: group
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 `);
     writePacket(packetsRoot, 'open_agent', [
       'Status: pre-live evidence pending',

@@ -1,5 +1,4 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { isAbsolute, join, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { getOverlayPath, loadGlobalConfigWithOverlay } from '@backend/config/overlay.js';
@@ -14,6 +13,7 @@ import {
   STATIC_RUNTIME_MODEL_OPTIONS,
   type RuntimeModelOption,
 } from '@/lib/runtime-models';
+import { isPiPackageInstalledSync } from '@/lib/runtime-setup';
 
 export type RuntimeProvider = 'claude-agent-sdk' | 'pi' | 'opencode';
 
@@ -164,12 +164,12 @@ export function getRuntimeStatus(
     legacyProviders: [LEGACY_PROVIDER],
     pi: {
       packageName: PI_PACKAGE_NAME,
-      packageAvailable: isPackageAvailable(PI_PACKAGE_NAME),
+      packageAvailable: isPiPackageInstalledSync(),
       defaultModel: DEFAULT_PI_MODEL_ID,
       authPath,
-      authConfigured: configuredPathExists(authPath),
+      authConfigured: authPath ? configuredPathExists(authPath) : true,
       modelsPath,
-      modelsConfigured: configuredPathExists(modelsPath),
+      modelsConfigured: modelsPath ? configuredPathExists(modelsPath) : true,
       lastError: null,
     },
     agents: providerCounts,
@@ -281,7 +281,7 @@ export function getRuntimeModelRegistry(): RuntimeModelRegistryResponse {
     },
     {
       id: 'legacy-claude',
-      title: 'Legacy Claude Agent SDK compatibility',
+      title: 'Legacy fallback compatibility',
       enabled: true,
       compatibility: true,
       source: {
@@ -366,15 +366,6 @@ function emptyProviderCounts(): Record<RuntimeProvider, number> {
 function configuredPathExists(path: string | null): boolean {
   if (!path) return false;
   return existsSync(isAbsolute(path) ? path : resolve(process.cwd(), '..', path));
-}
-
-function isPackageAvailable(packageName: string): boolean {
-  try {
-    createRequire(import.meta.url).resolve(`${packageName}/package.json`);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

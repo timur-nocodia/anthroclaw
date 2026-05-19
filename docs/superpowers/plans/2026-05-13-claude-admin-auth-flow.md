@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add a production-ready admin UI flow for connecting the Claude Code runtime used by AnthroClaw agents. Operators must be able to authenticate, verify, repair, and inspect Claude subscription auth without entering the container or running shell commands manually.
+Add a production-ready admin UI flow for connecting the Claude Code runtime used by AnthroClaw agents. Operators must be able to authenticate, verify, repair, and inspect legacy provider auth without entering the container or running shell commands manually.
 
 ## Requirements
 

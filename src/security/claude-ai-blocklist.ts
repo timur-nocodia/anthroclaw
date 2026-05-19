@@ -14,8 +14,8 @@
  * Linear/etc. integrations it cannot actually call. Hallucinated promises
  * are the user-visible bug.
  *
- * Fix: strip the names from the model's context via three native SDK options
- * (all documented, no runtime patching):
+ * Fix: strip the names from the model's context via legacy fallback provider
+ * options (all documented, no runtime patching):
  *
  *   1. `Options.disallowedTools` — enumerate full tool names. SDK doc: "These
  *      tools will be removed from the model's context and cannot be used."

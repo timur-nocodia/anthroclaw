@@ -38,7 +38,7 @@ routes:
     peers: ["-1003729315809"]
     topics: ["8"]
     mention_only: true
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 mcp_tools: [manage_cron]
 learning:
   enabled: true
@@ -94,7 +94,7 @@ routes:
     peers: ["-100"]
     topics: ["4"]
     mention_only: false
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 mcp_tools: [manage_cron]
 `);
     writeGreenMonitor(dataRoot);
@@ -184,8 +184,8 @@ mcp_tools: [manage_cron]
     store.recordAgentRunStart({
       runId: 'run-ok',
       startedAt: Date.now() - 1_000,
-      agentId: 'pi_telegram_lab',
-      sessionKey: 'pi_telegram_lab:telegram:dm:48705953',
+      agentId: 'example',
+      sessionKey: 'example:telegram:dm:peer-1',
       source: 'channel',
       channel: 'telegram',
       model: 'claude-sonnet-4-6',

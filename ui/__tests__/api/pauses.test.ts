@@ -99,15 +99,15 @@ describe('GET /api/agents/[agentId]/pauses', () => {
       getGateway: vi.fn().mockResolvedValue(makeFakeGateway()),
     }));
     const { GET } = await import('@/app/api/agents/[agentId]/pauses/route');
-    const req = new NextRequest(new URL('/api/agents/amina/pauses', 'http://localhost'));
-    const res = await GET(req, { params: Promise.resolve({ agentId: 'amina' }) });
+    const req = new NextRequest(new URL('/api/agents/agent_alpha/pauses', 'http://localhost'));
+    const res = await GET(req, { params: Promise.resolve({ agentId: 'agent_alpha' }) });
     expect(res.status).toBe(401);
   });
 
   it('returns the active pauses for the agent', async () => {
     const gw = makeFakeGateway([
       {
-        agentId: 'amina',
+        agentId: 'agent_alpha',
         peerKey: 'whatsapp:business:1',
         pausedAt: '2026-05-01T00:00:00Z',
         expiresAt: '2026-05-01T01:00:00Z',
@@ -119,13 +119,13 @@ describe('GET /api/agents/[agentId]/pauses', () => {
     ]);
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { GET } = await import('@/app/api/agents/[agentId]/pauses/route');
-    const req = new NextRequest(new URL('/api/agents/amina/pauses', 'http://localhost'));
-    const res = await GET(req, { params: Promise.resolve({ agentId: 'amina' }) });
+    const req = new NextRequest(new URL('/api/agents/agent_alpha/pauses', 'http://localhost'));
+    const res = await GET(req, { params: Promise.resolve({ agentId: 'agent_alpha' }) });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.pauses).toHaveLength(1);
     expect(body.pauses[0].peerKey).toBe('whatsapp:business:1');
-    expect(gw.peerPauseStore.list).toHaveBeenCalledWith('amina');
+    expect(gw.peerPauseStore.list).toHaveBeenCalledWith('agent_alpha');
   });
 
   it('returns empty list when peerPauseStore is null', async () => {
@@ -133,8 +133,8 @@ describe('GET /api/agents/[agentId]/pauses', () => {
       getGateway: vi.fn().mockResolvedValue({ peerPauseStore: null }),
     }));
     const { GET } = await import('@/app/api/agents/[agentId]/pauses/route');
-    const req = new NextRequest(new URL('/api/agents/amina/pauses', 'http://localhost'));
-    const res = await GET(req, { params: Promise.resolve({ agentId: 'amina' }) });
+    const req = new NextRequest(new URL('/api/agents/agent_alpha/pauses', 'http://localhost'));
+    const res = await GET(req, { params: Promise.resolve({ agentId: 'agent_alpha' }) });
     const body = await res.json();
     expect(body.pauses).toEqual([]);
   });
@@ -146,11 +146,11 @@ describe('POST /api/agents/[agentId]/pauses', () => {
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { POST } = await import('@/app/api/agents/[agentId]/pauses/route');
     const req = jsonRequest(
-      '/api/agents/amina/pauses',
+      '/api/agents/agent_alpha/pauses',
       { channel: 'whatsapp', account_id: 'business', peer_id: '37120@s.whatsapp.net', ttl_minutes: 60 },
       'POST',
     );
-    const res = await POST(req, { params: Promise.resolve({ agentId: 'amina' }) });
+    const res = await POST(req, { params: Promise.resolve({ agentId: 'agent_alpha' }) });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
@@ -164,11 +164,11 @@ describe('POST /api/agents/[agentId]/pauses', () => {
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { POST } = await import('@/app/api/agents/[agentId]/pauses/route');
     const req = jsonRequest(
-      '/api/agents/amina/pauses',
+      '/api/agents/agent_alpha/pauses',
       { channel: 'whatsapp', account_id: 'business', peer_id: '1', ttl_minutes: null },
       'POST',
     );
-    const res = await POST(req, { params: Promise.resolve({ agentId: 'amina' }) });
+    const res = await POST(req, { params: Promise.resolve({ agentId: 'agent_alpha' }) });
     const body = await res.json();
     expect(body.pause.reason).toBe('manual_indefinite');
     expect(body.pause.expiresAt).toBeNull();
@@ -178,8 +178,8 @@ describe('POST /api/agents/[agentId]/pauses', () => {
     const gw = makeFakeGateway();
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { POST } = await import('@/app/api/agents/[agentId]/pauses/route');
-    const req = jsonRequest('/api/agents/amina/pauses', {}, 'POST');
-    const res = await POST(req, { params: Promise.resolve({ agentId: 'amina' }) });
+    const req = jsonRequest('/api/agents/agent_alpha/pauses', {}, 'POST');
+    const res = await POST(req, { params: Promise.resolve({ agentId: 'agent_alpha' }) });
     expect(res.status).toBe(400);
   });
 
@@ -190,11 +190,11 @@ describe('POST /api/agents/[agentId]/pauses', () => {
     }));
     const { POST } = await import('@/app/api/agents/[agentId]/pauses/route');
     const req = jsonRequest(
-      '/api/agents/amina/pauses',
+      '/api/agents/agent_alpha/pauses',
       { peer_key: 'x', ttl_minutes: 5 },
       'POST',
     );
-    const res = await POST(req, { params: Promise.resolve({ agentId: 'amina' }) });
+    const res = await POST(req, { params: Promise.resolve({ agentId: 'agent_alpha' }) });
     expect(res.status).toBe(401);
   });
 });
@@ -203,7 +203,7 @@ describe('DELETE /api/agents/[agentId]/pauses/[peerKey]', () => {
   it('unpauses the entry and reports was_paused=true', async () => {
     const gw = makeFakeGateway([
       {
-        agentId: 'amina',
+        agentId: 'agent_alpha',
         peerKey: 'whatsapp:business:1',
         pausedAt: '2026-05-01T00:00:00Z',
         expiresAt: null,
@@ -216,17 +216,17 @@ describe('DELETE /api/agents/[agentId]/pauses/[peerKey]', () => {
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { DELETE } = await import('@/app/api/agents/[agentId]/pauses/[peerKey]/route');
     const req = new NextRequest(
-      new URL('/api/agents/amina/pauses/whatsapp%3Abusiness%3A1', 'http://localhost'),
+      new URL('/api/agents/agent_alpha/pauses/whatsapp%3Abusiness%3A1', 'http://localhost'),
       { method: 'DELETE' },
     );
     const res = await DELETE(req, {
-      params: Promise.resolve({ agentId: 'amina', peerKey: 'whatsapp:business:1' }),
+      params: Promise.resolve({ agentId: 'agent_alpha', peerKey: 'whatsapp:business:1' }),
     });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.was_paused).toBe(true);
     expect(gw.peerPauseStore.unpause).toHaveBeenCalledWith(
-      'amina',
+      'agent_alpha',
       'whatsapp:business:1',
       'ui:unpause',
     );
@@ -237,11 +237,11 @@ describe('DELETE /api/agents/[agentId]/pauses/[peerKey]', () => {
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { DELETE } = await import('@/app/api/agents/[agentId]/pauses/[peerKey]/route');
     const req = new NextRequest(
-      new URL('/api/agents/amina/pauses/x', 'http://localhost'),
+      new URL('/api/agents/agent_alpha/pauses/x', 'http://localhost'),
       { method: 'DELETE' },
     );
     const res = await DELETE(req, {
-      params: Promise.resolve({ agentId: 'amina', peerKey: 'x' }),
+      params: Promise.resolve({ agentId: 'agent_alpha', peerKey: 'x' }),
     });
     const body = await res.json();
     expect(body.was_paused).toBe(false);
@@ -254,11 +254,11 @@ describe('DELETE /api/agents/[agentId]/pauses/[peerKey]', () => {
     }));
     const { DELETE } = await import('@/app/api/agents/[agentId]/pauses/[peerKey]/route');
     const req = new NextRequest(
-      new URL('/api/agents/amina/pauses/x', 'http://localhost'),
+      new URL('/api/agents/agent_alpha/pauses/x', 'http://localhost'),
       { method: 'DELETE' },
     );
     const res = await DELETE(req, {
-      params: Promise.resolve({ agentId: 'amina', peerKey: 'x' }),
+      params: Promise.resolve({ agentId: 'agent_alpha', peerKey: 'x' }),
     });
     expect(res.status).toBe(401);
   });
@@ -268,7 +268,7 @@ describe('GET /api/agents/[agentId]/pause-events', () => {
   it('synthesises a timeline from current pauses (v1)', async () => {
     const gw = makeFakeGateway([
       {
-        agentId: 'amina',
+        agentId: 'agent_alpha',
         peerKey: 'whatsapp:business:1',
         pausedAt: '2026-05-01T00:00:00Z',
         expiresAt: '2026-05-01T01:00:00Z',
@@ -281,9 +281,9 @@ describe('GET /api/agents/[agentId]/pause-events', () => {
     vi.doMock('@/lib/gateway', () => ({ getGateway: vi.fn().mockResolvedValue(gw) }));
     const { GET } = await import('@/app/api/agents/[agentId]/pause-events/route');
     const req = new NextRequest(
-      new URL('/api/agents/amina/pause-events', 'http://localhost'),
+      new URL('/api/agents/agent_alpha/pause-events', 'http://localhost'),
     );
-    const res = await GET(req, { params: Promise.resolve({ agentId: 'amina' }) });
+    const res = await GET(req, { params: Promise.resolve({ agentId: 'agent_alpha' }) });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.events).toHaveLength(1);

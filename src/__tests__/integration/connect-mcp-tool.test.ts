@@ -27,6 +27,8 @@ import { EncryptedFilesystemCredentialStore } from '../../agent/credentials/encr
 import { CredentialAuditLog } from '../../agent/credentials/audit.js';
 
 const KEY = 'd'.repeat(64);
+const ORIGINAL_AGENTS_DIR = process.env.OC_AGENTS_DIR;
+const ORIGINAL_DATA_DIR = process.env.OC_DATA_DIR;
 const ORIGINAL_MASTER_KEY = process.env.ANTHROCLAW_MASTER_KEY;
 
 let dir: string;
@@ -72,10 +74,12 @@ function subscribe(onboarding: ReturnType<typeof createOnboarding>): void {
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'mcp-int-'));
+  process.env.OC_AGENTS_DIR = dir;
+  process.env.OC_DATA_DIR = dir;
   process.env.ANTHROCLAW_MASTER_KEY = KEY;
-  mkdirSync(join(dir, 'amina'));
+  mkdirSync(join(dir, 'agent_alpha'));
   writeFileSync(
-    join(dir, 'amina', 'agent.yml'),
+    join(dir, 'agent_alpha', 'agent.yml'),
     'model: claude-sonnet-4-5\nroutes: []\n',
   );
   pending = openPendingStore(join(dir, 'mcp.sqlite'));
@@ -94,6 +98,10 @@ beforeEach(() => {
 
 afterEach(() => {
   pending.close();
+  if (ORIGINAL_AGENTS_DIR === undefined) delete process.env.OC_AGENTS_DIR;
+  else process.env.OC_AGENTS_DIR = ORIGINAL_AGENTS_DIR;
+  if (ORIGINAL_DATA_DIR === undefined) delete process.env.OC_DATA_DIR;
+  else process.env.OC_DATA_DIR = ORIGINAL_DATA_DIR;
   if (ORIGINAL_MASTER_KEY === undefined) delete process.env.ANTHROCLAW_MASTER_KEY;
   else process.env.ANTHROCLAW_MASTER_KEY = ORIGINAL_MASTER_KEY;
   rmSync(dir, { recursive: true, force: true });
@@ -112,10 +120,10 @@ describe('mcp onboarding → gateway synthetic dispatch wiring', () => {
     const row: PendingConnection = {
       id: 'pnd_chat',
       state: 'st_chat_xyz',
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       // A real chat-driven session key — the subscriber decomposes this to
       // route the synthetic inbound back to the correct channel + peer.
-      agentSessionKey: 'amina:telegram:dm:123456',
+      agentSessionKey: 'agent_alpha:telegram:dm:123456',
       mcpUrl: 'https://mcp.test/mcp',
       authMode: 'oauth',
       codeVerifier: 'v_test',
@@ -123,7 +131,7 @@ describe('mcp onboarding → gateway synthetic dispatch wiring', () => {
       clientSecret: null,
       oauthMetadata: fakeOauthMeta,
       toolsMetadata: null,
-      requestedBy: 'agent:amina:telegram:dm:123456',
+      requestedBy: 'agent:agent_alpha:telegram:dm:123456',
       status: 'pending',
       failureReason: null,
       createdAt: now,
@@ -173,7 +181,7 @@ describe('mcp onboarding → gateway synthetic dispatch wiring', () => {
     // Subscriber should have produced exactly one dispatch.
     expect(dispatched).toHaveLength(1);
     const call = dispatched[0];
-    expect(call.targetAgentId).toBe('amina');
+    expect(call.targetAgentId).toBe('agent_alpha');
     expect(call.channel).toBe('telegram');
     expect(call.peerId).toBe('123456');
     expect(call.text).toMatch(/^\[system\] mcp_connected: /);
@@ -196,7 +204,7 @@ describe('mcp onboarding → gateway synthetic dispatch wiring', () => {
     pending.insert({
       id: 'pnd_admin',
       state: 'st_admin_xyz',
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       agentSessionKey: null,
       mcpUrl: 'https://mcp.test/mcp',
       authMode: 'oauth',
@@ -249,8 +257,8 @@ describe('mcp onboarding → gateway synthetic dispatch wiring', () => {
     pending.insert({
       id: 'pnd_fail',
       state: 'st_fail',
-      agentId: 'amina',
-      agentSessionKey: 'amina:telegram:dm:42',
+      agentId: 'agent_alpha',
+      agentSessionKey: 'agent_alpha:telegram:dm:42',
       mcpUrl: 'https://mcp.test/mcp',
       authMode: 'oauth',
       codeVerifier: 'v',
@@ -259,7 +267,7 @@ describe('mcp onboarding → gateway synthetic dispatch wiring', () => {
       // intentionally corrupt — completeOAuth will throw invalid_oauth_metadata
       oauthMetadata: 'not-json',
       toolsMetadata: null,
-      requestedBy: 'agent:amina:telegram:dm:42',
+      requestedBy: 'agent:agent_alpha:telegram:dm:42',
       status: 'pending',
       failureReason: null,
       createdAt: now,
@@ -277,7 +285,7 @@ describe('mcp onboarding → gateway synthetic dispatch wiring', () => {
     });
     expect(res.status).toBe('failed');
     expect(failedEvents).toHaveLength(1);
-    expect(failedEvents[0].agentSessionKey).toBe('amina:telegram:dm:42');
+    expect(failedEvents[0].agentSessionKey).toBe('agent_alpha:telegram:dm:42');
     expect(failedEvents[0].serverId).toBe('https://mcp.test/mcp');
     expect(failedEvents[0].reason).toBeTruthy();
   });

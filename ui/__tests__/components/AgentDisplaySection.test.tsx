@@ -21,14 +21,14 @@ describe("AgentDisplaySection — resolved-default hint", () => {
     expect(hint.textContent).toMatch(/new/);
   });
 
-  it("shows 'Resolved: new' for private and chat_like_openclaw", () => {
+  it("shows 'Resolved: new' for private and chat_like_anthroclaw", () => {
     const { rerender } = render(
       <AgentDisplaySection display={undefined} safetyProfile="private" onChange={vi.fn()} />,
     );
     expect(screen.getByText(/Resolved:/i).textContent).toMatch(/new/);
 
     rerender(
-      <AgentDisplaySection display={undefined} safetyProfile="chat_like_openclaw" onChange={vi.fn()} />,
+      <AgentDisplaySection display={undefined} safetyProfile="chat_like_anthroclaw" onChange={vi.fn()} />,
     );
     expect(screen.getByText(/Resolved:/i).textContent).toMatch(/new/);
   });

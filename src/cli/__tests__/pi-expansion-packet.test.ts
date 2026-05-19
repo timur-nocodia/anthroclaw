@@ -76,8 +76,8 @@ learning:
 routes:
   - channel: telegram
     scope: dm
-    peers: ["48705953"]
-safety_profile: chat_like_openclaw
+    peers: ["123456789"]
+safety_profile: chat_like_anthroclaw
 `);
     const out = join(root, 'packet.md');
     const stdout = createWriter();
@@ -105,8 +105,8 @@ safety_profile: chat_like_openclaw
 routes:
   - channel: telegram
     scope: dm
-    peers: ["48705953"]
-safety_profile: chat_like_openclaw
+    peers: ["123456789"]
+safety_profile: chat_like_anthroclaw
 `);
     const stdout = createWriter();
     const stderr = createWriter();

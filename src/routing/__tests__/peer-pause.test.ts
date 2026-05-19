@@ -8,7 +8,7 @@ describe('PeerPauseStore — basic shape', () => {
   it('starts empty and reports unpaused for unknown peers', () => {
     const store = createPeerPauseStore({ filePath: ':memory:' });
     expect(store.list()).toEqual([]);
-    const result = store.isPaused('amina', 'whatsapp:business:37120000@s.whatsapp.net');
+    const result = store.isPaused('agent_alpha', 'whatsapp:business:37120000@s.whatsapp.net');
     expect(result.paused).toBe(false);
     expect(result.entry).toBeUndefined();
   });
@@ -20,7 +20,7 @@ describe('PeerPauseStore — pause/unpause/extend', () => {
 
   it('pause sets entry with expiry and isPaused returns it', () => {
     const store = createPeerPauseStore({ filePath: ':memory:', clock });
-    const entry = store.pause('amina', 'wa:b:1', {
+    const entry = store.pause('agent_alpha', 'wa:b:1', {
       ttlMinutes: 30,
       reason: 'operator_takeover',
       source: 'whatsapp:fromMe',
@@ -29,16 +29,16 @@ describe('PeerPauseStore — pause/unpause/extend', () => {
     expect(entry.extendedCount).toBe(0);
     expect(entry.pausedAt).toBe('2026-05-01T12:00:00.000Z');
     expect(entry.lastOperatorMessageAt).toBe('2026-05-01T12:00:00.000Z');
-    expect(store.isPaused('amina', 'wa:b:1')).toMatchObject({ paused: true, expired: false });
+    expect(store.isPaused('agent_alpha', 'wa:b:1')).toMatchObject({ paused: true, expired: false });
   });
 
   it('isPaused returns expired:true after TTL passes', () => {
     const t0 = NOW;
     let now = t0;
     const store = createPeerPauseStore({ filePath: ':memory:', clock: () => now });
-    store.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    store.pause('agent_alpha', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
     now = t0 + 31 * 60 * 1000;
-    const result = store.isPaused('amina', 'wa:b:1');
+    const result = store.isPaused('agent_alpha', 'wa:b:1');
     expect(result.paused).toBe(true);
     expect(result.expired).toBe(true);
   });
@@ -46,9 +46,9 @@ describe('PeerPauseStore — pause/unpause/extend', () => {
   it('extend resets expiry and increments extendedCount', () => {
     let now = NOW;
     const store = createPeerPauseStore({ filePath: ':memory:', clock: () => now });
-    store.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    store.pause('agent_alpha', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
     now = NOW + 10 * 60 * 1000;
-    const ext = store.extend('amina', 'wa:b:1');
+    const ext = store.extend('agent_alpha', 'wa:b:1');
     expect(ext?.expiresAt).toBe('2026-05-01T12:40:00.000Z');
     expect(ext?.extendedCount).toBe(1);
     expect(ext?.lastOperatorMessageAt).toBe('2026-05-01T12:10:00.000Z');
@@ -56,57 +56,57 @@ describe('PeerPauseStore — pause/unpause/extend', () => {
 
   it('extend on missing entry returns null', () => {
     const store = createPeerPauseStore({ filePath: ':memory:', clock });
-    expect(store.extend('amina', 'wa:b:1')).toBeNull();
+    expect(store.extend('agent_alpha', 'wa:b:1')).toBeNull();
   });
 
   it('extend returns null when the pause is already expired', () => {
     let now = NOW;
     const store = createPeerPauseStore({ filePath: ':memory:', clock: () => now });
-    store.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    store.pause('agent_alpha', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
     now = NOW + 31 * 60 * 1000;
-    expect(store.extend('amina', 'wa:b:1')).toBeNull();
+    expect(store.extend('agent_alpha', 'wa:b:1')).toBeNull();
   });
 
   it('unpause removes the entry and returns the previous state', () => {
     const store = createPeerPauseStore({ filePath: ':memory:', clock });
-    store.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
-    const removed = store.unpause('amina', 'wa:b:1', 'manual');
+    store.pause('agent_alpha', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    const removed = store.unpause('agent_alpha', 'wa:b:1', 'manual');
     expect(removed?.peerKey).toBe('wa:b:1');
-    expect(store.isPaused('amina', 'wa:b:1').paused).toBe(false);
+    expect(store.isPaused('agent_alpha', 'wa:b:1').paused).toBe(false);
   });
 
   it('unpause on missing entry returns null', () => {
     const store = createPeerPauseStore({ filePath: ':memory:', clock });
-    expect(store.unpause('amina', 'wa:b:1', 'manual')).toBeNull();
+    expect(store.unpause('agent_alpha', 'wa:b:1', 'manual')).toBeNull();
   });
 
   it('indefinite pause has expiresAt: null and never reports expired', () => {
     let now = NOW;
     const store = createPeerPauseStore({ filePath: ':memory:', clock: () => now });
-    store.pause('amina', 'wa:b:1', { reason: 'manual_indefinite', source: 'mcp:operator-console' });
+    store.pause('agent_alpha', 'wa:b:1', { reason: 'manual_indefinite', source: 'mcp:operator-console' });
     now = NOW + 100 * 24 * 60 * 60 * 1000;
-    expect(store.isPaused('amina', 'wa:b:1')).toMatchObject({ paused: true, expired: false });
+    expect(store.isPaused('agent_alpha', 'wa:b:1')).toMatchObject({ paused: true, expired: false });
   });
 
   it('list returns all entries sorted by pausedAt asc; agentId filter applies', () => {
     let now = NOW;
     const store = createPeerPauseStore({ filePath: ':memory:', clock: () => now });
-    store.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    store.pause('agent_alpha', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
     now = NOW + 60 * 1000;
-    store.pause('amina', 'wa:b:2', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
-    store.pause('larry', 'wa:b:3', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    store.pause('agent_alpha', 'wa:b:2', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    store.pause('secondary_agent', 'wa:b:3', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
     expect(store.list().map((e) => e.peerKey)).toEqual(['wa:b:1', 'wa:b:2', 'wa:b:3']);
-    expect(store.list('amina').map((e) => e.peerKey)).toEqual(['wa:b:1', 'wa:b:2']);
-    expect(store.list('larry').map((e) => e.peerKey)).toEqual(['wa:b:3']);
+    expect(store.list('agent_alpha').map((e) => e.peerKey)).toEqual(['wa:b:1', 'wa:b:2']);
+    expect(store.list('secondary_agent').map((e) => e.peerKey)).toEqual(['wa:b:3']);
   });
 
   it('replacing a pause for the same peer overwrites prior entry, resets extendedCount', () => {
     let now = NOW;
     const store = createPeerPauseStore({ filePath: ':memory:', clock: () => now });
-    store.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
-    store.extend('amina', 'wa:b:1');
+    store.pause('agent_alpha', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    store.extend('agent_alpha', 'wa:b:1');
     now = NOW + 60 * 60 * 1000;
-    const replaced = store.pause('amina', 'wa:b:1', { ttlMinutes: 60, reason: 'manual', source: 'mcp' });
+    const replaced = store.pause('agent_alpha', 'wa:b:1', { ttlMinutes: 60, reason: 'manual', source: 'mcp' });
     expect(replaced.extendedCount).toBe(0);
     expect(replaced.reason).toBe('manual');
     expect(replaced.expiresAt).toBe('2026-05-01T14:00:00.000Z');
@@ -123,7 +123,7 @@ describe('PeerPauseStore — persistence', () => {
   it('saves to disk and reloads on next instance', async () => {
     const path = join(dir, 'peer-pauses.json');
     const a = createPeerPauseStore({ filePath: path });
-    a.pause('amina', 'wa:b:1', {
+    a.pause('agent_alpha', 'wa:b:1', {
       ttlMinutes: 30,
       reason: 'operator_takeover',
       source: 'wa',
@@ -133,7 +133,7 @@ describe('PeerPauseStore — persistence', () => {
     const b = createPeerPauseStore({ filePath: path });
     expect(b.list()).toHaveLength(1);
     expect(b.list()[0].peerKey).toBe('wa:b:1');
-    expect(b.list()[0].agentId).toBe('amina');
+    expect(b.list()[0].agentId).toBe('agent_alpha');
   });
 
   it('handles missing file as empty store', () => {
@@ -151,7 +151,7 @@ describe('PeerPauseStore — persistence', () => {
 
   it(':memory: filePath skips load and save', async () => {
     const store = createPeerPauseStore({ filePath: ':memory:' });
-    store.pause('amina', 'wa:b:1', {
+    store.pause('agent_alpha', 'wa:b:1', {
       ttlMinutes: 30,
       reason: 'operator_takeover',
       source: 'wa',
@@ -171,7 +171,7 @@ describe('PeerPauseStore — persistence', () => {
       path,
       JSON.stringify([
         {
-          agentId: 'amina',
+          agentId: 'agent_alpha',
           peerKey: 'wa:b:1',
           pausedAt: handcraftedAt,
           expiresAt: handcraftedExpires,
@@ -184,7 +184,7 @@ describe('PeerPauseStore — persistence', () => {
     );
     let now = Date.parse(handcraftedAt) + 10 * 60 * 1000;
     const store = createPeerPauseStore({ filePath: path, clock: () => now });
-    const ext = store.extend('amina', 'wa:b:1');
+    const ext = store.extend('agent_alpha', 'wa:b:1');
     expect(ext).not.toBeNull();
     // 10min after pausedAt + (30min TTL window from pausedAt→expiresAt) = 12:40
     expect(ext?.expiresAt).toBe('2026-05-01T12:40:00.000Z');
@@ -193,17 +193,17 @@ describe('PeerPauseStore — persistence', () => {
   it('extend and unpause persist across reloads', async () => {
     const path = join(dir, 'peer-pauses.json');
     const a = createPeerPauseStore({ filePath: path });
-    a.pause('amina', 'wa:b:1', {
+    a.pause('agent_alpha', 'wa:b:1', {
       ttlMinutes: 30,
       reason: 'operator_takeover',
       source: 'wa',
     });
-    a.pause('amina', 'wa:b:2', {
+    a.pause('agent_alpha', 'wa:b:2', {
       ttlMinutes: 30,
       reason: 'operator_takeover',
       source: 'wa',
     });
-    a.unpause('amina', 'wa:b:1', 'manual');
+    a.unpause('agent_alpha', 'wa:b:1', 'manual');
     await a.flush();
 
     const b = createPeerPauseStore({ filePath: path });

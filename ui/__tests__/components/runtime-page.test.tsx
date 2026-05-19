@@ -5,11 +5,13 @@ import RuntimePage from '@/app/(dashboard)/fleet/[serverId]/runtime/page';
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ serverId: 'local' }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/components/settings/ClaudeAuthPanel', () => ({
   ClaudeAuthPanel: ({ serverId }: { serverId: string }) => (
-    <div>Legacy Claude compatibility panel for {serverId}</div>
+    <div>Legacy fallback panel for {serverId}</div>
   ),
 }));
 
@@ -17,29 +19,33 @@ describe('<RuntimePage />', () => {
   it('loads provider-neutral runtime control plane data', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/runtime/status')) {
+      if (url.endsWith('/runtime/providers')) {
         return json({
-          harness: { id: 'runtime-v1' },
-          defaultProvider: 'pi',
+          status: 'ok',
+          runtimeMode: 'pi',
+          defaultModel: 'anthropic/claude-sonnet-4-6',
           pi: {
             packageName: '@pi/agent-sdk',
             packageAvailable: true,
+            packageVersion: '0.1.0',
             defaultModel: 'anthropic/claude-sonnet-4-6',
             authPath: '/tmp/pi-auth.json',
             authConfigured: true,
             modelsPath: '/tmp/pi-models.json',
-            modelsConfigured: true,
+            availableModelCount: 1,
+            providers: [{
+              id: 'anthropic',
+              name: 'Anthropic',
+              configured: true,
+              modelCount: 1,
+              defaultForInstance: true,
+              supportsApiKey: true,
+              authSource: 'storage',
+              authLabel: 'configured',
+            }],
+            models: [{ id: 'anthropic/claude-sonnet-4-6', runtime: 'pi' }],
           },
-          agents: {
-            total: 2,
-            byEffectiveProvider: {
-              pi: 2,
-              'claude-agent-sdk': 0,
-              opencode: 0,
-            },
-          },
-          gateway: { activeSessions: 1 },
-          legacy: { claudeAgentSdk: { present: true, primary: false } },
+          legacy: { visible: true, primary: false },
         });
       }
       if (url.endsWith('/runtime/gates')) {
@@ -138,45 +144,28 @@ describe('<RuntimePage />', () => {
           },
         });
       }
-      if (url.endsWith('/runtime/models')) {
-        return json({
-          defaultProvider: 'pi',
-          defaultModel: 'anthropic/claude-sonnet-4-6',
-          groups: [{
-            id: 'pi',
-            title: 'Pi configured models',
-            enabled: true,
-            source: { kind: 'configured' },
-            models: [{ id: 'anthropic/claude-sonnet-4-6', runtime: 'pi' }],
-          }],
-          options: [{ id: 'anthropic/claude-sonnet-4-6', runtime: 'pi' }],
-        });
-      }
       return json({ error: 'unexpected route' }, 404);
     });
     vi.stubGlobal('fetch', fetchMock);
 
     render(<RuntimePage />);
 
-    await screen.findByText('pi ready');
+    await screen.findByText('Pi ready');
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/fleet/local/runtime/status');
+    expect(screen.getByTestId('runtime-page-shell')).toHaveClass('overflow-auto');
+    expect(screen.getByTestId('runtime-page-content')).not.toHaveClass('overflow-auto');
+    expect(fetchMock).toHaveBeenCalledWith('/api/fleet/local/runtime/providers');
     expect(fetchMock).toHaveBeenCalledWith('/api/fleet/local/runtime/gates');
     expect(fetchMock).toHaveBeenCalledWith('/api/fleet/local/runtime/expansion-status');
-    expect(fetchMock).toHaveBeenCalledWith('/api/fleet/local/runtime/models');
-    expect(screen.getByText('runtime-v1')).toBeInTheDocument();
-    expect(screen.getByText('Pi configured models')).toBeInTheDocument();
+    expect(screen.getByText('Runtime setup')).toBeInTheDocument();
+    expect(screen.getByText('Default model')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: /gates/i }));
-    expect(screen.getAllByText('Controlled live turn').length).toBeGreaterThan(0);
-    expect(screen.getByText('This UI view is plan-only. Live gate execution stays disabled until a separate approval flow is implemented.')).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole('button', { name: /expansion/i }));
+    await userEvent.click(screen.getByRole('button', { name: /advanced/i }));
+    expect(screen.getByText('Side-effect gates')).toBeInTheDocument();
+    expect(screen.getByText('controlled-live-turn')).toBeInTheDocument();
+    expect(screen.getByText('Runs a guarded live turn plan.')).toBeInTheDocument();
     expect(screen.getByText('94%')).toBeInTheDocument();
-    expect(screen.getByText('generic-agent')).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole('button', { name: /legacy/i }));
-    expect(screen.getByText('Legacy Claude compatibility panel for local')).toBeInTheDocument();
+    expect(screen.getByText('Legacy fallback panel for local')).toBeInTheDocument();
   });
 });
 

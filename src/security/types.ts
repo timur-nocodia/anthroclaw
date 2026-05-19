@@ -1,4 +1,9 @@
-export type ProfileName = 'public' | 'trusted' | 'private' | 'chat_like_openclaw';
+export type ProfileName =
+  | 'public'
+  | 'trusted'
+  | 'private'
+  | 'chat_like_anthroclaw'
+  | 'chat_like_openclaw';
 
 export type ToolCategory =
   | 'read-only'         // Read, Glob, Grep, LS, memory_search, memory_wiki

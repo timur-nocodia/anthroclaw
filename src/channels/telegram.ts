@@ -44,6 +44,16 @@ function buildInlineKeyboard(buttons: InlineButton[][]): {
   };
 }
 
+function isTelegramPollingConflict(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const maybeError = 'error' in err ? (err as { error?: unknown }).error : err;
+  if (!maybeError || typeof maybeError !== 'object') return false;
+  const errorCode = (maybeError as { error_code?: unknown }).error_code;
+  const description = (maybeError as { description?: unknown }).description;
+  return errorCode === 409 ||
+    (typeof description === 'string' && description.includes('terminated by other getUpdates request'));
+}
+
 /* ------------------------------------------------------------------ */
 /*  TelegramChannel                                                   */
 /* ------------------------------------------------------------------ */
@@ -69,6 +79,7 @@ export class TelegramChannel implements ChannelAdapter {
   private log = logger.child({ channel: 'telegram' });
   private botUsernames = new Map<string, string>();
   private botStatuses = new Map<string, string>();
+  private pollingRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(config: TelegramConfig) {
     this.config = config;
@@ -184,14 +195,7 @@ export class TelegramChannel implements ChannelAdapter {
         this.log.info({ accountId, url: acct.webhook.url }, 'Telegram webhook set');
       } else {
         // Long-polling mode
-        bot.start({
-          drop_pending_updates: true,
-          onStart: (info) => {
-            this.botUsernames.set(accountId, info.username);
-            this.botStatuses.set(accountId, 'connected');
-            this.log.info({ accountId, username: info.username }, 'Telegram bot started polling');
-          },
-        });
+        this.startPolling(accountId, bot);
       }
     }
   }
@@ -199,6 +203,9 @@ export class TelegramChannel implements ChannelAdapter {
   async stop(): Promise<void> {
     for (const [accountId, bot] of this.bots) {
       try {
+        const retryTimer = this.pollingRetryTimers.get(accountId);
+        if (retryTimer) clearTimeout(retryTimer);
+        this.pollingRetryTimers.delete(accountId);
         await bot.stop();
         this.log.info({ accountId }, 'Telegram bot stopped');
       } catch {
@@ -389,6 +396,37 @@ export class TelegramChannel implements ChannelAdapter {
     const first = this.bots.values().next();
     if (first.done) throw new Error('No Telegram bots configured');
     return first.value;
+  }
+
+  private startPolling(accountId: string, bot: Bot): void {
+    const retryTimer = this.pollingRetryTimers.get(accountId);
+    if (retryTimer) clearTimeout(retryTimer);
+    this.pollingRetryTimers.delete(accountId);
+
+    void bot.start({
+      drop_pending_updates: true,
+      onStart: (info) => {
+        this.botUsernames.set(accountId, info.username);
+        this.botStatuses.set(accountId, 'connected');
+        this.log.info({ accountId, username: info.username }, 'Telegram bot started polling');
+      },
+    }).catch((err) => {
+      const conflict = isTelegramPollingConflict(err);
+      this.botStatuses.set(accountId, conflict ? 'polling_conflict' : 'error');
+      this.log.error(
+        { err, accountId },
+        conflict
+          ? 'Telegram polling conflict: another bot instance is using getUpdates'
+          : 'Telegram bot polling stopped',
+      );
+
+      if (!conflict || this.bots.get(accountId) !== bot) return;
+      const timer = setTimeout(() => {
+        this.log.info({ accountId }, 'Retrying Telegram polling after conflict');
+        this.startPolling(accountId, bot);
+      }, 15_000);
+      this.pollingRetryTimers.set(accountId, timer);
+    });
   }
 
   private async normalizeMessage(ctx: Context, accountId: string): Promise<InboundMessage | null> {

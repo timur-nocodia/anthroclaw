@@ -18,7 +18,7 @@ interface ActivityEvent {
 function ev(p: Partial<ActivityEvent>): ActivityEvent {
   return {
     kind: "pause_started",
-    agentId: "amina",
+    agentId: "agent_alpha",
     peerKey: "whatsapp:business:1",
     at: "2026-05-01T00:00:00Z",
     expiresAt: "2026-05-01T01:00:00Z",
@@ -42,7 +42,7 @@ describe("ActivityLogPanel", () => {
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    render(<ActivityLogPanel agentId="amina" />);
+    render(<ActivityLogPanel agentId="agent_alpha" />);
     await waitFor(() => expect(screen.getByText(/no events match/i)).toBeInTheDocument());
   });
 
@@ -60,7 +60,7 @@ describe("ActivityLogPanel", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    render(<ActivityLogPanel agentId="amina" />);
+    render(<ActivityLogPanel agentId="agent_alpha" />);
     await waitFor(() => expect(screen.getByTestId("activity-0")).toBeInTheDocument());
     expect(screen.getByText(/v1 note/)).toBeInTheDocument();
     expect(screen.getAllByText(/pause_started/i).length).toBeGreaterThanOrEqual(1);
@@ -79,7 +79,7 @@ describe("ActivityLogPanel", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    render(<ActivityLogPanel agentId="amina" />);
+    render(<ActivityLogPanel agentId="agent_alpha" />);
     await waitFor(() => expect(screen.getByTestId("activity-0")).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText("filter"), { target: { value: "telegram" } });
     expect(screen.queryByText(/whatsapp:business:1/)).not.toBeInTheDocument();
@@ -89,7 +89,7 @@ describe("ActivityLogPanel", () => {
   it("shows an error when the fetch fails", async () => {
     const fetchMock = vi.fn(async () => new Response("boom", { status: 500 }));
     vi.stubGlobal("fetch", fetchMock);
-    render(<ActivityLogPanel agentId="amina" />);
+    render(<ActivityLogPanel agentId="agent_alpha" />);
     await waitFor(() => expect(screen.getByText(/HTTP 500/)).toBeInTheDocument());
   });
 });

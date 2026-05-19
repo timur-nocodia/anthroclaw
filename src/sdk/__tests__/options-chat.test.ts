@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildSdkOptions } from '../options.js';
 import { CHAT_PERSONALITY_BASELINE } from '../../security/profiles/chat-personality-baseline.js';
-import { chatLikeOpenclawProfile } from '../../security/profiles/chat-like-openclaw.js';
+import { chatLikeAnthroclawProfile } from '../../security/profiles/chat-like-anthroclaw.js';
 import type { Agent } from '../../agent/agent.js';
 
 function makeAgentStub(opts: {
@@ -19,7 +19,7 @@ function makeAgentStub(opts: {
   return {
     id: 'test-agent',
     workspacePath: opts.workspaceDir,
-    safetyProfile: chatLikeOpenclawProfile,
+    safetyProfile: chatLikeAnthroclawProfile,
     config: {
       model: 'claude-sonnet-4-6',
       personality: opts.personality,
@@ -48,10 +48,10 @@ describe('buildSdkOptions on chat profile', () => {
   });
 
   it('systemPrompt includes baseline + CLAUDE.md when no personality override', () => {
-    const agent = makeAgentStub({ workspaceDir: tmpRoot, claudeMd: '# Klavdia\nYou love jokes.' });
+    const agent = makeAgentStub({ workspaceDir: tmpRoot, claudeMd: '# Example Assistant\nYou love jokes.' });
     const options = buildSdkOptions({ agent });
     expect(options.systemPrompt).toContain(CHAT_PERSONALITY_BASELINE);
-    expect(options.systemPrompt).toContain('# Klavdia');
+    expect(options.systemPrompt).toContain('# Example Assistant');
     expect(options.systemPrompt).toContain('You love jokes.');
     expect(options.systemPrompt).toContain('─────────');
   });
@@ -60,7 +60,7 @@ describe('buildSdkOptions on chat profile', () => {
     const agent = makeAgentStub({
       workspaceDir: tmpRoot,
       personality: 'You are super formal and brief.',
-      claudeMd: '# Klavdia',
+      claudeMd: '# Example Assistant',
     });
     const options = buildSdkOptions({ agent });
     expect(options.systemPrompt).toContain('You are super formal and brief.');
@@ -115,11 +115,11 @@ describe('buildSdkOptions on chat profile', () => {
   });
 
   // Plan task #32 — backward-compat byte-equality with v0.8.0.
-  // For chat_like_openclaw + plain-text CLAUDE.md (no @-imports),
+  // For chat_like_anthroclaw + plain-text CLAUDE.md (no @-imports),
   // the new composeSystemPrompt path must produce exactly the same string
   // the old inlined resolveChatSystemPrompt did. Any drift here would mean
   // existing chat agents see a different system prompt.
-  it('chat_like_openclaw + plain CLAUDE.md (no @-imports) is byte-identical to v0.8.0 output', () => {
+  it('chat_like_anthroclaw + plain CLAUDE.md (no @-imports) is byte-identical to v0.8.0 output', () => {
     const claudeMd = '# Test\n\nplain content';
     const agent = makeAgentStub({ workspaceDir: tmpRoot, claudeMd });
     const options = buildSdkOptions({ agent });

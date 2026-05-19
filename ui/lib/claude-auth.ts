@@ -403,10 +403,10 @@ export class ClaudeAuthManager {
       ok,
       checkedAt,
       message: ok
-        ? 'Claude runtime accepted a real query.'
+        ? 'Legacy Claude fallback accepted a real query.'
         : result.timedOut
-          ? 'Claude verification timed out.'
-          : safeError(output || `Claude verification exited with ${result.code ?? 'unknown'}.`),
+          ? 'Legacy Claude fallback verification timed out.'
+          : safeError(output || `Legacy Claude fallback verification exited with ${result.code ?? 'unknown'}.`),
       stdoutPreview: trimOutput(output).slice(0, 600),
     };
   }

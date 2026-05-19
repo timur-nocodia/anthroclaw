@@ -12,9 +12,9 @@ describe('resolveDisplayConfig — toolProgress defaults by safety profile', () 
     expect(resolveDisplayConfig('whatsapp', 'trusted').toolProgress).toBe('new');
   });
 
-  it('returns "new" for private and chat_like_openclaw profiles', () => {
+  it('returns "new" for private and chat_like_anthroclaw profiles', () => {
     expect(resolveDisplayConfig('telegram', 'private').toolProgress).toBe('new');
-    expect(resolveDisplayConfig('telegram', 'chat_like_openclaw').toolProgress).toBe('new');
+    expect(resolveDisplayConfig('telegram', 'chat_like_anthroclaw').toolProgress).toBe('new');
   });
 });
 

@@ -130,7 +130,7 @@ describe('runDiagnostics', () => {
       '      routes:',
       '        - channel: telegram',
       '          account_id: main',
-      '          peer_id: "48705953"',
+      '          peer_id: "123456789"',
       '      notify_admin_for:',
       '        - learning_skill',
     ].join('\n'));
@@ -144,9 +144,9 @@ describe('runDiagnostics', () => {
     expect(check.fix).toContain('learning.approvals.admin.senders');
   });
 
-  // ─── Native SDK auth ───────────────────────────────────────────
+  // ─── Legacy fallback auth ──────────────────────────────────────
 
-  it('reports native SDK auth status based on env var', async () => {
+  it('reports legacy fallback auth status based on env var', async () => {
     mkdirSync(dataDir, { recursive: true });
     mkdirSync(join(agentsDir, 'agent'), { recursive: true });
 
@@ -155,17 +155,17 @@ describe('runDiagnostics', () => {
     // Test with token set
     process.env.CLAUDE_CODE_OAUTH_TOKEN = 'test-token';
     let results = await runDiagnostics({ dataDir, agentsDir, globalConfig: true });
-    let check = findCheck(results, 'Native SDK auth');
+    let check = findCheck(results, 'Legacy fallback auth');
     expect(check.status).toBe('ok');
 
     // Test with token unset. This may still be ok if ~/.claude exists locally,
-    // so assert only the check shape and failure guidance when it errors.
+    // so assert only the check shape and failure guidance when it warns.
     delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
     results = await runDiagnostics({ dataDir, agentsDir, globalConfig: true });
-    check = findCheck(results, 'Native SDK auth');
-    expect(['ok', 'error']).toContain(check.status);
-    if (check.status === 'error') {
-      expect(check.fix).toBe('Run claude login or set CLAUDE_CODE_OAUTH_TOKEN');
+    check = findCheck(results, 'Legacy fallback auth');
+    expect(['ok', 'warn']).toContain(check.status);
+    if (check.status === 'warn') {
+      expect(check.fix).toContain('Runtime providers');
     }
 
     // Restore
@@ -246,7 +246,7 @@ describe('runDiagnostics', () => {
     expect(names).toContain('Data directory');
     expect(names).toContain('Agents directory');
     expect(names).toContain('Config file');
-    expect(names).toContain('Native SDK auth');
+    expect(names).toContain('Legacy fallback auth');
     expect(names).toContain('Learning admin approvals');
     expect(names).toContain('Memory store');
     expect(names).toContain('Rate limits');

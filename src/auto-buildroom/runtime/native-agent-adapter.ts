@@ -50,7 +50,7 @@ export class NativeAgentRuntimeAdapter {
         preset: 'claude_code',
         excludeDynamicSections: true,
         append: [
-          'You are running as the Auto-Buildroom Builder through the native Agent SDK runtime.',
+          'You are running as the Auto-Buildroom Builder through the configured runtime adapter.',
           'Act only inside the approved Buildroom scope.',
           `Approved scope: ${input.scopeSummary}`,
           `Idempotency key: ${input.idempotencyKey}`,

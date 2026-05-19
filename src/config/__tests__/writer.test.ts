@@ -7,8 +7,8 @@ import { createConfigAuditLog, type ConfigAuditLog } from '../audit.js';
 import { logger } from '../../logger.js';
 
 const SEED_YAML = [
-  '# Amina lead bot',
-  'safety_profile: chat_like_openclaw',
+  '# customer assistant lead bot',
+  'safety_profile: chat_like_anthroclaw',
   'routes:',
   '  - { channel: whatsapp }',
   '',
@@ -27,42 +27,42 @@ describe('AgentConfigWriter — patchSection', () => {
   let agentsDir: string;
   beforeEach(() => {
     agentsDir = mkdtempSync(join(tmpdir(), 'acw-'));
-    mkdirSync(join(agentsDir, 'amina'), { recursive: true });
-    writeFileSync(join(agentsDir, 'amina', 'agent.yml'), SEED_YAML);
+    mkdirSync(join(agentsDir, 'agent_alpha'), { recursive: true });
+    writeFileSync(join(agentsDir, 'agent_alpha', 'agent.yml'), SEED_YAML);
   });
   afterEach(() => rmSync(agentsDir, { recursive: true, force: true }));
 
   it('adds a new section with comment-preserving write', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const result = await writer.patchSection('amina', 'human_takeover', () => ({
+    const result = await writer.patchSection('agent_alpha', 'human_takeover', () => ({
       enabled: true,
       pause_ttl_minutes: 30,
     }));
     expect(result.prevValue).toBeUndefined();
     expect(result.newValue).toMatchObject({ enabled: true, pause_ttl_minutes: 30 });
-    const after = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
-    expect(after).toContain('# Amina lead bot');
-    expect(after).toContain('safety_profile: chat_like_openclaw');
+    const after = readFileSync(join(agentsDir, 'agent_alpha', 'agent.yml'), 'utf-8');
+    expect(after).toContain('# customer assistant lead bot');
+    expect(after).toContain('safety_profile: chat_like_anthroclaw');
     expect(after).toContain('human_takeover:');
     expect(after).toContain('enabled: true');
   });
 
   it('returns null patch removes the section', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    await writer.patchSection('amina', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 30 }));
-    const result = await writer.patchSection('amina', 'human_takeover', () => null);
+    await writer.patchSection('agent_alpha', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 30 }));
+    const result = await writer.patchSection('agent_alpha', 'human_takeover', () => null);
     expect(result.newValue).toBeNull();
-    const after = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
+    const after = readFileSync(join(agentsDir, 'agent_alpha', 'agent.yml'), 'utf-8');
     expect(after).not.toContain('human_takeover');
   });
 
   it('serializes concurrent writes per-agent', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const results = await Promise.all([
-      writer.patchSection('amina', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 30 })),
-      writer.patchSection('amina', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 60 })),
+      writer.patchSection('agent_alpha', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 30 })),
+      writer.patchSection('agent_alpha', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 60 })),
     ]);
-    const final = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
+    const final = readFileSync(join(agentsDir, 'agent_alpha', 'agent.yml'), 'utf-8');
     expect(final).toContain('pause_ttl_minutes: 60');
     expect(results).toHaveLength(2);
   });
@@ -76,15 +76,15 @@ describe('AgentConfigWriter — patchSection', () => {
 
   it('readSection returns current value (or undefined when missing)', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    expect(writer.readSection('amina', 'human_takeover')).toBeUndefined();
-    await writer.patchSection('amina', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 30 }));
-    expect(writer.readSection('amina', 'human_takeover')).toMatchObject({ enabled: true, pause_ttl_minutes: 30 });
+    expect(writer.readSection('agent_alpha', 'human_takeover')).toBeUndefined();
+    await writer.patchSection('agent_alpha', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 30 }));
+    expect(writer.readSection('agent_alpha', 'human_takeover')).toMatchObject({ enabled: true, pause_ttl_minutes: 30 });
   });
 
   it('readFullConfig returns full parsed YAML', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const cfg = writer.readFullConfig('amina') as Record<string, unknown>;
-    expect(cfg.safety_profile).toBe('chat_like_openclaw');
+    const cfg = writer.readFullConfig('agent_alpha') as Record<string, unknown>;
+    expect(cfg.safety_profile).toBe('chat_like_anthroclaw');
   });
 });
 
@@ -92,32 +92,32 @@ describe('AgentConfigWriter — schema validation + backups', () => {
   let agentsDir: string;
   beforeEach(() => {
     agentsDir = mkdtempSync(join(tmpdir(), 'acw-val-'));
-    mkdirSync(join(agentsDir, 'amina'), { recursive: true });
-    writeFileSync(join(agentsDir, 'amina', 'agent.yml'), SEED_YAML);
+    mkdirSync(join(agentsDir, 'agent_alpha'), { recursive: true });
+    writeFileSync(join(agentsDir, 'agent_alpha', 'agent.yml'), SEED_YAML);
   });
   afterEach(() => rmSync(agentsDir, { recursive: true, force: true }));
 
   it('rejects patch that produces invalid YAML schema and leaves file unchanged', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const before = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
+    const before = readFileSync(join(agentsDir, 'agent_alpha', 'agent.yml'), 'utf-8');
     await expect(
-      writer.patchSection('amina', 'human_takeover', () => ({
+      writer.patchSection('agent_alpha', 'human_takeover', () => ({
         enabled: true,
         pause_ttl_minutes: -1,
       })),
     ).rejects.toThrow(/pause_ttl_minutes/);
-    const after = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
+    const after = readFileSync(join(agentsDir, 'agent_alpha', 'agent.yml'), 'utf-8');
     expect(after).toBe(before);
     expect(after).not.toContain('-1');
   });
 
   it('creates a timestamped backup before each write', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const result = await writer.patchSection('amina', 'human_takeover', () => ({
+    const result = await writer.patchSection('agent_alpha', 'human_takeover', () => ({
       enabled: true,
       pause_ttl_minutes: 30,
     }));
-    const files = readdirSync(join(agentsDir, 'amina'));
+    const files = readdirSync(join(agentsDir, 'agent_alpha'));
     expect(files.some((f) => f.startsWith('agent.yml.bak-'))).toBe(true);
     expect(result.backupPath).toContain('agent.yml.bak-');
   });
@@ -125,12 +125,12 @@ describe('AgentConfigWriter — schema validation + backups', () => {
   it('prunes backups beyond backupKeep', async () => {
     const writer = createAgentConfigWriter({ agentsDir, backupKeep: 3 });
     for (let i = 0; i < 5; i++) {
-      await writer.patchSection('amina', 'human_takeover', () => ({
+      await writer.patchSection('agent_alpha', 'human_takeover', () => ({
         enabled: i % 2 === 0,
         pause_ttl_minutes: 30 + i,
       }));
     }
-    const backups = readdirSync(join(agentsDir, 'amina')).filter((f) =>
+    const backups = readdirSync(join(agentsDir, 'agent_alpha')).filter((f) =>
       f.startsWith('agent.yml.bak-'),
     );
     expect(backups).toHaveLength(3);
@@ -143,8 +143,8 @@ describe('AgentConfigWriter — audit integration', () => {
   beforeEach(() => {
     agentsDir = mkdtempSync(join(tmpdir(), 'acw-aud-'));
     auditDir = mkdtempSync(join(tmpdir(), 'acw-aud-log-'));
-    mkdirSync(join(agentsDir, 'amina'), { recursive: true });
-    writeFileSync(join(agentsDir, 'amina', 'agent.yml'), SEED_YAML);
+    mkdirSync(join(agentsDir, 'agent_alpha'), { recursive: true });
+    writeFileSync(join(agentsDir, 'agent_alpha', 'agent.yml'), SEED_YAML);
   });
   afterEach(() => {
     rmSync(agentsDir, { recursive: true, force: true });
@@ -155,17 +155,17 @@ describe('AgentConfigWriter — audit integration', () => {
     const auditLog = createConfigAuditLog({ auditDir });
     const writer = createAgentConfigWriter({ agentsDir, auditLog });
     await writer.patchSection(
-      'amina',
+      'agent_alpha',
       'human_takeover',
       () => ({ enabled: true, pause_ttl_minutes: 30 }),
-      { caller: 'klavdia', callerSession: 'tg:control:dm:1', source: 'chat', action: 'set_enabled' },
+      { caller: 'operator_agent', callerSession: 'tg:control:dm:1', source: 'chat', action: 'set_enabled' },
     );
-    const entries = await auditLog.readRecent('amina');
+    const entries = await auditLog.readRecent('agent_alpha');
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
-      callerAgent: 'klavdia',
+      callerAgent: 'operator_agent',
       callerSession: 'tg:control:dm:1',
-      targetAgent: 'amina',
+      targetAgent: 'agent_alpha',
       section: 'human_takeover',
       action: 'set_enabled',
       source: 'chat',
@@ -178,13 +178,13 @@ describe('AgentConfigWriter — audit integration', () => {
     const writer = createAgentConfigWriter({ agentsDir, auditLog });
     await expect(
       writer.patchSection(
-        'amina',
+        'agent_alpha',
         'human_takeover',
         () => ({ enabled: true, pause_ttl_minutes: -5 }),
-        { caller: 'klavdia', source: 'chat' },
+        { caller: 'operator_agent', source: 'chat' },
       ),
     ).rejects.toThrow();
-    const entries = await auditLog.readRecent('amina');
+    const entries = await auditLog.readRecent('agent_alpha');
     expect(entries).toHaveLength(0);
   });
 
@@ -200,12 +200,12 @@ describe('AgentConfigWriter — audit integration', () => {
     const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as unknown as void);
     try {
       const writer = createAgentConfigWriter({ agentsDir, auditLog: failingAudit });
-      const result = await writer.patchSection('amina', 'human_takeover', () => ({
+      const result = await writer.patchSection('agent_alpha', 'human_takeover', () => ({
         enabled: true,
         pause_ttl_minutes: 30,
       }));
       expect(result.newValue).toMatchObject({ enabled: true, pause_ttl_minutes: 30 });
-      const after = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
+      const after = readFileSync(join(agentsDir, 'agent_alpha', 'agent.yml'), 'utf-8');
       expect(after).toContain('human_takeover:');
       expect(after).toContain('pause_ttl_minutes: 30');
       // The warn-and-swallow path emitted a structured warning.
@@ -216,7 +216,7 @@ describe('AgentConfigWriter — audit integration', () => {
           typeof msg === 'string' &&
           msg.includes('audit log append failed') &&
           ctx !== undefined &&
-          (ctx as { agentId?: unknown }).agentId === 'amina'
+          (ctx as { agentId?: unknown }).agentId === 'agent_alpha'
         );
       });
       expect(warnedAuditFailure).toBe(true);
@@ -230,15 +230,15 @@ describe('AgentConfigWriter — clock injection', () => {
   let agentsDir: string;
   beforeEach(() => {
     agentsDir = mkdtempSync(join(tmpdir(), 'acw-clk-'));
-    mkdirSync(join(agentsDir, 'amina'), { recursive: true });
-    writeFileSync(join(agentsDir, 'amina', 'agent.yml'), SEED_YAML);
+    mkdirSync(join(agentsDir, 'agent_alpha'), { recursive: true });
+    writeFileSync(join(agentsDir, 'agent_alpha', 'agent.yml'), SEED_YAML);
   });
   afterEach(() => rmSync(agentsDir, { recursive: true, force: true }));
 
   it('uses injected clock for backup filename timestamp and writtenAt', async () => {
     const fixed = Date.parse('2026-05-01T12:34:56.789Z');
     const writer = createAgentConfigWriter({ agentsDir, clock: () => fixed });
-    const result = await writer.patchSection('amina', 'human_takeover', () => ({
+    const result = await writer.patchSection('agent_alpha', 'human_takeover', () => ({
       enabled: true,
       pause_ttl_minutes: 30,
     }));

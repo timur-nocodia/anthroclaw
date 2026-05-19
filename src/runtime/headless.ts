@@ -67,6 +67,7 @@ export interface HeadlessRunInput {
   toolDenyMessage?: string;
   toolPolicy?: HeadlessToolPolicy;
   customTools?: HeadlessCustomTool[];
+  resourceMode?: 'default' | 'minimal';
 }
 
 export interface HeadlessRunResult {

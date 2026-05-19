@@ -20,8 +20,6 @@ import {
   Terminal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ClaudeAuthPanel } from "@/components/settings/ClaudeAuthPanel";
-import { RuntimeAuthPanel } from "@/components/settings/RuntimeAuthPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -342,7 +340,6 @@ function GeneralSection({ serverId }: { serverId: string }) {
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
-  const [legacyRuntimeOpen, setLegacyRuntimeOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [environment, setEnvironment] = useState<Environment>("development");
   const [envSaving, setEnvSaving] = useState(false);
@@ -486,22 +483,19 @@ function GeneralSection({ serverId }: { serverId: string }) {
 
       <Divider />
 
-      <RuntimeAuthPanel serverId={serverId} />
-
-      <details
-        className="rounded-md border p-3"
-        style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}
-        onToggle={(event) => setLegacyRuntimeOpen(event.currentTarget.open)}
-      >
-        <summary className="cursor-pointer text-xs font-semibold" style={{ color: "var(--color-foreground)" }}>
-          Legacy Claude Agent SDK compatibility
-        </summary>
-        {legacyRuntimeOpen && (
-          <div className="mt-3">
-            <ClaudeAuthPanel serverId={serverId} />
+      <div className="rounded-md border p-3" style={{ borderColor: "var(--oc-border)", background: "var(--oc-bg1)" }}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <SectionHead
+              title="Runtime setup moved"
+              desc="Runtime mode, Pi provider keys, model selection, test turns, and legacy rollback are configured from the Runtime page."
+            />
           </div>
-        )}
-      </details>
+          <Button variant="outline" size="sm" onClick={() => { window.location.href = `/fleet/${serverId}/runtime`; }}>
+            Open Runtime
+          </Button>
+        </div>
+      </div>
 
       <Divider />
 
@@ -1562,7 +1556,7 @@ function AdvancedSection({ serverId }: { serverId: string }) {
       <Divider />
       <SectionHead
         title="Legacy active input diagnostics"
-        desc="Compatibility-only Claude Agent SDK native steer state for older provider paths."
+        desc="Compatibility-only active-input state for older fallback provider paths."
       />
       <div
         className="flex flex-col gap-2 rounded-md border px-3.5 py-3"

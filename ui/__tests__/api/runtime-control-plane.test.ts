@@ -176,8 +176,8 @@ describe('runtime control plane API', () => {
     expect(res.status).toBe(200);
     expect(body.status).toBe('ok');
     expect(body.gates.some((gate: { id: string }) => gate.id === 'controlled-live-turn')).toBe(true);
-    expect(JSON.stringify(body)).not.toContain('runtime:pi-timur-agent');
-    expect(JSON.stringify(body)).not.toContain('timur_agent');
+    expect(JSON.stringify(body)).not.toContain('runtime:pi-lab-agent');
+    expect(JSON.stringify(body)).not.toContain('legacy_lab_agent');
 
     const controlledLiveTurn = body.gates.find((gate: { id: string }) => gate.id === 'controlled-live-turn');
     expect(controlledLiveTurn.execution.requiredFlags).toEqual(['agent-id', 'peer-id', 'thread-id']);
@@ -316,7 +316,7 @@ describe('runtime control plane API', () => {
       '  - channel: telegram',
       '    scope: dm',
       '    peers: ["42"]',
-      'safety_profile: chat_like_openclaw',
+      'safety_profile: chat_like_anthroclaw',
       'mcp_onboarding:',
       '  enabled: false',
     ].join('\n'));
@@ -324,7 +324,7 @@ describe('runtime control plane API', () => {
       'routes:',
       '  - channel: telegram',
       '    scope: group',
-      'safety_profile: chat_like_openclaw',
+      'safety_profile: chat_like_anthroclaw',
     ].join('\n'));
     writeExpansionPacket(packetsDir, 'closed_agent', 'Status: closed\n\n- [x] closed evidence\n');
     const readyPacket = 'Status: ready_for_execution\n\n- [x] automated evidence\n- [ ] manual evidence\n';

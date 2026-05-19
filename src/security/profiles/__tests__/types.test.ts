@@ -27,8 +27,8 @@ describe('SafetyProfile interface', () => {
 import type { ProfileName } from '../../types.js';
 
 describe('ProfileName extended', () => {
-  it('accepts "chat_like_openclaw" as a valid value', () => {
-    const p: ProfileName = 'chat_like_openclaw';
-    expect(p).toBe('chat_like_openclaw');
+  it('accepts "chat_like_anthroclaw" as a valid value', () => {
+    const p: ProfileName = 'chat_like_anthroclaw';
+    expect(p).toBe('chat_like_anthroclaw');
   });
 });

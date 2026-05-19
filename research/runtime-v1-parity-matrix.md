@@ -1,7 +1,8 @@
-# Runtime v1 OSS parity matrix
+# Runtime v1 OSS coverage matrix
 
-This matrix tracks generic Agent SDK replacement parity for AnthroClaw Runtime
-v1. It intentionally does not use private agents as acceptance criteria.
+This matrix tracks generic Pi-native Runtime v1 coverage for AnthroClaw. It
+intentionally does not use private agents or 1:1 Claude Agent SDK compatibility
+as acceptance criteria.
 
 ## Coverage Levels
 
@@ -11,17 +12,17 @@ v1. It intentionally does not use private agents as acceptance criteria.
 - `L3`: local canary or CLI smoke without live external side effects.
 - `L4`: optional live rollout evidence, never required for OSS acceptance.
 
-## Generic Parity Matrix
+## Generic Coverage Matrix
 
 | Contract Surface | Area | Current Level | Evidence | Remaining OSS Work |
 | --- | --- | ---: | --- | --- |
 | Runtime selection | runtime | L3 | `HeadlessRuntime`, `headless-registry`, Runtime v1 contract tests | Keep provider additions behind the same registry. |
 | Pi headless runtime | runtime | L3 | `pi-headless` tests and generic canaries | None for OSS harness. |
 | OpenCode headless runtime | runtime | L2 | `opencode-headless` tests | Optional deeper runtime acceptance. |
-| Legacy Claude compatibility | runtime | L3 | `@anthroclaw/legacy-claude-agent-sdk`, adapter tests, and import-boundary tests | Keep it compatibility-only. |
+| Legacy Claude fallback | runtime | L3 | `@anthroclaw/legacy-claude-agent-sdk`, adapter tests, and import-boundary tests | Keep it legacy-only; do not use it as the implementation target. |
 | Session continuation | sessions | L3 | runtime/session tests and Pi session mapping | Session label/export polish is non-blocking. |
 | Interrupt/control registry | runtime_control | L2 | active-run/interrupt tests | None for generic harness. |
-| Checkpoint/rewind fallback | runtime_control | L2 | workspace snapshot and rewind tests | Provider-native parity remains optional. |
+| Checkpoint/rewind fallback | runtime_control | L2 | workspace snapshot and rewind tests | Prefer AnthroClaw-owned snapshot semantics over provider-native parity. |
 | Tool policy | tools | L3 | security profile and tool gate tests | Keep new tools declarative and policy-backed. |
 | Side-effect gates | side_effects | L3 | registry, plan, validate, focused gate tests | Remove named-agent aliases from public surface. |
 | Messaging/media gates | side_effects | L3 | generic live-send-message/media gate tests | Live rollout is private evidence, not OSS blocker. |
@@ -41,8 +42,9 @@ v1. It intentionally does not use private agents as acceptance criteria.
 ## OSS Decision
 
 Runtime v1 + Pi is strong enough to be the default OSS migration path. The
-remaining work is cleanup and packaging:
+remaining work is maintenance discipline, not a blocking migration gap:
 
-- remove named-agent migration commands and aliases from public scripts;
-- keep migration docs focused on generic harness parity;
+- keep migration docs focused on Pi-native harness coverage;
 - keep private production rollout evidence outside OSS acceptance criteria.
+- preserve the public-surface guard so private rollout identifiers and
+  legacy-provider primary-runtime wording cannot re-enter OSS docs/examples.

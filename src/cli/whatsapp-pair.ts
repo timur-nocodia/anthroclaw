@@ -63,7 +63,7 @@ async function createSocket(): Promise<WASocket> {
       keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
     },
     version,
-    browser: ['openclaw-replica', 'cli', '0.1.0'],
+    browser: ['anthroclaw', 'cli', '0.1.0'],
     printQRInTerminal: false,
     logger: silentLogger,
     syncFullHistory: false,

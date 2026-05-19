@@ -18,7 +18,7 @@ Post-rollout expansion audit is available as `pnpm runtime:pi-expansion-audit --
 - PR #110 merged the default flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`.
 - Post-merge local verification on `d0f2438` passed: config parsing resolved `provider=pi`, targeted runtime/config tests passed, TypeScript passed, `pi-auth` passed, and `pi-all` returned workspace text `SMOKE_OK` plus Gateway text `SMOKE_GATEWAY_OK`.
 - Post-merge durable GitHub Actions **Pi Runtime v1 decision** run `25971022679` passed on `main` commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`.
-- The live runtime checkout `/Users/tyess/dev/openclaw-agents-sdk-clone` was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e` on 2026-05-17 local time.
+- The live runtime checkout `/path/to/anthroclaw` was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e` on 2026-05-17 local time.
 - Post-pull live verification passed: `pnpm install --frozen-lockfile`, config parsing resolved `provider=pi`, TypeScript passed, `pi-auth` passed, and `pi-all` returned workspace text `SMOKE_OK` plus Gateway text `SMOKE_GATEWAY_OK`.
 - A no-channel live Gateway Web UI turn against `example` replied exactly `PI_LIVE_WEB_OK` via Pi with no tool calls; the first monitoring slice showed zero failed runs in the last hour and only `run.sdk_started`/`run.completed` diagnostic event types.
 - Extended live monitoring snapshot at 2026-05-17 01:04 Asia/Almaty passed with `alerts=[]`: seven runs in the last 60 minutes, all succeeded; failed/interrupted/stale running runs were `0`; auth/model alerts were `0`; diagnostic types were only `run.sdk_started` and `run.completed`. The single failed `read` tool warning is the expected historical denied-path canary event, not a stop condition.
@@ -51,7 +51,7 @@ Then restart Gateway and verify:
 
 ```bash
 pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6
-pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --json
+pnpm runtime:pi-canary-agent -- --agents-dir /path/to/anthroclaw/agents --agent example --json
 ```
 
 Expected rollback state:
@@ -91,7 +91,7 @@ Use `docs/pi-ring-expansion-policy.md` for the next live channel turn, stop cond
 
 Live pull/deploy checkpoint completed on 2026-05-17:
 
-- checkout: `/Users/tyess/dev/openclaw-agents-sdk-clone`;
+- checkout: `/path/to/anthroclaw`;
 - commit: `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e`;
 - tracked global provider: `runtime.headless.provider=pi`;
 - `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6`: passed;
@@ -132,7 +132,7 @@ Ring 2 preflight at 2026-05-17 local time:
 Ring 2 low-risk usage window at 2026-05-17 local time:
 
 - Web UI/no-channel turn: `example` returned exactly `PI_RING2_WEB_OK`, session id present, total tokens `16`, tool calls `0`;
-- Telegram DM turn: `example` returned exactly `PI_RING2_TELEGRAM_OK` to allowlisted operator peer `48705953`, one sent message, message id present;
+- Telegram DM turn: `example` returned exactly `PI_RING2_TELEGRAM_OK` to allowlisted operator peer `<telegram-peer-id>`, one sent message, message id present;
 - learning remained propose-only and produced action type `none`;
 - post-window monitor passed with `6` total runs, `6` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, auth/model alerts `0`, alerts `[]`, warnings `[]`;
 - Ring 2 is closed. Ring 3 must target one expanded product surface at a time.
@@ -186,7 +186,7 @@ Ring 3.5 scheduled Buildroom surface at 2026-05-17 local time:
 
 Ring 4.1 live cron delivery at 2026-05-17 local time:
 
-- scope: one-shot Gateway cron delivery for `example` to allowlisted operator Telegram DM peer `48705953`;
+- scope: one-shot Gateway cron delivery for `example` to allowlisted operator Telegram DM peer `<telegram-peer-id>`;
 - delivery path: Gateway cron handler with real `TelegramChannel.sendText`, without Telegram long-polling;
 - prompt: `Reply exactly PI_RING4_CRON_OK. Do not use tools.`;
 - result: exactly `PI_RING4_CRON_OK`;
@@ -197,7 +197,7 @@ Ring 4.1 live cron delivery at 2026-05-17 local time:
 
 Ring 4.2 live proactive notification at 2026-05-17 local time:
 
-- scope: one-shot `escalation_needed` notification for `example` to allowlisted operator Telegram DM peer `48705953`;
+- scope: one-shot `escalation_needed` notification for `example` to allowlisted operator Telegram DM peer `<telegram-peer-id>`;
 - delivery path: `NotificationsEmitter.emit` -> Telegram formatter -> real `TelegramChannel.sendText`, without Telegram long-polling;
 - subscription: temporary in-process route, not persisted to agent config;
 - marker: `PI_RING4_PROACTIVE_NOTIFICATION_OK`;
@@ -210,7 +210,7 @@ Ring 4.2 live proactive notification at 2026-05-17 local time:
 
 Ring 4.3 live recurring cron at 2026-05-17 local time:
 
-- scope: short-lived dynamic recurring cron for `example` to allowlisted operator Telegram DM peer `48705953`;
+- scope: short-lived dynamic recurring cron for `example` to allowlisted operator Telegram DM peer `<telegram-peer-id>`;
 - delivery path: `DynamicCronStore.create` -> `Gateway.reloadDynamicCron` -> `CronScheduler` tick -> Pi query -> real `TelegramChannel.sendText`, without Telegram long-polling;
 - schedule: `*/15 * * * * *`, `runOnce=false`, short `expiresAt` configured;
 - prompt: `Reply exactly PI_RING4_RECURRING_CRON_OK. Do not use tools.`;
@@ -222,9 +222,9 @@ Ring 4.3 live recurring cron at 2026-05-17 local time:
 
 Ring 4.4 controlled `send_message` fanout at 2026-05-17 local time:
 
-- scope: Web UI prompt for `example` that must call `send_message` exactly once to the allowlisted operator Telegram DM peer `48705953`;
+- scope: Web UI prompt for `example` that must call `send_message` exactly once to the allowlisted operator Telegram DM peer `<telegram-peer-id>`;
 - delivery path: Web UI Pi query -> `send_message` tool -> real `TelegramChannel.sendText`, without Telegram long-polling;
-- tool target: Telegram account `default`, peer `48705953`;
+- tool target: Telegram account `default`, peer `<telegram-peer-id>`;
 - marker: `PI_RING4_SEND_MESSAGE_TOOL_OK`;
 - result: one `send_message` tool call, one Telegram delivery, marker present, message id present;
 - final Web UI response: exactly `PI_RING4_SEND_MESSAGE_DONE`;
@@ -234,17 +234,17 @@ Ring 4.4 controlled `send_message` fanout at 2026-05-17 local time:
 
 Ring 4.5 business-critical leads escalation workflow at 2026-05-17 local time:
 
-- scope: simulated customer Web UI turn for live-only `leads_agent` asking for an Excel export of all leads;
+- scope: simulated customer Web UI turn for live-only `customer_intake_agent` asking for an Excel export of all leads;
 - workflow: customer-facing refusal plus human escalation for a request the public leads agent cannot fulfill directly;
-- defect found before closure: `escalate` had public-safe tool metadata but was missing from the MCP metadata registry, so prefixed `mcp__leads_agent-tools__escalate` was denied under `safety_profile=public`;
+- defect found before closure: `escalate` had public-safe tool metadata but was missing from the MCP metadata registry, so prefixed `mcp__customer_intake_agent-tools__escalate` was denied under `safety_profile=public`;
 - fix: register `escalate` in `MCP_META` and add profile/meta regression tests;
-- post-fix delivery path: Web UI Pi query -> `escalate` tool -> `data/escalations/leads_agent.jsonl`;
+- post-fix delivery path: Web UI Pi query -> `escalate` tool -> `data/escalations/customer_intake_agent.jsonl`;
 - result: exactly one `escalate` tool call, one escalation row written, escalation marker present, no forbidden internal architecture terms in final response, final marker present;
 - rollback: canary restored the escalation log to its previous state after verification;
 - post-fix short monitor passed with `1` total run, `1` succeeded, `0` failed/interrupted/stale, diagnostic types `run.completed` and `run.sdk_started`, tool events `escalate` started/completed once, auth/model alerts `0`, alerts `[]`, warnings `[]`;
 - Ring 4.5 is closed. Ring 4 high-risk rollout is complete.
 - Post-Ring-4.5 durable **Pi Runtime v1 decision** run `25981278010` passed on `main` commit `1825b973110ba6f91bcc5fc6e3b9293e409c2f1d` with the expanded 11-scenario map, including `pi.public-escalation`.
-- Use `pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --json` before broadening to any further production agent/channel surface.
+- Use `pnpm runtime:pi-expansion-audit -- --agents-dir /path/to/anthroclaw/agents --json` before broadening to any further production agent/channel surface.
 - Use repeated `--agents-dir` values for split tracked/live-only config roots, and use `--expect-agent <id>` for named live-only candidates so a missing `agent.yml` becomes an explicit `coverageGap=true` result instead of a false audit pass.
 - Treat duplicate agent ids across audited roots as a coverage error until the intended production config source is unambiguous.
 
@@ -267,5 +267,5 @@ The command reads `data/metrics.sqlite` by default and reports:
 For live checkout verification from another worktree, point it at the live data directory:
 
 ```bash
-pnpm runtime:pi-monitor -- --data-dir /Users/tyess/dev/openclaw-agents-sdk-clone/data --since-minutes 60 --json --fail-on-alert
+pnpm runtime:pi-monitor -- --data-dir /path/to/anthroclaw/data --since-minutes 60 --json --fail-on-alert
 ```

@@ -81,6 +81,6 @@ describe('<RuntimeAuthPanel />', () => {
     render(<RuntimeAuthPanel serverId="local" />);
 
     expect(await screen.findByText('Legacy primary')).toBeInTheDocument();
-    expect(screen.getByText(/Default provider is still legacy Claude Agent SDK/i)).toBeInTheDocument();
+    expect(screen.getByText(/Default provider is still the legacy fallback/i)).toBeInTheDocument();
   });
 });

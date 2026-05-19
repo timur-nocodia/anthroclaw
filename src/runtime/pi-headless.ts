@@ -25,9 +25,11 @@ import {
   type WorkspaceSnapshot,
   type WorkspaceSnapshotOptions,
 } from './workspace-snapshot.js';
+import { toJSONSchema, z } from 'zod';
 
 export const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 export const DEFAULT_PI_MODEL_ID = 'anthropic/claude-sonnet-4-6';
+export const DEFAULT_PI_OPENROUTER_MAX_OUTPUT_TOKENS = 256;
 
 export interface PiAgentSessionLike {
   id?: string;
@@ -127,6 +129,9 @@ export interface PiHeadlessRuntimeOptions {
   createOptions?: Record<string, unknown> | ((input: HeadlessRunInput) => Record<string, unknown> | Promise<Record<string, unknown>>);
   authStoragePath?: string;
   modelsPath?: string;
+  maxOutputTokens?: number;
+  providerMaxOutputTokens?: Record<string, number>;
+  modelMaxOutputTokens?: Record<string, number>;
   modelRegistry?: PiModelRegistryProvider;
   resolveModel?: (modelId: string, sdk: PiCodingAgentSdkModule) => unknown | Promise<unknown>;
   toolPolicy?: PiHeadlessToolPolicy | ((input: HeadlessRunInput) => PiHeadlessToolPolicy | Promise<PiHeadlessToolPolicy>);
@@ -282,7 +287,12 @@ export class PiHeadlessRuntime implements HeadlessRuntime {
       const registry = await this.resolveModelRegistry(input, sdk, configured);
       if (registry) {
         options.modelRegistry = registry;
-        options.model = resolvePiModelFromRegistry(modelId, registry);
+        const ref = parsePiModelRef(modelId);
+        options.model = applyPiModelOutputTokenCap(
+          resolvePiModelFromRegistry(modelId, registry),
+          ref,
+          this.options,
+        );
       }
     }
 
@@ -535,6 +545,48 @@ export function resolvePiModelFromRegistry(modelId: string, registry: PiModelReg
   return model;
 }
 
+export function applyPiModelOutputTokenCap(
+  model: unknown,
+  ref: PiModelRef,
+  options: Pick<PiHeadlessRuntimeOptions, 'maxOutputTokens' | 'providerMaxOutputTokens' | 'modelMaxOutputTokens'> = {},
+): unknown {
+  const cap = resolvePiModelOutputTokenCap(ref.provider, options, ref.modelId);
+  if (!cap || !isRecord(model)) return model;
+  const currentMaxTokens = model.maxTokens;
+  if (typeof currentMaxTokens !== 'number' || !Number.isFinite(currentMaxTokens) || currentMaxTokens <= cap) {
+    return model;
+  }
+  return {
+    ...model,
+    maxTokens: cap,
+  };
+}
+
+function resolvePiModelOutputTokenCap(
+  provider: string,
+  options: Pick<PiHeadlessRuntimeOptions, 'maxOutputTokens' | 'providerMaxOutputTokens' | 'modelMaxOutputTokens'>,
+  modelId?: string,
+): number | undefined {
+  const providerKey = provider.toLowerCase();
+  const fullModelId = modelId ? `${provider}/${modelId}` : undefined;
+  const configured = normalizePositiveInteger(fullModelId ? options.modelMaxOutputTokens?.[fullModelId] : undefined)
+    ?? normalizePositiveInteger(fullModelId ? options.modelMaxOutputTokens?.[fullModelId.toLowerCase()] : undefined)
+    ?? normalizePositiveInteger(modelId ? options.modelMaxOutputTokens?.[modelId] : undefined)
+    ?? normalizePositiveInteger(modelId ? options.modelMaxOutputTokens?.[modelId.toLowerCase()] : undefined)
+    ?? normalizePositiveInteger(options.providerMaxOutputTokens?.[providerKey])
+    ?? normalizePositiveInteger(options.providerMaxOutputTokens?.[provider])
+    ?? normalizePositiveInteger(options.maxOutputTokens);
+  if (configured) return configured;
+  if (providerKey === 'openrouter') return DEFAULT_PI_OPENROUTER_MAX_OUTPUT_TOKENS;
+  return undefined;
+}
+
+function normalizePositiveInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
 export function normalizePiToolNames(tools: string[]): string[] {
   const normalized = tools.map((tool) => {
     return normalizePiToolName(tool);
@@ -638,6 +690,24 @@ function extractPiError(event: unknown): Error | undefined {
   if (event.type === 'error') {
     return new Error(typeof event.message === 'string' ? event.message : 'Pi headless runtime error');
   }
+  if (event.type === 'message_end' && isRecord(event.message)) {
+    const message = event.message;
+    if (message.role === 'assistant' && message.stopReason === 'error') {
+      return new Error(typeof message.errorMessage === 'string' && message.errorMessage
+        ? message.errorMessage
+        : 'Pi assistant runtime error');
+    }
+  }
+  if (event.type === 'agent_end' && Array.isArray(event.messages)) {
+    const lastAssistant = [...event.messages]
+      .reverse()
+      .find((message) => isRecord(message) && message.role === 'assistant');
+    if (isRecord(lastAssistant) && lastAssistant.stopReason === 'error') {
+      return new Error(typeof lastAssistant.errorMessage === 'string' && lastAssistant.errorMessage
+        ? lastAssistant.errorMessage
+        : 'Pi assistant runtime error');
+    }
+  }
   if (event.type === 'message_update' && isRecord(event.assistantMessageEvent)) {
     const assistantEvent = event.assistantMessageEvent;
     if (assistantEvent.type === 'error') {
@@ -734,6 +804,15 @@ async function buildPiRuntimeResourceLoader(params: BuildPiToolPolicyResourceLoa
     cwd: params.cwd,
     agentDir,
     settingsManager: params.configured.settingsManager,
+    ...(params.input.resourceMode === 'minimal'
+      ? {
+          noContextFiles: true,
+          noSkills: true,
+          noPromptTemplates: true,
+          noThemes: true,
+          noExtensions: true,
+        }
+      : {}),
     ...(params.input.systemPrompt
       ? { systemPromptOverride: () => params.input.systemPrompt }
       : {}),
@@ -833,7 +912,7 @@ function buildPiCustomTools(
       name: tool.name,
       label: tool.name,
       description: tool.description,
-      parameters: tool.inputSchema,
+      parameters: normalizePiCustomToolParameters(tool.inputSchema),
       execute: async (toolCallId: unknown, params: unknown) => {
         const args = isRecord(params) ? params : {};
         const denial = await evaluatePiToolCallPolicy(input, policy, {
@@ -852,6 +931,60 @@ function buildPiCustomTools(
       ? sdk.defineTool(definition)
       : definition;
   });
+}
+
+export function normalizePiCustomToolParameters(inputSchema: Record<string, unknown>): Record<string, unknown> {
+  if (!isRecord(inputSchema)) return emptyPiObjectSchema();
+
+  if (inputSchema.type === 'object') {
+    return {
+      ...inputSchema,
+      properties: isRecord(inputSchema.properties) ? inputSchema.properties : {},
+    };
+  }
+
+  if (isRecord(inputSchema.properties)) {
+    return {
+      ...inputSchema,
+      type: 'object',
+    };
+  }
+
+  if (looksLikeZodRawShape(inputSchema)) {
+    try {
+      return stripJsonSchemaDialect(toJSONSchema(z.object(inputSchema as never), { io: 'input' }));
+    } catch {
+      return emptyPiObjectSchema();
+    }
+  }
+
+  return emptyPiObjectSchema();
+}
+
+function looksLikeZodRawShape(value: Record<string, unknown>): boolean {
+  const entries = Object.values(value);
+  return entries.length === 0 || entries.every(isZodSchemaLike);
+}
+
+function isZodSchemaLike(value: unknown): boolean {
+  return isRecord(value)
+    && typeof value.type === 'string'
+    && (isRecord(value.def) || isRecord(value._zod));
+}
+
+function emptyPiObjectSchema(): Record<string, unknown> {
+  return {
+    type: 'object',
+    properties: {},
+  };
+}
+
+function stripJsonSchemaDialect(schema: unknown): Record<string, unknown> {
+  if (!isRecord(schema)) return emptyPiObjectSchema();
+  const { $schema: _schema, ...rest } = schema;
+  return rest.type === 'object'
+    ? { ...rest, properties: isRecord(rest.properties) ? rest.properties : {} }
+    : emptyPiObjectSchema();
 }
 
 function headlessCustomToolResultToPiResult(result: HeadlessCustomToolResult): Record<string, unknown> {

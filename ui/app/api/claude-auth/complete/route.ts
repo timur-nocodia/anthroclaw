@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/route-handler';
 import { restartGateway } from '@/lib/gateway';
 import { getClaudeAuthManager } from '@/lib/claude-auth-instance';
+import { withLegacyClaudeRuntimeMeta } from '@/lib/legacy-runtime-response';
 
 export async function POST(req: NextRequest) {
   return withAuth(async () => {
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest) {
 
     if (!sessionId || !code) {
       return NextResponse.json(
-        { error: 'invalid_body', message: 'sessionId and code are required.' },
+        withLegacyClaudeRuntimeMeta({ error: 'invalid_body', message: 'sessionId and code are required.' }),
         { status: 400 },
       );
     }
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
     try {
       const result = await getClaudeAuthManager().completeLogin(sessionId, code);
       if (!result.ok) {
-        return NextResponse.json({ ...result, restarted: false }, { status: 409 });
+        return NextResponse.json(withLegacyClaudeRuntimeMeta({ ...result, restarted: false }), { status: 409 });
       }
 
       let restarted = false;
@@ -34,11 +35,11 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return NextResponse.json({ ...result, restarted, restartError });
+      return NextResponse.json(withLegacyClaudeRuntimeMeta({ ...result, restarted, restartError }));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'claude_auth_complete_failed';
       const status = message === 'auth_session_not_found' ? 404 : 400;
-      return NextResponse.json({ error: message }, { status });
+      return NextResponse.json(withLegacyClaudeRuntimeMeta({ error: message }), { status });
     }
   });
 }

@@ -20,12 +20,12 @@ describe("BindingCard", () => {
       <BindingCard
         route={sampleRoute}
         context={{
-          telegramAccounts: { content_sm: { username: "clowwy_bot" } },
+          telegramAccounts: { content_sm: { username: "example_bot" } },
         }}
       />,
     );
     expect(
-      screen.getByText("Telegram (clowwy_bot · content_sm)"),
+      screen.getByText("Telegram (example_bot · content_sm)"),
     ).toBeInTheDocument();
     expect(screen.getByText("In group: -1003729315809")).toBeInTheDocument();
     expect(screen.getByText("In topic: 3")).toBeInTheDocument();

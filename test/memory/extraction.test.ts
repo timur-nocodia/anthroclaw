@@ -51,14 +51,14 @@ describe('post-run memory extraction', () => {
   it('parses and normalizes candidate JSON', () => {
     const candidates = parseMemoryCandidates(JSON.stringify({
       candidates: [
-        { kind: 'decision', text: 'The team chose SDK-native memory review.', confidence: 0.9 },
+        { kind: 'decision', text: 'The team chose Runtime v1 memory review.', confidence: 0.9 },
         { kind: 'bad', text: 'x' },
       ],
     }));
 
     expect(candidates).toEqual([{
       kind: 'decision',
-      text: 'The team chose SDK-native memory review.',
+      text: 'The team chose Runtime v1 memory review.',
       confidence: 0.9,
       reason: undefined,
     }]);

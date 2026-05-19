@@ -71,7 +71,7 @@ function validSpec(): RuntimeSideEffectGateSpec {
     target: {
       channel: 'telegram',
       accountId: 'default',
-      peerId: '48705953',
+      peerId: '123456789',
     },
     markerPrefix: 'LIVE_SEND_MESSAGE_OK',
     dryRunSupported: true,
@@ -91,7 +91,7 @@ function validSpec(): RuntimeSideEffectGateSpec {
         target: {
           channel: 'telegram',
           accountId: 'default',
-          peerId: '48705953',
+          peerId: '123456789',
         },
         maxCount: 1,
       },

@@ -1,7 +1,7 @@
 # UI Pi Runtime Control Plane migration checklist
 
 Status: draft implementation scope
-Owner intent: remove Agent SDK-native UX as the primary path and rebuild the UI around Runtime v1 + Pi.
+Owner intent: remove legacy-provider UX as the primary path and rebuild the UI around Runtime v1 + Pi.
 
 ## Goal
 
@@ -15,7 +15,7 @@ The UI must stop presenting AnthroClaw as a Claude Agent SDK control panel. The 
 - Fleet expansion packet progress.
 - Legacy Claude Agent SDK only as a quarantined compatibility/diagnostics surface.
 
-This plan is intentionally broader than a rename. The source of truth must move from Claude-native concepts to AnthroClaw-owned runtime contracts.
+This plan is intentionally broader than a rename. The source of truth must move from provider-specific concepts to AnthroClaw-owned runtime contracts.
 
 ## Non-goals
 
@@ -29,7 +29,7 @@ This plan is intentionally broader than a rename. The source of truth must move 
 ### Claude auth surface
 
 - `ui/components/settings/ClaudeAuthPanel.tsx`
-  - User-facing copy says "Claude subscription auth", "Connect Claude subscription", "Claude runtime".
+  - User-facing copy presents legacy-provider auth as the primary setup path.
   - Calls `/api/fleet/:serverId/claude-auth/*`.
   - Models a Claude OAuth/login lifecycle, not a generic runtime credential lifecycle.
 - `ui/lib/claude-auth.ts`
@@ -84,7 +84,7 @@ This plan is intentionally broader than a rename. The source of truth must move 
 
 - Add a first-class `Runtime` section under fleet server pages.
 - Keep `Settings > General` for gateway-level config.
-- Move Claude-native auth to `Settings > Legacy Runtime` or `Runtime > Legacy`, hidden behind "compatibility".
+- Move provider-specific legacy auth to `Settings > Legacy Runtime` or `Runtime > Legacy`, hidden behind "compatibility".
 
 ### Runtime page tabs
 
@@ -193,7 +193,7 @@ This plan is intentionally broader than a rename. The source of truth must move 
 
 - [x] Create `RuntimeAuthPanel`.
 - [x] Render Pi readiness and config paths.
-- [x] Remove "Claude subscription auth" from primary settings.
+- [x] Remove legacy-provider auth wording from primary settings.
 - [x] Keep `ClaudeAuthPanel` only under `Legacy`.
 - [x] Rename component tests or add new tests:
   - [x] Runtime panel calls `/api/fleet/:serverId/runtime/status`.
@@ -285,7 +285,7 @@ This plan is intentionally broader than a rename. The source of truth must move 
 
 The UI migration is complete when:
 
-- [x] The primary settings/runtime UI has no Claude subscription or Agent SDK-native wording.
+- [x] The primary settings/runtime UI has no legacy-provider wording.
 - [x] Pi readiness is visible without reading CLI output.
 - [x] Runtime gates are visible from registry data in UI.
 - [x] Expansion packet progress is visible from UI.

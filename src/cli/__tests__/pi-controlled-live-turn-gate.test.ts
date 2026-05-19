@@ -30,7 +30,7 @@ routes:
     peers: ["-10042"]
     topics: ["8"]
     mention_only: true
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 mcp_tools: [send_message]
 `);
     const stdout = createWriter();

@@ -468,6 +468,82 @@ function runtimeUsageEvent(events: RuntimeEvent[]): RuntimeUsageUpdatedEvent | u
   return events.find((event): event is RuntimeUsageUpdatedEvent => event.type === 'usage.updated');
 }
 
+function runtimeFailureError(event: RuntimeEvent): Error {
+  const message = extractRuntimeFailureMessage(event.raw);
+  return new Error(message ? `Pi Gateway runtime failed: ${message}` : 'Pi Gateway runtime failed');
+}
+
+function extractRuntimeFailureMessage(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const event = raw as Record<string, unknown>;
+  if (typeof event.errorMessage === 'string' && event.errorMessage.trim()) {
+    return event.errorMessage.trim();
+  }
+  if (event.message && typeof event.message === 'object') {
+    const message = event.message as Record<string, unknown>;
+    if (typeof message.errorMessage === 'string' && message.errorMessage.trim()) {
+      return message.errorMessage.trim();
+    }
+  }
+  if (Array.isArray(event.messages)) {
+    const lastAssistant = [...event.messages]
+      .reverse()
+      .find((message) =>
+        message && typeof message === 'object'
+        && (message as Record<string, unknown>).role === 'assistant');
+    if (lastAssistant && typeof lastAssistant === 'object') {
+      const errorMessage = (lastAssistant as Record<string, unknown>).errorMessage;
+      if (typeof errorMessage === 'string' && errorMessage.trim()) return errorMessage.trim();
+    }
+  }
+  return undefined;
+}
+
+function isPiGatewayBudgetError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes('Pi Gateway runtime failed:')
+    && message.includes('402 ')
+    && (
+      message.includes('requires more credits')
+      || message.includes('Insufficient credits')
+      || message.includes('fewer max_tokens')
+      || message.includes('Prompt tokens limit exceeded')
+    );
+}
+
+export function buildRuntimeIdentityPrompt(input: {
+  runtime: HeadlessRuntimeProvider;
+  model: string;
+}): string {
+  const provider = inferModelProvider(input.model);
+  const anthropicModel = provider === 'anthropic' || /(^|[/:\s])claude[-_\w.]*/i.test(input.model);
+  return [
+    '<runtime-identity>',
+    'This block is authoritative for questions about the active runtime and model.',
+    `runtime: ${input.runtime}`,
+    `model: ${input.model}`,
+    `provider: ${provider ?? 'unknown'}`,
+    anthropicModel
+      ? 'You may identify the model as Anthropic/Claude only because the configured model/provider is Anthropic/Claude.'
+      : 'Do not identify yourself as Claude, Anthropic, Sonnet, or Opus. If asked what model you are, answer with the configured model id above.',
+    '</runtime-identity>',
+  ].join('\n');
+}
+
+function inferModelProvider(model: string): string | undefined {
+  const trimmed = model.trim();
+  const slash = trimmed.indexOf('/');
+  const colon = trimmed.indexOf(':');
+  const separator = slash === -1 ? colon : colon === -1 ? slash : Math.min(slash, colon);
+  if (separator > 0) return trimmed.slice(0, separator).toLowerCase();
+  if (/^claude[-_]/i.test(trimmed)) return 'anthropic';
+  return undefined;
+}
+
+function prependRuntimeIdentityPrompt(prompt: string, identity: string): string {
+  return `${identity}\n\n${prompt}`;
+}
+
 function runtimeToolEvent(
   events: RuntimeEvent[],
   type: RuntimeToolEvent['type'],
@@ -1245,6 +1321,7 @@ export class Gateway {
         handle: RuntimeRunHandle<RuntimeEvent>,
         context: { runId: string; sessionId?: string; agentId: string },
       ) => void;
+      slimBudgetRetry?: boolean;
     },
   ): Promise<{ text: string; sessionId?: string; usage?: StoredAgentRunUsage; totalTokens: number }> {
     const configured = this.getHeadlessReviewRuntimeOptions(agent);
@@ -1254,27 +1331,36 @@ export class Gateway {
 
     const runtime = resolveHeadlessRuntime(configured.runtime, configured.runtimeOptions);
     const model = agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6';
+    const slimBudgetRetry = input.slimBudgetRetry === true;
+    const prompt = prependRuntimeIdentityPrompt(
+      input.prompt,
+      buildRuntimeIdentityPrompt({ runtime: configured.runtime, model }),
+    );
     const allowedTools = buildAllowedTools(agent, false);
-    const externalMcpServers = await this.resolveAgentExternalMcpServers(agent);
-    const externalMcpCustomTools = (await buildExternalMcpCustomTools({
-      servers: externalMcpServers,
-      cwd: agent.workspacePath,
-      onError: (err, context) => logger.warn({
-        err,
-        agentId: agent.id,
-        ...context,
-      }, 'Pi Gateway external MCP custom tool bridge skipped or failed'),
-    })).filter((tool) => isPiGatewayCustomToolAllowed(agent, allowedTools, tool.name));
-    const dispatchTools = this.buildGatewayDispatchTools(agent, input.sessionKey, input.message);
-    const customTools = dispatchTools
-      .filter((tool) => isPiGatewayCustomToolAllowed(agent, allowedTools, tool.name))
-      .map((tool): HeadlessCustomTool => ({
-        name: tool.name,
-        description: tool.description,
-        inputSchema: tool.inputSchema,
-        handler: (args) => tool.handler(args),
-      }))
-      .concat(externalMcpCustomTools);
+    const externalMcpServers = slimBudgetRetry ? undefined : await this.resolveAgentExternalMcpServers(agent);
+    const externalMcpCustomTools = slimBudgetRetry
+      ? []
+      : (await buildExternalMcpCustomTools({
+          servers: externalMcpServers,
+          cwd: agent.workspacePath,
+          onError: (err, context) => logger.warn({
+            err,
+            agentId: agent.id,
+            ...context,
+          }, 'Pi Gateway external MCP custom tool bridge skipped or failed'),
+        })).filter((tool) => isPiGatewayCustomToolAllowed(agent, allowedTools, tool.name));
+    const dispatchTools = slimBudgetRetry ? [] : this.buildGatewayDispatchTools(agent, input.sessionKey, input.message);
+    const customTools = slimBudgetRetry
+      ? []
+      : dispatchTools
+        .filter((tool) => isPiGatewayCustomToolAllowed(agent, allowedTools, tool.name))
+        .map((tool): HeadlessCustomTool => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+          handler: (args) => tool.handler(args),
+        }))
+        .concat(externalMcpCustomTools);
     const customToolNames = new Set(customTools.map((tool) => tool.name));
     const toolGate = createCanUseTool({
       agent,
@@ -1282,30 +1368,32 @@ export class Gateway {
       channel: input.channel,
       sessionContext: input.sessionContext ?? { peerId: '__headless__' },
     });
-    const toolPolicy: HeadlessToolPolicy = {
-      mode: 'allow-list',
-      tools: [
-        ...allowedTools,
-        ...customTools.map((tool) => tool.name),
-      ],
-      canUseTool: async (toolCall) => {
-        const toolName = piGatewayToolNameToAnthroClawName(
-          toolCall.toolName,
-          toolCall.originalToolName,
-          agent.mcpServer.name,
-          customToolNames,
-        );
-        const workspaceDecision = piGatewayWorkspacePathDecision(agent, toolName, toolCall.input);
-        if (workspaceDecision) return workspaceDecision;
-        return toolGate(toolName, toolCall.input, {
-          signal: new AbortController().signal,
-          toolUseID: toolCall.toolCallId ?? `${toolName}:${Date.now()}`,
-        } as any);
-      },
-      denyMessage: 'Tool denied by AnthroClaw policy.',
-    };
+    const toolPolicy: HeadlessToolPolicy = slimBudgetRetry
+      ? { mode: 'deny' }
+      : {
+          mode: 'allow-list',
+          tools: [
+            ...allowedTools,
+            ...customTools.map((tool) => tool.name),
+          ],
+          canUseTool: async (toolCall) => {
+            const toolName = piGatewayToolNameToAnthroClawName(
+              toolCall.toolName,
+              toolCall.originalToolName,
+              agent.mcpServer.name,
+              customToolNames,
+            );
+            const workspaceDecision = piGatewayWorkspacePathDecision(agent, toolName, toolCall.input);
+            if (workspaceDecision) return workspaceDecision;
+            return toolGate(toolName, toolCall.input, {
+              signal: new AbortController().signal,
+              toolUseID: toolCall.toolCallId ?? `${toolName}:${Date.now()}`,
+            } as any);
+          },
+          denyMessage: 'Tool denied by AnthroClaw policy.',
+        };
     const runInput = {
-      prompt: input.prompt,
+      prompt,
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       model,
       cwd: agent.workspacePath,
@@ -1314,6 +1402,12 @@ export class Gateway {
         cwd: agent.workspacePath,
       },
       purpose: input.purpose,
+      ...(slimBudgetRetry
+        ? {
+            systemPrompt: 'You are AnthroClaw running in Pi budget-recovery mode. Reply directly and concisely in the user language. Tools and project context are unavailable for this turn.',
+            resourceMode: 'minimal' as const,
+          }
+        : {}),
       toolDenyMessage: 'Tool denied by AnthroClaw policy.',
       toolPolicy,
       customTools,
@@ -1354,7 +1448,7 @@ export class Gateway {
           } else if (event.type === 'usage.updated') {
             usage = runtimeUsageToStored(event, 0);
           } else if (event.type === 'run.failed') {
-            throw new Error('Pi Gateway runtime failed');
+            throw runtimeFailureError(event);
           }
         }
       } finally {
@@ -1697,9 +1791,9 @@ export class Gateway {
       const healthCheck = await initializeClaudeAgentRuntime();
       healthCheck.close();
       this.sdkReady = true;
-      logger.info('Claude Agent SDK initialized');
+      logger.info('Legacy Claude fallback initialized');
     } catch (err) {
-      logger.warn({ err }, 'Claude Agent SDK startup failed; agent queries will use fallback responses');
+      logger.warn({ err }, 'Legacy Claude fallback startup failed; agent queries will use fallback responses only if no primary runtime handles the turn');
     }
 
     // Agent config writer + audit log (Stage 1 self-config-tools). Single
@@ -3565,7 +3659,7 @@ export class Gateway {
         runId = randomUUID();
         const model = agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6';
         metrics.recordAgentRunStart({
-          runId,
+          runId: runId!,
           agentId,
           sessionKey,
           sdkSessionId: existingSessionId,
@@ -3579,13 +3673,14 @@ export class Gateway {
         let deliveredText = false;
         const abort = new AbortController();
         const keepCheckpointHandle = Boolean(agent.config.sdk?.enableFileCheckpointing);
-        const result = await this.runPiGatewayRuntime(agent, {
-          runId,
+        const runWebPiGateway = (options?: { slimBudgetRetry?: boolean }) => this.runPiGatewayRuntime(agent, {
+          runId: runId!,
           prompt,
-          sessionId: existingSessionId,
-          purpose: 'gateway web query',
+          ...(options?.slimBudgetRetry ? {} : { sessionId: existingSessionId }),
+          purpose: options?.slimBudgetRetry ? 'gateway web query budget recovery' : 'gateway web query',
           sessionKey,
           sessionContext: { channel: context.channel ?? 'web', peerId: 'web-user', senderId: 'web-user' },
+          ...(options?.slimBudgetRetry ? { slimBudgetRetry: true } : {}),
           onRunHandle: (handle) => {
             const registryHandle = runtimeRegistryHandle(handle);
             this.controlRegistry.register(
@@ -3635,6 +3730,26 @@ export class Gateway {
             }
           },
         });
+        let result: { text: string; sessionId?: string; usage?: StoredAgentRunUsage; totalTokens: number };
+        try {
+          result = await runWebPiGateway();
+        } catch (err) {
+          if (!isPiGatewayBudgetError(err)) throw err;
+          finishRun('failed', err);
+          runId = randomUUID();
+          metrics.recordAgentRunStart({
+            runId,
+            agentId,
+            sessionKey,
+            sdkSessionId: undefined,
+            source: 'web',
+            channel: context.channel ?? 'web',
+            peerId: 'web-user',
+            status: 'running',
+            model,
+          });
+          result = await runWebPiGateway({ slimBudgetRetry: true });
+        }
         const text = result.text.trim();
         newSessionId = result.sessionId ?? existingSessionId ?? '';
         if (newSessionId) {
@@ -4999,7 +5114,7 @@ export class Gateway {
     const channel = this.channels.get(msg.channel);
 
     // ─── Handle bot commands before agent query ───────────────────
-    // In Telegram groups, slash commands include the bot username (e.g. /model@clowwy_bot).
+    // In Telegram groups, slash commands include the bot username (e.g. /model@example_bot).
     // Normalize by stripping the @username suffix from the first token.
     const rawCmd = msg.text.trim();
     const cmd = rawCmd.startsWith('/')
@@ -5448,8 +5563,8 @@ export class Gateway {
   }
 
   /**
-   * Query an agent using the Claude Agent SDK.
-   * Falls back to a stub response if SDK is not initialized.
+   * Query an agent through the configured runtime path.
+   * Falls back to a stub response if no runtime is initialized.
    */
   private async queryAgent(
     agent: Agent,
@@ -5522,6 +5637,9 @@ export class Gateway {
     } else {
       prompt = sessionCtx + `[${senderLabel}]: ${msg.text}`;
     }
+    const budgetRecoveryPrompt = msg.media
+      ? `[${senderLabel}] sent ${msg.media.type}: ${msg.text || '(no caption)'}`
+      : `[${senderLabel}]: ${msg.text}`;
 
     // Inject prefetched memory context if available and relevant
     const prefetchKeywords = this.prefetchCache.extractKeywords(msg.text);
@@ -6186,6 +6304,57 @@ export class Gateway {
         finishRun('interrupted', err);
         return '';
       }
+
+      if (usePiGatewayRuntime && isPiGatewayBudgetError(err)) {
+        finishRun('failed', err);
+        try {
+          runId = randomUUID();
+          const model = agent.config.model ?? this.globalConfig?.defaults.model ?? 'claude-sonnet-4-6';
+          metrics.recordAgentRunStart({
+            runId,
+            agentId: agent.id,
+            sessionKey,
+            sdkSessionId: undefined,
+            source,
+            channel: msg.channel,
+            accountId: msg.accountId,
+            peerId: msg.peerId,
+            threadId: msg.threadId,
+            messageId: msg.messageId,
+            routeDecisionId,
+            status: 'running',
+            model,
+          });
+          const slimResult = await this.runPiGatewayRuntime(agent, {
+            runId,
+            prompt: budgetRecoveryPrompt,
+            purpose: 'gateway agent query budget recovery',
+            sessionKey,
+            message: msg,
+            channel: this.channels.get(msg.channel),
+            sessionContext: { channel: msg.channel, peerId: msg.peerId, senderId: msg.senderId, accountId: msg.accountId, threadId: msg.threadId },
+            slimBudgetRetry: true,
+          });
+          runUsage = slimResult.usage ?? { durationMs: Date.now() - queryStartMs };
+          const responseText = slimResult.text.trim();
+          finishRun('succeeded');
+          return responseText;
+        } catch (retryErr) {
+          metrics.increment('query_errors');
+          finishRun('failed', retryErr);
+          logger.error(
+            {
+              err: redactSecrets(String(retryErr)),
+              originalErr: redactSecrets(String(err)),
+              agentId: agent.id,
+              sessionKey,
+            },
+              'Pi budget recovery query failed',
+            );
+          return 'Не смог получить ответ модели: Pi/OpenRouter отклонил запрос по бюджету или credits. Проверь ключи, баланс и лимиты провайдера.';
+        }
+      }
+
       metrics.increment('query_errors');
       finishRun('failed', err);
       logger.error(

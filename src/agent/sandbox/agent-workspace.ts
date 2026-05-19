@@ -19,8 +19,7 @@ import type { Dirent } from 'node:fs';
 // Canonical agent-id form. Lowercase alphanumeric + `_` and `-`, leading
 // char must be alphanumeric (this is what excludes dotfiles like `.git`,
 // `.DS_Store` from the sibling list — they would never be valid agent
-// ids), max 64 chars. All production agent ids conform: content_sm_building,
-// leads_agent, operator_agent, timur_agent.
+// ids), max 64 chars. Production agent ids should conform to this shape.
 export const AGENT_ID_RE = /^[a-z0-9][a-z0-9_-]*$/;
 export const AGENT_ID_MAX_LEN = 64;
 

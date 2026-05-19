@@ -111,17 +111,17 @@ describe('PATCH /api/agents/[agentId]/config', () => {
       getGateway: vi.fn().mockResolvedValue(ctx.gateway),
     }));
     const { PATCH } = await import('@/app/api/agents/[agentId]/config/route');
-    const req = jsonRequest('/api/agents/amina/config', {
+    const req = jsonRequest('/api/agents/agent_alpha/config', {
       section: 'human_takeover',
       value: { enabled: true, pause_ttl_minutes: 30 },
     });
-    const res = await PATCH(req, { params: Promise.resolve({ agentId: 'amina' }) });
+    const res = await PATCH(req, { params: Promise.resolve({ agentId: 'agent_alpha' }) });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.section).toBe('human_takeover');
     expect(ctx.patchSection).toHaveBeenCalledOnce();
-    expect(ctx.patchSection.mock.calls[0][0]).toBe('amina');
+    expect(ctx.patchSection.mock.calls[0][0]).toBe('agent_alpha');
     expect(ctx.patchSection.mock.calls[0][1]).toBe('human_takeover');
     expect(ctx.patchSection.mock.calls[0][3]).toMatchObject({ source: 'ui' });
     expect(ctx.audit).toHaveLength(1);
@@ -134,11 +134,11 @@ describe('PATCH /api/agents/[agentId]/config', () => {
       getGateway: vi.fn().mockResolvedValue(ctx.gateway),
     }));
     const { PATCH } = await import('@/app/api/agents/[agentId]/config/route');
-    const req = jsonRequest('/api/agents/amina/config', {
+    const req = jsonRequest('/api/agents/agent_alpha/config', {
       section: 'mcp_tools',
       value: ['memory_search'],
     });
-    const res = await PATCH(req, { params: Promise.resolve({ agentId: 'amina' }) });
+    const res = await PATCH(req, { params: Promise.resolve({ agentId: 'agent_alpha' }) });
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe('invalid_section');
@@ -152,11 +152,11 @@ describe('PATCH /api/agents/[agentId]/config', () => {
       getGateway: vi.fn().mockResolvedValue(ctx.gateway),
     }));
     const { PATCH } = await import('@/app/api/agents/[agentId]/config/route');
-    const req = jsonRequest('/api/agents/amina/config', {
+    const req = jsonRequest('/api/agents/agent_alpha/config', {
       section: 'human_takeover',
       value: { enabled: true },
     });
-    const res = await PATCH(req, { params: Promise.resolve({ agentId: 'amina' }) });
+    const res = await PATCH(req, { params: Promise.resolve({ agentId: 'agent_alpha' }) });
     expect(res.status).toBe(401);
     expect(ctx.patchSection).not.toHaveBeenCalled();
   });
@@ -167,11 +167,11 @@ describe('PATCH /api/agents/[agentId]/config', () => {
       getGateway: vi.fn().mockResolvedValue(ctx.gateway),
     }));
     const { PATCH } = await import('@/app/api/agents/[agentId]/config/route');
-    const req = jsonRequest('/api/agents/amina/config', {
+    const req = jsonRequest('/api/agents/agent_alpha/config', {
       section: 'notifications',
       value: null,
     });
-    const res = await PATCH(req, { params: Promise.resolve({ agentId: 'amina' }) });
+    const res = await PATCH(req, { params: Promise.resolve({ agentId: 'agent_alpha' }) });
     expect(res.status).toBe(200);
     const callPatcher = ctx.patchSection.mock.calls[0][2] as (
       current: unknown,

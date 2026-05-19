@@ -121,10 +121,10 @@ describe('AgentConfigWriter — patchSection', () => {
   beforeEach(() => {
     agentsDir = mkdtempSync(join(tmpdir(), 'acw-'));
     // seed an agent
-    require('node:fs').mkdirSync(join(agentsDir, 'amina'), { recursive: true });
-    writeFileSync(join(agentsDir, 'amina', 'agent.yml'), [
-      '# Amina lead bot',
-      'safety_profile: chat_like_openclaw',
+    require('node:fs').mkdirSync(join(agentsDir, 'customer_agent'), { recursive: true });
+    writeFileSync(join(agentsDir, 'customer_agent', 'agent.yml'), [
+      '# customer assistant lead bot',
+      'safety_profile: chat_like_anthroclaw',
       'routes:',
       '  - { channel: whatsapp }',
       '',
@@ -134,35 +134,35 @@ describe('AgentConfigWriter — patchSection', () => {
 
   it('adds a new section with comment-preserving write', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const result = await writer.patchSection('amina', 'human_takeover', (current) => ({
+    const result = await writer.patchSection('customer_agent', 'human_takeover', (current) => ({
       enabled: true, pause_ttl_minutes: 30,
     }));
     expect(result.prevValue).toBeUndefined();
     expect(result.newValue).toMatchObject({ enabled: true, pause_ttl_minutes: 30 });
-    const after = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
-    expect(after).toContain('# Amina lead bot');         // comment preserved
-    expect(after).toContain('safety_profile: chat_like_openclaw'); // existing field preserved
+    const after = readFileSync(join(agentsDir, 'customer_agent', 'agent.yml'), 'utf-8');
+    expect(after).toContain('# customer assistant lead bot');         // comment preserved
+    expect(after).toContain('safety_profile: chat_like_anthroclaw'); // existing field preserved
     expect(after).toContain('human_takeover:');          // new section present
     expect(after).toContain('enabled: true');
   });
 
   it('returns null patch removes the section', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    await writer.patchSection('amina', 'human_takeover', () => ({ enabled: true }));
-    const result = await writer.patchSection('amina', 'human_takeover', () => null);
+    await writer.patchSection('customer_agent', 'human_takeover', () => ({ enabled: true }));
+    const result = await writer.patchSection('customer_agent', 'human_takeover', () => null);
     expect(result.newValue).toBeNull();
-    const after = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
+    const after = readFileSync(join(agentsDir, 'customer_agent', 'agent.yml'), 'utf-8');
     expect(after).not.toContain('human_takeover');
   });
 
   it('serializes concurrent writes per-agent', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const results = await Promise.all([
-      writer.patchSection('amina', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 30 })),
-      writer.patchSection('amina', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 60 })),
+      writer.patchSection('customer_agent', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 30 })),
+      writer.patchSection('customer_agent', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 60 })),
     ]);
     // both writes succeeded, second one wins
-    const final = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
+    const final = readFileSync(join(agentsDir, 'customer_agent', 'agent.yml'), 'utf-8');
     expect(final).toContain('pause_ttl_minutes: 60');
     expect(results).toHaveLength(2);
   });
@@ -202,27 +202,27 @@ git commit -m "feat(config): patchSection with comment-preserving YAML mutation 
 ```ts
 it('rejects patch that produces invalid YAML schema', async () => {
   const writer = createAgentConfigWriter({ agentsDir });
-  await expect(writer.patchSection('amina', 'human_takeover', () => ({
+  await expect(writer.patchSection('customer_agent', 'human_takeover', () => ({
     enabled: true, pause_ttl_minutes: -1,    // invalid: schema requires positive
   }))).rejects.toThrow(/pause_ttl_minutes/);
 
-  const after = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
+  const after = readFileSync(join(agentsDir, 'customer_agent', 'agent.yml'), 'utf-8');
   expect(after).not.toContain('-1');         // file unchanged
 });
 
 it('creates a timestamped backup before each write', async () => {
   const writer = createAgentConfigWriter({ agentsDir });
-  await writer.patchSection('amina', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 30 }));
-  const files = require('node:fs').readdirSync(join(agentsDir, 'amina'));
+  await writer.patchSection('customer_agent', 'human_takeover', () => ({ enabled: true, pause_ttl_minutes: 30 }));
+  const files = require('node:fs').readdirSync(join(agentsDir, 'customer_agent'));
   expect(files.some((f: string) => f.startsWith('agent.yml.bak-'))).toBe(true);
 });
 
 it('prunes backups beyond backupKeep', async () => {
   const writer = createAgentConfigWriter({ agentsDir, backupKeep: 3 });
   for (let i = 0; i < 5; i++) {
-    await writer.patchSection('amina', 'human_takeover', () => ({ enabled: i % 2 === 0, pause_ttl_minutes: 30 }));
+    await writer.patchSection('customer_agent', 'human_takeover', () => ({ enabled: i % 2 === 0, pause_ttl_minutes: 30 }));
   }
-  const backups = require('node:fs').readdirSync(join(agentsDir, 'amina'))
+  const backups = require('node:fs').readdirSync(join(agentsDir, 'customer_agent'))
     .filter((f: string) => f.startsWith('agent.yml.bak-'));
   expect(backups).toHaveLength(3);
 });
@@ -264,30 +264,30 @@ describe('ConfigAuditLog', () => {
   it('appends a JSONL entry per write', async () => {
     const log = createConfigAuditLog({ auditDir: dir });
     await log.append({
-      callerAgent: 'klavdia',
-      callerSession: 'telegram:control:dm:48705953',
-      targetAgent: 'amina',
+      callerAgent: 'operator_agent',
+      callerSession: 'telegram:control:dm:<telegram-peer-id>',
+      targetAgent: 'customer_agent',
       section: 'notifications',
       action: 'add_subscription',
       prev: null,
       new: { event: 'peer_pause_started', route: 'operator' },
       source: 'chat',
     });
-    const file = require('node:fs').readFileSync(join(dir, 'amina.jsonl'), 'utf-8');
+    const file = require('node:fs').readFileSync(join(dir, 'customer_agent.jsonl'), 'utf-8');
     const lines = file.trim().split('\n');
     expect(lines).toHaveLength(1);
     const entry = JSON.parse(lines[0]);
-    expect(entry).toMatchObject({ caller_agent: 'klavdia', target_agent: 'amina', section: 'notifications', source: 'chat' });
+    expect(entry).toMatchObject({ caller_agent: 'operator_agent', target_agent: 'customer_agent', section: 'notifications', source: 'chat' });
     expect(entry.ts).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   it('rotates file at maxFileBytes', async () => {
     const log = createConfigAuditLog({ auditDir: dir, maxFileBytes: 200, maxFiles: 3 });
     for (let i = 0; i < 10; i++) {
-      await log.append({ callerAgent: 'klavdia', targetAgent: 'amina', section: 'notifications', action: 'noop',
+      await log.append({ callerAgent: 'operator_agent', targetAgent: 'customer_agent', section: 'notifications', action: 'noop',
         prev: null, new: { i }, source: 'chat' });
     }
-    const files = require('node:fs').readdirSync(dir).filter((f: string) => f.startsWith('amina.jsonl'));
+    const files = require('node:fs').readdirSync(dir).filter((f: string) => f.startsWith('customer_agent.jsonl'));
     expect(files.length).toBeGreaterThan(1);
     expect(files.length).toBeLessThanOrEqual(3);
   });
@@ -295,10 +295,10 @@ describe('ConfigAuditLog', () => {
   it('readRecent returns most recent N entries newest-first', async () => {
     const log = createConfigAuditLog({ auditDir: dir });
     for (let i = 0; i < 5; i++) {
-      await log.append({ callerAgent: 'k', targetAgent: 'amina', section: 'human_takeover', action: 'noop',
+      await log.append({ callerAgent: 'k', targetAgent: 'customer_agent', section: 'human_takeover', action: 'noop',
         prev: null, new: { i }, source: 'chat' });
     }
-    const recent = await log.readRecent('amina', { limit: 3 });
+    const recent = await log.readRecent('customer_agent', { limit: 3 });
     expect(recent).toHaveLength(3);
     expect(recent[0].new).toMatchObject({ i: 4 });   // newest first
   });
@@ -352,12 +352,12 @@ git commit -m "feat(config): audit log with rotation; writer emits entries on ea
 ```ts
 it('PATCH /api/agents/[id]/config writes through AgentConfigWriter and creates audit entry with source: ui', async () => {
   const gw = mockGateway({ agentsDir: '/tmp/test', writerSpy: vi.fn() });
-  const res = await PATCH(req('/api/agents/amina/config', { method: 'PATCH', body: JSON.stringify({
+  const res = await PATCH(req('/api/agents/customer_agent/config', { method: 'PATCH', body: JSON.stringify({
     section: 'human_takeover', value: { enabled: true, pause_ttl_minutes: 30 },
-  }) }), { params: { agentId: 'amina' } });
+  }) }), { params: { agentId: 'customer_agent' } });
   expect(res.status).toBe(200);
-  expect(gw.writerSpy).toHaveBeenCalledWith('amina', 'human_takeover', expect.any(Function));
-  const audit = await gw.auditLog.readRecent('amina', { limit: 1 });
+  expect(gw.writerSpy).toHaveBeenCalledWith('customer_agent', 'human_takeover', expect.any(Function));
+  const audit = await gw.auditLog.readRecent('customer_agent', { limit: 1 });
   expect(audit[0].source).toBe('ui');
 });
 ```
@@ -398,16 +398,16 @@ import { canManageAgent } from '../cross-agent-perm.js';
 
 describe('canManageAgent', () => {
   it('self always allowed when target_agent_id matches caller', () => {
-    expect(canManageAgent({ callerId: 'amina', targetId: 'amina', operatorConsoleConfig: undefined })).toBe(true);
+    expect(canManageAgent({ callerId: 'customer_agent', targetId: 'customer_agent', operatorConsoleConfig: undefined })).toBe(true);
   });
   it('cross-agent requires operator_console.manages whitelist', () => {
     expect(canManageAgent({
-      callerId: 'klavdia', targetId: 'amina',
-      operatorConsoleConfig: { enabled: true, manages: ['amina'], capabilities: [] },
+      callerId: 'operator_agent', targetId: 'customer_agent',
+      operatorConsoleConfig: { enabled: true, manages: ['customer_agent'], capabilities: [] },
     })).toBe(true);
     expect(canManageAgent({
-      callerId: 'klavdia', targetId: 'larry',
-      operatorConsoleConfig: { enabled: true, manages: ['amina'], capabilities: [] },
+      callerId: 'operator_agent', targetId: 'secondary_agent',
+      operatorConsoleConfig: { enabled: true, manages: ['customer_agent'], capabilities: [] },
     })).toBe(false);
   });
   it('manages: "*" allows any target', () => { ... });
@@ -494,9 +494,9 @@ describe('manage_notifications', () => {
   it('action=set_enabled toggles enabled flag', async () => {
     const writer = makeFakeWriter();
     const tool = createManageNotificationsTool({ writer, canManage: () => true });
-    const r = await tool.handler({ action: { kind: 'set_enabled', enabled: true } }, mockCtx({ agentId: 'amina' }));
+    const r = await tool.handler({ action: { kind: 'set_enabled', enabled: true } }, mockCtx({ agentId: 'customer_agent' }));
     expect(r).toMatchObject({ ok: true, changed: true });
-    expect(writer.patchCalls[0]).toMatchObject({ agentId: 'amina', section: 'notifications' });
+    expect(writer.patchCalls[0]).toMatchObject({ agentId: 'customer_agent', section: 'notifications' });
   });
 
   it('action=add_route adds named route', async () => { ... });
@@ -508,8 +508,8 @@ describe('manage_notifications', () => {
   it('rejects cross-agent target without manage permission', async () => {
     const tool = createManageNotificationsTool({ writer: makeFakeWriter(), canManage: () => false });
     await expect(tool.handler({
-      target_agent_id: 'amina', action: { kind: 'set_enabled', enabled: true },
-    }, mockCtx({ agentId: 'klavdia' }))).rejects.toThrow(/not authorized/);
+      target_agent_id: 'customer_agent', action: { kind: 'set_enabled', enabled: true },
+    }, mockCtx({ agentId: 'operator_agent' }))).rejects.toThrow(/not authorized/);
   });
 });
 ```
@@ -544,21 +544,21 @@ git commit -m "feat(tools): manage_notifications self-config tool"
 it('patches enabled only when provided; preserves other fields', async () => {
   const writer = makeFakeWriterWithExisting('human_takeover', { enabled: false, pause_ttl_minutes: 60, channels: ['whatsapp'] });
   const tool = createManageHumanTakeoverTool({ writer, canManage: () => true });
-  await tool.handler({ enabled: true }, mockCtx({ agentId: 'amina' }));
+  await tool.handler({ enabled: true }, mockCtx({ agentId: 'customer_agent' }));
   expect(writer.lastPatchResult).toMatchObject({ enabled: true, pause_ttl_minutes: 60, channels: ['whatsapp'] });
 });
 
 it('null on a field resets it to schema default', async () => {
   const writer = makeFakeWriterWithExisting('human_takeover', { enabled: true, pause_ttl_minutes: 60 });
   const tool = createManageHumanTakeoverTool({ writer, canManage: () => true });
-  await tool.handler({ pause_ttl_minutes: null as any }, mockCtx({ agentId: 'amina' }));
+  await tool.handler({ pause_ttl_minutes: null as any }, mockCtx({ agentId: 'customer_agent' }));
   expect(writer.lastPatchResult.pause_ttl_minutes).toBe(30);  // schema default
 });
 
 it('seeds defaults when enabling on missing block', async () => {
   const writer = makeFakeWriterWithExisting('human_takeover', undefined);
   const tool = createManageHumanTakeoverTool({ writer, canManage: () => true });
-  await tool.handler({ enabled: true }, mockCtx({ agentId: 'amina' }));
+  await tool.handler({ enabled: true }, mockCtx({ agentId: 'customer_agent' }));
   expect(writer.lastPatchResult).toMatchObject({ enabled: true, pause_ttl_minutes: 30 });
 });
 
@@ -592,14 +592,14 @@ git commit -m "feat(tools): manage_human_takeover patch-style self-config tool"
 ```ts
 it('rejects when both manages and manages_action are provided', async () => {
   await expect(tool.handler({
-    manages: ['amina'], manages_action: { kind: 'add', agent_id: 'larry' },
-  }, mockCtx({ agentId: 'klavdia' }))).rejects.toThrow(/mutually exclusive/);
+    manages: ['customer_agent'], manages_action: { kind: 'add', agent_id: 'secondary_agent' },
+  }, mockCtx({ agentId: 'operator_agent' }))).rejects.toThrow(/mutually exclusive/);
 });
 
 it('manages_action=add appends to existing list', async () => {
-  const writer = makeFakeWriterWithExisting('operator_console', { enabled: true, manages: ['amina'], capabilities: [] });
-  await tool.handler({ manages_action: { kind: 'add', agent_id: 'larry' } }, mockCtx({ agentId: 'klavdia' }));
-  expect(writer.lastPatchResult.manages).toEqual(['amina', 'larry']);
+  const writer = makeFakeWriterWithExisting('operator_console', { enabled: true, manages: ['customer_agent'], capabilities: [] });
+  await tool.handler({ manages_action: { kind: 'add', agent_id: 'secondary_agent' } }, mockCtx({ agentId: 'operator_agent' }));
+  expect(writer.lastPatchResult.manages).toEqual(['customer_agent', 'secondary_agent']);
 });
 
 it('manages_action=remove drops from list; idempotent', async () => { ... });
@@ -634,11 +634,11 @@ git commit -m "feat(tools): manage_operator_console with full and incremental up
 ```ts
 it('returns requested section with defaults applied', async () => {
   const writer = makeFakeWriterWithExisting('human_takeover', { enabled: true });
-  const auditLog = makeFakeAudit([{ ts: '2026-05-01T12:00Z', section: 'human_takeover', source: 'chat', callerAgent: 'klavdia' }]);
+  const auditLog = makeFakeAudit([{ ts: '2026-05-01T12:00Z', section: 'human_takeover', source: 'chat', callerAgent: 'operator_agent' }]);
   const tool = createShowConfigTool({ writer, auditLog, canManage: () => true });
-  const r = await tool.handler({ sections: ['human_takeover'] }, mockCtx({ agentId: 'amina' }));
+  const r = await tool.handler({ sections: ['human_takeover'] }, mockCtx({ agentId: 'customer_agent' }));
   expect(r.sections.human_takeover).toMatchObject({ enabled: true, pause_ttl_minutes: 30 });
-  expect(r.last_modified).toMatchObject({ section: 'human_takeover', by: 'klavdia' });
+  expect(r.last_modified).toMatchObject({ section: 'human_takeover', by: 'operator_agent' });
 });
 
 it('"all" returns all three sections', async () => { ... });
@@ -664,25 +664,25 @@ git commit -m "feat(tools): show_config read-only inspector"
 ```ts
 it('e2e: chat → manage_notifications → file write → reload → notification fires', async () => {
   const gw = await createTestGateway({
-    agents: { klavdia: { mcp_tools: ['manage_notifications'] }, amina: { } },
+    agents: { operator_agent: { mcp_tools: ['manage_notifications'] }, customer_agent: { } },
     realFsForAgents: true,    // use real chokidar in this test
   });
 
-  // Klavdia (operator-console disabled — self-target only)
+  // Operator Assistant (operator-console disabled — self-target only)
   await gw.simulateInbound({
-    channel: 'telegram', accountId: 'control', peerId: '48705953',
-    text: 'set up notifications: pause alerts to me at telegram control 48705953',
-    targetAgent: 'klavdia',
+    channel: 'telegram', accountId: 'control', peerId: '<telegram-peer-id>',
+    text: 'set up notifications: pause alerts to me at telegram control <telegram-peer-id>',
+    targetAgent: 'operator_agent',
   });
 
-  // After Klavdia processes: amina/agent.yml unchanged (klavdia self-targeted)
-  // klavdia/agent.yml has notifications block
+  // After Operator Assistant processes: customer_agent/agent.yml unchanged (operator_agent self-targeted)
+  // operator_agent/agent.yml has notifications block
 
   await waitForFileReload();   // chokidar fires; agent reloads
 
   // Now trigger an event that would fire to that route
-  gw.notificationsEmitter.emit('peer_pause_started', { agentId: 'klavdia', peerKey: 'wa:b:1' });
-  expect(gw.lastSentMessage).toMatchObject({ channel: 'telegram', peerId: '48705953' });
+  gw.notificationsEmitter.emit('peer_pause_started', { agentId: 'operator_agent', peerKey: 'wa:b:1' });
+  expect(gw.lastSentMessage).toMatchObject({ channel: 'telegram', peerId: '<telegram-peer-id>' });
 });
 
 it('e2e: cross-agent management requires operator_console.manages', async () => { ... });
@@ -700,7 +700,7 @@ git commit -m "test(integration): self-config tools e2e via chat → file write 
 
 ## Stage 3 — UI surface
 
-Goal: operators see "Last modified by chat (klavdia)" indicators in the Handoff tab and can browse the audit log.
+Goal: operators see "Last modified by chat (operator_agent)" indicators in the Handoff tab and can browse the audit log.
 
 ### Task 13: Audit log API endpoint
 
@@ -712,8 +712,8 @@ Goal: operators see "Last modified by chat (klavdia)" indicators in the Handoff 
 
 ```ts
 it('GET returns audit entries newest-first; respects limit query', async () => {
-  const res = await GET(req('/api/agents/amina/config-audit?limit=5&section=notifications'),
-    { params: { agentId: 'amina' } });
+  const res = await GET(req('/api/agents/customer_agent/config-audit?limit=5&section=notifications'),
+    { params: { agentId: 'customer_agent' } });
   expect(res.status).toBe(200);
   const body = await res.json();
   expect(body.entries).toHaveLength(5);
@@ -739,10 +739,10 @@ git commit -m "feat(ui): config-audit API endpoint"
 - [ ] **Step 1: Write failing tests**
 
 ```ts
-it('HumanTakeoverCard shows "Last modified 3 hours ago via chat (klavdia)" when audit has recent entry', async () => {
-  render(<HumanTakeoverCard agentId="amina" />);
+it('HumanTakeoverCard shows "Last modified 3 hours ago via chat (operator_agent)" when audit has recent entry', async () => {
+  render(<HumanTakeoverCard agentId="customer_agent" />);
   await waitFor(() => screen.getByText(/Last modified/i));
-  expect(screen.getByText(/via chat \(klavdia\)/i)).toBeInTheDocument();
+  expect(screen.getByText(/via chat \(operator_agent\)/i)).toBeInTheDocument();
 });
 
 it('hides indicator when no audit entries exist', async () => { ... });

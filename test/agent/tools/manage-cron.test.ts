@@ -20,8 +20,8 @@ describe('createManageCronTool', () => {
       ? {
           agentId: 'test-agent',
           channel: 'telegram',
-          peerId: '48705953',
-          senderId: '48705953',
+          peerId: '123456789',
+          senderId: '123456789',
           accountId: 'content_sm',
           threadId: 'topic-1',
         }
@@ -47,14 +47,14 @@ describe('createManageCronTool', () => {
     expect(store.list('test-agent')[0]).toMatchObject({
       deliverTo: {
         channel: 'telegram',
-        peer_id: '48705953',
+        peer_id: '123456789',
         account_id: 'content_sm',
         thread_id: 'topic-1',
       },
       createdBy: {
         channel: 'telegram',
-        sender_id: '48705953',
-        peer_id: '48705953',
+        sender_id: '123456789',
+        peer_id: '123456789',
         account_id: 'content_sm',
         thread_id: 'topic-1',
       },
@@ -81,11 +81,11 @@ describe('createManageCronTool', () => {
       id: 'bad-target',
       schedule: '0 9 * * *',
       prompt: 'hello',
-      deliver_to: { channel: 'telegram', peer_id: 'timur@nocodia.dev' },
+      deliver_to: { channel: 'telegram', peer_id: 'operator@example.com' },
     });
     expect(store.list('test-agent')[0].deliverTo).toEqual({
       channel: 'telegram',
-      peer_id: '48705953',
+      peer_id: '123456789',
       account_id: 'content_sm',
       thread_id: 'topic-1',
     });
