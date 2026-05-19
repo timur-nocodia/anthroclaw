@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { MemoryProvider } from '../../memory/provider.js';
 import type { SearchResult } from '../../memory/store.js';
 import { mergeResults } from '../../memory/search.js';

@@ -1,3 +1,0 @@
-TIMUR_AGENT_LIVE_SEND_MEDIA_OK
-
-This small document is used by the guarded timur_agent live send_media gate.

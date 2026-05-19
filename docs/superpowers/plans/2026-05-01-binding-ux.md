@@ -52,8 +52,8 @@ describe('POST /api/agents/[id]/route-test', () => {
     // mock gateway with operator_agent route on group + topic 3
     const res = await POST(authReq({
       channel: 'telegram', account_id: 'content_sm', chat_type: 'group',
-      peer_id: '-1003729315809', thread_id: '3', sender_id: '48705953',
-      text: '@clowwy_bot покажи show_config', mentioned_bot: true,
+      peer_id: '-1003729315809', thread_id: '3', sender_id: '<telegram-peer-id>',
+      text: '@example_bot покажи show_config', mentioned_bot: true,
     }), { params: { agentId: 'operator_agent' } });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
@@ -202,9 +202,9 @@ describe('describeBinding', () => {
     expect(describeBinding({
       channel: 'telegram', account: 'content_sm', scope: 'group',
       peers: ['-1003729315809'], topics: ['3'], mention_only: true,
-    }, { telegramAccounts: { content_sm: { username: 'clowwy_bot' } } })).toEqual({
+    }, { telegramAccounts: { content_sm: { username: 'example_bot' } } })).toEqual({
       icon: 'telegram',
-      title: 'Telegram (clowwy_bot · content_sm)',
+      title: 'Telegram (example_bot · content_sm)',
       lines: [
         'In group: -1003729315809',
         'In topic: 3',

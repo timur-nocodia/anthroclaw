@@ -2,16 +2,59 @@
 
 All notable changes to AnthroClaw are documented here.
 
-> **Looking for a specific feature?** The **channel binding wizard** (mouse-driven 5-step UI for connecting an agent to channels/groups/topics) shipped in **[v0.7.0](#070---2026-05-01)** below. The **Operator Control Plane** (auto-pause on human takeover, generic notifications emitter, cross-agent admin tools) and **self-configuration tools** (configure agents via chat) shipped in **[v0.6.0](#060---2026-05-01)**. Most other major capabilities (Plugin framework, **LCM** lossless context management, **Safety profiles**, **Learning loop**, **Scheduled tasks**, **chat_like_openclaw**) shipped in **[v0.5.0](#050---2026-04-30)**. Earlier releases focused on Sessions UI (0.4.0) and persistent session/channel reliability (0.3.0).
+> **Looking for a specific feature?** The **channel binding wizard** (mouse-driven 5-step UI for connecting an agent to channels/groups/topics) shipped in **[v0.7.0](#070---2026-05-01)** below. The **Operator Control Plane** (auto-pause on human takeover, generic notifications emitter, cross-agent admin tools) and **self-configuration tools** (configure agents via chat) shipped in **[v0.6.0](#060---2026-05-01)**. Most other major capabilities (Plugin framework, **LCM** lossless context management, **Safety profiles**, **Learning loop**, **Scheduled tasks**, **chat_like_anthroclaw**) shipped in **[v0.5.0](#050---2026-04-30)**. Earlier releases focused on Sessions UI (0.4.0) and persistent session/channel reliability (0.3.0).
 
 ## [Unreleased]
+
+## [1.2.0] - 2026-05-19
+
+### Added
+- Pi-native Runtime v1 control plane for runtime status, provider credentials,
+  model registry, runtime config, side-effect gates, expansion status, and
+  per-agent effective runtime metadata.
+- Runtime provider APIs and UI flows for configuring Pi auth and provider keys
+  without exposing legacy Claude auth as the primary setup path.
+- Public OSS regression guard that blocks private rollout agent directories,
+  credential artifacts, legacy primary-runtime copy, and private rollout names
+  from shipped examples/docs.
+- Runtime v1 migration status, parity matrix, execution plan, canary plan, and
+  UI control-plane checklist documenting the Pi-native release criteria.
+
+### Changed
+- Runtime v1 / Pi is now the default product framing for user-facing LLM
+  execution. Claude Agent SDK is retained only as an optional legacy fallback
+  and diagnostics path.
+- Runtime UI has been reworked around instance-level runtime setup, Pi/provider
+  auth, model selection, runtime gates, and provider testing instead of
+  Claude-specific setup.
+- Default personal chat safety profile copy and generated examples now use
+  `chat_like_anthroclaw`; existing `chat_like_openclaw` configs remain accepted
+  as a legacy alias.
+- Agent examples, docs, config samples, and public copy now use generic OSS
+  runtime examples instead of private rollout agents.
+- Generic side-effect gate coverage now treats messaging, media, notifications,
+  scheduled work, Buildroom, MCP/file-transfer, Honcho, learning, and memory as
+  reusable runtime primitives rather than agent-specific scripts.
+- Gateway/runtime identity, Pi headless behavior, and runtime control-plane
+  routes now have expanded test coverage.
+
+### Removed
+- Private Telegram/lab agent directories and CLI smoke scripts from the OSS
+  shipped surface.
+- Public runtime docs/copy that presented Claude Agent SDK compatibility as the
+  target of the migration.
 
 ### Fixed
 - Gateway now canonicalizes `OC_AGENTS_DIR` and `OC_DATA_DIR` from its actual startup paths while running, preventing the Claude SDK baseline path from resolving agent workspaces under the wrong worktree.
 - Claude headless smoke runs now fail on text-shaped authentication failures instead of treating provider auth errors as successful model output.
+- Next.js dev instrumentation no longer imports the backend gateway during UI
+  development, avoiding accidental native/runtime dependency loading while the
+  runtime page is being tested.
 
 ### Documentation
 - Runtime v1 canary docs now record the first-window Claude baseline waiver and require the waiver owner/reason/scope in canary evidence.
+- README, guide, Honcho, Buildroom, migration, and Runtime v1 status docs now
+  describe the Pi-native Runtime v1 path as the current product direction.
 
 ## [1.1.7] - 2026-05-16
 
@@ -61,9 +104,9 @@ All notable changes to AnthroClaw are documented here.
 - fix(reliability): break auto-compress retry loop + reviewer rubric schema mismatch (#38) (d66b5c2)
 
 
-## [1.0.0] - 2026-05-14 — The Funeral Release
+## [1.0.0] - 2026-05-14 — Archive Release
 
-This release marks the end of active AnthroClaw development.
+This release marked the end of the original Claude Agent SDK product line.
 
 AnthroClaw started as an experiment in making Claude Code usable
 outside the terminal: from Telegram, WhatsApp, and web chat, with
@@ -77,14 +120,12 @@ plans starting June 15, 2026.
 That move is good for users, but it removes the urgency behind
 AnthroClaw as originally imagined.
 
-This repository will remain public as:
+At the time, this repository remained public as:
 
 - a reference implementation
 - a research artifact
 - a snapshot of lessons learned while building around Claude Agent SDK
-- an archive of the product direction
-
-No active roadmap is planned.
+- an archive of that product direction
 
 Thank you to everyone who looked at it, starred it, tested it, or
 gave feedback.
@@ -426,7 +467,7 @@ generic "Invalid key" — even when the token was valid.
 
 ## [0.11.0] - 2026-05-13
 
-Honcho memory, MCP onboarding, Claude subscription auth, and
+Honcho memory, MCP onboarding, legacy Claude auth, and
 operator-safe learning release. This release adds a first-party Honcho
 plugin, gives operators a UI-driven way to connect external MCP servers,
 adds admin-managed Claude Code subscription authorization, and turns
@@ -453,7 +494,7 @@ learning approvals into an auditable operator workflow.
   credential references are resolved at MCP wire-up, OAuth tokens refresh
   before load when needed, runtime 401s mark servers as `needs_reauth`,
   and the UI surfaces reauth banners/status per server.
-- **Claude subscription auth in Settings.**
+- **legacy Claude auth in Settings.**
   Added an admin Settings panel and API routes for Claude Code
   subscription authorization using the official Claude CLI:
   start/cancel/complete/verify/restart-runtime/status. Docker now
@@ -513,7 +554,7 @@ learning approvals into an auditable operator workflow.
 - MCP onboarding now depends on encrypted credential storage. Production
   deployments should set and preserve `ANTHROCLAW_MASTER_KEY`; without
   it, secret-backed MCP onboarding cannot safely persist credentials.
-- Claude subscription auth is now expected to be performed from the
+- legacy Claude auth is now expected to be performed from the
   admin Settings UI instead of manually entering a host/container shell.
   Existing deployments should keep `data/claude` persistent.
 - Honcho remains opt-in per agent. Enable it only for agents/channels
@@ -672,11 +713,11 @@ runtime boundary.
 ## [0.9.0] - 2026-05-05
 
 System-prompt resolution release. Closes a pre-existing pre-v0.8 bug
-discovered while diagnosing the 2026-05-04 Amina hallucination incident:
+discovered while diagnosing the 2026-05-04 customer assistant hallucination incident:
 agent CLAUDE.md files were either ignored entirely (under `public` /
 `trusted` / `private` profiles) or sent to the model as literal
 `@./SOUL.md` text without resolving the `@-imports` (under
-`chat_like_openclaw`). Both halves are now fixed. Also ships a documentation
+`chat_like_anthroclaw`). Both halves are now fixed. Also ships a documentation
 overhaul making safety-profile selection obvious for new operators.
 
 ### Added
@@ -695,7 +736,7 @@ overhaul making safety-profile selection obvious for new operators.
 - **`composeSystemPrompt` profile-aware composer**
   (`src/sdk/system-prompt.ts`). Replaces the inline branching in
   `buildSdkOptions`. Per profile:
-  - `chat_like_openclaw` → personality (custom or
+  - `chat_like_anthroclaw` → personality (custom or
     `CHAT_PERSONALITY_BASELINE`) + separator + agent CLAUDE.md
   - `public` (string mode) → profile text + separator + agent CLAUDE.md
   - `trusted` / `private` (preset mode) → SDK preset with `append:
@@ -707,14 +748,14 @@ overhaul making safety-profile selection obvious for new operators.
 ### Fixed
 
 - **System prompt body now reaches the model under every safety
-  profile.** Previously, only `chat_like_openclaw` agents had their
+  profile.** Previously, only `chat_like_anthroclaw` agents had their
   CLAUDE.md included in `Options.systemPrompt`. `public`, `trusted`,
   and `private` profile agents received only the profile's 6-line
   generic placeholder (`public`) or the bare `claude_code` preset
   (`trusted` / `private`). The agent's authored rules — identity, role,
   guardrails, tone — were invisible to the model. Production hotfix on
-  2026-05-04 swapped `leads_agent` (Amina) from `public` to
-  `chat_like_openclaw` and inlined the @-imports by hand. This release
+  2026-05-04 swapped `customer_intake_agent` (customer assistant) from `public` to
+  `chat_like_anthroclaw` and inlined the @-imports by hand. This release
   is the architectural fix; the hotfix can be reverted in a follow-up.
 - **`@-imports` no longer reach the model as literal text.** Production
   CLAUDE.md files in the form
@@ -745,8 +786,8 @@ secrets), this release will start sending that content to the model.
    - Check any files imported via `@./...` recursively.
 2. Production hotfixes from 2026-05-04 can now be reverted in a
    follow-up commit:
-   - `agents/leads_agent/agent.yml` — restore `safety_profile: public`
-   - `agents/{leads_agent,timur_agent,content_sm_building}/CLAUDE.md` —
+   - `agents/customer_intake_agent/agent.yml` — restore `safety_profile: public`
+   - `agents/{customer_intake_agent,operator_agent,content_agent}/CLAUDE.md` —
      restore `@-imports` form from the `.bak-imports*` backups.
 
 ### Documentation
@@ -757,7 +798,7 @@ secrets), this release will start sending that content to the model.
   - "Which profile do I want?" decision-tree + 4-row comparison table
     (audience, allowed tools, approvals, rate limit, system-prompt
     source) at the top of the section.
-  - Explicit `chat_like_openclaw` vs `private` comparison for personal
+  - Explicit `chat_like_anthroclaw` vs `private` comparison for personal
     use — the most-asked question before this rewrite.
   - Each profile sub-section now follows a consistent structure (when
     to use → built-ins allowed → full hard-blacklist sourced from
@@ -777,7 +818,7 @@ secrets), this release will start sending that content to the model.
 - 5 new integration tests in `options-chat.test.ts` and
   `options-profile.test.ts` asserting CLAUDE.md presence under each of
   the 4 profiles + byte-identical backward-compat for
-  `chat_like_openclaw` with no `@-imports`.
+  `chat_like_anthroclaw` with no `@-imports`.
 - Total: 1822 / 1822 green.
 
 ### Operator actions
@@ -789,13 +830,13 @@ successful prod deploy, the 2026-05-04 hotfixes can be reverted:
 # on prod:
 cd /home/ubuntu/anthroclaw
 
-# leads_agent.yml: restore safety_profile: public
-mv agents/leads_agent/agent.yml.bak-pre-chat-profile-1777911287 agents/leads_agent/agent.yml
+# customer_intake_agent.yml: restore safety_profile: public
+mv agents/customer_intake_agent/agent.yml.bak-pre-chat-profile-1777911287 agents/customer_intake_agent/agent.yml
 
 # Restore @-imports CLAUDE.md (resolver does the inlining now)
-mv agents/leads_agent/CLAUDE.md.bak-imports-only-1777911469 agents/leads_agent/CLAUDE.md
-mv agents/timur_agent/CLAUDE.md.bak-imports-1777911551 agents/timur_agent/CLAUDE.md
-mv agents/content_sm_building/CLAUDE.md.bak-imports-1777911551 agents/content_sm_building/CLAUDE.md
+mv agents/customer_intake_agent/CLAUDE.md.bak-imports-only-1777911469 agents/customer_intake_agent/CLAUDE.md
+mv agents/operator_agent/CLAUDE.md.bak-imports-1777911551 agents/operator_agent/CLAUDE.md
+mv agents/content_agent/CLAUDE.md.bak-imports-1777911551 agents/content_agent/CLAUDE.md
 
 # ConfigWatcher hot-reloads on agent.yml; CLAUDE.md picked up on next session.
 ```
@@ -875,7 +916,7 @@ related production bugs found 2026-05-04.
   addendum (don't invent technical excuses involving internal
   architecture; refusal must be plain) plus instructions for adding
   `escalate` to the agent's `mcp_tools`. Operators of customer-facing
-  agents (e.g. `leads_agent`/Amina) apply this at deploy time.
+  agents (e.g. `customer_intake_agent`/customer assistant) apply this at deploy time.
 
 - **`escalate` in example agent** — `agents/example/agent.yml`
   ships with `escalate` registered.
@@ -923,7 +964,7 @@ related production bugs found 2026-05-04.
 3. **Disable cron jobs that relied on inherited Claude.ai MCP
    servers.** After deploy, `mcp__claude_ai_*` tools return deny
    from the cutoff gate. Most affected: `morning-standup` for
-   `timur_agent` (calendar reads). Disable in
+   `operator_agent` (calendar reads). Disable in
    `data/dynamic-cron.json` (set `enabled: false`) until v0.9.0
    ships agent-driven OAuth.
 
@@ -939,10 +980,10 @@ related production bugs found 2026-05-04.
   session, follow-up user message started a different session.
   Fixed by mirroring the captured session id to the user-shaped
   sessionKey in `handleCronJob`.
-- **Bug #2 (cross-tenant calendar leak):** Klavdia (`timur_agent`)
+- **Bug #2 (cross-tenant calendar leak):** operator assistant (`operator_agent`)
   read Roman's Google Calendar via the inherited Claude.ai MCP
   server. Closed structurally by the cutoff (Subsystem 1).
-- **Bug #3 (Amina hallucination):** `leads_agent` invented an
+- **Bug #3 (customer assistant hallucination):** `customer_intake_agent` invented an
   "operator console is disabled" excuse to refuse a client.
   Mitigated by the customer-facing addendum + `escalate` tool.
 - **Bug #4 (cross-agent MCP credential leak):** parent of #2;
@@ -966,7 +1007,7 @@ related production bugs found 2026-05-04.
   "model-knows-they-exist" layer. A clean closure requires moving the
   OAuth-token storage out of `~/.claude/` so the bind-mount is no
   longer needed — deferred to v0.9.0.
-- **Bug #3 behavioural discipline (Amina) only partially fixed.** The
+- **Bug #3 behavioural discipline (customer assistant) only partially fixed.** The
   structural cause (hallucinated technical excuses about internal
   architecture) is closed by the cutoff + `escalate` tool. But the
   customer-facing addendum's hard rules (no competitor names, no
@@ -1119,7 +1160,7 @@ Heartbeat routines, an SDK-native periodic wake loop driven by per-agent
 
 This release is the large post-0.4.1 integration release: plugin framework,
 Lossless Context Management, secure-by-default safety profiles, the
-`chat_like_openclaw` conversational profile, SDK-native learning loop, and
+`chat_like_anthroclaw` conversational profile, SDK-native learning loop, and
 the corresponding UI surfaces. It also finalizes Gateway-managed scheduled
 tasks for chat agents, including context-bound delivery and model-driven
 fire-time execution. Internal planning docs were removed from the public docs
@@ -1154,11 +1195,11 @@ tree; the maintained operator reference is now `docs/guide.md`.
   node/message drill-down, grep bridge, and doctor panel with double-gated
   cleanup.
 - **Safety profiles**: `public`, `trusted`, `private`, and
-  `chat_like_openclaw`, backed by tool metadata, validation, rate-limit floors,
+  `chat_like_anthroclaw`, backed by tool metadata, validation, rate-limit floors,
   sandbox defaults, hard blacklists, and profile-aware SDK options.
 - **Interactive approval flow** for destructive tool calls where the profile
   and channel support it, including Telegram callback handling.
-- **`chat_like_openclaw` profile** for personal conversational bots: warm
+- **`chat_like_anthroclaw` profile** for personal conversational bots: warm
   pure-string baseline prompt, optional `personality` override, wildcard
   allowlists accepted, all configured tools allowed, and no approval flow.
 - **Learning loop** with SDK-native headless reviewer, artifact export,
@@ -1178,8 +1219,8 @@ tree; the maintained operator reference is now `docs/guide.md`.
 
 ### Changed
 
-- New agents scaffold with `safety_profile: chat_like_openclaw` by default.
-- `agents/example` (Klavdia) moved to `chat_like_openclaw` with warmer prompt
+- New agents scaffold with `safety_profile: chat_like_anthroclaw` by default.
+- `agents/example` (operator assistant) moved to `chat_like_anthroclaw` with warmer prompt
   files and learning rollout config.
 - `buildSdkOptions()` and `canUseTool()` are profile-aware and short-circuit
   chat profile permissions while preserving explicit deny tools.
@@ -1504,7 +1545,7 @@ runtime, opt-in task notifications).
 ### Added
 
 - Initial public AnthroClaw release.
-- Claude Agent SDK-native gateway runtime.
+- Claude Agent SDK-based gateway runtime.
 - Telegram and WhatsApp channels.
 - Agent workspaces with prompts, skills, MCP tools, memory, sessions, and cron jobs.
 - Next.js Web UI for agents, chat, channels, logs, settings, and fleet control.

@@ -70,8 +70,8 @@ const validBody = {
   chat_type: 'group',
   peer_id: '-1003729315809',
   thread_id: '3',
-  sender_id: '48705953',
-  text: '@clowwy_bot show_config',
+  sender_id: '123456789',
+  text: '@example_bot show_config',
   mentioned_bot: true,
 };
 

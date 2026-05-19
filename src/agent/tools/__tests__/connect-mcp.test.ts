@@ -43,7 +43,7 @@ const getFacade = (): RealOnboarding =>
   facade as unknown as RealOnboarding;
 
 const DM_CONTEXT: ConnectMcpDispatchContext = {
-  agentSessionKey: 'amina:telegram:dm:123',
+  agentSessionKey: 'agent_alpha:telegram:dm:123',
   chatType: 'private',
 };
 
@@ -53,7 +53,7 @@ describe('connect_mcp built-in tool', () => {
   });
 
   it('exposes a single discriminated-union tool named "connect_mcp"', () => {
-    const def = createConnectMcpTool('amina', getFacade);
+    const def = createConnectMcpTool('agent_alpha', getFacade);
     const meta = def as unknown as { name: string; description: string };
     expect(meta.name).toBe('connect_mcp');
     expect(meta.description).toMatch(/MCP/);
@@ -66,7 +66,7 @@ describe('connect_mcp built-in tool', () => {
       authUrl: 'https://ui.test/api/mcp/oauth/start/pnd_1',
       serverName: 'notion',
     });
-    const def = createConnectMcpTool('amina', getFacade, () => DM_CONTEXT);
+    const def = createConnectMcpTool('agent_alpha', getFacade, () => DM_CONTEXT);
     const r = await getHandler(def)({ op: 'connect', url: 'https://mcp.notion.com' });
     expect(r.isError).toBeFalsy();
     const payload = parseResultJson(r);
@@ -86,8 +86,8 @@ describe('connect_mcp built-in tool', () => {
     expect(call.url).toBe('https://mcp.notion.com');
     expect(call.requester).toEqual({
       kind: 'agent',
-      agentId: 'amina',
-      agentSessionKey: 'amina:telegram:dm:123',
+      agentId: 'agent_alpha',
+      agentSessionKey: 'agent_alpha:telegram:dm:123',
       chatType: 'private',
     });
   });
@@ -99,7 +99,7 @@ describe('connect_mcp built-in tool', () => {
       apikeyUrl: 'https://ui.test/mcp/connect/pnd_2/apikey',
       serverName: 'postmypost',
     });
-    const def = createConnectMcpTool('amina', getFacade, () => DM_CONTEXT);
+    const def = createConnectMcpTool('agent_alpha', getFacade, () => DM_CONTEXT);
     const r = await getHandler(def)({ op: 'connect', url: 'https://mcp.postmypost.io' });
     const payload = parseResultJson(r);
     expect(payload.status).toBe('awaiting_apikey');
@@ -113,8 +113,8 @@ describe('connect_mcp built-in tool', () => {
       status: 'rejected',
       reason: 'mcp_onboarding_requires_dm',
     });
-    const def = createConnectMcpTool('amina', getFacade, () => ({
-      agentSessionKey: 'amina:telegram:group:-100123',
+    const def = createConnectMcpTool('agent_alpha', getFacade, () => ({
+      agentSessionKey: 'agent_alpha:telegram:group:-100123',
       chatType: 'group' as const,
     }));
     const r = await getHandler(def)({ op: 'connect', url: 'https://mcp.notion.com' });
@@ -131,7 +131,7 @@ describe('connect_mcp built-in tool', () => {
       status: 'rejected',
       reason: 'dcr_required_but_not_supported',
     });
-    const def = createConnectMcpTool('amina', getFacade, () => DM_CONTEXT);
+    const def = createConnectMcpTool('agent_alpha', getFacade, () => DM_CONTEXT);
     const r = await getHandler(def)({ op: 'connect', url: 'https://mcp.notion.com' });
     const payload = parseResultJson(r);
     expect(payload.status).toBe('rejected');
@@ -146,7 +146,7 @@ describe('connect_mcp built-in tool', () => {
       serverId: 'postmypost',
       tools: [{ name: 'create_post' }],
     });
-    const def = createConnectMcpTool('amina', getFacade);
+    const def = createConnectMcpTool('agent_alpha', getFacade);
     const r = await getHandler(def)({
       op: 'apikey',
       pendingId: 'pnd_3',
@@ -168,7 +168,7 @@ describe('connect_mcp built-in tool', () => {
       server: 'postmypost',
       tools: [{ name: 'create_post' }, { name: 'delete_post' }],
     });
-    const def = createConnectMcpTool('amina', getFacade);
+    const def = createConnectMcpTool('agent_alpha', getFacade);
     const r = await getHandler(def)({
       op: 'finalize',
       pendingId: 'pnd_3',
@@ -189,7 +189,7 @@ describe('connect_mcp built-in tool', () => {
       age_seconds: 12,
       expires_in_seconds: 588,
     });
-    const def = createConnectMcpTool('amina', getFacade);
+    const def = createConnectMcpTool('agent_alpha', getFacade);
     const r = await getHandler(def)({ op: 'check', pendingId: 'pnd_4' });
     const payload = parseResultJson(r);
     expect(payload).toEqual({
@@ -202,7 +202,7 @@ describe('connect_mcp built-in tool', () => {
 
   it('op=check returns a not-found marker when the pending row is unknown', async () => {
     facade.getPending.mockReturnValueOnce(null);
-    const def = createConnectMcpTool('amina', getFacade);
+    const def = createConnectMcpTool('agent_alpha', getFacade);
     const r = await getHandler(def)({ op: 'check', pendingId: 'pnd_missing' });
     const payload = parseResultJson(r);
     expect(payload.status).toBe('not_found');
@@ -210,7 +210,7 @@ describe('connect_mcp built-in tool', () => {
 
   it('op=cancel returns success when the row is cancelled', async () => {
     facade.cancel.mockReturnValueOnce({ status: 'cancelled' });
-    const def = createConnectMcpTool('amina', getFacade);
+    const def = createConnectMcpTool('agent_alpha', getFacade);
     const r = await getHandler(def)({ op: 'cancel', pendingId: 'pnd_5' });
     const payload = parseResultJson(r);
     expect(payload.status).toBe('cancelled');
@@ -219,7 +219,7 @@ describe('connect_mcp built-in tool', () => {
 
   it('op=cancel returns not_found when the row is unknown', async () => {
     facade.cancel.mockReturnValueOnce({ status: 'not_found' });
-    const def = createConnectMcpTool('amina', getFacade);
+    const def = createConnectMcpTool('agent_alpha', getFacade);
     const r = await getHandler(def)({ op: 'cancel', pendingId: 'pnd_missing' });
     const payload = parseResultJson(r);
     expect(payload.status).toBe('not_found');
@@ -227,7 +227,7 @@ describe('connect_mcp built-in tool', () => {
 
   it('op=cancel returns not_cancellable when the row is in a terminal state', async () => {
     facade.cancel.mockReturnValueOnce({ status: 'not_cancellable' });
-    const def = createConnectMcpTool('amina', getFacade);
+    const def = createConnectMcpTool('agent_alpha', getFacade);
     const r = await getHandler(def)({ op: 'cancel', pendingId: 'pnd_done' });
     const payload = parseResultJson(r);
     expect(payload.status).toBe('not_cancellable');
@@ -235,7 +235,7 @@ describe('connect_mcp built-in tool', () => {
 
   it('returns isError=true when the underlying facade throws', async () => {
     facade.startConnection.mockRejectedValueOnce(new Error('boom'));
-    const def = createConnectMcpTool('amina', getFacade, () => DM_CONTEXT);
+    const def = createConnectMcpTool('agent_alpha', getFacade, () => DM_CONTEXT);
     const r = await getHandler(def)({ op: 'connect', url: 'https://mcp.notion.com' });
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toMatch(/boom/);
@@ -250,14 +250,14 @@ describe('connect_mcp built-in tool', () => {
       pendingId: 'pnd_x',
       authUrl: 'https://ui.test/api/mcp/oauth/start/pnd_x',
     });
-    const def = createConnectMcpTool('amina', getFacade);
+    const def = createConnectMcpTool('agent_alpha', getFacade);
     const r = await getHandler(def)({ op: 'connect', url: 'https://mcp.notion.com' });
     expect(r.isError).toBeFalsy();
     const call = facade.startConnection.mock.calls[0][0] as {
       requester: { kind: string; agentId: string; agentSessionKey?: string; chatType?: string };
     };
     expect(call.requester.kind).toBe('agent');
-    expect(call.requester.agentId).toBe('amina');
+    expect(call.requester.agentId).toBe('agent_alpha');
     expect(call.requester.agentSessionKey).toBeUndefined();
     expect(call.requester.chatType).toBeUndefined();
   });

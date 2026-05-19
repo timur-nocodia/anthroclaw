@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { HelpCircle, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ANTHROPIC_MODELS } from "@/lib/anthropic-models";
+import {
+  STATIC_RUNTIME_MODEL_OPTIONS,
+  withCurrentRuntimeModelOption,
+} from "@/lib/runtime-models";
 
 /* ------------------------------------------------------------------ */
 /*  JSON Schema → Form generator                                       */
@@ -21,7 +24,7 @@ import { ANTHROPIC_MODELS } from "@/lib/anthropic-models";
 /*    - array of primitives (string/number/boolean)                    */
 /*                                                                     */
 /*  Field name heuristics:                                             */
-/*    - `model` or `*_model` strings → Anthropic models dropdown       */
+/*    - `model` or `*_model` strings → runtime models dropdown         */
 /*                                                                     */
 /*  Anything else falls back to a JSON textarea (validate on blur).    */
 /* ------------------------------------------------------------------ */
@@ -77,7 +80,7 @@ const MONO_FIELD_STYLE: React.CSSProperties = {
   fontFamily: "var(--oc-mono)",
 };
 
-/** Field name implies Anthropic model selection — render dropdown. */
+/** Field name implies runtime model selection — render dropdown. */
 function isModelField(label: string | undefined): boolean {
   if (!label) return false;
   return label === "model" || label.endsWith("_model") || label.endsWith("Model");
@@ -223,12 +226,10 @@ function SchemaNode(props: NodeProps) {
   }
 
   if (type === "string") {
-    // Anthropic-model dropdown for fields named `model` / `*_model`.
+    // Runtime-model dropdown for fields named `model` / `*_model`.
     if (isModelField(label)) {
       const current = typeof value === "string" ? value : "";
-      const isCustom =
-        current !== "" &&
-        !ANTHROPIC_MODELS.includes(current as typeof ANTHROPIC_MODELS[number]);
+      const options = withCurrentRuntimeModelOption(STATIC_RUNTIME_MODEL_OPTIONS, current);
       return (
         <Field label={label} tooltip={desc} pathKey={pathKey} error={error}>
           <select
@@ -243,16 +244,11 @@ function SchemaNode(props: NodeProps) {
             data-model-select
           >
             <option value="">— inherit from agent —</option>
-            {ANTHROPIC_MODELS.map((m) => (
-              <option key={m} value={m}>
-                {m}
+            {options.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
               </option>
             ))}
-            {isCustom && (
-              <option key={`extra-${current}`} value={current}>
-                {current} (custom)
-              </option>
-            )}
           </select>
         </Field>
       );

@@ -147,7 +147,7 @@ describe('@e2e: plugin admin full flow', () => {
       join(tmpAgentsDir, 'test-agent', 'agent.yml'),
       [
         '# operator-authored agent',
-        'model: claude-sonnet-4-6',
+        'model: anthropic/claude-sonnet-4-6',
         'safety_profile: trusted',
         'routes:',
         '  - channel: telegram',

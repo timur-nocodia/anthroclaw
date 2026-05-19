@@ -1,4 +1,4 @@
-import type { PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import type { PermissionResult } from '@anthroclaw/legacy-claude-agent-sdk';
 
 interface PendingApproval {
   resolve: (v: PermissionResult) => void;

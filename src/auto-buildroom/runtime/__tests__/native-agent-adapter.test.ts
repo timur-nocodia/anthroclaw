@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeAgentRuntimeAdapter } from '../native-agent-adapter.js';
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+vi.mock('@anthroclaw/legacy-claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { query } from '@anthroclaw/legacy-claude-agent-sdk';
 
 const mockedQuery = query as unknown as ReturnType<typeof vi.fn>;
 
@@ -14,7 +14,7 @@ describe('NativeAgentRuntimeAdapter', () => {
     mockedQuery.mockReset();
   });
 
-  it('starts Builder through native SDK query with bounded Buildroom options', async () => {
+  it('starts Builder through the configured runtime adapter with bounded Buildroom options', async () => {
     const close = vi.fn();
     mockedQuery.mockReturnValue({
       [Symbol.asyncIterator]: () => asyncEvents([
@@ -95,4 +95,3 @@ describe('NativeAgentRuntimeAdapter', () => {
 async function* asyncEvents(events: Array<Record<string, unknown>>) {
   for (const event of events) yield event;
 }
-

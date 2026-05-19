@@ -1,7 +1,11 @@
-model: claude-sonnet-4-6
+model: anthropic/claude-sonnet-4-6
 timezone: Asia/Almaty
 
-safety_profile: chat_like_openclaw
+runtime:
+  headless:
+    provider: pi
+
+safety_profile: chat_like_anthroclaw
 
 routes:
   - channel: telegram
@@ -9,9 +13,6 @@ routes:
 
 pairing:
   mode: off
-
-allowlist:
-  telegram: [ "48705953" ]
 
 mcp_tools:
   - memory_search
@@ -63,5 +64,5 @@ cron:
       [SILENT]. If something is wrong, describe the problem."
     deliver_to:
       channel: telegram
-      peer_id: "48705953"
+      peer_id: "<telegram-peer-id>"
     enabled: false

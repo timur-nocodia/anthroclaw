@@ -31,8 +31,8 @@ export async function runDiagnostics(opts: {
   // 4. Config file
   results.push(checkConfig(opts.globalConfig));
 
-  // 5. Native SDK auth
-  results.push(checkNativeSdkAuth());
+  // 5. Legacy fallback auth
+  results.push(checkLegacyFallbackAuth());
 
   // 6. Learning admin approvals
   results.push(checkLearningAdminApprovals(opts.agentsDir));
@@ -129,20 +129,20 @@ function checkConfig(globalConfig: unknown): CheckResult {
   };
 }
 
-function checkNativeSdkAuth(): CheckResult {
+function checkLegacyFallbackAuth(): CheckResult {
   if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-    return { name: 'Native SDK auth', status: 'ok', message: 'CLAUDE_CODE_OAUTH_TOKEN is set' };
+    return { name: 'Legacy fallback auth', status: 'ok', message: 'CLAUDE_CODE_OAUTH_TOKEN is set' };
   }
 
   if (existsSync(join(homedir(), '.claude'))) {
-    return { name: 'Native SDK auth', status: 'ok', message: '~/.claude exists' };
+    return { name: 'Legacy fallback auth', status: 'ok', message: '~/.claude exists' };
   }
 
   return {
-    name: 'Native SDK auth',
-    status: 'error',
-    message: 'Claude Code OAuth credentials not found',
-    fix: 'Run claude login or set CLAUDE_CODE_OAUTH_TOKEN',
+    name: 'Legacy fallback auth',
+    status: 'warn',
+    message: 'Legacy fallback credentials not found; Runtime v1 / Pi does not require them',
+    fix: 'Configure Runtime providers for normal agent calls. Add legacy fallback credentials only if rollback diagnostics need them.',
   };
 }
 

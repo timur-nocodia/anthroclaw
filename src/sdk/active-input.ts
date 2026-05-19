@@ -17,8 +17,8 @@ export interface SdkActiveInputStatus {
 
 export function getSdkActiveInputStatus(featureFlagEnabled = false): SdkActiveInputStatus {
   const reason = featureFlagEnabled
-    ? 'features.sdk_active_input is enabled, but native active-run steer remains disabled: AnthroClaw does not keep a tested writable SDK Query handle for active runs. Supported delivery is interrupt-and-restart.'
-    : 'SDK streamInput is present, but native active-run steer is disabled until a dedicated SDK proof keeps a tested writable Query handle. Supported delivery is interrupt-and-restart.';
+    ? 'features.sdk_active_input is enabled, but native active-run steer remains disabled: AnthroClaw does not keep a tested writable provider run handle for active runs. Supported delivery is interrupt-and-restart.'
+    : 'Provider stream input is present only on legacy/provider-specific surfaces; Runtime v1 active-run steer stays disabled until a tested writable run handle exists. Supported delivery is interrupt-and-restart.';
 
   return {
     streamInputAvailable: true,

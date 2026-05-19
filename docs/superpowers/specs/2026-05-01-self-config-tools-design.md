@@ -30,7 +30,7 @@ For a chat-first workflow this is friction. The desired pattern: tell the agent 
 
 ```
               ┌───────────────────────────────────────────┐
-              │  Calling agent (e.g. Klavdia in Telegram) │
+              │  Calling agent (e.g. Operator Assistant in Telegram) │
               │   model decides to call manage_*           │
               └─────────────────┬─────────────────────────┘
                                 │ MCP tool call
@@ -108,7 +108,7 @@ export interface AgentConfigWriter {
 7. **Audit** — append JSONL entry to `data/config-audit/{agentId}.jsonl`:
 
 ```jsonl
-{"ts":"2026-05-01T14:00:00Z","caller":"klavdia","callerSession":"telegram:control:dm:48705953","target":"amina","section":"notifications","action":"add_subscription","prev":{...},"new":{...}}
+{"ts":"2026-05-01T14:00:00Z","caller":"operator_agent","callerSession":"telegram:control:dm:<telegram-peer-id>","target":"customer_agent","section":"notifications","action":"add_subscription","prev":{...},"new":{...}}
 ```
 
 8. **Release lock**.
@@ -131,7 +131,7 @@ Extract from `plugins/operator-console/src/permissions.ts` into `src/security/cr
 
 ### Defaults
 
-Self-config tools shipped as built-in MCP (under `src/agent/tools/`), opt-in via `mcp_tools:` array. Default disallowed in `public` safety profile (HARD_BLACKLIST). Allowed in `trusted`, `private`, `chat_like_openclaw`.
+Self-config tools shipped as built-in MCP (under `src/agent/tools/`), opt-in via `mcp_tools:` array. Default disallowed in `public` safety profile (HARD_BLACKLIST). Allowed in `trusted`, `private`, `chat_like_anthroclaw`.
 
 ## Subsystem 3 — Tools
 
@@ -228,7 +228,7 @@ Read-only. No permission required for `target_agent_id === self`. Cross-agent re
 Each Handoff tab card (`HumanTakeoverCard`, `NotificationsCard`) shows the most recent audit entry:
 
 ```
-Last modified: 3 hours ago via chat (klavdia)
+Last modified: 3 hours ago via chat (operator_agent)
 ```
 
 API endpoint: `GET /api/agents/[agentId]/config-audit?section=notifications&limit=1`.
@@ -302,7 +302,7 @@ data/                              # runtime — created on first write
 `data/config-audit/{agentId}.jsonl` — one line per write, append-only:
 
 ```jsonl
-{"ts":"...","caller_agent":"klavdia","caller_session":"telegram:control:dm:48705953","target_agent":"amina","section":"notifications","action":"add_subscription","prev":{...},"new":{...},"source":"chat"|"ui"}
+{"ts":"...","caller_agent":"operator_agent","caller_session":"telegram:control:dm:<telegram-peer-id>","target_agent":"customer_agent","section":"notifications","action":"add_subscription","prev":{...},"new":{...},"source":"chat"|"ui"}
 ```
 
 Source tags distinguish chat-driven from UI-driven changes. UI saves get `source: "ui"`; tools get `source: "chat"`. Useful for the "Last modified by" indicator.
@@ -330,7 +330,7 @@ Verification: write a fresh `notifications.subscriptions` entry via `manage_noti
 - Chat → tool call → file write → chokidar fires → agent reloads with new config (use real chokidar; the existing tests already do this for `agent.yml` changes).
 - Concurrent writes serialize via lock (two parallel `patchSection` calls produce sequential audit entries, both writes succeed).
 - UI save and chat tool both write through `AgentConfigWriter` → audit log shows both with correct `source` tags.
-- Cross-agent: Klavdia (with `operator_console.manages: ['amina']`) calls `manage_notifications({ target_agent_id: 'amina', ... })` → Amina's YAML updated.
+- Cross-agent: Operator Assistant (with `operator_console.manages: ['customer_agent']`) calls `manage_notifications({ target_agent_id: 'customer_agent', ... })` → customer assistant's YAML updated.
 
 ### Contract tests
 
@@ -360,7 +360,7 @@ Single PR, three commit groups:
 Total ~16 tasks. Estimated 2-3 hours of subagent-driven work.
 
 Stage 1 acceptance: UI save through `AgentConfigWriter` works, audit entries are written, rollback via backup file.
-Stage 2 acceptance: chat in Telegram with Klavdia → "set up notifications to me" → Amina's `notifications` block populated → subsequent pause triggers a Telegram notification.
+Stage 2 acceptance: chat in Telegram with Operator Assistant → "set up notifications to me" → customer assistant's `notifications` block populated → subsequent pause triggers a Telegram notification.
 Stage 3 acceptance: Handoff tab shows last-modified info; clicking refresh reflects chat-driven changes within 10s.
 
 ## Open questions

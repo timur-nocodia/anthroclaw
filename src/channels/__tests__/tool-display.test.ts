@@ -153,7 +153,7 @@ describe('resolveToolDisplay — skill-file detection', () => {
   });
 
   it('Write of agents/<id>/skills/<name>/foo → skill_write', () => {
-    const r = resolveToolDisplay('Write', { file_path: '/repo/agents/timur_agent/skills/twitter-autopilot/notes.md' }, 40);
+    const r = resolveToolDisplay('Write', { file_path: '/repo/agents/example/skills/twitter-autopilot/notes.md' }, 40);
     expect(r.emoji).toBe('📚');
     expect(r.displayName).toBe('skill_write');
     expect(r.preview).toBe('twitter-autopilot');

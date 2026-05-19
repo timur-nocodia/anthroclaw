@@ -41,7 +41,7 @@ describe('PeerPauseStore — basic shape', () => {
   it('starts empty and reports unpaused for unknown peers', () => {
     const store = createPeerPauseStore({ filePath: ':memory:' });
     expect(store.list()).toEqual([]);
-    const result = store.isPaused('amina', 'whatsapp:business:37120000@s.whatsapp.net');
+    const result = store.isPaused('customer_agent', 'whatsapp:business:37120000@s.whatsapp.net');
     expect(result.paused).toBe(false);
     expect(result.entry).toBeUndefined();
   });
@@ -129,19 +129,19 @@ describe('PeerPauseStore — pause/unpause/extend', () => {
 
   it('pause sets entry with expiry and isPaused returns it', () => {
     const store = createPeerPauseStore({ filePath: ':memory:', clock });
-    const entry = store.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'whatsapp:fromMe' });
+    const entry = store.pause('customer_agent', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'whatsapp:fromMe' });
     expect(entry.expiresAt).toBe('2026-05-01T12:30:00.000Z');
     expect(entry.extendedCount).toBe(0);
-    expect(store.isPaused('amina', 'wa:b:1')).toMatchObject({ paused: true, expired: false });
+    expect(store.isPaused('customer_agent', 'wa:b:1')).toMatchObject({ paused: true, expired: false });
   });
 
   it('isPaused returns expired:true after TTL passes', () => {
     const t0 = NOW;
     let now = t0;
     const store = createPeerPauseStore({ filePath: ':memory:', clock: () => now });
-    store.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    store.pause('customer_agent', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
     now = t0 + 31 * 60 * 1000;
-    const result = store.isPaused('amina', 'wa:b:1');
+    const result = store.isPaused('customer_agent', 'wa:b:1');
     expect(result.paused).toBe(true);
     expect(result.expired).toBe(true);
   });
@@ -149,27 +149,27 @@ describe('PeerPauseStore — pause/unpause/extend', () => {
   it('extend resets expiry and increments extendedCount', () => {
     let now = NOW;
     const store = createPeerPauseStore({ filePath: ':memory:', clock: () => now });
-    store.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    store.pause('customer_agent', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
     now = NOW + 10 * 60 * 1000;
-    const ext = store.extend('amina', 'wa:b:1');
+    const ext = store.extend('customer_agent', 'wa:b:1');
     expect(ext?.expiresAt).toBe('2026-05-01T12:40:00.000Z');
     expect(ext?.extendedCount).toBe(1);
   });
 
   it('unpause removes the entry and returns the previous state', () => {
     const store = createPeerPauseStore({ filePath: ':memory:', clock });
-    store.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
-    const removed = store.unpause('amina', 'wa:b:1', 'manual');
+    store.pause('customer_agent', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    const removed = store.unpause('customer_agent', 'wa:b:1', 'manual');
     expect(removed?.peerKey).toBe('wa:b:1');
-    expect(store.isPaused('amina', 'wa:b:1').paused).toBe(false);
+    expect(store.isPaused('customer_agent', 'wa:b:1').paused).toBe(false);
   });
 
   it('indefinite pause has expiresAt: null and never reports expired', () => {
     let now = NOW;
     const store = createPeerPauseStore({ filePath: ':memory:', clock: () => now });
-    store.pause('amina', 'wa:b:1', { reason: 'manual_indefinite', source: 'mcp:operator-console' });
+    store.pause('customer_agent', 'wa:b:1', { reason: 'manual_indefinite', source: 'mcp:operator-console' });
     now = NOW + 100 * 24 * 60 * 60 * 1000;
-    expect(store.isPaused('amina', 'wa:b:1')).toMatchObject({ paused: true, expired: false });
+    expect(store.isPaused('customer_agent', 'wa:b:1')).toMatchObject({ paused: true, expired: false });
   });
 });
 ```
@@ -211,7 +211,7 @@ describe('PeerPauseStore — persistence', () => {
   it('saves to disk and reloads on next instance', async () => {
     const path = join(dir, 'peer-pauses.json');
     const a = createPeerPauseStore({ filePath: path });
-    a.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    a.pause('customer_agent', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
     await a.flush();   // public flush() for tests; internal save is debounced
 
     const b = createPeerPauseStore({ filePath: path });
@@ -450,23 +450,23 @@ git commit -m "feat(channels): emit operator_outbound from whatsapp adapter"
 ```ts
 it('on operator_outbound, gateway pauses the peer for the configured TTL', async () => {
   const gw = await createTestGateway({
-    agents: { amina: { human_takeover: { enabled: true, pause_ttl_minutes: 30 } } },
+    agents: { customer_agent: { human_takeover: { enabled: true, pause_ttl_minutes: 30 } } },
   });
   gw.simulateChannelEvent('whatsapp', 'business', {
     type: 'operator_outbound',
     peerKey: 'whatsapp:business:37120@s.whatsapp.net',
     messageId: 'X', timestamp: 1, hasMedia: false, textPreview: 'hi',
   });
-  const status = gw.peerPauseStore.isPaused('amina', 'whatsapp:business:37120@s.whatsapp.net');
+  const status = gw.peerPauseStore.isPaused('customer_agent', 'whatsapp:business:37120@s.whatsapp.net');
   expect(status.paused).toBe(true);
 });
 
 it('does NOT pause when human_takeover.enabled is false', async () => {
   const gw = await createTestGateway({
-    agents: { amina: { human_takeover: { enabled: false } } },
+    agents: { customer_agent: { human_takeover: { enabled: false } } },
   });
   gw.simulateChannelEvent(...);
-  expect(gw.peerPauseStore.list('amina')).toEqual([]);
+  expect(gw.peerPauseStore.list('customer_agent')).toEqual([]);
 });
 
 it('extends pause on subsequent operator_outbound', async () => {
@@ -500,8 +500,8 @@ git commit -m "feat(gateway): wire operator_outbound → peer-pause store"
 
 ```ts
 it('skips dispatch for paused peer', async () => {
-  const gw = await createTestGateway({ agents: { amina: { human_takeover: { enabled: true } } } });
-  gw.peerPauseStore.pause('amina', 'whatsapp:business:37120@s.whatsapp.net', {
+  const gw = await createTestGateway({ agents: { customer_agent: { human_takeover: { enabled: true } } } });
+  gw.peerPauseStore.pause('customer_agent', 'whatsapp:business:37120@s.whatsapp.net', {
     ttlMinutes: 30, reason: 'operator_takeover', source: 'wa',
   });
   const queryAgent = vi.spyOn(gw, 'queryAgent');
@@ -540,15 +540,15 @@ git commit -m "feat(gateway): skip dispatch for paused peers; auto-clear expired
 
 ```ts
 it('suppresses send when peer is paused mid-generation', async () => {
-  const gw = await createTestGateway({ agents: { amina: { human_takeover: { enabled: true } } } });
-  const tool = gw.agents.get('amina')!.getTool('send_message');
-  gw.peerPauseStore.pause('amina', 'whatsapp:business:37120@s.whatsapp.net', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+  const gw = await createTestGateway({ agents: { customer_agent: { human_takeover: { enabled: true } } } });
+  const tool = gw.agents.get('customer_agent')!.getTool('send_message');
+  gw.peerPauseStore.pause('customer_agent', 'whatsapp:business:37120@s.whatsapp.net', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
   const result = await tool.handler({
     channel: 'whatsapp',
     account_id: 'business',
     peer_id: '37120@s.whatsapp.net',
     text: 'reply that should be suppressed',
-  }, mockContext({ agentId: 'amina' }));
+  }, mockContext({ agentId: 'customer_agent' }));
   expect(result).toMatchObject({ suppressed: true, reason: 'paused' });
   expect(mockChannelAdapter.sendCount).toBe(0);
 });
@@ -585,7 +585,7 @@ git commit -m "feat(send_message): suppress sends to paused peers"
 it('end-to-end: WA fromMe → pause → skip inbound → TTL expire → resume', async () => {
   const clock = mockClock('2026-05-01T12:00:00Z');
   const gw = await createTestGateway({
-    agents: { amina: { human_takeover: { enabled: true, pause_ttl_minutes: 30 } } },
+    agents: { customer_agent: { human_takeover: { enabled: true, pause_ttl_minutes: 30 } } },
     clock,
   });
 
@@ -603,7 +603,7 @@ it('end-to-end: WA fromMe → pause → skip inbound → TTL expire → resume',
 
   // 4. Next inbound — dispatched normally
   await gw.simulateInbound({ channel: 'whatsapp', accountId: 'business', peerId: '37120@s.whatsapp.net', text: 'still there?' });
-  expect(queryCalls).toEqual(['amina:still there?']);
+  expect(queryCalls).toEqual(['customer_agent:still there?']);
 });
 ```
 
@@ -704,7 +704,7 @@ One test per event name. Telegram-formatted output uses `*bold*`, `_italic_`, ``
 ```ts
 it('formats peer_pause_started for telegram', () => {
   const msg = formatTelegram('peer_pause_started', {
-    agentId: 'amina',
+    agentId: 'customer_agent',
     peerKey: 'whatsapp:business:37120@s.whatsapp.net',
     expiresAt: '2026-05-01T12:30:00Z',
   });
@@ -734,13 +734,13 @@ git commit -m "feat(notifications): event formatters for telegram and plain text
 it('emit calls sendMessage on each matching subscription', async () => {
   const sendMessage = vi.fn();
   const emitter = createNotificationsEmitter({ sendMessage });
-  emitter.subscribeAgent('amina', {
-    routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+  emitter.subscribeAgent('customer_agent', {
+    routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '<telegram-peer-id>' } },
     subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
   });
-  await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1', expiresAt: '...' });
+  await emitter.emit('peer_pause_started', { agentId: 'customer_agent', peerKey: 'wa:b:1', expiresAt: '...' });
   expect(sendMessage).toHaveBeenCalledOnce();
-  expect(sendMessage.mock.calls[0][0]).toMatchObject({ channel: 'telegram', peerId: '48705953' });
+  expect(sendMessage.mock.calls[0][0]).toMatchObject({ channel: 'telegram', peerId: '<telegram-peer-id>' });
 });
 
 it('throttle dedupes identical events within window', async () => {
@@ -774,8 +774,8 @@ git commit -m "feat(notifications): subscription dispatch with per-event throttl
 it('peer_pause_summary_daily fires at scheduled cron and emits aggregated payload', async () => {
   const sendMessage = vi.fn();
   const emitter = createNotificationsEmitter({ sendMessage });
-  emitter.subscribeAgent('amina', {
-    routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+  emitter.subscribeAgent('customer_agent', {
+    routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '<telegram-peer-id>' } },
     subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' }],
   });
   // simulate cron tick at 09:00
@@ -806,11 +806,11 @@ it('pause start emits peer_pause_started; expiry emits peer_pause_ended', async 
   const sendMessage = vi.fn();
   const gw = await createTestGateway({
     agents: {
-      amina: {
+      customer_agent: {
         human_takeover: { enabled: true, pause_ttl_minutes: 30 },
         notifications: {
           enabled: true,
-          routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '48705953' } },
+          routes: { operator: { channel: 'telegram', accountId: 'control', peerId: '<telegram-peer-id>' } },
           subscriptions: [
             { event: 'peer_pause_started', route: 'operator' },
             { event: 'peer_pause_ended', route: 'operator' },
@@ -903,18 +903,18 @@ import { canManage } from '../src/permissions.js';
 
 describe('operator-console permissions', () => {
   it('canManage true when target listed in manages array', () => {
-    const cfg = resolveConfig({ enabled: true, manages: ['amina'] });
-    expect(canManage(cfg, 'amina')).toBe(true);
-    expect(canManage(cfg, 'larry')).toBe(false);
+    const cfg = resolveConfig({ enabled: true, manages: ['customer_agent'] });
+    expect(canManage(cfg, 'customer_agent')).toBe(true);
+    expect(canManage(cfg, 'secondary_agent')).toBe(false);
   });
   it('manages: "*" allows all', () => {
     const cfg = resolveConfig({ enabled: true, manages: '*' });
-    expect(canManage(cfg, 'amina')).toBe(true);
+    expect(canManage(cfg, 'customer_agent')).toBe(true);
     expect(canManage(cfg, 'anything')).toBe(true);
   });
   it('disabled config refuses everything', () => {
     const cfg = resolveConfig({ enabled: false, manages: '*' });
-    expect(canManage(cfg, 'amina')).toBe(false);
+    expect(canManage(cfg, 'customer_agent')).toBe(false);
   });
 });
 ```
@@ -939,20 +939,20 @@ git commit -m "feat(operator-console): config schema and manages whitelist"
 describe('operator_console.peer_pause', () => {
   it('action=pause sets pause on target via gateway store', async () => {
     const fakeStore = makeFakePauseStore();
-    const tool = createPeerPauseTool({ pauseStore: fakeStore, config: { enabled: true, manages: ['amina'] } });
+    const tool = createPeerPauseTool({ pauseStore: fakeStore, config: { enabled: true, manages: ['customer_agent'] } });
     const r = await tool.handler({
-      target_agent_id: 'amina',
+      target_agent_id: 'customer_agent',
       peer: { channel: 'whatsapp', account_id: 'business', peer_id: '37120@s.whatsapp.net' },
       action: 'pause',
       ttl_minutes: 60,
-    }, mockCtx({ agentId: 'klavdia' }));
+    }, mockCtx({ agentId: 'operator_agent' }));
     expect(r).toMatchObject({ ok: true, expires_at: expect.any(String) });
-    expect(fakeStore.list('amina')).toHaveLength(1);
+    expect(fakeStore.list('customer_agent')).toHaveLength(1);
   });
 
   it('rejects unmanaged target', async () => {
-    const tool = createPeerPauseTool({ pauseStore: makeFakePauseStore(), config: { enabled: true, manages: ['amina'] } });
-    await expect(tool.handler({ target_agent_id: 'larry', peer: { ... }, action: 'pause' }, mockCtx())).rejects.toThrow(/not authorized/);
+    const tool = createPeerPauseTool({ pauseStore: makeFakePauseStore(), config: { enabled: true, manages: ['customer_agent'] } });
+    await expect(tool.handler({ target_agent_id: 'secondary_agent', peer: { ... }, action: 'pause' }, mockCtx())).rejects.toThrow(/not authorized/);
   });
 
   it('action=unpause/list/status work end-to-end', async () => { ... });
@@ -983,13 +983,13 @@ it('synthesizes an inbound to target session and returns dispatched_message_id',
   const dispatched: any[] = [];
   const tool = createDelegateTool({
     dispatchSynthetic: (msg) => { dispatched.push(msg); return { messageId: 'ID' }; },
-    config: { enabled: true, manages: ['amina'] },
+    config: { enabled: true, manages: ['customer_agent'] },
   });
   const r = await tool.handler({
-    target_agent_id: 'amina',
+    target_agent_id: 'customer_agent',
     peer: { channel: 'whatsapp', account_id: 'business', peer_id: '37120@s.whatsapp.net' },
     instruction: 'find out a convenient time for a call',
-  }, mockCtx({ agentId: 'klavdia' }));
+  }, mockCtx({ agentId: 'operator_agent' }));
   expect(r.ok).toBe(true);
   expect(dispatched).toHaveLength(1);
   expect(dispatched[0].text).toContain('Operator delegation');
@@ -1057,7 +1057,7 @@ git commit -m "feat(operator-console): escalate tool"
 
 ```ts
 it('register returns 5 tools when all capabilities enabled', () => {
-  const ctx = makeFakePluginContext({ config: { enabled: true, manages: ['amina'], capabilities: ['peer_pause','delegate','list_peers','peer_summary','escalate'] } });
+  const ctx = makeFakePluginContext({ config: { enabled: true, manages: ['customer_agent'], capabilities: ['peer_pause','delegate','list_peers','peer_summary','escalate'] } });
   const inst = register(ctx);
   expect(inst.tools.map((t) => t.name)).toEqual([
     'operator_console.peer_pause',
@@ -1097,8 +1097,8 @@ git commit -m "feat(operator-console): register all tools by capabilities"
 describe('GET /api/agents/[agentId]/pauses', () => {
   it('returns 401 without auth', async () => { ... });
   it('returns active pauses for the agent', async () => {
-    const gw = mockGateway({ pauses: [{ agentId: 'amina', peerKey: 'wa:b:1', ... }] });
-    const res = await GET(req('/api/agents/amina/pauses'), { params: { agentId: 'amina' } });
+    const gw = mockGateway({ pauses: [{ agentId: 'customer_agent', peerKey: 'wa:b:1', ... }] });
+    const res = await GET(req('/api/agents/customer_agent/pauses'), { params: { agentId: 'customer_agent' } });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ pauses: [{ peerKey: 'wa:b:1' }] });
   });
@@ -1190,7 +1190,7 @@ git commit -m "feat(ui): ActivityLogPanel for pause events"
 
 ```tsx
 it('HandoffTab renders all four sections', () => {
-  render(<HandoffTab serverId="local" agentId="amina" agent={mockAgent} />);
+  render(<HandoffTab serverId="local" agentId="customer_agent" agent={mockAgent} />);
   expect(screen.getByText(/Auto-pause on human takeover/i)).toBeInTheDocument();
   expect(screen.getByText(/Notifications/i)).toBeInTheDocument();
   expect(screen.getByText(/Active pauses/i)).toBeInTheDocument();
@@ -1217,24 +1217,24 @@ git commit -m "feat(ui): Handoff tab with all four sections wired into agent set
 it('e2e: operator agent pauses a managed agent peer via Telegram', async () => {
   const gw = await createTestGateway({
     agents: {
-      klavdia: {
-        plugins: { 'operator-console': { enabled: true, manages: ['amina'] } },
+      operator_agent: {
+        plugins: { 'operator-console': { enabled: true, manages: ['customer_agent'] } },
         mcp_tools: ['operator_console.peer_pause'],
       },
-      amina: {
+      customer_agent: {
         human_takeover: { enabled: true },
       },
     },
   });
 
-  // Klavdia receives a Telegram inbound asking to pause +371
+  // Operator Assistant receives a Telegram inbound asking to pause +371
   await gw.simulateInbound({
-    channel: 'telegram', accountId: 'control', peerId: '48705953',
-    text: 'pause +37120@s.whatsapp.net for amina',
+    channel: 'telegram', accountId: 'control', peerId: '<telegram-peer-id>',
+    text: 'pause +37120@s.whatsapp.net for customer_agent',
   });
 
-  // After Klavdia processes: pause exists for amina
-  expect(gw.peerPauseStore.list('amina')).toHaveLength(1);
+  // After Operator Assistant processes: pause exists for customer_agent
+  expect(gw.peerPauseStore.list('customer_agent')).toHaveLength(1);
 });
 
 it('e2e: delegate_to_peer dispatches synthesized inbound to managed agent', async () => { ... });
@@ -1243,7 +1243,7 @@ it('e2e: delegate_to_peer dispatches synthesized inbound to managed agent', asyn
 - [ ] **Step 2-5:** Run, fix any wiring gaps, commit.
 
 ```
-git commit -m "test(integration): operator-console e2e via klavdia → amina"
+git commit -m "test(integration): operator-console e2e via operator_agent → customer_agent"
 ```
 
 ---

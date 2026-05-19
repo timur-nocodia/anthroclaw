@@ -151,13 +151,13 @@ describe('plugins config schema', () => {
               {
                 channel: 'telegram',
                 account_id: 'main',
-                peer_id: '48705953',
+                peer_id: '123456789',
                 thread_id: '10',
               },
             ],
             senders: {
               telegram: {
-                main: ['48705953'],
+                main: ['123456789'],
               },
             },
             notify_admin_for: ['learning_skill', 'curator_action'],
@@ -168,15 +168,15 @@ describe('plugins config schema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.learning.approvals.admin.routes).toEqual([
-        expect.objectContaining({ channel: 'telegram', account_id: 'main', peer_id: '48705953' }),
+        expect.objectContaining({ channel: 'telegram', account_id: 'main', peer_id: '123456789' }),
       ]);
-      expect(result.data.learning.approvals.admin.senders.telegram.main).toEqual(['48705953']);
+      expect(result.data.learning.approvals.admin.senders.telegram.main).toEqual(['123456789']);
     }
   });
 
   it('example agent is configured for propose-only learning rollout', () => {
     const config = loadAgentYml(resolve(process.cwd(), 'agents', 'example'));
-    expect(config.safety_profile).toBe('chat_like_openclaw');
+    expect(config.safety_profile).toBe('chat_like_anthroclaw');
     expect(config.learning).toMatchObject({
       enabled: true,
       mode: 'propose',
@@ -285,7 +285,7 @@ describe('plugins config schema', () => {
       notifications: {
         enabled: true,
         routes: {
-          operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' },
+          operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' },
           team: { channel: 'whatsapp', account_id: 'business', peer_id: '37120000@s.whatsapp.net' },
         },
         subscriptions: [
@@ -300,7 +300,7 @@ describe('plugins config schema', () => {
       expect(result.data.notifications?.routes.operator).toMatchObject({
         channel: 'telegram',
         account_id: 'control',
-        peer_id: '48705953',
+        peer_id: '123456789',
       });
       expect(result.data.notifications?.subscriptions).toHaveLength(3);
     }

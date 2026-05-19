@@ -30,7 +30,7 @@ beforeEach(() => {
 
 describe("HandoffTab", () => {
   it("renders all four sections", async () => {
-    render(<HandoffTab serverId="local" agentId="amina" agent={{}} />);
+    render(<HandoffTab serverId="local" agentId="agent_alpha" agent={{}} />);
     expect(screen.getByText(/Auto-pause on human takeover/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Notifications/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Active pauses/i).length).toBeGreaterThan(0);
@@ -43,7 +43,7 @@ describe("HandoffTab", () => {
     render(
       <HandoffTab
         serverId="local"
-        agentId="amina"
+        agentId="agent_alpha"
         agent={{
           human_takeover: { enabled: true, pause_ttl_minutes: 99 },
           notifications: {

@@ -62,7 +62,7 @@ Ring 1 live channel turn was executed on 2026-05-17 at 01:12 Asia/Almaty:
 
 - agent: `example`;
 - channel: Telegram DM;
-- target: allowlisted operator peer `48705953`;
+- target: allowlisted operator peer `<telegram-peer-id>`;
 - prompt: `Reply exactly PI_LIVE_CHANNEL_OK. Do not use tools.`;
 - delivery path: `Gateway.dispatch` with real `TelegramChannel.sendText`, without Telegram long-polling;
 - result: exactly `PI_LIVE_CHANNEL_OK`;
@@ -90,7 +90,7 @@ Allowed:
 
 - agent: `example`;
 - routes: Web UI and Telegram DM only;
-- Telegram peer: allowlisted operator peer `48705953`;
+- Telegram peer: allowlisted operator peer `<telegram-peer-id>`;
 - prompts: ordinary operator messages and exact-answer sanity prompts;
 - memory/learning: learning may remain `mode: propose`; no auto-apply;
 - tools: no forced broad tool exercise; incidental safe reads are acceptable only inside the agent workspace.
@@ -119,7 +119,7 @@ Ring 2 low-risk usage window was executed on 2026-05-17:
 - Web UI total tokens: `16`;
 - Web UI tool calls: `0`;
 - Telegram result: exactly `PI_RING2_TELEGRAM_OK`;
-- Telegram channel: DM to allowlisted operator peer `48705953`;
+- Telegram channel: DM to allowlisted operator peer `<telegram-peer-id>`;
 - Telegram sent messages: `1`;
 - Telegram message id: present;
 - learning side effect: propose-only review created with action type `none`;
@@ -395,7 +395,7 @@ Allowed:
 
 - agent: `example`;
 - channel: Telegram DM;
-- target: allowlisted operator peer `48705953`;
+- target: allowlisted operator peer `<telegram-peer-id>`;
 - execution path: Gateway cron delivery handler with a one-shot job object;
 - prompt: exact-answer no-tools prompt;
 - real `TelegramChannel.sendText`;
@@ -419,7 +419,7 @@ Ring 4.1 live cron delivery was executed on 2026-05-17:
 
 - agent: `example`;
 - channel: Telegram DM;
-- target: allowlisted operator peer `48705953`;
+- target: allowlisted operator peer `<telegram-peer-id>`;
 - delivery path: Gateway cron handler with real `TelegramChannel.sendText`, without Telegram long-polling;
 - persisted cron: false;
 - prompt: `Reply exactly PI_RING4_CRON_OK. Do not use tools.`;
@@ -449,7 +449,7 @@ Allowed:
 - event: `escalation_needed`;
 - route: temporary in-process notification subscription;
 - channel: Telegram DM;
-- target: allowlisted operator peer `48705953`;
+- target: allowlisted operator peer `<telegram-peer-id>`;
 - real `TelegramChannel.sendText`;
 - marker check in formatted notification text;
 - post-run monitor;
@@ -474,7 +474,7 @@ Ring 4.2 live proactive notification was executed on 2026-05-17:
 - agent: `example`;
 - event: `escalation_needed`;
 - channel: Telegram DM;
-- target: allowlisted operator peer `48705953`;
+- target: allowlisted operator peer `<telegram-peer-id>`;
 - delivery path: `NotificationsEmitter.emit` -> Telegram formatter -> real `TelegramChannel.sendText`, without Telegram long-polling;
 - subscription: temporary in-process route, not persisted to agent config;
 - marker: `PI_RING4_PROACTIVE_NOTIFICATION_OK`;
@@ -506,7 +506,7 @@ Allowed:
 - `runOnce=false`;
 - short `expiresAt`;
 - channel: Telegram DM;
-- target: allowlisted operator peer `48705953`;
+- target: allowlisted operator peer `<telegram-peer-id>`;
 - exactly two live delivery ticks;
 - real `TelegramChannel.sendText`;
 - dynamic cron disable/delete cleanup;
@@ -532,7 +532,7 @@ Ring 4.3 live recurring cron was executed on 2026-05-17:
 
 - agent: `example`;
 - channel: Telegram DM;
-- target: allowlisted operator peer `48705953`;
+- target: allowlisted operator peer `<telegram-peer-id>`;
 - delivery path: `DynamicCronStore.create` -> `Gateway.reloadDynamicCron` -> `CronScheduler` tick -> Pi query -> real `TelegramChannel.sendText`, without Telegram long-polling;
 - schedule: `*/15 * * * * *`;
 - `runOnce`: false;
@@ -565,7 +565,7 @@ Allowed:
 - tool: `send_message` exactly once;
 - channel: Telegram DM;
 - account: `default`;
-- target: allowlisted operator peer `48705953`;
+- target: allowlisted operator peer `<telegram-peer-id>`;
 - marker check in delivered tool text;
 - final Web UI exact-answer check;
 - post-run monitor;
@@ -592,7 +592,7 @@ Ring 4.4 controlled `send_message` fanout was executed on 2026-05-17:
 - delivery path: Web UI Pi query -> `send_message` tool -> real `TelegramChannel.sendText`, without Telegram long-polling;
 - channel: Telegram DM;
 - account: `default`;
-- target: allowlisted operator peer `48705953`;
+- target: allowlisted operator peer `<telegram-peer-id>`;
 - tool call count: `1`;
 - tool name: `send_message`;
 - marker: `PI_RING4_SEND_MESSAGE_TOOL_OK`;
@@ -615,11 +615,11 @@ Ring 4.4 is closed. Remaining Ring 4 surface is one business-critical workflow; 
 
 ## Ring 4.5 Business-Critical Leads Escalation Scope
 
-The final Ring 4 high-risk surface is one business-critical customer-facing workflow for the live-only `leads_agent`: a customer asks for an Excel export of all leads. This path exercises public-profile tool policy, customer-facing refusal behavior, the `escalate` MCP tool, and the operator escalation JSONL queue without sending a WhatsApp message to a real customer.
+The final Ring 4 high-risk surface is one business-critical customer-facing workflow for the live-only `customer_intake_agent`: a customer asks for an Excel export of all leads. This path exercises public-profile tool policy, customer-facing refusal behavior, the `escalate` MCP tool, and the operator escalation JSONL queue without sending a WhatsApp message to a real customer.
 
 Allowed:
 
-- agent: `leads_agent`;
+- agent: `customer_intake_agent`;
 - source surface: Web UI simulated customer turn;
 - customer request: all-leads Excel export;
 - tool: `escalate` exactly once;
@@ -646,23 +646,23 @@ Excluded:
 
 Ring 4.5 initially exposed a real permission-policy defect:
 
-- `leads_agent` uses `safety_profile=public` and declares `escalate`;
+- `customer_intake_agent` uses `safety_profile=public` and declares `escalate`;
 - `escalate` declares `META.safe_in_public=true`;
 - `escalate` was missing from `MCP_META`;
-- the prefixed runtime tool `mcp__leads_agent-tools__escalate` was therefore treated as a plugin tool without metadata and denied under the public profile.
+- the prefixed runtime tool `mcp__customer_intake_agent-tools__escalate` was therefore treated as a plugin tool without metadata and denied under the public profile.
 
 The defect was fixed by registering `escalate` in `MCP_META` and adding regression coverage for public-profile prefixed escalation.
 
 Post-fix Ring 4.5 was executed on 2026-05-17:
 
-- agent: `leads_agent`;
+- agent: `customer_intake_agent`;
 - source: Web UI simulated customer turn;
 - workflow: customer asks for all leads Excel export;
-- delivery path: Web UI Pi query -> `escalate` tool -> `data/escalations/leads_agent.jsonl`;
+- delivery path: Web UI Pi query -> `escalate` tool -> `data/escalations/customer_intake_agent.jsonl`;
 - tool call count: `1`;
 - tool name: `escalate`;
 - escalation rows added during verification: `1`;
-- escalation agent id: `leads_agent`;
+- escalation agent id: `customer_intake_agent`;
 - escalation marker present: true;
 - final response marker present: true;
 - forbidden internal terms present: false;
@@ -685,14 +685,14 @@ Ring 4.5 is closed. Ring 4 high-risk rollout is complete; future expansion shoul
 Future production expansion should start with a config-only audit before any live turn:
 
 ```bash
-pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --json
+pnpm runtime:pi-expansion-audit -- --agents-dir /path/to/anthroclaw/agents --json
 ```
 
 `--agents-dir` is repeatable when production configs are split between the tracked checkout and live-only roots:
 
 ```bash
 pnpm runtime:pi-expansion-audit -- \
-  --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents \
+  --agents-dir /path/to/anthroclaw/agents \
   --agents-dir /path/to/live-only/agents \
   --json
 ```
@@ -713,13 +713,13 @@ The audit is intentionally read-only. It loads `agent.yml` files through the sam
 Use `--max-risk <low|medium|high|critical>` when a release or operator checkpoint wants a failing gate. Example:
 
 ```bash
-pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --max-risk medium --json
+pnpm runtime:pi-expansion-audit -- --agents-dir /path/to/anthroclaw/agents --max-risk medium --json
 ```
 
 Use `--expect-agent <id>` when the checkpoint is about a specific live-only production agent. Expected agents are checked against the combined inventory from all audited roots. The command exits non-zero with `coverageGap=true` when that agent has no `agent.yml` in any audited directory:
 
 ```bash
-pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --expect-agent leads_agent --json
+pnpm runtime:pi-expansion-audit -- --agents-dir /path/to/anthroclaw/agents --expect-agent customer_intake_agent --json
 ```
 
 Directories under `agents-dir` that do not contain `agent.yml` are reported as `skippedDirectories` rather than silently treated as audited agents.
@@ -738,9 +738,9 @@ After audit coverage is closed for a specific candidate, create a redacted expan
 
 ```bash
 pnpm runtime:pi-expansion-packet -- \
-  --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents \
+  --agents-dir /path/to/anthroclaw/agents \
   --agents-dir /path/to/live-only/agents \
-  --agent leads_agent \
+  --agent customer_intake_agent \
   --owner <operator-or-team> \
   --rollback <rollback-runbook-or-command>
 ```
@@ -780,7 +780,7 @@ After changing the config:
 
 1. Restart Gateway.
 2. Run `pnpm runtime:pi-monitor -- --since-minutes 60 --json`.
-3. Run `pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --json`.
+3. Run `pnpm runtime:pi-canary-agent -- --agents-dir /path/to/anthroclaw/agents --agent example --json`.
 4. Confirm agents without per-agent overrides resolve to `claude-agent-sdk`.
 
 For ring-specific rollback, prefer a per-agent override only when the global default should remain Pi for lower rings. Do not leave temporary per-agent overrides undocumented.
@@ -792,7 +792,7 @@ Before advancing:
 ```bash
 pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6
 pnpm runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert
-pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --json
+pnpm runtime:pi-expansion-audit -- --agents-dir /path/to/anthroclaw/agents --json
 ```
 
 After the ring action:

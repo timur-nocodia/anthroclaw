@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/route-handler';
 import { getClaudeAuthManager } from '@/lib/claude-auth-instance';
+import { withLegacyClaudeRuntimeMeta } from '@/lib/legacy-runtime-response';
 
 export async function POST() {
   return withAuth(async () => {
     try {
-      return NextResponse.json(await getClaudeAuthManager().startLogin());
+      return NextResponse.json(withLegacyClaudeRuntimeMeta(await getClaudeAuthManager().startLogin()));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'claude_auth_start_failed';
-      return NextResponse.json({ error: 'claude_auth_start_failed', message }, { status: 500 });
+      return NextResponse.json(withLegacyClaudeRuntimeMeta({ error: 'claude_auth_start_failed', message }), { status: 500 });
     }
   });
 }

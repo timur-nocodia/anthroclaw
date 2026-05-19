@@ -4,7 +4,7 @@ import type {
   SessionKey,
   SessionStore,
   SessionStoreEntry,
-} from '@anthropic-ai/claude-agent-sdk';
+} from '@anthroclaw/legacy-claude-agent-sdk';
 
 const MAIN_TRANSCRIPT_FILE = 'main.jsonl';
 const TRANSCRIPT_EXT = '.jsonl';

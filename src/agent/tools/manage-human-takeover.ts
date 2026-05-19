@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
 import { HumanTakeoverSchema } from '../../config/schema.js';
 import type { AgentConfigWriter, PatchContext } from '../../config/writer.js';
 import type { ToolDefinition } from './types.js';

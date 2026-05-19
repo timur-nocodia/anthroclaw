@@ -1,0 +1,423 @@
+import 'dotenv/config';
+import { runPiAdminConfigGateCli } from './pi-admin-config-gate.js';
+import { runPiBuildroomHandoffGateCli } from './pi-buildroom-handoff-gate.js';
+import { runPiControlledLiveTurnGateCli } from './pi-controlled-live-turn-gate.js';
+import { runPiCronNotificationGateCli } from './pi-cron-notification-gate.js';
+import { runPiHonchoLocalGateCli } from './pi-honcho-local-gate.js';
+import { runPiLearningProposeGateCli } from './pi-learning-propose-gate.js';
+import { runPiLiveNotificationGateCli } from './pi-live-notification-gate.js';
+import { runPiLiveSendMediaGateCli } from './pi-live-send-media-gate.js';
+import { runPiLiveSendMessageGateCli } from './pi-live-send-message-gate.js';
+import { runPiMcpFileTransferGateCli } from './pi-mcp-file-transfer-gate.js';
+import { runPiMemoryReadGateCli } from './pi-memory-read-gate.js';
+import { runPiScheduledWorkGateCli } from './pi-scheduled-work-gate.js';
+import {
+  SIDE_EFFECT_GATE_REGISTRY,
+  findSideEffectGate,
+  sideEffectGateIds,
+  type SideEffectGateId,
+} from '../runtime/side-effect-gates/registry.js';
+
+export const PI_LIVE_GATE_IDS = sideEffectGateIds();
+
+export type PiLiveGateId = SideEffectGateId;
+
+interface PiLiveGateArgs {
+  describe?: PiLiveGateId;
+  gate?: PiLiveGateId;
+  plan?: PiLiveGateId;
+  planAll: boolean;
+  rest: string[];
+  validateArgs?: PiLiveGateId;
+  help: boolean;
+  json: boolean;
+  list: boolean;
+  strict: boolean;
+}
+
+interface PiLiveGateDeps {
+  stdout?: Pick<NodeJS.WriteStream, 'write'>;
+  stderr?: Pick<NodeJS.WriteStream, 'write'>;
+  gateRunners?: Partial<Record<PiLiveGateId, (argv: string[], deps?: unknown) => Promise<number>>>;
+}
+
+const GATE_RUNNERS: Record<PiLiveGateId, (argv: string[], deps?: unknown) => Promise<number>> = {
+  'controlled-live-turn': (argv, deps) => runPiControlledLiveTurnGateCli(argv, deps as never),
+  'live-send-message': (argv, deps) => runPiLiveSendMessageGateCli(argv, deps as never),
+  'live-send-media': (argv, deps) => runPiLiveSendMediaGateCli(argv, deps as never),
+  'live-notification': (argv, deps) => runPiLiveNotificationGateCli(argv, deps as never),
+  'cron-notification': (argv, deps) => runPiCronNotificationGateCli(argv, deps as never),
+  'scheduled-work': (argv, deps) => runPiScheduledWorkGateCli(argv, deps as never),
+  'buildroom-handoff': (argv, deps) => runPiBuildroomHandoffGateCli(argv, deps as never),
+  'admin-config': (argv, deps) => runPiAdminConfigGateCli(argv, deps as never),
+  'mcp-file-transfer': (argv, deps) => runPiMcpFileTransferGateCli(argv, deps as never),
+  'honcho-local': (argv, deps) => runPiHonchoLocalGateCli(argv, deps as never),
+  'learning-propose': (argv, deps) => runPiLearningProposeGateCli(argv, deps as never),
+  'memory-read': (argv, deps) => runPiMemoryReadGateCli(argv, deps as never),
+};
+
+export async function runPiLiveGateCli(
+  argv: string[],
+  deps: PiLiveGateDeps = {},
+): Promise<number> {
+  const stdout = deps.stdout ?? process.stdout;
+  const stderr = deps.stderr ?? process.stderr;
+
+  let args: PiLiveGateArgs;
+  try {
+    args = parsePiLiveGateArgs(argv);
+  } catch (err) {
+    stderr.write(`${errorMessage(err)}\n${usage()}\n`);
+    return 2;
+  }
+
+  if (args.help) {
+    stdout.write(`${usage()}\n`);
+    return 0;
+  }
+  if (args.list) {
+    stdout.write(args.json ? `${JSON.stringify(listPayload(), null, 2)}\n` : `${formatGateList()}\n`);
+    return 0;
+  }
+  if (args.describe) {
+    const gate = findSideEffectGate(args.describe);
+    if (!gate) {
+      stderr.write(`Unknown gate: ${args.describe}\n${usage()}\n`);
+      return 2;
+    }
+    stdout.write(args.json ? `${JSON.stringify(describePayload(gate), null, 2)}\n` : `${formatGateDescription(gate)}\n`);
+    return 0;
+  }
+  if (args.planAll) {
+    const catalog = buildRunPlanCatalog(args.strict);
+    stdout.write(args.json ? `${JSON.stringify(catalog, null, 2)}\n` : `${formatRunPlanCatalog(catalog)}\n`);
+    return catalog.status === 'ok' ? 0 : 2;
+  }
+  if (args.plan) {
+    const gate = findSideEffectGate(args.plan);
+    if (!gate) {
+      stderr.write(`Unknown gate: ${args.plan}\n${usage()}\n`);
+      return 2;
+    }
+    const plan = buildRunPlan(gate, args.rest, args.strict);
+    stdout.write(args.json ? `${JSON.stringify(plan, null, 2)}\n` : `${formatRunPlan(plan)}\n`);
+    return plan.status === 'ok' ? 0 : 2;
+  }
+  if (args.validateArgs) {
+    const gate = findSideEffectGate(args.validateArgs);
+    if (!gate) {
+      stderr.write(`Unknown gate: ${args.validateArgs}\n${usage()}\n`);
+      return 2;
+    }
+    const validation = validateGateArgs(gate, args.rest, args.strict);
+    stdout.write(args.json ? `${JSON.stringify(validation, null, 2)}\n` : `${formatValidation(validation)}\n`);
+    return validation.status === 'ok' ? 0 : 2;
+  }
+  if (!args.gate) {
+    stderr.write(`--gate is required.\n${usage()}\n`);
+    return 2;
+  }
+
+  const runner = deps.gateRunners?.[args.gate] ?? GATE_RUNNERS[args.gate];
+  return runner(args.rest, deps);
+}
+
+export function parsePiLiveGateArgs(argv: string[]): PiLiveGateArgs {
+  let describe: PiLiveGateId | undefined;
+  const rest: string[] = [];
+  let gate: PiLiveGateId | undefined;
+  let plan: PiLiveGateId | undefined;
+  let planAll = false;
+  let validateArgs: PiLiveGateId | undefined;
+  let help = false;
+  let json = false;
+  let list = false;
+  let strict = false;
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--') continue;
+    if (arg === '--help' || arg === '-h') {
+      help = true;
+      continue;
+    }
+    if (arg === '--json') {
+      json = true;
+      rest.push(arg);
+      continue;
+    }
+    if (arg === '--list') {
+      list = true;
+      continue;
+    }
+    if (arg === '--strict') {
+      strict = true;
+      continue;
+    }
+    if (arg === '--describe') {
+      describe = parseGateId(requireValue(argv, ++i, '--describe'));
+      continue;
+    }
+    if (arg.startsWith('--describe=')) {
+      describe = parseGateId(arg.slice('--describe='.length));
+      continue;
+    }
+    if (arg === '--plan-all') {
+      planAll = true;
+      continue;
+    }
+    if (arg === '--plan') {
+      plan = parseGateId(requireValue(argv, ++i, '--plan'));
+      continue;
+    }
+    if (arg.startsWith('--plan=')) {
+      plan = parseGateId(arg.slice('--plan='.length));
+      continue;
+    }
+    if (arg === '--validate-args') {
+      validateArgs = parseGateId(requireValue(argv, ++i, '--validate-args'));
+      continue;
+    }
+    if (arg.startsWith('--validate-args=')) {
+      validateArgs = parseGateId(arg.slice('--validate-args='.length));
+      continue;
+    }
+    if (arg === '--gate') {
+      gate = parseGateId(requireValue(argv, ++i, '--gate'));
+      continue;
+    }
+    if (arg.startsWith('--gate=')) {
+      gate = parseGateId(arg.slice('--gate='.length));
+      continue;
+    }
+    rest.push(arg);
+  }
+
+  return { describe, gate, plan, planAll, rest, validateArgs, help, json, list, strict };
+}
+
+function listPayload() {
+  return {
+    status: 'ok',
+    gates: SIDE_EFFECT_GATE_REGISTRY,
+  };
+}
+
+function describePayload(gate: NonNullable<ReturnType<typeof findSideEffectGate>>) {
+  return {
+    status: 'ok',
+    gate,
+  };
+}
+
+function buildRunPlan(
+  gate: NonNullable<ReturnType<typeof findSideEffectGate>>,
+  argv: string[],
+  strict: boolean,
+) {
+  const validation = validateGateArgs(gate, argv, strict);
+  const aggregateArgs = ['--gate', gate.id, ...argv];
+  return {
+    status: validation.status,
+    gate,
+    validation,
+    operator: {
+      risk: gate.risk,
+      action: gate.action,
+      approval: gate.execution.approval,
+      safetyMode: gate.execution.safetyMode,
+      supportsDryRun: gate.execution.supportsDryRun,
+    },
+    run: {
+      aggregateArgs,
+      focusedArgs: argv,
+      packageScripts: {
+        aggregate: ['pnpm', 'runtime:pi-live-gate', '--', ...aggregateArgs],
+        focused: ['pnpm', gate.focusedCommand, '--', ...argv],
+      },
+    },
+  };
+}
+
+function buildRunPlanCatalog(strict: boolean) {
+  const plans = SIDE_EFFECT_GATE_REGISTRY.map((gate) => buildRunPlan(gate, gate.execution.exampleArgs, strict));
+  return {
+    status: plans.every((plan) => plan.status === 'ok') ? 'ok' : 'failed',
+    plans,
+  };
+}
+
+function formatGateList(): string {
+  return [
+    'Pi live gates:',
+    ...SIDE_EFFECT_GATE_REGISTRY.map((gate) => {
+      const compatibilityCommand = 'compatibilityCommand' in gate ? gate.compatibilityCommand : undefined;
+      return [
+        `  ${gate.id} - ${gate.title}`,
+        `    group: ${gate.capabilityGroup}`,
+        `    summary: ${gate.summary}`,
+        `    action: ${gate.action}`,
+        `    risk: ${gate.risk}`,
+        `    focused: ${gate.focusedCommand}`,
+        `    compatibility: ${compatibilityCommand ?? 'none'}`,
+      ].join('\n');
+    }),
+  ].join('\n');
+}
+
+function formatGateDescription(gate: NonNullable<ReturnType<typeof findSideEffectGate>>): string {
+  const compatibilityCommand = 'compatibilityCommand' in gate ? gate.compatibilityCommand : undefined;
+  return [
+    `Pi live gate: ${gate.id} - ${gate.title}`,
+    `  group: ${gate.capabilityGroup}`,
+    `  summary: ${gate.summary}`,
+    `  action: ${gate.action}`,
+    `  risk: ${gate.risk}`,
+    `  focused: ${gate.focusedCommand}`,
+    `  compatibility: ${compatibilityCommand ?? 'none'}`,
+    `  safety: ${gate.execution.safetyMode}`,
+    `  approval: ${gate.execution.approval}`,
+    `  supportsDryRun: ${gate.execution.supportsDryRun}`,
+    `  requiredFlags: ${gate.execution.requiredFlags.join(', ')}`,
+    `  optionalFlags: ${gate.execution.optionalFlags.join(', ')}`,
+    `  example: pnpm runtime:pi-live-gate -- --gate ${gate.id} ${gate.execution.exampleArgs.join(' ')}`,
+  ].join('\n');
+}
+
+function formatRunPlan(plan: ReturnType<typeof buildRunPlan>): string {
+  return [
+    `Pi live gate plan: ${plan.gate.id} - ${plan.gate.title}`,
+    `  status: ${plan.status}`,
+    `  group: ${plan.gate.capabilityGroup}`,
+    `  summary: ${plan.gate.summary}`,
+    `  action: ${plan.operator.action}`,
+    `  risk: ${plan.operator.risk}`,
+    `  safety: ${plan.operator.safetyMode}`,
+    `  approval: ${plan.operator.approval}`,
+    `  supportsDryRun: ${plan.operator.supportsDryRun}`,
+    `  missingFlags: ${plan.validation.missingFlags.join(', ')}`,
+    `  unknownFlags: ${plan.validation.unknownFlags.join(', ')}`,
+    `  aggregate: ${plan.run.packageScripts.aggregate.join(' ')}`,
+    `  focused: ${plan.run.packageScripts.focused.join(' ')}`,
+  ].join('\n');
+}
+
+function formatRunPlanCatalog(catalog: ReturnType<typeof buildRunPlanCatalog>): string {
+  return [
+    `Pi live gate plans: ${catalog.status}`,
+    ...catalog.plans.map((plan) => [
+      `  ${plan.gate.id} - ${plan.gate.title}`,
+      `    status: ${plan.status}`,
+      `    aggregate: ${plan.run.packageScripts.aggregate.join(' ')}`,
+      `    focused: ${plan.run.packageScripts.focused.join(' ')}`,
+    ].join('\n')),
+  ].join('\n');
+}
+
+function validateGateArgs(
+  gate: NonNullable<ReturnType<typeof findSideEffectGate>>,
+  argv: string[],
+  strict: boolean,
+) {
+  const presentFlags = collectPresentFlags(argv);
+  const missingFlags = gate.execution.requiredFlags.filter((flag) => !presentFlags.has(flag));
+  const allowedFlags = new Set([...gate.execution.requiredFlags, ...gate.execution.optionalFlags]);
+  const unknownFlags = strict
+    ? collectMentionedFlags(argv).filter((flag) => !allowedFlags.has(flag))
+    : [];
+  return {
+    status: missingFlags.length === 0 && unknownFlags.length === 0 ? 'ok' : 'failed',
+    gateId: gate.id,
+    missingFlags,
+    unknownFlags,
+    requiredFlags: gate.execution.requiredFlags,
+    optionalFlags: gate.execution.optionalFlags,
+  };
+}
+
+function collectPresentFlags(argv: string[]): Set<string> {
+  const present = new Set<string>();
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (!arg.startsWith('--')) continue;
+    const rawName = arg.slice(2);
+    const equalsIndex = rawName.indexOf('=');
+    if (equalsIndex >= 0) {
+      if (rawName.slice(equalsIndex + 1).length > 0) present.add(rawName.slice(0, equalsIndex));
+      continue;
+    }
+    if (argv[i + 1] && !argv[i + 1].startsWith('--')) {
+      present.add(rawName);
+      i += 1;
+    }
+  }
+  return present;
+}
+
+function collectMentionedFlags(argv: string[]): string[] {
+  const present = new Set<string>();
+  for (const arg of argv) {
+    if (!arg.startsWith('--')) continue;
+    const rawName = arg.slice(2);
+    const equalsIndex = rawName.indexOf('=');
+    present.add(equalsIndex >= 0 ? rawName.slice(0, equalsIndex) : rawName);
+  }
+  return [...present];
+}
+
+function formatValidation(validation: ReturnType<typeof validateGateArgs>): string {
+  if (validation.status === 'ok') return `Pi live gate args ok: ${validation.gateId}`;
+  return [
+    `Pi live gate args failed: ${validation.gateId}`,
+    `  missingFlags: ${validation.missingFlags.join(', ')}`,
+    `  unknownFlags: ${validation.unknownFlags.join(', ')}`,
+  ].join('\n');
+}
+
+function parseGateId(value: string): PiLiveGateId {
+  if (findSideEffectGate(value)) return value as PiLiveGateId;
+  throw new Error(`Unknown gate: ${value}`);
+}
+
+function requireValue(argv: string[], index: number, flag: string): string {
+  const value = argv[index];
+  if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value.`);
+  return value;
+}
+
+function usage(): string {
+  return [
+    'Usage: pnpm runtime:pi-live-gate -- --gate <gate-id> [gate options]',
+    '       pnpm runtime:pi-live-gate -- --list [--json]',
+    '       pnpm runtime:pi-live-gate -- --describe <gate-id> [--json]',
+    '       pnpm runtime:pi-live-gate -- --plan-all [--strict] [--json]',
+    '       pnpm runtime:pi-live-gate -- --plan <gate-id> [gate options] [--strict] [--json]',
+    '       pnpm runtime:pi-live-gate -- --validate-args <gate-id> [gate options] [--strict] [--json]',
+    '',
+    'Gate ids:',
+    ...PI_LIVE_GATE_IDS.map((id) => `  ${id}`),
+    '',
+    'Examples:',
+    '  pnpm runtime:pi-live-gate -- --gate controlled-live-turn --agent-id <id> --peer-id <peer> --thread-id <topic> --dry-run --json',
+    '  pnpm runtime:pi-live-gate -- --gate live-send-message --agent-id <id> --peer-id <peer> --dry-run --json',
+    '  pnpm runtime:pi-live-gate -- --gate scheduled-work --agent-id <id> --peer-id <peer> --sender-id <sender> --json',
+    '  pnpm runtime:pi-live-gate -- --gate memory-read --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip',
+    '',
+    'Pass -h/--help after a focused gate command to see that gate-specific help.',
+  ].join('\n');
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runPiLiveGateCli(process.argv.slice(2))
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((err) => {
+      process.stderr.write(`${errorMessage(err)}\n`);
+      process.exitCode = 1;
+    });
+}

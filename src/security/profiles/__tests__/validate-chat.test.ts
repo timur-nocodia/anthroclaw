@@ -4,7 +4,7 @@ import type { AgentYml } from '../../../config/schema.js';
 
 const baseChat: AgentYml = {
   routes: [{ channel: 'telegram', scope: 'dm' }],
-  safety_profile: 'chat_like_openclaw',
+  safety_profile: 'chat_like_anthroclaw',
   timezone: 'UTC',
 } as unknown as AgentYml;
 
@@ -41,7 +41,7 @@ describe('validateSafetyProfile on chat profile', () => {
     });
     expect(result.ok).toBe(true);
     expect(result.warnings.some((w) =>
-      w.includes('safety_overrides.allow_tools') && w.includes('chat_like_openclaw'),
+      w.includes('safety_overrides.allow_tools') && w.includes('chat_like_anthroclaw'),
     )).toBe(true);
   });
 

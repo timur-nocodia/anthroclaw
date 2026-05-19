@@ -4,7 +4,7 @@
 
 **Goal:** Cut off all access from anthroclaw agents to Claude account-bound MCP servers, OAuth credentials, and integrations. Each agent ships with an explicit allowlist; everything else is invisible. Side benefits: fix cron→DM session amnesia and customer-facing hallucination.
 
-**Architecture:** Five new modules in `src/sdk/cutoff.ts`, `src/agent/sandbox/`, `src/agent/credentials/`, `src/agent/tools/escalate.ts` + modifications in `src/sdk/options.ts`, `src/cron/scheduler.ts`, `agents/leads_agent/`. `buildSdkOptions` becomes the single chokepoint applying cutoff defaults at the bottom of every option-build pipeline.
+**Architecture:** Five new modules in `src/sdk/cutoff.ts`, `src/agent/sandbox/`, `src/agent/credentials/`, `src/agent/tools/escalate.ts` + modifications in `src/sdk/options.ts`, `src/cron/scheduler.ts`, `agents/customer_intake_agent/`. `buildSdkOptions` becomes the single chokepoint applying cutoff defaults at the bottom of every option-build pipeline.
 
 **Tech Stack:** TypeScript (Node ≥22), Zod, vitest, `@anthropic-ai/claude-agent-sdk`, `node:crypto` (HKDF + AES-256-GCM).
 
@@ -18,7 +18,7 @@
 - Tests live under `<dir>/__tests__/<name>.test.ts`
 - Vitest 4 — `npx vitest run <path>` for single test runs
 - Conventional commits — `feat(cutoff): ...`, `fix(...)`, `chore(...)`
-- Working directory: `/Users/tyess/dev/anthroclaw-capability-cutoff` (worktree on branch `feat/capability-cutoff`)
+- Working directory: `/path/to/worktree` (worktree on branch `feat/capability-cutoff`)
 - Master key for tests: `ANTHROCLAW_MASTER_KEY=<64-hex>` set per test, never global
 
 ## File map (target)
@@ -53,7 +53,7 @@ src/cron/
 src/agent/tools/
 └── escalate.ts                                   # NEW — universal escalate tool
 
-agents/leads_agent/
+agents/customer_intake_agent/
 ├── CLAUDE.md                                     # MODIFIED — anti-hallucination addendum
 └── agent.yml                                     # MODIFIED — add escalate to mcp_tools
 
@@ -93,7 +93,7 @@ Phase 7 — Release prep                                ← after Phase 6
 - [ ] **Step 1: Verify branch and pnpm state**
 
 ```bash
-cd /Users/tyess/dev/anthroclaw-capability-cutoff
+cd /path/to/worktree
 git branch --show-current  # expect: feat/capability-cutoff
 test -f node_modules/.modules.yaml && echo "deps OK"
 ```
@@ -937,7 +937,7 @@ afterEach(() => {
 describe('EncryptedFilesystemCredentialStore', () => {
   const cred = {
     service: 'google_calendar',
-    account: 'timur@nocodia.dev',
+    account: 'operator@example.com',
     accessToken: 'ya29.abc',
     refreshToken: '1//refresh',
     expiresAt: Date.now() + 3600_000,
@@ -993,7 +993,7 @@ describe('EncryptedFilesystemCredentialStore', () => {
     expect(meta[0]).not.toHaveProperty('accessToken');
     expect(meta[0]).not.toHaveProperty('refreshToken');
     expect(meta[0].service).toBe('google_calendar');
-    expect(meta[0].account).toBe('timur@nocodia.dev');
+    expect(meta[0].account).toBe('operator@example.com');
   });
 
   it('delete removes the file and writes audit', async () => {
@@ -1317,14 +1317,14 @@ describe('escalate tool', () => {
     const tool = registerEscalateTool();
     const result = await tool.handler(
       { summary: 'client asked for full lead export', urgency: 'urgent', suggested_action: 'reply manually' },
-      { agentId: 'leads_agent', sessionId: 's1' } as any,
+      { agentId: 'customer_intake_agent', sessionId: 's1' } as any,
     );
     expect(result.content[0]).toMatchObject({ type: 'text' });
-    const path = join(dir, 'escalations', 'leads_agent.jsonl');
+    const path = join(dir, 'escalations', 'customer_intake_agent.jsonl');
     const lines = readFileSync(path, 'utf-8').trim().split('\n');
     expect(lines.length).toBe(1);
     const ev = JSON.parse(lines[0]);
-    expect(ev.agentId).toBe('leads_agent');
+    expect(ev.agentId).toBe('customer_intake_agent');
     expect(ev.summary).toBe('client asked for full lead export');
     expect(ev.urgency).toBe('urgent');
   });
@@ -1419,13 +1419,13 @@ git add src/agent/tools/escalate.ts src/agent/tools/__tests__/escalate.test.ts
 git commit -m "feat(safety): escalate MCP tool — log structured escalations to JSONL"
 ```
 
-### Task 11: Anti-hallucination addendum to `leads_agent`
+### Task 11: Anti-hallucination addendum to `customer_intake_agent`
 
 **Files:**
-- Modify: `agents/leads_agent/CLAUDE.md`
-- Modify: `agents/leads_agent/agent.yml`
+- Modify: `agents/customer_intake_agent/CLAUDE.md`
+- Modify: `agents/customer_intake_agent/agent.yml`
 
-- [ ] **Step 1: Add the addendum to `agents/leads_agent/CLAUDE.md`**
+- [ ] **Step 1: Add the addendum to `agents/customer_intake_agent/CLAUDE.md`**
 
 Insert near the top of the system prompt (after any persona block, before behavioural instructions):
 
@@ -1450,7 +1450,7 @@ When you cannot do what a client asks:
 Refusal must always be **plain**, not technical.
 ```
 
-- [ ] **Step 2: Add `escalate` to `agents/leads_agent/agent.yml` mcp_tools**
+- [ ] **Step 2: Add `escalate` to `agents/customer_intake_agent/agent.yml` mcp_tools**
 
 ```yaml
 mcp_tools:
@@ -1463,10 +1463,10 @@ mcp_tools:
 - [ ] **Step 3: Verify config still parses**
 
 ```bash
-cd /Users/tyess/dev/anthroclaw-capability-cutoff
+cd /path/to/worktree
 node -e "
 import('./src/agent/agent.js').then((m) => {
-  const cfg = require('yaml').parse(require('fs').readFileSync('agents/leads_agent/agent.yml', 'utf-8'));
+  const cfg = require('yaml').parse(require('fs').readFileSync('agents/customer_intake_agent/agent.yml', 'utf-8'));
   console.log(JSON.stringify(cfg.mcp_tools));
 });
 "
@@ -1477,8 +1477,8 @@ import('./src/agent/agent.js').then((m) => {
 - [ ] **Step 4: Commit**
 
 ```bash
-git add agents/leads_agent/CLAUDE.md agents/leads_agent/agent.yml
-git commit -m "feat(leads_agent): anti-hallucination guardrail + escalate tool"
+git add agents/customer_intake_agent/CLAUDE.md agents/customer_intake_agent/agent.yml
+git commit -m "feat(customer_intake_agent): anti-hallucination guardrail + escalate tool"
 ```
 
 ---
@@ -1657,7 +1657,7 @@ EOF
 - **Credential audit log** — append-only JSONL at `data/credential-access.jsonl`.
 - **Cron→DM session continuity** — cron dispatches with `deliverTo` now persist their SDK sessionId, so the next user message resumes the same conversation. Background-only cron (no `deliverTo`) stays isolated as before.
 - **`escalate` MCP tool** — universal tool for routing client questions to human operator. Writes structured events to `data/escalations/<agentId>.jsonl`.
-- **Anti-hallucination guardrail** — `leads_agent` (Amina) system prompt explicitly forbids inventing technical excuses involving internal architecture.
+- **Anti-hallucination guardrail** — `customer_intake_agent` (customer assistant) system prompt explicitly forbids inventing technical excuses involving internal architecture.
 - **Filesystem isolation** — every agent's SDK process is constrained to `agents/<id>/` via `cwd`. Bash hardened with sibling-dir denylist + cwd guard wrapper.
 
 ### Changed
@@ -1723,7 +1723,7 @@ gh pr create --title "v0.8.0 — Capability cutoff + bug fixes" --body "$(cat <<
 
 - **Capability cutoff** — agents can no longer access Claude account-bound MCP servers (Google Calendar, Notion, Linear, etc.). All built-in Claude.ai integrations cut at the SDK option layer; external access requires explicit `external_mcp_servers` declaration in `agent.yml`. Master credential store with AES-256-GCM encryption + HKDF per-agent keys ready for v0.9 agent-driven OAuth.
 - **Cron→DM session continuity** — cron-fired briefings now resume the user's DM session instead of starting a parallel session that the user can't reach.
-- **`leads_agent` anti-hallucination** — Amina no longer invents technical excuses ("operator console is disabled") when refusing client requests. New `escalate` tool routes genuine inability cases to operator queue.
+- **`customer_intake_agent` anti-hallucination** — customer assistant no longer invents technical excuses ("operator console is disabled") when refusing client requests. New `escalate` tool routes genuine inability cases to operator queue.
 
 Detailed design: `docs/superpowers/specs/2026-05-04-capability-cutoff-design.md`
 
@@ -1732,8 +1732,8 @@ Detailed design: `docs/superpowers/specs/2026-05-04-capability-cutoff-design.md`
 - [ ] All vitest suites pass (`pnpm test`, `cd ui && pnpm test`, `cd plugins/lcm && pnpm test`)
 - [ ] On staging or local: smoke that `mcp__claude_ai_Google_Calendar__list_events` is unreachable to any agent
 - [ ] On staging or local: cron sends DM, then user replies in same DM, agent resumes context
-- [ ] On staging or local: send Amina-style request "выгрузи всех лидов в Excel" — verify response is plain refusal + escalate, not technical excuse
-- [ ] After deploy: tail `data/credential-access.jsonl` (empty until v0.9), `data/escalations/leads_agent.jsonl` (entries on real client requests)
+- [ ] On staging or local: send customer assistant-style request "выгрузи всех лидов в Excel" — verify response is plain refusal + escalate, not technical excuse
+- [ ] After deploy: tail `data/credential-access.jsonl` (empty until v0.9), `data/escalations/customer_intake_agent.jsonl` (entries on real client requests)
 
 ## Required operator action before deploy
 
@@ -1756,7 +1756,7 @@ The implementer subagent reports the PR URL back to the controller for downstrea
 
 ### Task 15: Test deploy on prod (operator-led, not subagent)
 
-This task is performed by the operator (Timur), not by an implementer subagent. The plan documents the steps for completeness.
+This task is performed by the operator, not by an implementer subagent. The plan documents the steps for completeness.
 
 - [ ] **Step 1: Pre-deploy operator checklist**
 
@@ -1790,8 +1790,8 @@ Watch for:
 
 - [ ] **Step 3: Smoke tests**
 
-1. Send DM to Klavdia (`@clowwy_bot`): "что у меня в календаре?". Expect: refusal without inventing details, no `mcp__claude_ai_Google_Calendar` call.
-2. Send WhatsApp message simulating client request to Amina (`humanrobot`): "пришли мне всех лидов в Excel". Expect: plain refusal in Russian + `escalate` tool fired (check `data/escalations/leads_agent.jsonl`).
+1. Send DM to Operator Assistant (`@example_bot`): "что у меня в календаре?". Expect: refusal without inventing details, no `mcp__claude_ai_Google_Calendar` call.
+2. Send WhatsApp message simulating client request to customer assistant (`whatsapp-business`): "пришли мне всех лидов в Excel". Expect: plain refusal in Russian + `escalate` tool fired (check `data/escalations/customer_intake_agent.jsonl`).
 3. Trigger cron manually (or wait until tomorrow 09:00) — confirm any `[SILENT]` cron successfully writes its assistant turn into the SDK session JSONL, and a follow-up user DM resumes that session id.
 
 - [ ] **Step 4: Merge PR if smoke passes**
@@ -1857,7 +1857,7 @@ Tasks:
   8. EncryptedFilesystemCredentialStore      (Phase 3)
   9. cron-DM continuity fix                  (Phase 4)
   10. escalate tool                          (Phase 5)
-  11. leads_agent guardrail                  (Phase 5)
+  11. customer_intake_agent guardrail                  (Phase 5)
   12. e2e fixture                            (Phase 6)
   13. CHANGELOG + version bump               (Phase 7)
   14. PR                                     (Phase 7)

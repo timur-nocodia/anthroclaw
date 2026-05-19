@@ -4,7 +4,7 @@ Status: Draft
 
 Purpose: describe how Auto-Buildroom fits into AnthroClaw alongside ordinary agents, including the distinction between an `Agent` and a `Buildroom` / buildroom squad.
 
-This document is an AnthroClaw product adaptation of the Hermes/OpenClaw Auto-think / Auto-build pattern, not a literal runtime design.
+This document is an AnthroClaw product adaptation of the Auto-think / Auto-build pattern, not a literal runtime design.
 
 ## Integration Thesis
 
@@ -105,7 +105,7 @@ It has:
 Example:
 
 ```text
-agents/amina/
+agents/support_agent/
 agents/code-helper/
 agents/content-writer/
 agents/support-bot/
@@ -151,7 +151,7 @@ Example:
 
 ```text
 agents/
-  amina/
+  support_agent/
   code-helper/
   content-writer/
 
@@ -266,7 +266,7 @@ An ordinary agent may explicitly hand a signal to the Buildroom through a contro
 Example:
 
 ```text
-Amina notices repeated operator friction
+Support Agent notices repeated operator friction
 -> proposes signal to Buildroom
 -> Buildroom stores signal
 -> Research/Subconscious decide whether it matters
@@ -348,7 +348,7 @@ buildrooms:
       trust: buildroom-trust
     watch:
       agents:
-        - amina
+        - support_agent
         - code-helper
       sources:
         - repo

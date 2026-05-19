@@ -71,7 +71,7 @@ describe('@e2e: LCM sessions surface (full stack: seed → API → drill → byt
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(
       join(agentDir, 'agent.yml'),
-      'model: claude-sonnet-4-6\nroutes:\n  - channel: telegram\n    scope: dm\n',
+      'model: anthropic/claude-sonnet-4-6\nroutes:\n  - channel: telegram\n    scope: dm\n',
       'utf-8',
     );
     writeFileSync(join(agentDir, 'CLAUDE.md'), '# test\n', 'utf-8');

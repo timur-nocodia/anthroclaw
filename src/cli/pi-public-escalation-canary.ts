@@ -34,11 +34,11 @@ interface PiPublicEscalationCanaryResult {
 }
 
 const SCENARIO_ID = 'pi.public-escalation' as const;
-const AGENT_ID = 'leads_agent';
-const SERVER_NAME = 'leads_agent-tools';
+const AGENT_ID = 'public_escalation_agent';
+const SERVER_NAME = 'public-escalation-agent-tools';
 const ESCALATE_TOOL_NAME = `mcp__${SERVER_NAME}__escalate`;
 const UNKNOWN_PLUGIN_TOOL_NAME = `mcp__${SERVER_NAME}__sync_crm`;
-const ESCALATION_SUMMARY = 'Customer requested an Excel export of all leads.';
+const ESCALATION_SUMMARY = 'Public user requested a restricted data export.';
 
 export async function runPiPublicEscalationCanaryCli(
   argv: string[],
@@ -172,7 +172,7 @@ export async function runPublicEscalationCanary(workspacePath: string): Promise<
       channel: 'whatsapp',
       peerId: 'customer-1',
       senderId: 'customer-1',
-      accountId: 'humanrobot',
+    accountId: 'public-demo',
     },
   });
 
@@ -204,7 +204,7 @@ export async function runPublicEscalationCanary(workspacePath: string): Promise<
       channel: 'whatsapp',
       peerId: 'customer-1',
       senderId: 'customer-1',
-      accountId: 'humanrobot',
+      accountId: 'public-demo',
     },
   });
   const deniedDecision = await canUseUnknownPluginTool(

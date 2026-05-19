@@ -13,7 +13,7 @@ describe('NotificationsEmitter — scaffold', () => {
   it('emit returns a Promise (awaitable) even with no subscribers', async () => {
     const emitter = createNotificationsEmitter({ sendMessage: vi.fn() });
     await expect(
-      emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' }),
+      emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'wa:b:1' }),
     ).resolves.toBeUndefined();
   });
 });
@@ -22,55 +22,55 @@ describe('NotificationsEmitter — subscription dispatch', () => {
   it('emit calls sendMessage on each matching subscription', async () => {
     const sendMessage = vi.fn();
     const emitter = createNotificationsEmitter({ sendMessage });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
     });
     await emitter.emit('peer_pause_started', {
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       peerKey: 'wa:b:1',
       expiresAt: '2026-05-01T12:30:00Z',
     });
     expect(sendMessage).toHaveBeenCalledOnce();
     const [route, text, meta] = sendMessage.mock.calls[0]!;
-    expect(route).toMatchObject({ channel: 'telegram', account_id: 'control', peer_id: '48705953' });
+    expect(route).toMatchObject({ channel: 'telegram', account_id: 'control', peer_id: '123456789' });
     expect(text).toContain('Auto-pause');
-    expect(text).toContain('amina');
-    expect(meta).toMatchObject({ event: 'peer_pause_started', agentId: 'amina' });
+    expect(text).toContain('agent_alpha');
+    expect(meta).toMatchObject({ event: 'peer_pause_started', agentId: 'agent_alpha' });
   });
 
   it('does not match unsubscribed events', async () => {
     const sendMessage = vi.fn();
     const emitter = createNotificationsEmitter({ sendMessage });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
     });
-    await emitter.emit('peer_pause_ended', { agentId: 'amina', peerKey: 'wa:b:1' });
+    await emitter.emit('peer_pause_ended', { agentId: 'agent_alpha', peerKey: 'wa:b:1' });
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('skips when notifications.enabled is false', async () => {
     const sendMessage = vi.fn();
     const emitter = createNotificationsEmitter({ sendMessage });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: false,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
     });
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'wa:b:1' });
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('emits to multiple subscriptions on the same event', async () => {
     const sendMessage = vi.fn();
     const emitter = createNotificationsEmitter({ sendMessage });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
       routes: {
-        operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' },
+        operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' },
         team: { channel: 'whatsapp', account_id: 'business', peer_id: '37120@s.whatsapp.net' },
       },
       subscriptions: [
@@ -78,19 +78,19 @@ describe('NotificationsEmitter — subscription dispatch', () => {
         { event: 'peer_pause_started', route: 'team' },
       ],
     });
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'wa:b:1' });
     expect(sendMessage).toHaveBeenCalledTimes(2);
   });
 
   it('skips subscriptions with unresolved route name (logs warn)', async () => {
     const sendMessage = vi.fn();
     const emitter = createNotificationsEmitter({ sendMessage });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
       routes: {},
       subscriptions: [{ event: 'peer_pause_started', route: 'missing' }],
     });
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'wa:b:1' });
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
@@ -98,43 +98,43 @@ describe('NotificationsEmitter — subscription dispatch', () => {
     const sendMessage = vi.fn();
     const emitter = createNotificationsEmitter({ sendMessage });
     emitter.subscribe(
-      'amina',
+      'agent_alpha',
       { event: 'peer_pause_started', route: 'operator' },
-      { channel: 'telegram', account_id: 'control', peer_id: '48705953' },
+      { channel: 'telegram', account_id: 'control', peer_id: '123456789' },
     );
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'wa:b:1' });
     expect(sendMessage).toHaveBeenCalledOnce();
   });
 
   it('subscribeAgent(undefined) clears prior subscription', async () => {
     const sendMessage = vi.fn();
     const emitter = createNotificationsEmitter({ sendMessage });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
     });
-    emitter.subscribeAgent('amina', undefined);
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
+    emitter.subscribeAgent('agent_alpha', undefined);
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'wa:b:1' });
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('subscribeAgent is idempotent — second call replaces, not appends', async () => {
     const sendMessage = vi.fn();
     const emitter = createNotificationsEmitter({ sendMessage });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
     });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_ended', route: 'operator' }],
     });
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'wa:b:1' });
     expect(sendMessage).not.toHaveBeenCalled();
-    await emitter.emit('peer_pause_ended', { agentId: 'amina', peerKey: 'wa:b:1' });
+    await emitter.emit('peer_pause_ended', { agentId: 'agent_alpha', peerKey: 'wa:b:1' });
     expect(sendMessage).toHaveBeenCalledOnce();
   });
 });
@@ -144,12 +144,12 @@ describe('NotificationsEmitter — throttle', () => {
     const sendMessage = vi.fn();
     let now = 1_700_000_000_000;
     const emitter = createNotificationsEmitter({ sendMessage, clock: () => now });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator', throttle: '5m' }],
     });
-    const payload = { agentId: 'amina', peerKey: 'wa:b:1' };
+    const payload = { agentId: 'agent_alpha', peerKey: 'wa:b:1' };
     await emitter.emit('peer_pause_started', payload);
     await emitter.emit('peer_pause_started', payload); // within window — dropped
     expect(sendMessage).toHaveBeenCalledTimes(1);
@@ -162,26 +162,26 @@ describe('NotificationsEmitter — throttle', () => {
     const sendMessage = vi.fn();
     let now = 1_700_000_000_000;
     const emitter = createNotificationsEmitter({ sendMessage, clock: () => now });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator', throttle: '5m' }],
     });
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:2' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'wa:b:1' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'wa:b:2' });
     expect(sendMessage).toHaveBeenCalledTimes(2);
   });
 
   it('malformed throttle is treated as no-throttle', async () => {
     const sendMessage = vi.fn();
     const emitter = createNotificationsEmitter({ sendMessage });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator', throttle: 'whenever' }],
     });
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'wa:b:1' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'wa:b:1' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'wa:b:1' });
     expect(sendMessage).toHaveBeenCalledTimes(2);
   });
 
@@ -195,15 +195,15 @@ describe('NotificationsEmitter — throttle', () => {
       clock: () => now,
       throttleMaxEntries: 3,
     });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator', throttle: '5m' }],
     });
     const peers = ['A', 'B', 'C', 'D'];
     // Insert A, B, C (each populates a throttle entry).
     for (const p of peers.slice(0, 3)) {
-      await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: p });
+      await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: p });
     }
     // Touch A (re-emit while throttled is the cheapest way to bump LRU,
     // but emit returns early on hit. Simulate with a direct re-emit by
@@ -215,17 +215,17 @@ describe('NotificationsEmitter — throttle', () => {
     // hit returns BEFORE noteThrottle. To touch A reliably we re-emit
     // after window; the throttle window is 5m so advance and emit A.
     now += 6 * 60_000;
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'A' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'A' });
     // Now A was inserted most-recently. Insert D (cap=3) → oldest is B.
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'D' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'D' });
     // Verify by checking that B re-emit within window still fires (its
     // entry was evicted, so no throttle hit), while A and C re-emit
     // within window are throttled (still in map).
     const before = sendMessage.mock.calls.length;
     // Re-emit A within current window — should be throttled (entry alive).
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'A' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'A' });
     // Re-emit B within window — should fire (entry evicted).
-    await emitter.emit('peer_pause_started', { agentId: 'amina', peerKey: 'B' });
+    await emitter.emit('peer_pause_started', { agentId: 'agent_alpha', peerKey: 'B' });
     expect(sendMessage.mock.calls.length).toBe(before + 1);
     expect(sendMessage.mock.calls.at(-1)![1]).toContain('B');
   });
@@ -237,17 +237,17 @@ describe('NotificationsEmitter — throttle', () => {
     const sendMessage = vi.fn();
     let now = 1_700_000_000_000;
     const emitter = createNotificationsEmitter({ sendMessage, clock: () => now });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [
         { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *', throttle: '1h' },
       ],
     });
-    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'amina' });
+    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'agent_alpha' });
     // Within throttle window — must still fire (scheduled-event bypass).
     now += 30_000;
-    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'amina' });
+    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'agent_alpha' });
     expect(sendMessage).toHaveBeenCalledTimes(2);
   });
 });

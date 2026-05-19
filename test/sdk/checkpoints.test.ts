@@ -8,7 +8,7 @@ function mockQuery(result = { canRewind: true, filesChanged: ['a.ts'], insertion
 }
 
 describe('SdkCheckpointRegistry', () => {
-  it('rewinds files through a registered SDK Query handle', async () => {
+  it('rewinds files through a registered runtime checkpoint handle', async () => {
     const registry = new SdkCheckpointRegistry();
     const query = mockQuery();
 

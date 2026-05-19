@@ -18,7 +18,7 @@ function getHandler(t: unknown): (a: Record<string, unknown>) => Promise<{
 function baseAgentYml(): string {
   return [
     '# test agent',
-    'safety_profile: chat_like_openclaw',
+    'safety_profile: chat_like_anthroclaw',
     'routes:',
     '  - { channel: whatsapp }',
     '',
@@ -47,17 +47,17 @@ describe('manage_human_takeover', () => {
   let agentsDir: string;
   beforeEach(() => {
     agentsDir = mkdtempSync(join(tmpdir(), 'mht-'));
-    seedAgent(agentsDir, 'amina');
-    seedAgent(agentsDir, 'klavdia');
+    seedAgent(agentsDir, 'agent_alpha');
+    seedAgent(agentsDir, 'operator_agent');
   });
   afterEach(() => rmSync(agentsDir, { recursive: true, force: true }));
 
   it('seeds defaults when enabling on a missing block', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageHumanTakeoverTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageHumanTakeoverTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     const r = await getHandler(t)({ enabled: true });
     expect(r.isError).toBeFalsy();
-    const block = writer.readSection('amina', 'human_takeover') as Record<string, unknown>;
+    const block = writer.readSection('agent_alpha', 'human_takeover') as Record<string, unknown>;
     expect(block).toMatchObject({
       enabled: true,
       pause_ttl_minutes: 30,
@@ -70,14 +70,14 @@ describe('manage_human_takeover', () => {
   it('preserves other fields when patching enabled only', async () => {
     seedAgent(
       agentsDir,
-      'amina',
+      'agent_alpha',
       withTakeover({ enabled: false, pause_ttl_minutes: 60, channels: ['whatsapp'] }),
     );
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageHumanTakeoverTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageHumanTakeoverTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     const r = await getHandler(t)({ enabled: true });
     expect(r.isError).toBeFalsy();
-    const block = writer.readSection('amina', 'human_takeover') as Record<string, unknown>;
+    const block = writer.readSection('agent_alpha', 'human_takeover') as Record<string, unknown>;
     expect(block).toMatchObject({
       enabled: true,
       pause_ttl_minutes: 60,
@@ -88,23 +88,23 @@ describe('manage_human_takeover', () => {
   it('null on a field resets it to schema default', async () => {
     seedAgent(
       agentsDir,
-      'amina',
+      'agent_alpha',
       withTakeover({ enabled: true, pause_ttl_minutes: 90 }),
     );
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageHumanTakeoverTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageHumanTakeoverTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     const r = await getHandler(t)({ pause_ttl_minutes: null });
     expect(r.isError).toBeFalsy();
-    const block = writer.readSection('amina', 'human_takeover') as Record<string, unknown>;
+    const block = writer.readSection('agent_alpha', 'human_takeover') as Record<string, unknown>;
     expect(block.pause_ttl_minutes).toBe(30);
     // enabled stays untouched
     expect(block.enabled).toBe(true);
   });
 
   it('reports applied diffs in the response', async () => {
-    seedAgent(agentsDir, 'amina', withTakeover({ enabled: false, pause_ttl_minutes: 60 }));
+    seedAgent(agentsDir, 'agent_alpha', withTakeover({ enabled: false, pause_ttl_minutes: 60 }));
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageHumanTakeoverTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageHumanTakeoverTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     const r = await getHandler(t)({ enabled: true, pause_ttl_minutes: 45 });
     const body = JSON.parse(r.content[0].text);
     expect(body.applied.enabled).toEqual({ prev: false, new: true });
@@ -115,11 +115,11 @@ describe('manage_human_takeover', () => {
   it('rejects unauthorized cross-agent target', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createManageHumanTakeoverTool({
-      agentId: 'klavdia',
+      agentId: 'operator_agent',
       writer,
       canManage: () => false,
     });
-    const r = await getHandler(t)({ target_agent_id: 'amina', enabled: true });
+    const r = await getHandler(t)({ target_agent_id: 'agent_alpha', enabled: true });
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toMatch(/not authorized/);
   });
@@ -127,18 +127,18 @@ describe('manage_human_takeover', () => {
   it('allows authorized cross-agent target', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createManageHumanTakeoverTool({
-      agentId: 'klavdia',
+      agentId: 'operator_agent',
       writer,
-      canManage: (caller, target) => caller === 'klavdia' && target === 'amina',
+      canManage: (caller, target) => caller === 'operator_agent' && target === 'agent_alpha',
     });
-    const r = await getHandler(t)({ target_agent_id: 'amina', enabled: true });
+    const r = await getHandler(t)({ target_agent_id: 'agent_alpha', enabled: true });
     expect(r.isError).toBeFalsy();
-    expect(writer.readSection('amina', 'human_takeover')).toMatchObject({ enabled: true });
+    expect(writer.readSection('agent_alpha', 'human_takeover')).toMatchObject({ enabled: true });
   });
 
   it('rejects malformed input via Zod', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageHumanTakeoverTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageHumanTakeoverTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     const r = await getHandler(t)({ pause_ttl_minutes: -5 });
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toMatch(/Invalid input/);

@@ -2,13 +2,13 @@
 
 > **For agentic workers:** Use sub-driven workflow per task — implementer (TDD), controller verification, spec reviewer, quality reviewer, fix-pass, re-review.
 
-**Goal:** All `safety_profile`s deliver the agent's authored CLAUDE.md to the SDK system prompt; `@-imports` are resolved recursively with cycle detection. Closes pre-existing pre-v0.8 bug (root cause of Amina hallucinations).
+**Goal:** All `safety_profile`s deliver the agent's authored CLAUDE.md to the SDK system prompt; `@-imports` are resolved recursively with cycle detection. Closes pre-existing pre-v0.8 bug (root cause of customer assistant hallucinations).
 
 **Spec:** [`docs/superpowers/specs/2026-05-05-system-prompt-resolution-design.md`](../specs/2026-05-05-system-prompt-resolution-design.md). Read before any task.
 
 **Tech stack:** TypeScript (Node ≥22), vitest, `node:fs`, `node:path`, `@anthropic-ai/claude-agent-sdk`.
 
-**Branch / worktree:** `/Users/tyess/dev/anthroclaw-v0.9-system-prompt` on branch `feat/v0.9-system-prompt-fix`, base `main` at commit `aa7d9a0`.
+**Branch / worktree:** `/path/to/worktree` on branch `feat/v0.9-system-prompt-fix`, base `main` at commit `aa7d9a0`.
 
 ---
 
@@ -109,7 +109,7 @@ Thin wrapper that reads the agent's CLAUDE.md and runs the resolver.
 
 ## Task 3 — `composeSystemPrompt` profile-aware composer
 
-This is the function that replaces today's `resolveChatSystemPrompt` and the inline `if (profile.name === 'chat_like_openclaw') ... else ...` block in `options.ts`.
+This is the function that replaces today's `resolveChatSystemPrompt` and the inline `if (profile.name === 'chat_like_anthroclaw') ... else ...` block in `options.ts`.
 
 - [ ] **3.1** Add to `src/sdk/system-prompt.ts`:
   ```ts
@@ -119,18 +119,18 @@ This is the function that replaces today's `resolveChatSystemPrompt` and the inl
   ): Options['systemPrompt'];
   ```
 - [ ] **3.2** Failing tests in `src/sdk/__tests__/system-prompt-composer.test.ts`:
-  - 17 — `chat_like_openclaw` + agent with CLAUDE.md → personality (CHAT_PERSONALITY_BASELINE) + separator + CLAUDE.md
-  - 18 — `chat_like_openclaw` + no CLAUDE.md → personality only
-  - 19 — `chat_like_openclaw` + agent.config.personality set → custom personality + separator + CLAUDE.md
+  - 17 — `chat_like_anthroclaw` + agent with CLAUDE.md → personality (CHAT_PERSONALITY_BASELINE) + separator + CLAUDE.md
+  - 18 — `chat_like_anthroclaw` + no CLAUDE.md → personality only
+  - 19 — `chat_like_anthroclaw` + agent.config.personality set → custom personality + separator + CLAUDE.md
   - 20 — `public` + CLAUDE.md → public.text + separator + CLAUDE.md
   - 21 — `public` + no CLAUDE.md → public.text only
   - 22 — `trusted` + CLAUDE.md → `{ type: 'preset', preset: 'claude_code', excludeDynamicSections: true, append: CLAUDE.md }`
   - 23 — `trusted` + no CLAUDE.md → `{ type: 'preset', preset: 'claude_code', excludeDynamicSections: true }` (no `append`)
   - 24 — `private` + CLAUDE.md → `{ type: 'preset', preset: 'claude_code', excludeDynamicSections: false, append: CLAUDE.md }`
   - 25 — `private` + no CLAUDE.md → `{ type: 'preset', preset: 'claude_code', excludeDynamicSections: false }`
-  - 26 — `chat_like_openclaw` + CLAUDE.md with `@./X.md` import → resolved content present in result (integration)
+  - 26 — `chat_like_anthroclaw` + CLAUDE.md with `@./X.md` import → resolved content present in result (integration)
   - 27 — `public` + CLAUDE.md with `@./X.md` import → resolved content present (integration)
-- [ ] **3.3** Implement composer per spec "Composer" section. Mock `Agent` and `SafetyProfile` shapes minimally — use existing `publicProfile`, `trustedProfile`, `privateProfile`, `chatLikeOpenclawProfile` for realism.
+- [ ] **3.3** Implement composer per spec "Composer" section. Mock `Agent` and `SafetyProfile` shapes minimally — use existing `publicProfile`, `trustedProfile`, `privateProfile`, `chatLikeAnthroclawProfile` for realism.
 - [ ] **3.4** Tests green.
 - [ ] **3.5** Controller diff verification + reviewers.
 - [ ] **3.6** Commit: `feat(prompt): composeSystemPrompt — profile-aware system prompt with agent CLAUDE.md`
@@ -140,11 +140,11 @@ This is the function that replaces today's `resolveChatSystemPrompt` and the inl
 Replace the inlined logic; delete the now-redundant `resolveChatSystemPrompt`.
 
 - [ ] **4.1** Failing tests in `src/sdk/__tests__/options.test.ts` (modify or extend if exists, otherwise create):
-  - 28 — `buildSdkOptions(agent)` for `chat_like_openclaw` agent with CLAUDE.md → `options.systemPrompt` is string containing personality + CLAUDE.md
+  - 28 — `buildSdkOptions(agent)` for `chat_like_anthroclaw` agent with CLAUDE.md → `options.systemPrompt` is string containing personality + CLAUDE.md
   - 29 — `buildSdkOptions(agent)` for `public` agent with CLAUDE.md → `options.systemPrompt` is string containing public.text + CLAUDE.md
   - 30 — `buildSdkOptions(agent)` for `trusted` agent with CLAUDE.md → `options.systemPrompt` is `{ type: 'preset', preset: 'claude_code', excludeDynamicSections: true, append: <CLAUDE.md> }`
   - 31 — `buildSdkOptions(agent)` for `private` agent with CLAUDE.md → `options.systemPrompt` is `{ type: 'preset', ..., excludeDynamicSections: false, append: <CLAUDE.md> }`
-  - 32 — Backward compat: `chat_like_openclaw` agent with plain text CLAUDE.md (no imports) on byte level → identical to v0.8.0 output (snapshot or string equality)
+  - 32 — Backward compat: `chat_like_anthroclaw` agent with plain text CLAUDE.md (no imports) on byte level → identical to v0.8.0 output (snapshot or string equality)
 - [ ] **4.2** Refactor `src/sdk/options.ts`:
   - Remove `resolveChatSystemPrompt` function (lines 47-65)
   - Replace lines 91-102 with single call: `const systemPrompt = composeSystemPrompt(agent, profile);`
@@ -173,7 +173,7 @@ A test fixture that creates real-shaped agents on disk (workspace dir, `agent.ym
   ## [Unreleased]
   ### Fixed
   - **System prompt resolution**: `@-imports` (e.g. `@./SOUL.md`) in agent CLAUDE.md are now resolved recursively before being passed to the SDK. Previously these were sent as literal text and ignored by the model. Cycle detection, max depth = 5, path-policy rejects absolute / URL / workspace-escape paths.
-  - **Non-chat safety profiles read agent CLAUDE.md**: `safety_profile: public | trusted | private` agents now include their authored CLAUDE.md in the system prompt. Previously only `chat_like_openclaw` did.
+  - **Non-chat safety profiles read agent CLAUDE.md**: `safety_profile: public | trusted | private` agents now include their authored CLAUDE.md in the system prompt. Previously only `chat_like_anthroclaw` did.
   ### Behaviour change
   - Agents under `public/trusted/private` profiles will start receiving their own CLAUDE.md content. Operators must verify that any CLAUDE.md does not contain credentials or developer-only notes that shouldn't reach customer-facing dialogues.
   ```
@@ -197,10 +197,10 @@ A test fixture that creates real-shaped agents on disk (workspace dir, `agent.ym
 
 After this PR merges and is deployed, a follow-up commit reverts the prod hotfixes:
 
-- [ ] **9.1** `agents/leads_agent/agent.yml` — `safety_profile: public` (was `chat_like_openclaw` hotfix).
-- [ ] **9.2** `agents/leads_agent/CLAUDE.md` — restore `@-imports` form from `CLAUDE.md.bak-imports-only-1777911469`.
-- [ ] **9.3** `agents/timur_agent/CLAUDE.md` — restore `@-imports` from `.bak-imports-1777911551`.
-- [ ] **9.4** `agents/content_sm_building/CLAUDE.md` — restore `@-imports` from `.bak-imports-1777911551`.
+- [ ] **9.1** `agents/customer_intake_agent/agent.yml` — `safety_profile: public` (was `chat_like_anthroclaw` hotfix).
+- [ ] **9.2** `agents/customer_intake_agent/CLAUDE.md` — restore `@-imports` form from `CLAUDE.md.bak-imports-only-1777911469`.
+- [ ] **9.3** `agents/personal_operator_agent/CLAUDE.md` — restore `@-imports` from `.bak-imports-1777911551`.
+- [ ] **9.4** `agents/group_content_agent/CLAUDE.md` — restore `@-imports` from `.bak-imports-1777911551`.
 - [ ] **9.5** Deploy + verify each agent still receives the right body (resolver does the work now).
 - [ ] **9.6** Update `project_pre_v080_profile_systemprompt_bug.md` memory: mark `RESOLVED in v0.9.0`.
 

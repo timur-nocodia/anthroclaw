@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { createCanUseTool } from '../permissions.js';
-import { chatLikeOpenclawProfile } from '../../security/profiles/chat-like-openclaw.js';
+import { chatLikeAnthroclawProfile } from '../../security/profiles/chat-like-anthroclaw.js';
 import { ApprovalBroker } from '../../security/approval-broker.js';
 
 function makeAgent(overrides?: Record<string, unknown>) {
   return {
     id: 'test-agent',
-    safetyProfile: chatLikeOpenclawProfile,
+    safetyProfile: chatLikeAnthroclawProfile,
     config: {
       safety_overrides: overrides ?? {},
       sdk: undefined,
@@ -14,7 +14,7 @@ function makeAgent(overrides?: Record<string, unknown>) {
   } as any;
 }
 
-const ctx = { channel: 'telegram', peerId: '48705953', accountId: 'content_sm' };
+const ctx = { channel: 'telegram', peerId: '123456789', accountId: 'content_sm' };
 const signal = new AbortController().signal;
 
 describe('createCanUseTool on chat profile', () => {

@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { z } from 'zod';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
 import { nowInTimezone, formatTime, dailyMemoryPath } from '../../util/time.js';
 import type { MemoryProvider } from '../../memory/provider.js';
 import type { MemoryEntryRecord } from '../../memory/store.js';

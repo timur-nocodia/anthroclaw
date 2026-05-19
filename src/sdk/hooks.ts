@@ -12,7 +12,7 @@ import type {
   PreToolUseHookInput,
   SubagentStartHookInput,
   SubagentStopHookInput,
-} from '@anthropic-ai/claude-agent-sdk';
+} from '@anthroclaw/legacy-claude-agent-sdk';
 import type { HookEmitter, HookEvent } from '../hooks/emitter.js';
 
 const MAX_STRING_LENGTH = 2_000;

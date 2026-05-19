@@ -29,16 +29,28 @@ function readAgentYml(id: string): Record<string, unknown> {
 }
 
 describe('createAgent default safety_profile', () => {
-  it('blank template writes safety_profile: chat_like_openclaw', () => {
+  it('blank template writes Pi-native Runtime v1 defaults', () => {
     agentsModule.createAgent('blank-test', undefined, 'blank');
     const config = readAgentYml('blank-test');
-    expect(config.safety_profile).toBe('chat_like_openclaw');
+    expect(config.safety_profile).toBe('chat_like_anthroclaw');
+    expect(config.model).toBe('anthropic/claude-sonnet-4-6');
+    expect(config.runtime).toEqual({
+      headless: {
+        provider: 'pi',
+      },
+    });
   });
 
-  it('example template writes safety_profile: chat_like_openclaw', () => {
+  it('example template writes Pi-native Runtime v1 defaults', () => {
     agentsModule.createAgent('example-test', 'claude-opus-4-6', 'example');
     const config = readAgentYml('example-test');
-    expect(config.safety_profile).toBe('chat_like_openclaw');
+    expect(config.safety_profile).toBe('chat_like_anthroclaw');
+    expect(config.model).toBe('anthropic/claude-opus-4-6');
+    expect(config.runtime).toEqual({
+      headless: {
+        provider: 'pi',
+      },
+    });
   });
 
   it('blank template includes routes', () => {

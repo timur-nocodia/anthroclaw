@@ -16,18 +16,18 @@ afterEach(() => {
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
-describe('chat_like_openclaw end-to-end', () => {
+describe('chat_like_anthroclaw end-to-end', () => {
   it('default scaffold profile matches chat profile registry entry', () => {
     const defaultName = getDefaultProfile();
-    expect(defaultName).toBe('chat_like_openclaw');
+    expect(defaultName).toBe('chat_like_anthroclaw');
     const profile = getProfile(defaultName);
-    expect(profile.name).toBe('chat_like_openclaw');
+    expect(profile.name).toBe('chat_like_anthroclaw');
   });
 
   it('agent.yml with chat profile parses + validates', () => {
     const config = {
       model: 'claude-sonnet-4-6',
-      safety_profile: 'chat_like_openclaw',
+      safety_profile: 'chat_like_anthroclaw',
       routes: [{ channel: 'telegram', scope: 'dm' }],
       personality: 'Be a warm friendly companion.',
     };
@@ -45,13 +45,13 @@ describe('chat_like_openclaw end-to-end', () => {
     expect(CHAT_PERSONALITY_BASELINE.toLowerCase()).not.toContain('no preamble');
   });
 
-  it('agents/example config (production) validates as chat_like_openclaw', async () => {
+  it('agents/example config (production) validates as chat_like_anthroclaw', async () => {
     const { readFileSync } = await import('node:fs');
     const { parse } = await import('yaml');
     const path = join(process.cwd(), 'agents/example/agent.yml');
     const raw = readFileSync(path, 'utf-8');
     const cfg = parse(raw);
-    expect(cfg.safety_profile).toBe('chat_like_openclaw');
+    expect(cfg.safety_profile).toBe('chat_like_anthroclaw');
     const result = AgentYmlSchema.safeParse(cfg);
     expect(result.success).toBe(true);
   });

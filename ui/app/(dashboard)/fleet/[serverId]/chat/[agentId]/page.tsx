@@ -1750,7 +1750,7 @@ function SubagentRunsPanel({
               No subagent runs for this session.
             </p>
             <p className="mt-1 text-[11px] leading-relaxed">
-              Runs appear here when Claude Agent SDK emits subagent activity.
+              Runs appear here when the active runtime records delegated work.
             </p>
           </div>
         ) : (
@@ -1790,7 +1790,7 @@ function ActiveRunsCard({
         <div className="flex min-w-0 items-center gap-1.5">
           <Activity className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--oc-accent)" }} />
           <span className="text-xs font-medium" style={{ color: "var(--color-foreground)" }}>
-            Active SDK runs
+            Active runtime runs
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -1803,7 +1803,7 @@ function ActiveRunsCard({
 
       {runs.length === 0 ? (
         <p className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
-          No active SDK run is registered for this agent.
+          No active runtime run is registered for this agent.
         </p>
       ) : (
         <div className="flex flex-col gap-1.5">
@@ -1835,7 +1835,7 @@ function ActiveRunsCard({
                   <SubagentMeta label="idle" value={formatDuration(idleMs)} />
                   <SubagentMeta label="registered" value={formatTime(run.registeredAt)} />
                   {run.sdkSessionId && (
-                    <SubagentMeta label="sdk" value={shortId(run.sdkSessionId, 12)} title={run.sdkSessionId} />
+                    <SubagentMeta label="runtime" value={shortId(run.sdkSessionId, 12)} title={run.sdkSessionId} />
                   )}
                   {run.channelDeliveryTarget && (
                     <SubagentMeta
@@ -1919,7 +1919,7 @@ function InterruptsCard({
                 <SubagentMeta label="time" value={item.timestamp ? formatTime(item.timestamp) : "unknown"} />
                 {item.runId && <SubagentMeta label="run" value={shortId(item.runId, 10)} title={item.runId} />}
                 {item.sdkSessionId && (
-                  <SubagentMeta label="sdk" value={shortId(item.sdkSessionId, 10)} title={item.sdkSessionId} />
+                  <SubagentMeta label="runtime" value={shortId(item.sdkSessionId, 10)} title={item.sdkSessionId} />
                 )}
               </div>
               {item.reason && (
@@ -2148,7 +2148,7 @@ function SessionDebugCard({
         </>
       ) : (
         <p className="text-[11px] leading-relaxed" style={{ color: "var(--oc-text-muted)" }}>
-          No SDK transcript loaded yet. It will appear after the session is persisted by Claude Agent SDK.
+          No runtime transcript loaded yet. It will appear after the session is persisted by the active runtime.
         </p>
       )}
     </section>

@@ -2,9 +2,9 @@
 
 # Operational instructions
 
-You are available via Telegram (`@clowwy_personal_bot`).
+You are available through the configured messaging routes.
 
-- Use the user's language (Russian primarily).
+- Use the user's language.
 - Search memory before answering questions about past events.
 - Write important facts to daily memory proactively.
 - Cron jobs you create deliver via the channel/account/peer of the chat

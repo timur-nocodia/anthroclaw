@@ -73,7 +73,7 @@ beforeEach(() => {
   process.env.OC_AGENTS_DIR = dir;
   process.env.OC_DATA_DIR = dir;
   process.env.ANTHROCLAW_MASTER_KEY = KEY;
-  mkdirSync(join(dir, 'amina'));
+  mkdirSync(join(dir, 'agent_alpha'));
   store = new EncryptedFilesystemCredentialStore(
     new CredentialAuditLog(join(dir, 'audit.log')),
   );
@@ -97,7 +97,7 @@ function flushMicrotasks(): Promise<void> {
 describe('mcp runtime 401 trap → reauth_required dispatch', () => {
   it('markReauthRequired flips needs_reauth and dispatches synthetic message (chat-initiated)', async () => {
     await store.set(
-      { agentId: 'amina', service: 'mcp:notion' },
+      { agentId: 'agent_alpha', service: 'mcp:notion' },
       {
         kind: 'mcp_oauth',
         service: 'mcp:notion',
@@ -122,24 +122,24 @@ describe('mcp runtime 401 trap → reauth_required dispatch', () => {
 
     const calls: DispatchCall[] = [];
     const gw = new Gateway() as unknown as GatewayInternals;
-    gw.agents = new Map([['amina', { id: 'amina', config: {} }]]);
+    gw.agents = new Map([['agent_alpha', { id: 'agent_alpha', config: {} }]]);
     gw.queryAgent = vi.fn(async () => 'ok');
     gw.dispatchSyntheticInbound = vi.fn(async (...args: unknown[]) => {
       calls.push(args[0] as DispatchCall);
-      return { messageId: 'm1', sessionKey: 'amina:telegram:dm:123456' };
+      return { messageId: 'm1', sessionKey: 'agent_alpha:telegram:dm:123456' };
     });
     gw.subscribeMcpOnboardingEvents(onboarding);
 
     await onboarding.markReauthRequired({
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       serverId: 'notion',
-      agentSessionKey: 'amina:telegram:dm:123456',
+      agentSessionKey: 'agent_alpha:telegram:dm:123456',
     });
     await flushMicrotasks();
 
     // 1. Credential flipped.
     const reread = (await store.get(
-      { agentId: 'amina', service: 'mcp:notion' },
+      { agentId: 'agent_alpha', service: 'mcp:notion' },
       'test',
     )) as McpOAuthCredential;
     expect(reread.metadata?.needs_reauth).toBe('1');
@@ -147,7 +147,7 @@ describe('mcp runtime 401 trap → reauth_required dispatch', () => {
     // 2. Synthetic dispatch fired with the expected body.
     expect(calls).toHaveLength(1);
     const call = calls[0];
-    expect(call.targetAgentId).toBe('amina');
+    expect(call.targetAgentId).toBe('agent_alpha');
     expect(call.channel).toBe('telegram');
     expect(call.peerId).toBe('123456');
     expect(call.text).toBe(
@@ -164,7 +164,7 @@ describe('mcp runtime 401 trap → reauth_required dispatch', () => {
 
   it('admin-initiated (no agentSessionKey): credential flips but no dispatch', async () => {
     await store.set(
-      { agentId: 'amina', service: 'mcp:notion' },
+      { agentId: 'agent_alpha', service: 'mcp:notion' },
       {
         kind: 'mcp_oauth',
         service: 'mcp:notion',
@@ -189,7 +189,7 @@ describe('mcp runtime 401 trap → reauth_required dispatch', () => {
 
     const calls: DispatchCall[] = [];
     const gw = new Gateway() as unknown as GatewayInternals;
-    gw.agents = new Map([['amina', { id: 'amina', config: {} }]]);
+    gw.agents = new Map([['agent_alpha', { id: 'agent_alpha', config: {} }]]);
     gw.queryAgent = vi.fn(async () => 'ok');
     gw.dispatchSyntheticInbound = vi.fn(async (...args: unknown[]) => {
       calls.push(args[0] as DispatchCall);
@@ -198,14 +198,14 @@ describe('mcp runtime 401 trap → reauth_required dispatch', () => {
     gw.subscribeMcpOnboardingEvents(onboarding);
 
     await onboarding.markReauthRequired({
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       serverId: 'notion',
       agentSessionKey: null,
     });
     await flushMicrotasks();
 
     const reread = (await store.get(
-      { agentId: 'amina', service: 'mcp:notion' },
+      { agentId: 'agent_alpha', service: 'mcp:notion' },
       'test',
     )) as McpOAuthCredential;
     expect(reread.metadata?.needs_reauth).toBe('1');
@@ -214,7 +214,7 @@ describe('mcp runtime 401 trap → reauth_required dispatch', () => {
 
   it('emits reauth_required event with expected payload', async () => {
     await store.set(
-      { agentId: 'amina', service: 'mcp:notion' },
+      { agentId: 'agent_alpha', service: 'mcp:notion' },
       {
         kind: 'mcp_oauth',
         service: 'mcp:notion',
@@ -242,16 +242,16 @@ describe('mcp runtime 401 trap → reauth_required dispatch', () => {
     });
 
     await onboarding.markReauthRequired({
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       serverId: 'notion',
-      agentSessionKey: 'amina:telegram:dm:42',
+      agentSessionKey: 'agent_alpha:telegram:dm:42',
     });
 
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       serverId: 'notion',
-      agentSessionKey: 'amina:telegram:dm:42',
+      agentSessionKey: 'agent_alpha:telegram:dm:42',
     });
   });
 
@@ -270,7 +270,7 @@ describe('mcp runtime 401 trap → reauth_required dispatch', () => {
 
     // Don't pre-seed the credential — facade should swallow the read error.
     await onboarding.markReauthRequired({
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       serverId: 'ghost',
       agentSessionKey: null,
     });

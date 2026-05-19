@@ -6,7 +6,8 @@ const { queryMock, startupMock, createSdkMcpServerMock } = vi.hoisted(() => ({
   createSdkMcpServerMock: vi.fn((spec) => spec),
 }));
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+vi.mock('@anthroclaw/legacy-claude-agent-sdk', () => ({
+  claudeAgentHeadlessRuntime: { id: 'claude-agent-sdk', runText: vi.fn() },
   query: queryMock,
   startup: startupMock,
   createSdkMcpServer: createSdkMcpServerMock,
@@ -22,7 +23,7 @@ import { Gateway } from '../src/gateway.js';
  * session-agnostic. The bypass had a hidden cost: cron-having agents that
  * also use external HTTP MCP servers (Linear/Supabase) paid a fresh
  * handshake on every turn, which surfaced on 2026-05-16 as 8-min hangs on
- * project-manager. This test locks the corrected behavior in place so a
+ * a cron-heavy runtime fixture. This test locks the corrected behavior in place so a
  * future refactor doesn't silently bring the bypass back.
  */
 describe('Gateway warm queries for manage_cron agents', () => {

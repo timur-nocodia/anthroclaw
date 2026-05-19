@@ -6,7 +6,7 @@
 
 ## Goal
 
-Adopt the highest-value ideas from the latest upstream OpenClaw and Hermes releases without breaking AnthroClaw's defining contract:
+Adopt the highest-value ideas from the latest upstream external gateway and Hermes releases without breaking AnthroClaw's defining contract:
 
 - user-facing execution must stay on the native Claude Agent SDK path
 - no generic provider-router refactor
@@ -53,25 +53,23 @@ This is the exact reading list the implementing agent should use for inspiration
 
 | Upstream | Version | Date | What to study | Why it matters to AnthroClaw |
 | --- | --- | --- | --- | --- |
-| OpenClaw | `v2026.5.3` | 2026-05-04 | release highlights for `Plugins/file-transfer`, `Plugins/install`, `Gateway/performance`, `Channels/streaming`, `/steer` | newest statement of OpenClaw's plugin operations model, file-transfer policy model, and lazy-load direction |
-| OpenClaw | `v2026.5.2` | 2026-05-02 | release highlights for external plugin install/update/doctor/dependency reporting and gateway hot-path trimming | clearest prior release for lifecycle/admin surfaces before `v2026.5.3` polish |
+| external gateway | `v2026.5.3` | 2026-05-04 | release highlights for `Plugins/file-transfer`, `Plugins/install`, `Gateway/performance`, `Channels/streaming`, `/steer` | newest statement of external gateway's plugin operations model, file-transfer policy model, and lazy-load direction |
+| external gateway | `v2026.5.2` | 2026-05-02 | release highlights for external plugin install/update/doctor/dependency reporting and gateway hot-path trimming | clearest prior release for lifecycle/admin surfaces before `v2026.5.3` polish |
 | Hermes Agent | `v0.12.0` | 2026-04-30 | `Autonomous Curator & Self-Improvement Loop`, plus cold-start performance notes | best current reference for rubric-based review, active-update bias, skill-side artifacts, and reviewer runtime hygiene |
 
-Direct links:
-
-- OpenClaw `v2026.5.3`: `https://github.com/openclaw/openclaw/releases/tag/v2026.5.3`
-- OpenClaw `v2026.5.2`: `https://github.com/openclaw/openclaw/releases/tag/v2026.5.2`
-- Hermes `v0.12.0`: `https://github.com/NousResearch/hermes-agent/blob/main/RELEASE_v0.12.0.md`
+Reference material should be gathered from the relevant upstream release notes
+before executing this archived plan. Do not treat this planning note as a
+source of truth for current Runtime v1 migration criteria.
 
 ### Exact sections to inspect
 
-- OpenClaw `v2026.5.3`
+- external gateway `v2026.5.3`
   - `Plugins/file-transfer`
   - `Plugins/install`
   - `Gateway/performance`
   - `Channels/streaming`
   - `Agents/commands: /steer`
-- OpenClaw `v2026.5.2`
+- external gateway `v2026.5.2`
   - `External plugin installation, update, doctor repair, dependency reporting`
   - `Gateway and agent hot paths are leaner`
   - `Plugins/runtime`
@@ -133,7 +131,7 @@ These are the current code seams the implementation must build on.
 
 - Plugin config is persisted through `agent.yml`, not database-only state.
 - Runtime state is a mix of JSON/JSONL and SQLite.
-- AnthroClaw is intentionally local-first and Claude Agent SDK-native.
+- AnthroClaw is intentionally local-first and Runtime v1 legacy-provider-compatible.
 
 ## Design principles
 
@@ -159,7 +157,7 @@ Operators can install, update, inspect, diagnose, and remove external plugins wi
 
 #### Why now
 
-This is the biggest leverage point from OpenClaw `v2026.5.2` and `v2026.5.3`. AnthroClaw already has a plugin runtime, but not a plugin operations layer.
+This is the biggest leverage point from external gateway `v2026.5.2` and `v2026.5.3`. AnthroClaw already has a plugin runtime, but not a plugin operations layer.
 
 #### Current gap
 
@@ -276,8 +274,8 @@ The UI must show:
 
 #### Upstream references
 
-- OpenClaw `v2026.5.2`: external plugin installation/update/doctor/dependency reporting
-- OpenClaw `v2026.5.3`: harder install/update/onboarding paths and "externalized plugins behave like first-class package installs"
+- external gateway `v2026.5.2`: external plugin installation/update/doctor/dependency reporting
+- external gateway `v2026.5.3`: harder install/update/onboarding paths and "externalized plugins behave like first-class package installs"
 
 ### Epic B - Startup and runtime hot-path trimming
 
@@ -287,7 +285,7 @@ Gateway startup, plugin admin, and steady-state query preparation become lighter
 
 #### Why now
 
-This is the lowest-risk high-value adoption from both OpenClaw and Hermes. AnthroClaw already has the right runtime model; it just does too much eagerly.
+This is the lowest-risk high-value adoption from both external gateway and Hermes. AnthroClaw already has the right runtime model; it just does too much eagerly.
 
 #### Current gap
 
@@ -328,8 +326,8 @@ Do not add a broad internal caching framework. Keep optimizations local and audi
 
 #### Upstream references
 
-- OpenClaw `v2026.5.2`: gateway and agent hot paths; `Plugins/runtime`
-- OpenClaw `v2026.5.3`: `Gateway/performance`
+- external gateway `v2026.5.2`: gateway and agent hot paths; `Plugins/runtime`
+- external gateway `v2026.5.3`: `Gateway/performance`
 - Hermes `v0.12.0`: cold-start performance/lazy init
 
 ### Epic C - Learning loop v2
@@ -417,7 +415,7 @@ This follow-up should reuse LearningStore rather than invent a second maintenanc
 - Learning proposals include stronger rationale and fewer weak/noisy patches.
 - Reviewers can target the skill that was actually active during the run.
 - Skill proposals can reference adjacent `references/` and `templates/` context.
-- Headless review remains SDK-native and tool-restricted.
+- Headless review remains provider-specific and tool-restricted.
 - No new security regression is introduced in review output parsing or application.
 
 #### Upstream references
@@ -433,7 +431,7 @@ Operators get a tightly scoped file transfer utility through the plugin system f
 
 #### Why now
 
-OpenClaw `v2026.5.3` validates the product value of a file-transfer shape, but AnthroClaw should adapt only the policy model, not the paired-node transport model.
+external gateway `v2026.5.3` validates the product value of a file-transfer shape, but AnthroClaw should adapt only the policy model, not the paired-node transport model.
 
 #### Current gap
 
@@ -441,7 +439,7 @@ AnthroClaw has no operator-safe binary/file movement plugin today. Adding it as 
 
 #### v1 design
 
-Implement a first-party plugin under `plugins/file-transfer/` with tool names inspired by OpenClaw:
+Implement a first-party plugin under `plugins/file-transfer/` with tool names inspired by external gateway:
 
 - `file_fetch`
 - `dir_list`
@@ -496,7 +494,7 @@ This is an operator tool, not a general-purpose filesystem abstraction.
 
 #### Upstream references
 
-- OpenClaw `v2026.5.3`: `Plugins/file-transfer`
+- external gateway `v2026.5.3`: `Plugins/file-transfer`
 
 ## Release sequencing
 

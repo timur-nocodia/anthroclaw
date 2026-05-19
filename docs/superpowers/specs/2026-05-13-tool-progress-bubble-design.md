@@ -1,7 +1,7 @@
 # Tool-progress observability bubble
 
 **Status:** Draft
-**Author:** Timur
+**Author:** AnthroClaw team
 **Date:** 2026-05-13
 
 ## Problem
@@ -427,7 +427,7 @@ Where `silentRun = responseText.startsWith('[SILENT]')` — already detected ups
 ### Unit — `display-config.test.ts`
 
 - `safetyProfile: 'public'` + any channel → `toolProgress = 'off'`
-- `safetyProfile: 'trusted' | 'private' | 'chat_like_openclaw'` + any channel → `'new'`
+- `safetyProfile: 'trusted' | 'private' | 'chat_like_anthroclaw'` + any channel → `'new'`
 - `agentOverrides.toolProgress = 'all'` beats safety-profile default
 - `globalDefaults.toolProgress = 'all'` beats safety-profile default, loses to agent override
 - All other fields independent of safety profile
@@ -463,8 +463,8 @@ Assertions:
 
 Single PR — backend + UI + tests. After merge:
 
-1. Production agents with `safety_profile: public` (Roman, Amina) automatically get `off` — no UX change.
-2. Private / trusted agents (timur-asisstant, Buildroom) automatically get `new` — observability turns on.
+1. Production agents with `safety_profile: public` (a public-profile fixture, customer assistant) automatically get `off` — no UX change.
+2. Private / trusted agents (operator-assistant, Buildroom) automatically get `new` — observability turns on.
 3. No migration of `agent.yml` files needed: all new fields are optional. Existing agents that explicitly set `display.toolProgress: off` keep that.
 4. Operators who want chat-cleanup behaviour set `display.cleanupProgress: true` in the UI per agent — opt-in only.
 

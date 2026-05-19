@@ -168,7 +168,7 @@ watch:
     mode: sanitized_summaries
     agents:
       - code-helper
-      - amina
+      - support_agent
   rawTranscripts:
     enabled: false
   external:

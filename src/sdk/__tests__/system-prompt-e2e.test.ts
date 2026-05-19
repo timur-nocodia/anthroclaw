@@ -30,7 +30,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { composeSystemPrompt } from '../system-prompt.js';
-import { chatLikeOpenclawProfile } from '../../security/profiles/chat-like-openclaw.js';
+import { chatLikeAnthroclawProfile } from '../../security/profiles/chat-like-anthroclaw.js';
 import { publicProfile } from '../../security/profiles/public.js';
 import { trustedProfile } from '../../security/profiles/trusted.js';
 import { privateProfile } from '../../security/profiles/private.js';
@@ -94,9 +94,9 @@ function mkAgentLike(id: string, workspaceRoot: string): Agent {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe('system-prompt e2e — all 4 profiles resolve agent CLAUDE.md with @-imports', () => {
-  it('chat_like_openclaw — resolves SOUL.md and IDENTITY.md into the string body', () => {
+  it('chat_like_anthroclaw — resolves SOUL.md and IDENTITY.md into the string body', () => {
     const agent = mkAgentLike('agent_chat', join(tmpRoot, 'agent_chat'));
-    const body = composeSystemPrompt(agent, chatLikeOpenclawProfile);
+    const body = composeSystemPrompt(agent, chatLikeAnthroclawProfile);
     expect(typeof body).toBe('string');
     const sp = body as string;
     expect(sp).toContain('SOUL_chat');
@@ -164,7 +164,7 @@ describe('system-prompt e2e — all 4 profiles resolve agent CLAUDE.md with @-im
       const agent = mkAgentLike(`agent_${profileName}`, agentDir);
       const profile =
         profileName === 'chat'
-          ? chatLikeOpenclawProfile
+          ? chatLikeAnthroclawProfile
           : profileName === 'public'
           ? publicProfile
           : profileName === 'trusted'

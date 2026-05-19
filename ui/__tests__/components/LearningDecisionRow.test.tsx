@@ -16,7 +16,7 @@ describe("LearningDecisionRow", () => {
     );
 
     expect(screen.getByText("Create publishing skill")).toBeInTheDocument();
-    expect(screen.getByText(/sent telegram\/main\/48705953/)).toBeInTheDocument();
+    expect(screen.getByText(/sent telegram\/main\/123456789/)).toBeInTheDocument();
     expect(screen.getByText(/message tg-msg-1/)).toBeInTheDocument();
     expect(screen.getByText(/failed whatsapp\/main\/15551212/)).toBeInTheDocument();
     expect(screen.getByText(/timeout/)).toBeInTheDocument();
@@ -89,7 +89,7 @@ function decisionFixture(): LearningDecisionRecord {
         decisionId: "decision-1",
         channel: "telegram",
         accountId: "main",
-        peerId: "48705953",
+        peerId: "123456789",
         messageId: "tg-msg-1",
         status: "sent",
         createdAt: 2100,

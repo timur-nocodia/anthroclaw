@@ -9,15 +9,15 @@
 
 After this release, no agent in any anthroclaw deployment can read, write, or otherwise touch any MCP server, OAuth credential, or integration that lives in the Claude account hosting the SDK. Every external capability an agent has must be explicitly declared in its `agent.yml` and authenticated against credentials owned by that agent. Built-in Claude.ai MCP servers (`mcp__claude_ai_Google_Calendar__*`, `mcp__claude_ai_Notion__*`, `mcp__claude_ai_Linear__*`, `mcp__claude_ai_Gmail__*`, `mcp__claude_ai_Vercel__*`, etc.) become invisible to all agents.
 
-As a side benefit, this release fixes two unrelated production bugs surfaced during the same diagnostic pass: (1) cron-fired messages do not resume the same SDK session as user-initiated DMs, leaving agents blind to their own scheduled output one turn later; (2) customer-facing agents (notably `leads_agent`) hallucinate technical excuses involving internal anthroclaw architecture (e.g. claiming "operator console is disabled") when refusing client requests.
+As a side benefit, this release fixes two unrelated production bugs surfaced during the same diagnostic pass: (1) cron-fired messages do not resume the same SDK session as user-initiated DMs, leaving agents blind to their own scheduled output one turn later; (2) customer-facing agents (notably `customer_intake_agent`) hallucinate technical excuses involving internal anthroclaw architecture (e.g. claiming "operator console is disabled") when refusing client requests.
 
 ## Motivation
 
 Three production incidents on 2026-05-04 surfaced these problems together:
 
-1. **Klavdia (`timur_agent`) sent Timur a 09:01 morning briefing populated from Roman's Google Calendar (`landline.60@gmail.com`).** Diagnostic showed the cron task uses `mcp__claude_ai_Google_Calendar__list_events` — a tool inherited from the Claude account that runs the SDK process. That account has Google Calendar OAuth wired to Roman's email, so every agent in the same container reads Roman's calendar. Same flow exposes Roman's Notion, Gmail, Linear, Vercel, Cloudflare, etc. to every agent.
-2. **When Timur asked Klavdia at 09:22 about "this calendar", she did not remember her own 09:01 briefing.** Two distinct SDK sessions on disk — one written by cron, one started fresh on user dispatch — with no resume between them, no LCM carryover, no in-prompt summary.
-3. **Madina (a WhatsApp client of Amina/`leads_agent`) asked for an Excel export of all leads. Amina invented "operator console is disabled, you'll need to wait for Timur to fix the config".** No such system component is exposed to her — she fabricated a credible technical excuse out of unfamiliar internal terminology.
+1. **Operator Assistant (`personal_operator_agent`) sent the operator a 09:01 morning briefing populated from the connected account owner's Google Calendar (`operator@example.invalid`).** Diagnostic showed the cron task uses `mcp__claude_ai_Google_Calendar__list_events` — a tool inherited from the Claude account that runs the SDK process. That account has Google Calendar OAuth wired to the connected account owner's email, so every agent in the same container reads the connected account owner's calendar. Same flow exposes the connected account owner's Notion, Gmail, Linear, Vercel, Cloudflare, etc. to every agent.
+2. **When the operator asked Operator Assistant at 09:22 about "this calendar", she did not remember her own 09:01 briefing.** Two distinct SDK sessions on disk — one written by cron, one started fresh on user dispatch — with no resume between them, no LCM carryover, no in-prompt summary.
+3. **A sample WhatsApp client of `customer_intake_agent` asked for an Excel export of all leads. customer assistant invented "operator console is disabled, you'll need to wait for the operator to fix the config".** No such system component is exposed to the client — the agent fabricated a credible technical excuse out of unfamiliar internal terminology.
 
 Incident 1 is the load-bearing one: it is a credential-leak hazard, not a bug. The threat model is concrete — colleagues in the operator group (`-1003729315809`, topic 3) can ask `operator_agent` to "summarize the boss's calendar this week", and the agent has the tool to do it because the entire MCP catalogue is shared. Same applies to Notion (financial notes, salary tables, vendor agreements), Gmail (private email), Linear (sensitive product roadmap), Vercel (deployment access), Cloudflare (DNS / WAF / KV write access).
 
@@ -85,8 +85,8 @@ src/cron/
 src/agent/tools/
   escalate.ts                        # NEW — universal escalate tool
 
-agents/leads_agent/CLAUDE.md         # MODIFIED — anti-hallucination guardrail
-agents/leads_agent/agent.yml         # MODIFIED — add escalate to mcp_tools
+agents/customer_intake_agent/CLAUDE.md         # MODIFIED — anti-hallucination guardrail
+agents/customer_intake_agent/agent.yml         # MODIFIED — add escalate to mcp_tools
 
 config/secrets/                      # NEW dir — master key bootstrap helper
 .env.example                         # MODIFIED — add ANTHROCLAW_MASTER_KEY
@@ -294,9 +294,9 @@ Refreshed at agent-config-load time, not at every Bash call (overhead). Cached o
 
 Plus integration test (in Subsystem 7) that an agent cannot read another agent's directory through `Read` or `Bash`.
 
-### Edge case — `quick_commands` for `timur_agent`
+### Edge case — `quick_commands` for `personal_operator_agent`
 
-`timur_agent/agent.yml` has `quick_commands: status / disk / memory` running shell commands like `df -h /` (queries `/`, outside the sandbox). After cutoff, these break.
+`personal_operator_agent/agent.yml` has `quick_commands: status / disk / memory` running shell commands like `df -h /` (queries `/`, outside the sandbox). After cutoff, these break.
 
 **Resolution:** `quick_commands` are operator-facing, not agent-facing. They run via a different code path (`gateway.ts:processSlashCommand`) that does not go through SDK sandbox. Confirmed by reading the existing implementation. No change needed to `quick_commands` — they keep working.
 
@@ -311,7 +311,7 @@ Even though v0.8.0 does not let agents add credentials (that's v0.9), the storag
 
 export interface OAuthCredential {
   service: string;          // e.g. 'google_calendar'
-  account: string;          // e.g. 'timur@nocodia.dev' (display only)
+  account: string;          // e.g. 'operator@example.com' (display only)
   accessToken: string;
   refreshToken?: string;
   expiresAt?: number;       // unix ms
@@ -476,7 +476,7 @@ Append-only JSONL. Rotation/retention is operator concern (logrotate or periodic
 
 ## Subsystem 5 — Cron-DM session continuity
 
-Today: `cron/scheduler.ts` fires a synthetic `InboundMessage` → `gateway.queryAgent()`. The `sessionKey` is built deterministically from `{agentId, channel, chatType, peerId, threadId}`. For a `morning-standup` cron with `deliverTo.peer_id: "48705953", channel: 'telegram', account_id: 'content_sm'`, the sessionKey is `timur_agent:telegram:dm:48705953`.
+Today: `cron/scheduler.ts` fires a synthetic `InboundMessage` → `gateway.queryAgent()`. The `sessionKey` is built deterministically from `{agentId, channel, chatType, peerId, threadId}`. For a `morning-standup` cron with `deliverTo.peer_id: "<telegram-peer-id>", channel: 'telegram', account_id: 'content_sm'`, the sessionKey is `personal_operator_agent:telegram:dm:<telegram-peer-id>`.
 
 The user's DM dispatch builds the same sessionKey. So on paper they should resume the same SDK session. They don't, because the gateway does not call `agent.setSessionId(sessionKey, sdkSessionId)` after the cron run completes. The SDK creates a new session id, the gateway's `Agent.sessions[sessionKey]` map stays empty, and the next user message starts fresh.
 
@@ -505,7 +505,7 @@ After the fix, when cron run completes and writes its assistant message to the S
 
 ### Edge case — `[SILENT]` cron responses
 
-Today, when a cron prompt instructs the agent to respond `[SILENT]` if all is well (e.g. the disabled `silent-test` cron in `timur_agent.yml`), the gateway suppresses the channel send but still records the assistant message in the SDK session. This is correct behaviour — preserving the silent ack in history. After the fix, `agent.setSessionId` persists for these too, which is what we want.
+Today, when a cron prompt instructs the agent to respond `[SILENT]` if all is well (e.g. the disabled `silent-test` cron in `personal_operator_agent.yml`), the gateway suppresses the channel send but still records the assistant message in the SDK session. This is correct behaviour — preserving the silent ack in history. After the fix, `agent.setSessionId` persists for these too, which is what we want.
 
 ### Test surface
 
@@ -517,9 +517,9 @@ Today, when a cron prompt instructs the agent to respond `[SILENT]` if all is we
 
 ## Subsystem 6 — Customer-facing safety guardrails
 
-Two changes for `leads_agent` (Amina), generalizable to any agent with `safety_profile: public` later.
+Two changes for `customer_intake_agent` (customer assistant), generalizable to any agent with `safety_profile: public` later.
 
-### 6a — `agents/leads_agent/CLAUDE.md` addendum
+### 6a — `agents/customer_intake_agent/CLAUDE.md` addendum
 
 Add a new section near the top of the system prompt:
 
@@ -585,9 +585,9 @@ export const escalateTool = tool(
 );
 ```
 
-The watcher / UI for surfacing escalations is out of scope for v0.8. For now, the operator can `tail -f data/escalations/leads_agent.jsonl` on the VPS, or the existing notification system (which routes to Timur's Telegram for `manage_notifications` events) can be extended to include escalation events.
+The watcher / UI for surfacing escalations is out of scope for v0.8. For now, the operator can `tail -f data/escalations/customer_intake_agent.jsonl` on the VPS, or the existing notification system (which routes to the operator's Telegram for `manage_notifications` events) can be extended to include escalation events.
 
-### 6c — `agents/leads_agent/agent.yml` change
+### 6c — `agents/customer_intake_agent/agent.yml` change
 
 Add `escalate` to `mcp_tools`:
 
@@ -602,7 +602,7 @@ mcp_tools:
 ### Test surface
 
 - A unit test that the `escalate` tool writes a JSONL line to `data/escalations/<agentId>.jsonl`
-- An eval test (separate fixtures) that asks Amina-style prompts to "give me an Excel of all leads" and verifies the response does not contain strings like "operator console", "config", "Timur will fix" — instead contains a polite plain refusal + an `escalate` call. Eval failure tolerated for v0.8 (model behaviour, will iterate); tracked separately.
+- An eval test (separate fixtures) that asks customer assistant-style prompts to "give me an Excel of all leads" and verifies the response does not contain strings like "operator console", "config", "operator will fix" — instead contains a polite plain refusal + an `escalate` call. Eval failure tolerated for v0.8 (model behaviour, will iterate); tracked separately.
 
 ## Subsystem 7 — End-to-end smoke test
 
@@ -653,7 +653,7 @@ describe('capability cutoff e2e', () => {
 
 ### EC-1 — Existing production agents have no `external_mcp_servers` block
 
-All four prod agents (`timur_agent`, `leads_agent`, `operator_agent`, `content_sm_building`) currently have nothing under `external_mcp_servers`. After cutoff, they have *zero* external integrations. This is intentional — the cron prompt for `morning-standup` references Google Calendar and Linear, which will fail. Resolution: see Migration section below — disable the cron until v0.9 ships.
+All four prod agents (`personal_operator_agent`, `customer_intake_agent`, `operator_agent`, `group_content_agent`) currently have nothing under `external_mcp_servers`. After cutoff, they have *zero* external integrations. This is intentional — the cron prompt for `morning-standup` references Google Calendar and Linear, which will fail. Resolution: see Migration section below — disable the cron until v0.9 ships.
 
 ### EC-2 — Master key not set at boot
 
@@ -665,7 +665,7 @@ If `ANTHROCLAW_MASTER_KEY` is rotated, all existing encrypted credentials become
 
 ### EC-4 — Operator manually copies credentials between agents
 
-Encryption is keyed on `(agentId, service)` via HKDF. Copying `agents/timur_agent/credentials/google.enc` to `agents/leads_agent/credentials/google.enc` and trying to read it from `leads_agent` fails: HKDF salt for `leads_agent/google` derives a different key, AES-GCM auth tag check fails, decryption errors. Tested.
+Encryption is keyed on `(agentId, service)` via HKDF. Copying `agents/personal_operator_agent/credentials/google.enc` to `agents/customer_intake_agent/credentials/google.enc` and trying to read it from `customer_intake_agent` fails: HKDF salt for `customer_intake_agent/google` derives a different key, AES-GCM auth tag check fails, decryption errors. Tested.
 
 ### EC-5 — Bash-based attempt to read sibling agent dir
 
@@ -696,8 +696,8 @@ Migration: existing `mcp_tools` lists work unchanged because they only reference
 
 1. `git pull && docker compose up -d --build` on the VPS.
 2. Tail logs for 5 minutes: `sudo docker logs -f anthroclaw-app-1`. Watch for `capability-cutoff: tool blocked at runtime` warnings.
-3. Smoke test in chat: send a DM to Klavdia "что сейчас в моём календаре?". Expected: she has no Google Calendar tool, refuses gracefully with "у меня нет доступа к календарю — давай я добавлю эту интеграцию в следующей версии". (After v0.9 she will be able to.)
-4. Smoke test in WhatsApp: message Amina (or use a test account) "выгрузи всех лидов в Excel". Expected: plain refusal, no mention of operator console, escalate logged to `data/escalations/leads_agent.jsonl`.
+3. Smoke test in chat: send a DM to Operator Assistant "что сейчас в моём календаре?". Expected: she has no Google Calendar tool, refuses gracefully with "у меня нет доступа к календарю — давай я добавлю эту интеграцию в следующей версии". (After v0.9 she will be able to.)
+4. Smoke test in WhatsApp: message customer assistant (or use a test account) "выгрузи всех лидов в Excel". Expected: plain refusal, no mention of operator console, escalate logged to `data/escalations/customer_intake_agent.jsonl`.
 5. Run `tail -n 50 data/credential-access.jsonl` — empty file (no credentials in v0.8). Confirms wiring exists.
 
 ### Rollback
@@ -711,14 +711,14 @@ If anything breaks production unexpectedly: `git revert HEAD && docker compose u
 
 ## Open questions to revisit during planning
 
-1. **Should `Bash` be in the default whitelist?** Today `quick_commands` need it (per existing `timur_agent.yml`), but they bypass SDK sandbox via a different code path. The agent itself rarely needs Bash. **Decision: keep it in whitelist for now**, harden via the deny-list wrapper. Re-evaluate in v0.10 if abused.
-2. **Should `escalate` be added to `timur_agent` and `operator_agent` too?** Both are operator-facing, less risk of hallucination. **Decision: only `leads_agent` for v0.8.** Promote to defaults in v0.9 when we have escalation routing infra.
+1. **Should `Bash` be in the default whitelist?** Today `quick_commands` need it (per existing `personal_operator_agent.yml`), but they bypass SDK sandbox via a different code path. The agent itself rarely needs Bash. **Decision: keep it in whitelist for now**, harden via the deny-list wrapper. Re-evaluate in v0.10 if abused.
+2. **Should `escalate` be added to `personal_operator_agent` and `operator_agent` too?** Both are operator-facing, less risk of hallucination. **Decision: only `customer_intake_agent` for v0.8.** Promote to defaults in v0.9 when we have escalation routing infra.
 3. **Telemetry on tool blocking.** Should every blocked tool call be reported as a separate event, or aggregated? **Decision: per-event log line** (volume is low — agents rarely guess at unknown tools). Easy to grep.
 4. **Reverse proxy or Caddy logs needed?** No. Cutoff is at SDK option layer, not network. Outbound traffic from `mcp__claude_ai_*` is prevented because the tools never load.
 
 ## What this spec does NOT decide
 
-- Exact wording of `escalate` tool descriptions (will iterate after Amina is observed in prod).
-- Whether to add a SIGNAL or `manage_notifications`-style cron alert that pings Timur when an escalation arrives. v0.9 concern.
+- Exact wording of `escalate` tool descriptions (will iterate after customer assistant is observed in prod).
+- Whether to add a SIGNAL or `manage_notifications`-style cron alert that pings the operator when an escalation arrives. v0.9 concern.
 - UI surface for credential management. v0.9.
 - Whether to migrate `auto_compress` legacy field at the same time as cutoff. **No** — keep concerns separate, that lives in compact-redesign v0.10.

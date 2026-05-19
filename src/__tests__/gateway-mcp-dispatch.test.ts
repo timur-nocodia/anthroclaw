@@ -47,11 +47,11 @@ let onboarding: { events: EventEmitter };
 beforeEach(() => {
   dispatchCalls = [];
   gw = new Gateway() as unknown as GatewayInternals;
-  gw.agents = new Map([['amina', { id: 'amina', config: {} }]]);
+  gw.agents = new Map([['agent_alpha', { id: 'agent_alpha', config: {} }]]);
   gw.queryAgent = vi.fn(async () => 'ok');
   gw.dispatchSyntheticInbound = vi.fn(async (...args: unknown[]) => {
     dispatchCalls.push(args[0] as DispatchCall);
-    return { messageId: 'm1', sessionKey: 'amina:telegram:dm:123' };
+    return { messageId: 'm1', sessionKey: 'agent_alpha:telegram:dm:123' };
   });
   onboarding = { events: new EventEmitter() };
   gw.subscribeMcpOnboardingEvents(onboarding);
@@ -70,8 +70,8 @@ function flushMicrotasks(): Promise<void> {
 describe('Gateway.subscribeMcpOnboardingEvents → dispatchMcpSystemMessage', () => {
   const BASE_EVT: OnboardingEvent = {
     pendingId: 'pnd_xyz',
-    agentId: 'amina',
-    agentSessionKey: 'amina:telegram:dm:123456',
+    agentId: 'agent_alpha',
+    agentSessionKey: 'agent_alpha:telegram:dm:123456',
     serverId: 'notion',
   };
 
@@ -87,7 +87,7 @@ describe('Gateway.subscribeMcpOnboardingEvents → dispatchMcpSystemMessage', ()
 
     expect(dispatchCalls).toHaveLength(1);
     const call = dispatchCalls[0];
-    expect(call.targetAgentId).toBe('amina');
+    expect(call.targetAgentId).toBe('agent_alpha');
     expect(call.channel).toBe('telegram');
     expect(call.peerId).toBe('123456');
     expect(call.text).toBe(
@@ -168,7 +168,7 @@ describe('Gateway.subscribeMcpOnboardingEvents → dispatchMcpSystemMessage', ()
   it('skips dispatch when agentSessionKey channel is unsupported', async () => {
     onboarding.events.emit('connected', {
       ...BASE_EVT,
-      agentSessionKey: 'amina:slack:dm:123456',
+      agentSessionKey: 'agent_alpha:slack:dm:123456',
       tools: [],
     } satisfies OnboardingEvent);
     await flushMicrotasks();

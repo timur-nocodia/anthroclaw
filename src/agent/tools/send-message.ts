@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { ChannelAdapter, SendOptions } from '../../channels/types.js';
 import type { PeerPauseStore } from '../../routing/peer-pause.js';
 import type { NotificationsEmitter } from '../../notifications/emitter.js';

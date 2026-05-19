@@ -5,7 +5,7 @@
  *
  * Fetches `/api/agents/{agentId}/config-audit?section={section}&limit=1`
  * on mount, then renders one of:
- *   - "Last modified 3 hours ago via chat (klavdia)"
+ *   - "Last modified 3 hours ago via chat (operator_agent)"
  *   - "Last modified 5 min ago via UI"
  *
  * Hides itself when the audit log has no entry for that section.

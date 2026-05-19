@@ -21,20 +21,20 @@ afterEach(() => {
 describe('HeartbeatStateStore', () => {
   it('persists last delivery target', () => {
     const store = makeStore();
-    store.recordTarget('klavdia', {
+    store.recordTarget('operator_agent', {
       channel: 'telegram',
-      peer_id: '48705953',
+      peer_id: '123456789',
       account_id: 'default',
       thread_id: '42',
-      session_key: 'klavdia:telegram:48705953',
+      session_key: 'operator_agent:telegram:123456789',
     });
 
-    expect(store.getLastTarget('klavdia')).toEqual({
+    expect(store.getLastTarget('operator_agent')).toEqual({
       channel: 'telegram',
-      peer_id: '48705953',
+      peer_id: '123456789',
       account_id: 'default',
       thread_id: '42',
-      session_key: 'klavdia:telegram:48705953',
+      session_key: 'operator_agent:telegram:123456789',
     });
   });
 
@@ -44,18 +44,18 @@ describe('HeartbeatStateStore', () => {
     const path = join(dir, 'heartbeat-state.json');
 
     const first = new HeartbeatStateStore(path);
-    first.markTaskRun('klavdia', 'standup', 'ok', 1234);
+    first.markTaskRun('operator_agent', 'standup', 'ok', 1234);
 
     const second = new HeartbeatStateStore(path);
-    expect(second.getTaskLastRun('klavdia', 'standup')).toBe(1234);
-    expect(second.getAgent('klavdia').tasks.standup?.lastStatus).toBe('ok');
+    expect(second.getTaskLastRun('operator_agent', 'standup')).toBe(1234);
+    expect(second.getAgent('operator_agent').tasks.standup?.lastStatus).toBe('ok');
   });
 
   it('records delivery hash without storing response text', () => {
     const store = makeStore();
-    store.recordDelivery('klavdia', 'Sensitive response text');
+    store.recordDelivery('operator_agent', 'Sensitive response text');
 
-    const agentState = store.getAgent('klavdia');
+    const agentState = store.getAgent('operator_agent');
     expect(agentState.lastDeliveredHash).toMatch(/^[a-f0-9]{64}$/);
     expect(JSON.stringify(agentState)).not.toContain('Sensitive response text');
   });

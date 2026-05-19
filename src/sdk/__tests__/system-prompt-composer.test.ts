@@ -12,7 +12,7 @@ import { CHAT_PERSONALITY_BASELINE } from '../../security/profiles/chat-personal
 import { publicProfile } from '../../security/profiles/public.js';
 import { trustedProfile } from '../../security/profiles/trusted.js';
 import { privateProfile } from '../../security/profiles/private.js';
-import { chatLikeOpenclawProfile } from '../../security/profiles/chat-like-openclaw.js';
+import { chatLikeAnthroclawProfile } from '../../security/profiles/chat-like-anthroclaw.js';
 
 import type { Agent } from '../../agent/agent.js';
 import type { AgentYml } from '../../config/schema.js';
@@ -54,33 +54,33 @@ const SEPARATOR = '\n\n─────────\n\n';
 // Tests numbered per plan §2 (17–27)
 // ──────────────────────────────────────────────────────────────────────────────
 
-describe('composeSystemPrompt — chat_like_openclaw profile', () => {
+describe('composeSystemPrompt — chat_like_anthroclaw profile', () => {
   // 17
-  it('chat_like_openclaw + agent CLAUDE.md → baseline + separator + CLAUDE.md', () => {
+  it('chat_like_anthroclaw + agent CLAUDE.md → baseline + separator + CLAUDE.md', () => {
     writeClaudeMd('# My agent rules\n\nBe helpful.');
     const agent = mkAgent({ id: 'a1', workspaceRoot });
-    const result = composeSystemPrompt(agent, chatLikeOpenclawProfile);
+    const result = composeSystemPrompt(agent, chatLikeAnthroclawProfile);
     expect(result).toBe(
       `${CHAT_PERSONALITY_BASELINE}${SEPARATOR}# My agent rules\n\nBe helpful.`,
     );
   });
 
   // 18
-  it('chat_like_openclaw + no CLAUDE.md → just CHAT_PERSONALITY_BASELINE', () => {
+  it('chat_like_anthroclaw + no CLAUDE.md → just CHAT_PERSONALITY_BASELINE', () => {
     const agent = mkAgent({ id: 'a2', workspaceRoot });
-    const result = composeSystemPrompt(agent, chatLikeOpenclawProfile);
+    const result = composeSystemPrompt(agent, chatLikeAnthroclawProfile);
     expect(result).toBe(CHAT_PERSONALITY_BASELINE);
   });
 
   // 19
-  it('chat_like_openclaw + custom personality → custom + separator + CLAUDE.md', () => {
+  it('chat_like_anthroclaw + custom personality → custom + separator + CLAUDE.md', () => {
     writeClaudeMd('Agent specific rules.');
     const agent = mkAgent({
       id: 'a3',
       workspaceRoot,
       personality: 'I am a pirate. Arrr.',
     });
-    const result = composeSystemPrompt(agent, chatLikeOpenclawProfile);
+    const result = composeSystemPrompt(agent, chatLikeAnthroclawProfile);
     expect(result).toBe(`I am a pirate. Arrr.${SEPARATOR}Agent specific rules.`);
   });
 });
@@ -167,11 +167,11 @@ describe('composeSystemPrompt — private profile (preset mode)', () => {
 
 describe('composeSystemPrompt — integration with @-import resolver', () => {
   // 26
-  it('chat_like_openclaw + CLAUDE.md with @./SOUL.md import → resolved content inlined', () => {
+  it('chat_like_anthroclaw + CLAUDE.md with @./SOUL.md import → resolved content inlined', () => {
     writeWorkspaceFile('SOUL.md', 'I am SOUL — the agent essence.');
     writeClaudeMd('header line\n@./SOUL.md\nfooter line');
     const agent = mkAgent({ id: 'a10', workspaceRoot });
-    const result = composeSystemPrompt(agent, chatLikeOpenclawProfile);
+    const result = composeSystemPrompt(agent, chatLikeAnthroclawProfile);
     expect(typeof result).toBe('string');
     expect(result).toContain('I am SOUL — the agent essence.');
     // The inlined content should sit between header and footer.

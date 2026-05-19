@@ -26,15 +26,15 @@ routes:
   - channel: telegram
     scope: dm
 allowlist:
-  telegram: ["48705953"]
-safety_profile: chat_like_openclaw
+  telegram: ["123456789"]
+safety_profile: chat_like_anthroclaw
 mcp_onboarding:
   enabled: false
 learning:
   enabled: true
   mode: propose
 `);
-    writeAgent(root, 'leads_agent', `
+    writeAgent(root, 'public_agent', `
 routes:
   - channel: whatsapp
     scope: dm
@@ -47,12 +47,12 @@ learning:
   enabled: true
   mode: propose
 `);
-    writeAgent(root, 'project-manager', `
+    writeAgent(root, 'group-agent', `
 routes:
   - channel: telegram
     scope: group
     topics: ["8"]
-safety_profile: chat_like_openclaw
+safety_profile: chat_like_anthroclaw
 mcp_tools:
   - manage_cron
 cron:
@@ -79,7 +79,7 @@ cron:
       recommendedRing: 'ring2',
       blockers: [],
     });
-    expect(result.agents.find((agent) => agent.id === 'leads_agent')).toMatchObject({
+    expect(result.agents.find((agent) => agent.id === 'public_agent')).toMatchObject({
       risk: 'critical',
       recommendedRing: 'ring4',
       routes: ['whatsapp:dm'],
@@ -95,12 +95,12 @@ cron:
         },
       ]),
     });
-    expect(result.agents.find((agent) => agent.id === 'leads_agent')?.blockers).toEqual(expect.arrayContaining([
+    expect(result.agents.find((agent) => agent.id === 'public_agent')?.blockers).toEqual(expect.arrayContaining([
       'public safety profile',
       'WhatsApp route',
       'operator escalation tool',
     ]));
-    expect(result.agents.find((agent) => agent.id === 'project-manager')).toMatchObject({
+    expect(result.agents.find((agent) => agent.id === 'group-agent')).toMatchObject({
       risk: 'high',
       recommendedRing: 'ring4',
     });
@@ -108,7 +108,7 @@ cron:
 
   it('emits JSON and fails when max risk budget is exceeded', async () => {
     root = mkdtempSync(join(tmpdir(), 'pi-expansion-audit-'));
-    writeAgent(root, 'leads_agent', `
+    writeAgent(root, 'public_agent', `
 routes:
   - channel: whatsapp
     scope: dm
@@ -145,17 +145,19 @@ mcp_tools:
 routes:
   - channel: telegram
     scope: dm
-    peers: ["48705953"]
-safety_profile: chat_like_openclaw
+    peers: ["123456789"]
+safety_profile: chat_like_anthroclaw
+mcp_onboarding:
+  enabled: false
 `);
-    mkdirSync(join(root, 'amina', 'credentials'), { recursive: true });
-    writeFileSync(join(root, 'amina', 'credentials', 'mcp:test.enc'), 'encrypted', 'utf8');
+    mkdirSync(join(root, 'agent_alpha', 'credentials'), { recursive: true });
+    writeFileSync(join(root, 'agent_alpha', 'credentials', 'mcp:test.enc'), 'encrypted', 'utf8');
     const stdout = createWriter();
     const stderr = createWriter();
 
     const code = await runPiExpansionAuditCli([
       '--agents-dir', root,
-      '--expect-agent', 'leads_agent',
+      '--expect-agent', 'public_agent',
       '--json',
     ], { stdout, stderr });
 
@@ -165,9 +167,9 @@ safety_profile: chat_like_openclaw
     expect(body).toMatchObject({
       status: 'attention',
       coverageGap: true,
-      expectedAgentsMissing: ['leads_agent'],
+      expectedAgentsMissing: ['public_agent'],
       skippedDirectories: [
-        { name: 'amina', reason: 'missing agent.yml' },
+        { name: 'agent_alpha', reason: 'missing agent.yml' },
       ],
     });
   });
@@ -179,10 +181,12 @@ safety_profile: chat_like_openclaw
 routes:
   - channel: telegram
     scope: dm
-    peers: ["48705953"]
-safety_profile: chat_like_openclaw
+    peers: ["123456789"]
+safety_profile: chat_like_anthroclaw
+mcp_onboarding:
+  enabled: false
 `);
-    writeAgent(secondRoot, 'leads_agent', `
+    writeAgent(secondRoot, 'public_agent', `
 routes:
   - channel: whatsapp
     scope: dm
@@ -197,7 +201,7 @@ mcp_tools:
       '--agents-dir', root,
       '--agents-dir', secondRoot,
       '--expect-agent', 'example',
-      '--expect-agent', 'leads_agent',
+      '--expect-agent', 'public_agent',
       '--json',
     ], { stdout, stderr });
 
@@ -213,7 +217,7 @@ mcp_tools:
       },
     });
     expect(body.agents.map((agent: { id: string; agentsDir: string }) => [agent.id, agent.agentsDir])).toEqual([
-      ['leads_agent', secondRoot],
+      ['public_agent', secondRoot],
       ['example', root],
     ]);
   });
@@ -226,8 +230,10 @@ mcp_tools:
 routes:
   - channel: telegram
     scope: dm
-    peers: ["48705953"]
-safety_profile: chat_like_openclaw
+    peers: ["123456789"]
+safety_profile: chat_like_anthroclaw
+mcp_onboarding:
+  enabled: false
 `);
     }
 
@@ -242,6 +248,73 @@ safety_profile: chat_like_openclaw
     ]));
   });
 
+  it('fails packet coverage when high-risk audited agents have no expansion packet', async () => {
+    root = mkdtempSync(join(tmpdir(), 'pi-expansion-audit-'));
+    secondRoot = mkdtempSync(join(tmpdir(), 'pi-expansion-packets-'));
+    writeAgent(root, 'group-agent', `
+routes:
+  - channel: telegram
+    scope: group
+safety_profile: chat_like_anthroclaw
+mcp_tools:
+  - manage_cron
+`);
+    writeAgent(root, 'example', `
+routes:
+  - channel: telegram
+    scope: dm
+    peers: ["123456789"]
+safety_profile: chat_like_anthroclaw
+mcp_onboarding:
+  enabled: false
+`);
+
+    const result = auditPiExpansionReadiness({
+      agentsDir: root,
+      requirePacketsDir: secondRoot,
+    });
+
+    expect(result.packetCoverageGap).toBe(true);
+    expect(result.packetCoverage).toMatchObject({
+      packetsDir: secondRoot,
+      requiredAgents: ['group-agent'],
+      present: [],
+      missing: ['group-agent'],
+    });
+  });
+
+  it('passes packet coverage when high-risk audited agents have expansion packets', async () => {
+    root = mkdtempSync(join(tmpdir(), 'pi-expansion-audit-'));
+    secondRoot = mkdtempSync(join(tmpdir(), 'pi-expansion-packets-'));
+    writeAgent(root, 'group-agent', `
+routes:
+  - channel: telegram
+    scope: group
+safety_profile: chat_like_anthroclaw
+mcp_tools:
+  - manage_cron
+`);
+    writeFileSync(join(secondRoot, 'group-agent.md'), '# packet\n', 'utf8');
+
+    const stdout = createWriter();
+    const stderr = createWriter();
+    const code = await runPiExpansionAuditCli([
+      '--agents-dir', root,
+      '--require-packets-dir', secondRoot,
+      '--json',
+    ], { stdout, stderr });
+
+    expect(code).toBe(0);
+    expect(stderr.text()).toBe('');
+    const body = JSON.parse(stdout.text());
+    expect(body.packetCoverageGap).toBe(false);
+    expect(body.packetCoverage).toMatchObject({
+      requiredAgents: ['group-agent'],
+      present: ['group-agent'],
+      missing: [],
+    });
+  });
+
   it('parses flags narrowly', () => {
     expect(parsePiExpansionAuditArgs([
       '--',
@@ -249,14 +322,16 @@ safety_profile: chat_like_openclaw
       '--agents-dir', '/tmp/live-agents',
       '--agent', 'example',
       '--expect-agent', 'example',
-      '--expect-agent', 'leads_agent',
+      '--expect-agent', 'public_agent',
+      '--require-packets-dir', '/tmp/packets',
       '--max-risk', 'high',
       '--json',
     ])).toMatchObject({
       agentsDir: '/tmp/agents',
       agentsDirs: ['/tmp/agents', '/tmp/live-agents'],
       agent: 'example',
-      expectAgents: ['example', 'leads_agent'],
+      expectAgents: ['example', 'public_agent'],
+      requirePacketsDir: '/tmp/packets',
       maxRisk: 'high',
       json: true,
     });

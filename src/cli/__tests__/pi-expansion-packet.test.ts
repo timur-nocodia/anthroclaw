@@ -21,7 +21,7 @@ describe('Pi expansion packet CLI', () => {
 
   it('builds a ready packet with automated commands and manual evidence', () => {
     root = mkdtempSync(join(tmpdir(), 'pi-expansion-packet-'));
-    writeAgent(root, 'leads_agent', `
+    writeAgent(root, 'public_agent', `
 routes:
   - channel: whatsapp
     scope: dm
@@ -39,7 +39,7 @@ learning:
     const packet = buildPiExpansionPacket({
       agentsDir: root,
       agentsDirs: [root],
-      agent: 'leads_agent',
+      agent: 'public_agent',
       owner: 'ops',
       rollback: 'set runtime.headless.provider=claude-agent-sdk',
       json: false,
@@ -48,7 +48,7 @@ learning:
 
     expect(packet).toMatchObject({
       status: 'ready_for_execution',
-      agentId: 'leads_agent',
+      agentId: 'public_agent',
       risk: 'critical',
       recommendedRing: 'ring4',
       owner: 'ops',
@@ -76,8 +76,8 @@ learning:
 routes:
   - channel: telegram
     scope: dm
-    peers: ["48705953"]
-safety_profile: chat_like_openclaw
+    peers: ["123456789"]
+safety_profile: chat_like_anthroclaw
 `);
     const out = join(root, 'packet.md');
     const stdout = createWriter();
@@ -105,8 +105,8 @@ safety_profile: chat_like_openclaw
 routes:
   - channel: telegram
     scope: dm
-    peers: ["48705953"]
-safety_profile: chat_like_openclaw
+    peers: ["123456789"]
+safety_profile: chat_like_anthroclaw
 `);
     const stdout = createWriter();
     const stderr = createWriter();
@@ -114,13 +114,13 @@ safety_profile: chat_like_openclaw
     const code = await runPiExpansionPacketCli([
       '--agents-dir', root,
       '--agents-dir', secondRoot,
-      '--agent', 'leads_agent',
+      '--agent', 'public_agent',
       '--json',
     ], { stdout, stderr });
 
     expect(code).toBe(1);
     expect(stdout.text()).toBe('');
-    expect(stderr.text()).toContain('coverage gap for leads_agent');
+    expect(stderr.text()).toContain('coverage gap for public_agent');
   });
 
   it('parses packet flags narrowly', () => {
@@ -128,7 +128,7 @@ safety_profile: chat_like_openclaw
       '--',
       '--agents-dir', '/tmp/agents',
       '--agents-dir', '/tmp/live agents',
-      '--agent', 'leads_agent',
+      '--agent', 'public_agent',
       '--owner', 'ops',
       '--rollback', 'rollback doc',
       '--output', '/tmp/packet.md',
@@ -136,7 +136,7 @@ safety_profile: chat_like_openclaw
     ])).toMatchObject({
       agentsDir: '/tmp/agents',
       agentsDirs: ['/tmp/agents', '/tmp/live agents'],
-      agent: 'leads_agent',
+      agent: 'public_agent',
       owner: 'ops',
       rollback: 'rollback doc',
       output: '/tmp/packet.md',

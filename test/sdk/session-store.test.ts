@@ -6,7 +6,7 @@ import { FileSessionStore } from '../../src/sdk/session-store.js';
 
 describe('FileSessionStore', () => {
   it('appends, loads, lists, and deletes main session transcripts', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'openclaw-sdk-store-'));
+    const root = await mkdtemp(join(tmpdir(), 'anthroclaw-sdk-store-'));
     const store = new FileSessionStore(root);
     const key = { projectKey: '/tmp/project', sessionId: 'session-1' };
 
@@ -35,7 +35,7 @@ describe('FileSessionStore', () => {
   });
 
   it('round-trips subagent transcript subpaths', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'openclaw-sdk-store-'));
+    const root = await mkdtemp(join(tmpdir(), 'anthroclaw-sdk-store-'));
     const store = new FileSessionStore(root);
     const key = {
       projectKey: '/tmp/project',
@@ -59,7 +59,7 @@ describe('FileSessionStore', () => {
   });
 
   it('returns null or empty lists for missing data', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'openclaw-sdk-store-'));
+    const root = await mkdtemp(join(tmpdir(), 'anthroclaw-sdk-store-'));
     const store = new FileSessionStore(root);
 
     try {

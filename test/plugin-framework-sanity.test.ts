@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // Mock the SDK so gateway.start() doesn't require real auth or network.
-vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@anthropic-ai/claude-agent-sdk')>();
+vi.mock('@anthroclaw/legacy-claude-agent-sdk', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@anthroclaw/legacy-claude-agent-sdk')>();
   return {
     ...real,
     startup: vi.fn(async () => { throw new Error('mocked: no SDK in tests'); }),

@@ -22,12 +22,51 @@ Every live side-effect gate must declare:
 
 ## Refactor Direction
 
-Existing migration CLIs such as `pi-timur-agent-live-send-message`, `pi-timur-agent-live-send-media`, and `pi-timur-agent-live-notification` remain evidence until they are moved. New work should create or extend generic gates first, then bind a concrete agent through CLI args or expansion-packet fixtures.
+`controlled-live-turn`, `live-send-message`, `live-send-media`, `live-notification`, `cron-notification`, `scheduled-work`, `buildroom-handoff`, `admin-config`, `mcp-file-transfer`, `honcho-local`, `learning-propose`, and `memory-read` are the first extracted gates. The machine-readable gate list lives in `src/runtime/side-effect-gates/registry.ts`; add or rename gates there first, then wire the focused CLI and docs. The reusable implementations live under `src/runtime/side-effect-gates/` and are runnable through:
+
+```sh
+pnpm runtime:pi-controlled-live-turn-gate -- --agent-id <id> --peer-id <peer> --thread-id <topic> --dry-run --json
+pnpm runtime:pi-live-send-message-gate -- --agent-id <id> --peer-id <peer> --dry-run --json
+pnpm runtime:pi-live-send-media-gate -- --agent-id <id> --peer-id <peer> --file-path <path> --allowed-file-root <root> --dry-run --json
+pnpm runtime:pi-live-notification-gate -- --agent-id <id> --peer-id <peer> --dry-run --json
+pnpm runtime:pi-cron-notification-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --static-cron-id <id> --dynamic-cron-id <id> --json
+pnpm runtime:pi-scheduled-work-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json
+pnpm runtime:pi-buildroom-handoff-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json
+pnpm runtime:pi-admin-config-gate -- --agent-id <id> --peer-id <peer> --session-key <key> --json
+pnpm runtime:pi-mcp-file-transfer-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json
+pnpm runtime:pi-honcho-local-gate -- --agent-id <id> --peer-id <peer> --expected-workspace-id <workspace> --json
+pnpm runtime:pi-learning-propose-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip
+pnpm runtime:pi-memory-read-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip
+```
+
+Agent-specific live evidence commands have been removed from the public runtime
+surface. New work should create or extend generic gates first, then bind a
+concrete agent through CLI args or private expansion-packet fixtures.
+
+The aggregate dispatcher is available as:
+
+```sh
+pnpm runtime:pi-live-gate -- --list
+pnpm runtime:pi-live-gate -- --list --json
+pnpm runtime:pi-live-gate -- --describe <gate-id>
+pnpm runtime:pi-live-gate -- --describe <gate-id> --json
+pnpm runtime:pi-live-gate -- --plan-all --json
+pnpm runtime:pi-live-gate -- --plan <gate-id> [gate options]
+pnpm runtime:pi-live-gate -- --plan <gate-id> [gate options] --strict --json
+pnpm runtime:pi-live-gate -- --validate-args <gate-id> [gate options]
+pnpm runtime:pi-live-gate -- --validate-args <gate-id> [gate options] --strict --json
+pnpm runtime:pi-live-gate -- --gate controlled-live-turn --agent-id <id> --peer-id <peer> --thread-id <topic> --dry-run --json
+pnpm runtime:pi-live-gate -- --gate live-send-message --agent-id <id> --peer-id <peer> --dry-run --json
+pnpm runtime:pi-live-gate -- --gate scheduled-work --agent-id <id> --peer-id <peer> --sender-id <sender> --json
+pnpm runtime:pi-live-gate -- --gate memory-read --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip
+```
+
+The JSON list, single-gate description, run plan, and argument validation are the automation contract for dashboards and runners. Each gate entry includes `title`, `summary`, `capabilityGroup`, `risk`, `action`, focused/compatibility commands, `execution.requiredFlags`, `execution.optionalFlags`, `execution.supportsDryRun`, `execution.safetyMode`, `execution.approval`, and generic `execution.exampleArgs`. It must not include concrete agent ids, peer ids, or operator secrets. `--plan-all` returns no-run plans for every gate using registry examples. `--plan` returns validation plus aggregate/focused package-script argv arrays without running the gate. `--validate-args` checks required flags and does not run the gate; add `--strict` to also reject flags outside the gate registry entry.
 
 The desired end state is:
 
-1. `runtime:pi-live-gate -- --agent <id> --gate live-send-message ...`
+1. `runtime:pi-live-gate -- --gate <gate-id> --agent-id <id> ...`; focused commands such as `runtime:pi-controlled-live-turn-gate`, `runtime:pi-live-send-message-gate`, `runtime:pi-live-send-media-gate`, `runtime:pi-live-notification-gate`, `runtime:pi-cron-notification-gate`, `runtime:pi-scheduled-work-gate`, `runtime:pi-buildroom-handoff-gate`, `runtime:pi-admin-config-gate`, `runtime:pi-mcp-file-transfer-gate`, `runtime:pi-honcho-local-gate`, `runtime:pi-learning-propose-gate`, and `runtime:pi-memory-read-gate` remain as direct generic entrypoints
 2. expansion packets record the concrete command and operator approval
 3. agent-specific CLI names are gradually removed or reduced to thin aliases
 
-This keeps Agent SDK parity at the harness boundary: any configured agent can use the same gate contract when its route, tools, and safety policy allow the action.
+This keeps side effects Pi-native at the harness boundary: any configured agent can use the same gate contract when its route, tools, and safety policy allow the action.

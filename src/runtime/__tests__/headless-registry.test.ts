@@ -5,7 +5,8 @@ import {
   resolveHeadlessRuntime,
 } from '../headless-registry.js';
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+vi.mock('@anthroclaw/legacy-claude-agent-sdk', () => ({
+  claudeAgentHeadlessRuntime: { id: 'claude-agent-sdk', runText: vi.fn() },
   query: vi.fn(),
   startup: vi.fn(),
   createSdkMcpServer: vi.fn(),

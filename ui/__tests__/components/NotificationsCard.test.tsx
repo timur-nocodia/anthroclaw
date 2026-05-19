@@ -10,7 +10,7 @@ beforeEach(() => {
 
 describe("NotificationsCard", () => {
   it("renders empty-state copy when no routes/subscriptions exist", () => {
-    render(<NotificationsCard agentId="amina" />);
+    render(<NotificationsCard agentId="agent_alpha" />);
     expect(screen.getByText(/No routes configured/i)).toBeInTheDocument();
     expect(screen.getByText(/No subscriptions yet/i)).toBeInTheDocument();
   });
@@ -18,7 +18,7 @@ describe("NotificationsCard", () => {
   it("renders existing routes and subscriptions", () => {
     render(
       <NotificationsCard
-        agentId="amina"
+        agentId="agent_alpha"
         initialConfig={{
           enabled: true,
           routes: {
@@ -35,13 +35,13 @@ describe("NotificationsCard", () => {
   });
 
   it("adds a new route when 'Add route' is clicked", () => {
-    render(<NotificationsCard agentId="amina" />);
+    render(<NotificationsCard agentId="agent_alpha" />);
     fireEvent.click(screen.getByRole("button", { name: /add route/i }));
     expect(screen.getByTestId("route-operator")).toBeInTheDocument();
   });
 
   it("disables 'Add subscription' when no routes exist", () => {
-    render(<NotificationsCard agentId="amina" />);
+    render(<NotificationsCard agentId="agent_alpha" />);
     const addSub = screen.getByRole("button", { name: /add subscription/i });
     expect(addSub).toBeDisabled();
   });
@@ -49,7 +49,7 @@ describe("NotificationsCard", () => {
   it("removes a route via the trash button", () => {
     render(
       <NotificationsCard
-        agentId="amina"
+        agentId="agent_alpha"
         initialConfig={{
           enabled: true,
           routes: {
@@ -78,7 +78,7 @@ describe("NotificationsCard", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(
       <NotificationsCard
-        agentId="amina"
+        agentId="agent_alpha"
         initialConfig={{
           enabled: true,
           routes: {
@@ -95,14 +95,14 @@ describe("NotificationsCard", () => {
     const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit | undefined]>;
     const postCall = calls.find((c) => c[1]?.method === "POST");
     expect(postCall).toBeDefined();
-    expect(postCall![1]!.body).toContain("amina");
+    expect(postCall![1]!.body).toContain("agent_alpha");
   });
 
   it("invokes onSave with the new config", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
       <NotificationsCard
-        agentId="amina"
+        agentId="agent_alpha"
         onSave={onSave}
       />,
     );

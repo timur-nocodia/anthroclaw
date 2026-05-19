@@ -18,7 +18,7 @@ function getHandler(t: unknown): (a: Record<string, unknown>) => Promise<{
 function baseAgentYml(): string {
   return [
     '# test agent',
-    'safety_profile: chat_like_openclaw',
+    'safety_profile: chat_like_anthroclaw',
     'routes:',
     '  - { channel: whatsapp }',
     '',
@@ -59,17 +59,17 @@ describe('manage_operator_console', () => {
   let agentsDir: string;
   beforeEach(() => {
     agentsDir = mkdtempSync(join(tmpdir(), 'moc-'));
-    seedAgent(agentsDir, 'klavdia');
-    seedAgent(agentsDir, 'amina');
+    seedAgent(agentsDir, 'operator_agent');
+    seedAgent(agentsDir, 'agent_alpha');
   });
   afterEach(() => rmSync(agentsDir, { recursive: true, force: true }));
 
   it('rejects when both manages and manages_action are provided', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageOperatorConsoleTool({ agentId: 'klavdia', writer, canManage: () => true });
+    const t = createManageOperatorConsoleTool({ agentId: 'operator_agent', writer, canManage: () => true });
     const r = await getHandler(t)({
-      manages: ['amina'],
-      manages_action: { kind: 'add', agent_id: 'larry' },
+      manages: ['agent_alpha'],
+      manages_action: { kind: 'add', agent_id: 'secondary_agent' },
     });
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toMatch(/mutually exclusive/);
@@ -78,68 +78,68 @@ describe('manage_operator_console', () => {
   it('manages_action=add appends to existing list', async () => {
     seedAgent(
       agentsDir,
-      'klavdia',
-      withOperatorConsole({ enabled: true, manages: ['amina'], capabilities: [] }),
+      'operator_agent',
+      withOperatorConsole({ enabled: true, manages: ['agent_alpha'], capabilities: [] }),
     );
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageOperatorConsoleTool({ agentId: 'klavdia', writer, canManage: () => true });
-    const r = await getHandler(t)({ manages_action: { kind: 'add', agent_id: 'larry' } });
+    const t = createManageOperatorConsoleTool({ agentId: 'operator_agent', writer, canManage: () => true });
+    const r = await getHandler(t)({ manages_action: { kind: 'add', agent_id: 'secondary_agent' } });
     expect(r.isError).toBeFalsy();
-    const block = writer.readSection('klavdia', 'operator_console') as { manages: string[] };
-    expect(block.manages).toEqual(['amina', 'larry']);
+    const block = writer.readSection('operator_agent', 'operator_console') as { manages: string[] };
+    expect(block.manages).toEqual(['agent_alpha', 'secondary_agent']);
   });
 
   it('manages_action=add is idempotent (no duplicate)', async () => {
     seedAgent(
       agentsDir,
-      'klavdia',
-      withOperatorConsole({ enabled: true, manages: ['amina'], capabilities: [] }),
+      'operator_agent',
+      withOperatorConsole({ enabled: true, manages: ['agent_alpha'], capabilities: [] }),
     );
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageOperatorConsoleTool({ agentId: 'klavdia', writer, canManage: () => true });
-    await getHandler(t)({ manages_action: { kind: 'add', agent_id: 'amina' } });
-    const block = writer.readSection('klavdia', 'operator_console') as { manages: string[] };
-    expect(block.manages).toEqual(['amina']);
+    const t = createManageOperatorConsoleTool({ agentId: 'operator_agent', writer, canManage: () => true });
+    await getHandler(t)({ manages_action: { kind: 'add', agent_id: 'agent_alpha' } });
+    const block = writer.readSection('operator_agent', 'operator_console') as { manages: string[] };
+    expect(block.manages).toEqual(['agent_alpha']);
   });
 
   it('manages_action=remove drops from list; idempotent on already-absent', async () => {
     seedAgent(
       agentsDir,
-      'klavdia',
-      withOperatorConsole({ enabled: true, manages: ['amina', 'larry'], capabilities: [] }),
+      'operator_agent',
+      withOperatorConsole({ enabled: true, manages: ['agent_alpha', 'secondary_agent'], capabilities: [] }),
     );
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageOperatorConsoleTool({ agentId: 'klavdia', writer, canManage: () => true });
-    await getHandler(t)({ manages_action: { kind: 'remove', agent_id: 'larry' } });
-    const block1 = writer.readSection('klavdia', 'operator_console') as { manages: string[] };
-    expect(block1.manages).toEqual(['amina']);
-    await getHandler(t)({ manages_action: { kind: 'remove', agent_id: 'larry' } });
-    const block2 = writer.readSection('klavdia', 'operator_console') as { manages: string[] };
-    expect(block2.manages).toEqual(['amina']);
+    const t = createManageOperatorConsoleTool({ agentId: 'operator_agent', writer, canManage: () => true });
+    await getHandler(t)({ manages_action: { kind: 'remove', agent_id: 'secondary_agent' } });
+    const block1 = writer.readSection('operator_agent', 'operator_console') as { manages: string[] };
+    expect(block1.manages).toEqual(['agent_alpha']);
+    await getHandler(t)({ manages_action: { kind: 'remove', agent_id: 'secondary_agent' } });
+    const block2 = writer.readSection('operator_agent', 'operator_console') as { manages: string[] };
+    expect(block2.manages).toEqual(['agent_alpha']);
   });
 
   it('manages_action against "*" super-admin is no-op (preserves "*")', async () => {
     seedAgent(
       agentsDir,
-      'klavdia',
+      'operator_agent',
       withOperatorConsole({ enabled: true, manages: '*', capabilities: [] }),
     );
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageOperatorConsoleTool({ agentId: 'klavdia', writer, canManage: () => true });
-    await getHandler(t)({ manages_action: { kind: 'remove', agent_id: 'amina' } });
-    const block1 = writer.readSection('klavdia', 'operator_console') as { manages: string };
+    const t = createManageOperatorConsoleTool({ agentId: 'operator_agent', writer, canManage: () => true });
+    await getHandler(t)({ manages_action: { kind: 'remove', agent_id: 'agent_alpha' } });
+    const block1 = writer.readSection('operator_agent', 'operator_console') as { manages: string };
     expect(block1.manages).toBe('*');
-    await getHandler(t)({ manages_action: { kind: 'add', agent_id: 'amina' } });
-    const block2 = writer.readSection('klavdia', 'operator_console') as { manages: string };
+    await getHandler(t)({ manages_action: { kind: 'add', agent_id: 'agent_alpha' } });
+    const block2 = writer.readSection('operator_agent', 'operator_console') as { manages: string };
     expect(block2.manages).toBe('*');
   });
 
   it('manages: "*" sets super-admin', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageOperatorConsoleTool({ agentId: 'klavdia', writer, canManage: () => true });
+    const t = createManageOperatorConsoleTool({ agentId: 'operator_agent', writer, canManage: () => true });
     const r = await getHandler(t)({ enabled: true, manages: '*' });
     expect(r.isError).toBeFalsy();
-    const block = writer.readSection('klavdia', 'operator_console') as { manages: string; enabled: boolean };
+    const block = writer.readSection('operator_agent', 'operator_console') as { manages: string; enabled: boolean };
     expect(block.manages).toBe('*');
     expect(block.enabled).toBe(true);
   });
@@ -147,7 +147,7 @@ describe('manage_operator_console', () => {
   it('partial capabilities array replaces full list', async () => {
     seedAgent(
       agentsDir,
-      'klavdia',
+      'operator_agent',
       withOperatorConsole({
         enabled: true,
         manages: '*',
@@ -155,21 +155,21 @@ describe('manage_operator_console', () => {
       }),
     );
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageOperatorConsoleTool({ agentId: 'klavdia', writer, canManage: () => true });
+    const t = createManageOperatorConsoleTool({ agentId: 'operator_agent', writer, canManage: () => true });
     const r = await getHandler(t)({ capabilities: ['peer_pause', 'escalate'] });
     expect(r.isError).toBeFalsy();
-    const block = writer.readSection('klavdia', 'operator_console') as { capabilities: string[] };
+    const block = writer.readSection('operator_agent', 'operator_console') as { capabilities: string[] };
     expect(block.capabilities).toEqual(['peer_pause', 'escalate']);
   });
 
   it('rejects unauthorized cross-agent target', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createManageOperatorConsoleTool({
-      agentId: 'klavdia',
+      agentId: 'operator_agent',
       writer,
       canManage: () => false,
     });
-    const r = await getHandler(t)({ target_agent_id: 'amina', enabled: true });
+    const r = await getHandler(t)({ target_agent_id: 'agent_alpha', enabled: true });
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toMatch(/not authorized/);
   });
@@ -177,17 +177,17 @@ describe('manage_operator_console', () => {
   it('reports applied diffs in response', async () => {
     seedAgent(
       agentsDir,
-      'klavdia',
-      withOperatorConsole({ enabled: false, manages: ['amina'], capabilities: [] }),
+      'operator_agent',
+      withOperatorConsole({ enabled: false, manages: ['agent_alpha'], capabilities: [] }),
     );
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageOperatorConsoleTool({ agentId: 'klavdia', writer, canManage: () => true });
+    const t = createManageOperatorConsoleTool({ agentId: 'operator_agent', writer, canManage: () => true });
     const r = await getHandler(t)({
       enabled: true,
-      manages_action: { kind: 'add', agent_id: 'larry' },
+      manages_action: { kind: 'add', agent_id: 'secondary_agent' },
     });
     const body = JSON.parse(r.content[0].text);
     expect(body.applied.enabled).toEqual({ prev: false, new: true });
-    expect(body.applied.manages).toEqual({ prev: ['amina'], new: ['amina', 'larry'] });
+    expect(body.applied.manages).toEqual({ prev: ['agent_alpha'], new: ['agent_alpha', 'secondary_agent'] });
   });
 });

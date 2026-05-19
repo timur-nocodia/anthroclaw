@@ -76,7 +76,7 @@ describe("LastModifiedIndicator on Handoff cards", () => {
   });
 
   describe("HumanTakeoverCard indicator", () => {
-    it("renders 'Last modified ... via chat (klavdia)' when audit has a chat entry", async () => {
+    it("renders 'Last modified ... via chat (operator_agent)' when audit has a chat entry", async () => {
       const ts = new Date(Date.now() - 3 * 3600_000).toISOString();
       vi.stubGlobal(
         "fetch",
@@ -84,10 +84,10 @@ describe("LastModifiedIndicator on Handoff cards", () => {
           human_takeover: [
             {
               ts,
-              callerAgent: "klavdia",
+              callerAgent: "operator_agent",
               source: "chat",
               section: "human_takeover",
-              targetAgent: "klavdia",
+              targetAgent: "operator_agent",
               action: "human_takeover.set_enabled",
               prev: { enabled: false },
               new: { enabled: true },
@@ -95,13 +95,13 @@ describe("LastModifiedIndicator on Handoff cards", () => {
           ],
         }),
       );
-      render(<HumanTakeoverCard agentId="klavdia" />);
+      render(<HumanTakeoverCard agentId="operator_agent" />);
       await waitFor(() => {
         expect(screen.getByTestId("last-modified-human_takeover")).toBeInTheDocument();
       });
       const indicator = screen.getByTestId("last-modified-human_takeover");
       expect(indicator.textContent).toMatch(/Last modified/);
-      expect(indicator.textContent).toMatch(/via chat \(klavdia\)/);
+      expect(indicator.textContent).toMatch(/via chat \(operator_agent\)/);
     });
 
     it("renders 'via UI' when source is ui", async () => {
@@ -115,7 +115,7 @@ describe("LastModifiedIndicator on Handoff cards", () => {
               callerAgent: "ui",
               source: "ui",
               section: "human_takeover",
-              targetAgent: "klavdia",
+              targetAgent: "operator_agent",
               action: "ui_save_human_takeover",
               prev: null,
               new: null,
@@ -123,7 +123,7 @@ describe("LastModifiedIndicator on Handoff cards", () => {
           ],
         }),
       );
-      render(<HumanTakeoverCard agentId="klavdia" />);
+      render(<HumanTakeoverCard agentId="operator_agent" />);
       await waitFor(() => {
         const el = screen.getByTestId("last-modified-human_takeover");
         expect(el.textContent).toMatch(/via UI/);
@@ -133,7 +133,7 @@ describe("LastModifiedIndicator on Handoff cards", () => {
 
     it("hides indicator when no audit entries exist", async () => {
       vi.stubGlobal("fetch", fetchMock({ human_takeover: [] }));
-      render(<HumanTakeoverCard agentId="klavdia" />);
+      render(<HumanTakeoverCard agentId="operator_agent" />);
       // Wait a tick for fetch to resolve
       await new Promise((r) => setTimeout(r, 10));
       expect(screen.queryByTestId("last-modified-human_takeover")).toBeNull();
@@ -142,7 +142,7 @@ describe("LastModifiedIndicator on Handoff cards", () => {
     it("queries the human_takeover section, not notifications", async () => {
       const fm = fetchMock({});
       vi.stubGlobal("fetch", fm);
-      render(<HumanTakeoverCard agentId="klavdia" />);
+      render(<HumanTakeoverCard agentId="operator_agent" />);
       await waitFor(() => expect(fm).toHaveBeenCalled());
       const calls = (fm as unknown as { mock: { calls: unknown[][] } }).mock.calls;
       const url = String(calls[0][0]);
@@ -152,7 +152,7 @@ describe("LastModifiedIndicator on Handoff cards", () => {
   });
 
   describe("NotificationsCard indicator", () => {
-    it("renders 'Last modified ... via chat (klavdia)' when audit has a chat entry", async () => {
+    it("renders 'Last modified ... via chat (operator_agent)' when audit has a chat entry", async () => {
       const ts = new Date(Date.now() - 2 * 3600_000).toISOString();
       vi.stubGlobal(
         "fetch",
@@ -160,10 +160,10 @@ describe("LastModifiedIndicator on Handoff cards", () => {
           notifications: [
             {
               ts,
-              callerAgent: "klavdia",
+              callerAgent: "operator_agent",
               source: "chat",
               section: "notifications",
-              targetAgent: "klavdia",
+              targetAgent: "operator_agent",
               action: "notifications.add_route",
               prev: null,
               new: null,
@@ -171,16 +171,16 @@ describe("LastModifiedIndicator on Handoff cards", () => {
           ],
         }),
       );
-      render(<NotificationsCard agentId="klavdia" />);
+      render(<NotificationsCard agentId="operator_agent" />);
       await waitFor(() => {
         const el = screen.getByTestId("last-modified-notifications");
-        expect(el.textContent).toMatch(/via chat \(klavdia\)/);
+        expect(el.textContent).toMatch(/via chat \(operator_agent\)/);
       });
     });
 
     it("hides indicator when no audit entries exist", async () => {
       vi.stubGlobal("fetch", fetchMock({ notifications: [] }));
-      render(<NotificationsCard agentId="klavdia" />);
+      render(<NotificationsCard agentId="operator_agent" />);
       await new Promise((r) => setTimeout(r, 10));
       expect(screen.queryByTestId("last-modified-notifications")).toBeNull();
     });
@@ -188,7 +188,7 @@ describe("LastModifiedIndicator on Handoff cards", () => {
     it("queries the notifications section, not human_takeover", async () => {
       const fm = fetchMock({});
       vi.stubGlobal("fetch", fm);
-      render(<NotificationsCard agentId="klavdia" />);
+      render(<NotificationsCard agentId="operator_agent" />);
       await waitFor(() => expect(fm).toHaveBeenCalled());
       const calls = (fm as unknown as { mock: { calls: unknown[][] } }).mock.calls;
       const url = String(calls[0][0]);

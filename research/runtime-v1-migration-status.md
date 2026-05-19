@@ -1,162 +1,125 @@
-# Runtime v1 migration status
+# Runtime v1 OSS migration status
 
-Date: 2026-05-18
+This document tracks the open-source Agent SDK replacement work. It measures
+Pi-native Runtime v1 harness coverage, not private production-agent rollout
+or 1:1 Claude Agent SDK compatibility.
 
-This is the human-readable phase checklist for replacing the Claude Agent SDK-centered harness with the Runtime v1 contract and Pi canary path. The machine-readable source remains `RUNTIME_CANARY_SCENARIOS` in `src/runtime/contract.ts`; the detailed evidence plan remains `research/runtime-v1-canary-plan.md`; the parity/readiness matrix is `research/runtime-v1-parity-matrix.md`; the integration merge strategy memo is `research/runtime-v1-integration-strategy.md`; the first production canary preflight note is `research/runtime-v1-production-canary-preflight.md`.
+Private or personal agents are not migration exit criteria. Concrete agents may
+be used as local evidence fixtures, but public migration status must be stated
+in terms of reusable runtime capabilities.
 
-## Current Snapshot
+## Current State
 
-Overall state: implementation canaries are merged into `main`; local and durable real-auth Runtime v1 evidence is green; the limited `example` Web UI production canary passed and rolled back cleanly; and the final Runtime v1 decision package is `READY`. Default-runtime parity is green, while fleet-wide live parity remains tracked by `research/runtime-v1-parity-matrix.md` and per-agent expansion packets. PR #110 merged the default-runtime flip into `main` as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`. Post-merge local verification and durable decision run `25971022679` are green. The live runtime checkout was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e`; post-pull `pi-auth`, `pi-all`, safe Web UI, first monitoring slice, and extended 60-minute monitoring snapshot are green. Ring 1 live channel turn returned exactly `PI_LIVE_CHANNEL_OK`; the immediate post-turn monitor and follow-up manual monitor are green. Ring 1 is closed by operator acceptance, with later monitor alerts treated as escalation triggers. Ring 2 is closed after green scope/preflight, Web UI plus allowlisted Telegram DM usage window, and post-window monitor. Ring 3 expanded product-surface rollout is complete. Ring 4.1 live cron delivery, Ring 4.2 live proactive notification, Ring 4.3 live recurring cron, Ring 4.4 controlled `send_message` fanout, and Ring 4.5 business-critical leads escalation are closed after controlled real operator-path deliveries/writes, no lingering persisted cron/config/escalation changes, and green post-fix monitor. Ring 4.5's `MCP_META.escalate` defect now has a deterministic canary, `pi.public-escalation`; durable decision run `25981278010` on `main` commit `1825b973110ba6f91bcc5fc6e3b9293e409c2f1d` passed the expanded 11-scenario Runtime v1 map. Post-rollout production expansion now has a read-only config audit command, `pnpm runtime:pi-expansion-audit`.
+The OSS Runtime v1 migration is functionally complete for the Pi-native generic
+harness:
 
-Approximate progress to a default-runtime decision: 100%.
+- Runtime v1 contract exists and covers runtime selection, sessions, tools,
+  memory, learning, plugins, dashboard/UI, Buildroom, config, observability,
+  rollback, and side-effect control.
+- Pi is available behind the Runtime v1 headless/runtime boundary.
+- OpenCode remains represented as an alternate provider path.
+- Claude Agent SDK is retained only inside the
+  `@anthroclaw/legacy-claude-agent-sdk` compatibility package.
+- Generic side-effect gates exist for live messaging, media, notifications,
+  scheduled work, Buildroom handoff, admin/config, MCP/file-transfer, Honcho
+  local integration, learning-propose, and memory-read.
+- Runtime UI exposes status, model registry, gate registry, expansion status,
+  fleet runtime health, and per-agent effective runtime metadata without using
+  legacy Claude auth as the primary path.
+- Public OSS examples/docs no longer ship private rollout agent directories,
+  named private-agent migration flows, real Telegram peer ids, or local
+  operator filesystem paths.
 
-What is done:
+## Latest Acceptance Gate
 
-- Runtime v1 feature atlas and canary map exist.
-- Pi auth/workspace/Gateway smoke entrypoints exist.
-- Scripted canaries exist for sessions/memory/learning, plugins/context/tools, external MCP, rollback/mixed runtime, scheduled Buildroom, and public-profile escalation.
-- Production canary runbook exists at `docs/pi-production-canary-runbook.md`.
-- Manual Runtime v1 decision workflow exists at `.github/workflows/pi-runtime-v1-decision.yml`.
-- Local full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed on 2026-05-16 with existing local Pi auth storage; the generated decision package is blocked only by PR-stack and production-canary operational gates.
-- PR #95 merged into `main` on 2026-05-16 as `9b46102f74397b6eee25d8b8d60f7c85843f0ba4`; `pnpm build`, `pnpm test`, and the full local Runtime v1 canary passed on the rebased integration branch before merge.
-- Repository secret `PI_AUTH_JSON_B64` is configured for the manual Runtime v1 decision workflow without storing Pi auth material in the repository.
-- Post-merge **Pi Runtime v1 decision** workflow run `25965686443` on `main` passed build, Pi storage preparation, the full ten-scenario canary map, and artifact upload. The generated decision package is `BLOCKED` only by `production-canary-window=pending`.
-- Production canary preflight identified `example` as the preferred first canary candidate, subject to operator-owner confirmation before any live runtime override.
-- Guarded per-agent runtime switch CLI exists as `pnpm runtime:pi-canary-agent`; it dry-runs by default and requires `--apply` before writing a validated `agent.yml` backup/update.
-- The guarded switch CLI supports exact rollback with `--restore-backup <agent.yml.bak-...>` so the canary agent can return to its original config, not merely an explicit Claude provider override.
-- Latest **Pi Runtime v1 decision** workflow run `25969043105` on `main` after the exact rollback restore merge passed all ten scenarios and remains `BLOCKED` only by `production-canary-window=pending`.
-- Config-only rehearsal against local real `example` agent config completed on 2026-05-16 with no Gateway running: guarded enable wrote Pi override, exact backup restore returned `agent.yml` to its original hash `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`, and generated rehearsal backups were removed afterward.
-- Gateway hot-reload rehearsal completed on 2026-05-16 against the real local config/agents/data paths: Gateway started on current Runtime v1 code with Telegram polling, `example` was switched to Pi and restored while Gateway was running, ConfigWatcher hot-reloaded after both writes, and `agent.yml` again returned to the original hash. No test messages were sent.
-- Gateway now sets `OC_AGENTS_DIR` and `OC_DATA_DIR` from its actual startup arguments while running, then restores the previous process env on stop. This closes the local worktree/dev-data mismatch that made the Claude SDK surface a misleading native-binary warning.
-- Real Gateway startup was rechecked on 2026-05-16 with `OC_AGENTS_DIR`/`OC_DATA_DIR` unset and real dev config/agents/data/plugin paths; Gateway started, Telegram polling started, and the prior `Claude Code native binary not found` warning did not recur. No test messages were sent.
-- A no-channel Claude headless baseline probe was attempted after the startup fix; it reached the provider path but returned `Invalid authentication credentials` from the configured local Claude auth. The headless runtime now treats that text-shaped auth failure as an error instead of a successful smoke result.
-- The pre-Pi Claude text baseline and post-rollback Claude text prompt are explicitly waived for the first `example` Pi-only production canary window in `research/runtime-v1-production-canary-preflight.md`; Pi live-turn, tool, rollback, diagnostics, and final decision evidence remain required.
-- PR #106 merged on 2026-05-16 and closed the focused Pi Web UI/Gateway blockers found on the first `example` canary attempt: Pi Web UI now resumes through Pi's session-file reference, outside-workspace filesystem tool calls are denied before the chat-profile allow shortcut, and Pi `text_end` events no longer duplicate streamed partial text.
-- Focused local Web UI/Gateway verification after PR #106 passed on 2026-05-16: text replied exactly `PI_CANARY_TEXT_OK`, same-session follow-up replied exactly `PI_CANARY_TEXT_OK`, outside-workspace read check replied exactly `DENY_OK`, and exact rollback restored `example/agent.yml` to hash `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`.
-- Local full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed all ten scenarios again from `main` after PR #106. The regenerated decision package with `pr_stack=merged` is `BLOCKED` only by `production-canary-window=pending`.
-- PR #107 merged on 2026-05-16 and refreshed the post-PR #106 decision evidence docs.
-- PR #108 merged on 2026-05-16 and made `pi-workspace-smoke` require exact `SMOKE_OK`, closing the gap where duplicated `SMOKE_OKSMOKE_OK` could still appear in raw evidence while the smoke stayed green.
-- Local full `pnpm smoke:pi-v1-canary -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` passed all ten scenarios again from `main` after PR #107 and PR #108. Both standalone and aggregate workspace smoke replies were exactly `SMOKE_OK`.
-- Limited `example` Web UI production canary passed on 2026-05-17 local time: five Pi turns covered text, same-session follow-up, harmless workspace read, small workspace edit, and denied protected-path read; exact rollback restored `example/agent.yml` to hash `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`, and the real dev repo returned clean.
-- Local final `pnpm runtime:pi-decision -- --production-canary passed --pr-stack merged --browser-ux not-required --fail-on-blocked` produced `READY` with no blocking failures.
-- Durable **Pi Runtime v1 decision** workflow run `25970623984` on `main` commit `72766ff850a3dfff757a25e7b232c9002b7fcdac` passed build, Pi storage preparation, the full ten-scenario canary map, final `READY` decision generation with `production_canary=passed`, and artifact upload.
-- Default-runtime flip PR verification passed locally with `runtime.headless.provider=pi`: targeted runtime/config tests, TypeScript, config parsing, `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6`, and `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000`.
-- PR #110 merged the default-runtime flip into `main` on 2026-05-17 local time as commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8`.
-- Post-merge local verification on `d0f2438` passed: config parsing resolved `provider=pi`, targeted runtime/config tests passed, TypeScript passed, `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` passed, and `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` returned workspace text `SMOKE_OK` plus Gateway text `SMOKE_GATEWAY_OK`.
-- Post-merge durable **Pi Runtime v1 decision** workflow run `25971022679` on `main` commit `d0f24383503f3e1d0ef22257a4a2d9f347c62cc8` passed build, Pi storage preparation, the full canary map, final decision generation, and artifact upload.
-- Live runtime checkout `/Users/tyess/dev/openclaw-agents-sdk-clone` was fast-forwarded to `4d0942cbc58d95553aa025e3b5c5a1d74a19fe4e` on 2026-05-17 local time.
-- Post-pull live verification passed: `pnpm install --frozen-lockfile`, config parsing resolved `provider=pi`, TypeScript passed, `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` passed, and `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` returned workspace text `SMOKE_OK` plus Gateway text `SMOKE_GATEWAY_OK`.
-- Safe no-channel live Gateway Web UI turn against `example` replied exactly `PI_LIVE_WEB_OK` through Pi with no tool calls, a present session id, and `15` total tokens.
-- First monitoring slice after the live pull showed zero failed runs in the last hour; diagnostic event types were limited to `run.sdk_started` and `run.completed`.
-- Operator monitoring CLI exists as `pnpm runtime:pi-monitor`; it reads `metrics.sqlite`, reports run/diagnostic/tool summaries, and can exit non-zero with `--fail-on-alert` when stop-condition alerts appear.
-- Extended live monitoring snapshot at 2026-05-17 01:04 Asia/Almaty passed with `alerts=[]`: seven runs in the last 60 minutes, all succeeded; failed/interrupted/stale running runs were `0`; auth/model alerts were `0`; diagnostic types were only `run.sdk_started` and `run.completed`. The single failed `read` tool warning is the expected historical denied-path canary event, not a stop condition.
-- Ring expansion policy exists at `docs/pi-ring-expansion-policy.md`; it defines Rings 0-4, Ring 1 live channel criteria, stop conditions, rollback, and required checks per ring.
-- Ring 1 immediate live channel evidence passed on 2026-05-17 at 01:12 Asia/Almaty: controlled `Gateway.dispatch` sent a real Telegram DM response for `example`, the reply was exactly `PI_LIVE_CHANNEL_OK`, no tool events appeared in the 15-minute Ring 1 slice, and the immediate post-turn monitor showed eight succeeded runs with zero failed/interrupted/stale runs and zero auth/model alerts.
-- Ring 1 follow-up manual monitor at approximately 2026-05-17 01:21 Asia/Almaty passed for the 60-minute window: three succeeded runs, zero failed/interrupted/stale runs, zero auth/model alerts, no alerts, and no warnings.
-- Ring 1 is closed by operator acceptance. The original 30-minute timer is waived for this checkpoint; the operator will escalate if later monitoring detects a stop condition.
-- Ring 2 scope is defined: `example` only, Web UI plus allowlisted operator Telegram DM, ordinary operator prompts, learning propose-only, no cron delivery, no proactive notifications, no `send_message` fanout, no `manage_cron`/`manage_skills`/external MCP/Buildroom, no WhatsApp, and no non-operator peers.
-- Pre-Ring-2 checks passed on 2026-05-17: `pi-auth` passed with Pi package `0.74.0` and available `anthropic/claude-sonnet-4-6`; `runtime:pi-monitor` passed with three succeeded runs, zero failed/interrupted/stale runs, zero auth/model alerts, no alerts, and no warnings.
-- Ring 2 low-risk usage window passed on 2026-05-17: Web UI returned exactly `PI_RING2_WEB_OK` with session id present, `16` total tokens, and zero tool calls; Telegram DM returned exactly `PI_RING2_TELEGRAM_OK` to allowlisted operator peer `48705953` with one sent message and message id present.
-- Ring 2 post-window monitor passed with six succeeded runs, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, zero auth/model alerts, no alerts, and no warnings.
-- Ring 2 is closed. Ring 3 should target one expanded product surface at a time.
-- Ring 3.1 learning review scope is defined and executed: `example` learning review in propose-only mode, operator list/transition only, no approve/apply, no memory/skill writes, no plugin/MCP/Buildroom/cron expansion.
-- Ring 3.1 learning review evidence passed on 2026-05-17: `example` had two completed reviews and two proposed `none` actions; one `none` action was rejected with reason `ring3-learning-review-closed-no-action`; target action became `rejected`, reason was present, `applied_at` stayed null, and action counts became one proposed `none` plus one rejected `none`.
-- Ring 3.1 post-check monitor passed with six succeeded runs, zero failed/interrupted/stale runs, zero auth/model alerts, no alerts, and no warnings.
-- Ring 3.2 session continuity scope is defined and executed: `example` Web UI only, two turns in one continued session, no Telegram/WhatsApp, no memory write, no learning apply, no plugin tools, no external MCP, no Buildroom, no cron/proactive notification, and no `send_message` fanout.
-- Ring 3.2 session continuity evidence passed on 2026-05-17: first turn returned exactly `PI_RING3_MEMORY_SEED_OK`, second turn continued the same session and returned exactly `PI_RING3_MEMORY_CONTINUITY_OK`, both turns had zero tool calls, Gateway listed the continued session, and the session had two active keys.
-- Ring 3.2 post-check monitor passed with eight succeeded runs, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, zero auth/model alerts, no alerts, and no warnings.
-- Ring 3.3 plugin context scope is defined and executed with `pnpm smoke:pi-plugins-context -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` in an isolated temporary Gateway workspace; real production plugin actions, real external MCP credentials, Buildroom, cron delivery, and production `send_message` fanout remained excluded.
-- Ring 3.3 plugin context evidence passed on 2026-05-17: synthetic plugin enablement/tool registration/policy hooks passed, disabled-agent tool exclusion held, plugin context assembly/compression and session attribution passed, Pi plugin subagent ran with tools disabled, and bundled `file-transfer`, `lcm`, and `operator-console` checks passed including outside-root denial and delegate denial.
-- Ring 3.3 post-check monitor passed with eight succeeded runs, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, zero auth/model alerts, no alerts, and no warnings.
-- Ring 3.4 external MCP scope is defined and executed with `pnpm smoke:pi-external-mcp -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000`; real production MCP credentials, real network-backed MCP calls, production agent external MCP configs, live channel delivery, Buildroom, and scheduled automation remained excluded.
-- Ring 3.4 external MCP evidence passed on 2026-05-17: agent schema validation, credential header resolution, credential-store audit reason, allowed custom tool exposure, disallowed tool suppression, Pi custom tool definition/execution, Pi policy denial, upstream call path, and redaction all passed.
-- Ring 3.4 post-check monitor passed with six succeeded runs, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, zero auth/model alerts, no alerts, and no warnings.
-- Ring 3.5 scheduled Buildroom scope is defined and executed with `pnpm smoke:pi-scheduled-buildroom -- --json --timeout-ms 120000`; live production cron delivery, live proactive notifications, production channel delivery, broad `send_message` fanout, real external MCP calls, and production Buildroom rooms/worktrees remained excluded.
-- Ring 3.5 scheduled Buildroom evidence passed on 2026-05-17: dynamic cron lifecycle, heartbeat scheduler/runner, Buildroom init/status/pause/resume/kill-switch, handoff/session-summary tools, trust notification formatting, artifact persistence/content hashes, path policy, and lock/idempotency checks all passed.
-- Ring 3.5 post-check monitor passed with six succeeded runs, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, zero auth/model alerts, no alerts, and no warnings.
-- Ring 3 expanded product-surface rollout is complete.
-- Ring 4.1 live cron delivery scope is defined and executed: `example` only, allowlisted operator Telegram DM peer `48705953`, Gateway cron handler, real `TelegramChannel.sendText`, no persisted dynamic cron, no recurring cron, no fanout, no non-operator peer.
-- Ring 4.1 live cron delivery evidence passed on 2026-05-17: prompt `Reply exactly PI_RING4_CRON_OK. Do not use tools.` returned exactly `PI_RING4_CRON_OK`, one Telegram message was sent, message id was present, and the dynamic cron store was absent/empty for Ring 4 canary jobs.
-- Ring 4.1 post-run monitor passed with one succeeded run, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, zero auth/model alerts, no tool events, no alerts, and no warnings.
-- Ring 4.2 live proactive notification scope is defined and executed: `example` only, one temporary in-process `escalation_needed` subscription, allowlisted operator Telegram DM peer `48705953`, real `TelegramChannel.sendText`, no persisted notification config change, no scheduler registration, no fanout, no non-operator peer.
-- Ring 4.2 live proactive notification evidence passed on 2026-05-17: `NotificationsEmitter.emit` produced a formatted Telegram notification containing `PI_RING4_PROACTIVE_NOTIFICATION_OK`, one Telegram message was sent, message id was present, parse mode was `markdown`, and the dynamic cron store was absent/empty for Ring 4 canary jobs.
-- Ring 4.2 post-run monitor passed with one succeeded run, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, zero auth/model alerts, no alerts, and no warnings.
-- Ring 4.3 live recurring cron scope is defined and executed: `example` only, short-lived dynamic recurring cron, allowlisted operator Telegram DM peer `48705953`, schedule `*/15 * * * * *`, `runOnce=false`, short `expiresAt`, real `TelegramChannel.sendText`, no static agent cron config change, no fanout, no non-operator peer.
-- Ring 4.3 live recurring cron evidence passed on 2026-05-17: the dynamic job registered through `Gateway.reloadDynamicCron`, fired twice through `CronScheduler`, both ticks returned exactly `PI_RING4_RECURRING_CRON_OK`, two Telegram messages were sent with message ids present, and cleanup disabled/deleted the job.
-- Ring 4.3 post-run cleanup and monitor passed: dynamic cron store is empty with no Ring 4 jobs remaining; monitor showed three succeeded runs, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, zero auth/model alerts, no alerts, and no warnings.
-- Ring 4.4 controlled `send_message` fanout scope is defined and executed: `example` Web UI source, exactly one `send_message` tool call, allowlisted operator Telegram DM peer `48705953`, account `default`, no non-operator peer, no group, no WhatsApp, no media send, no repeated sends, no unmanaged fanout list.
-- Ring 4.4 controlled `send_message` evidence passed on 2026-05-17: the Pi turn called `send_message` exactly once, delivered `PI_RING4_SEND_MESSAGE_TOOL_OK` through real `TelegramChannel.sendText`, returned final Web UI text exactly `PI_RING4_SEND_MESSAGE_DONE`, and recorded a present Telegram message id.
-- Ring 4.4 post-run monitor passed with four succeeded runs, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, `send_message` started/completed once, zero failed tool events, zero auth/model alerts, no alerts, and no warnings.
-- Ring 4.5 business-critical leads escalation scope is defined and executed: live-only `leads_agent`, Web UI simulated customer request for all leads Excel export, exactly one `escalate` tool call, escalation JSONL queue write, no real WhatsApp customer delivery, no lead export generation, no `send_message`, no external MCP call.
-- Ring 4.5 initially exposed a permission-policy defect: `escalate` was public-safe but missing from `MCP_META`, causing prefixed `mcp__leads_agent-tools__escalate` to be denied under `safety_profile=public`; the defect is fixed by registering `escalate` in `MCP_META` with regression tests.
-- Ring 4.5 post-fix evidence passed on 2026-05-17: the Pi turn called `escalate` exactly once, wrote one `leads_agent` escalation row with marker present, avoided forbidden internal architecture terms in the final response, restored the escalation log to its previous state, and left dynamic cron empty.
-- Ring 4.5 post-fix short monitor passed with one succeeded run, zero failed/interrupted/stale runs, diagnostic types `run.completed` and `run.sdk_started`, `escalate` started/completed once, zero failed tool events, zero auth/model alerts, no alerts, and no warnings.
-- Post-Ring-4.5 durable guard exists: `pnpm smoke:pi-public-escalation -- --json` validates `MCP_META.escalate`, public-profile prefixed MCP permission, denial of unknown plugin MCP tools, and isolated JSONL escalation logging for `leads_agent`.
-- Durable **Pi Runtime v1 decision** workflow run `25981278010` on `main` commit `1825b973110ba6f91bcc5fc6e3b9293e409c2f1d` passed with the expanded 11-scenario canary map, including `pi.public-escalation`, and uploaded artifact `7039268917`.
-- Post-rollout expansion audit CLI exists as `pnpm runtime:pi-expansion-audit`. It reads one or more `agents-dir` roots, classifies per-agent expansion risk, recommends Ring 2/3/4 evidence, emits an `evidencePlan` with automated commands versus manual operator checks, and reports only redacted structural config facts.
-- Post-audit expansion packet CLI exists as `pnpm runtime:pi-expansion-packet`. It turns one audited agent into a redacted review artifact with owner, rollback path, blockers, automated evidence commands, manual evidence checkboxes, and the exact reproducible audit command.
-- Live checkout audit at `/Users/tyess/dev/openclaw-agents-sdk-clone/agents` currently sees one tracked `agent.yml` candidate, `example`; it classifies as high/ring4 because its tracked config includes high-risk tools (`manage_cron`, `manage_skills`, `send_message`) plus `escalate`. The `amina` directory in that checkout contains credential material but no `agent.yml`, so it is reported as `skippedDirectories`.
-- Named live-only coverage check works: `pnpm runtime:pi-expansion-audit -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --expect-agent leads_agent --json` exits non-zero with `coverageGap=true` and `expectedAgentsMissing=["leads_agent"]`, proving this tracked agents dir does not cover that production config.
-- Repeated `--agents-dir` values are supported for split tracked/live-only config roots. Expected agents are checked across the combined inventory, each audited agent reports its source `agentsDir`, and duplicate agent ids across roots fail as `coverageGap=true`.
-- Local multi-root evidence check against `/Users/tyess/dev/openclaw-agents-sdk-clone/agents` plus `/Users/tyess/dev/anthroclaw-vibe-agents/agents` found `leads_agent`, closed `coverageGap=false`, and ranked the current live expansion queue as one critical agent (`leads_agent`) plus three high-risk agents (`content_sm_building`, tracked `example`, and `project-manager`).
-- `leads_agent` expansion packet is recorded in `research/pi-expansion-packets/leads_agent.md`. Automated evidence is closed: public escalation passed, plugin-context canary passed, and the live checkout 60-minute monitor passed. Learning evidence is closed by redacted multi-root audit (`learningMode=propose`, `coverageGap=false`). Customer-facing dry-run evidence is closed by `pnpm runtime:pi-leads-agent-dry-run -- --json`: simulated customer request escalated, no real delivery, no `send_message`, no lead export, and no external MCP.
-- `content_sm_building` expansion packet is recorded in `research/pi-expansion-packets/content_sm_building.md`. Plugin-context and external-MCP automated preflight evidence passed. Safe dry-run evidence for `send_message`, `send_media`, and `manage_cron` passed with fake Telegram delivery and temp cron cleanup. The pre-live-turn gate `pnpm runtime:pi-content-sm-preflight` passed against the split tracked/live-only agent roots with explicit peer/topic confirmation, fake-only delivery, temp cron cleanup, and green live monitor. A controlled live group turn and post-expansion monitor remain open.
-- `pi_telegram_lab` tracked Telegram DM agent exists as the intended hands-on Pi test agent. It audits as low/ring2, has no fanout/cron/admin/plugin/external-MCP tools, explicitly disables MCP onboarding/`connect_mcp`, passes route-table construction with tracked agents, has a live monitor no-alert baseline, passes direct Gateway/Pi lab smoke with fake Telegram DM dispatch returning `PI_TELEGRAM_LAB_OK`, has explicit operator commands (`/help`, `/status`, `/scope`, `/memory`, `/smoke`, `/handoff`) plus a passed operator command smoke command, has a one-command readiness gate covering audit, route proof, smoke, and live monitor, and has closed live Telegram DM evidence. The first live manual turn was operator text `привет как дела`; metrics recorded run `3afa6dbe-e1d6-453d-a675-e772fec70236` as `pi_telegram_lab`, `source=channel`, `channel=telegram`, `peer_id=48705953`, `status=succeeded`, and the post-turn gate passed. The first live command suite then exercised `/help`, `/status`, `/scope`, and `/smoke`; metrics recorded four additional successful channel runs (`a16f7a32-7155-41e4-be07-cdb14289ec36`, `135b58e1-0e89-406b-a58f-468357429a5c`, `6c1a8e4f-b220-4c1b-a06e-f41b2182e4ff`, `08829eab-4035-418f-88f2-f4db0034e793`) and the post-command gate passed with no alerts or warnings.
-- `timur_agent` is now the preferred full-featured operator parity lab instead of continuing near-term work on obscure low-usage agents. The tracked config enables Pi, memory/session tools, propose-only learning, messaging/media/cron/notifications/admin/config tools, MCP onboarding, LCM, operator-console, file-transfer, Buildroom handoff tools, the connected default Telegram route for the operator DM, and an expansion packet at `research/pi-expansion-packets/timur_agent.md`. `pi_telegram_lab` remains valid but is archived on account `pi_telegram_lab_archive` so it does not conflict with the connected bot. Config parse, route isolation, expansion audit, operator command smoke, live `/smoke`, live `/status`, live `/scope`, live `/tools`, live `/memory`, live `/learning`, live `/plugins`, live `/cron`, live `/mcp`, live `/handoff`, post-expansion monitor, Pi memory/session read smoke, Pi propose-only learning smoke, fake-only cron/proactive notification smoke, fake-only messaging/media smoke, temp-only admin/config smoke, temp-only Buildroom handoff smoke, temp-only MCP/file-transfer smoke, temp-only Honcho local smoke, and the first operator-approved live `send_message`, `send_media`, and proactive notification gates passed. The `send_message` gate delivered marker `TIMUR_AGENT_LIVE_SEND_MESSAGE_OK 2026-05-18T09:19:55Z` to `telegram/default/48705953`, returned Telegram `messageId=181`, and recorded run `pi-live-send-c3bfa9af-d756-4501-856f-cb7044621bbe`. The `send_media` gate delivered document caption `TIMUR_AGENT_LIVE_SEND_MEDIA_OK 2026-05-18T09:30:06Z` to `telegram/default/48705953`, returned Telegram `messageId=182`, and recorded run `pi-live-media-ebb4abe5-754e-4871-8b70-e3f114642406`. The first proactive notification gate delivered note `TIMUR_AGENT_LIVE_NOTIFICATION_OK 2026-05-18T09:41:40Z` to `telegram/default/48705953`, returned Telegram `messageId=183`, and recorded run `pi-live-notification-da91ab06-9860-43b5-9917-f424e051cf09`, but operator observation showed Telegram Markdown stripped underscores from the italicized marker. The escalation formatter was hardened to render notes as Telegram code text, then the repeat notification delivered note `TIMUR_AGENT_LIVE_NOTIFICATION_MARKDOWN_OK 2026-05-18T09:45:57Z`, returned Telegram `messageId=184`, and recorded run `pi-live-notification-d2e2dd95-f8bd-4457-868b-5f0776238519`. The 60-minute monitor passed with alerts `[]` and warnings `[]`.
-- Full feature parity is tracked in `research/runtime-v1-parity-matrix.md`: default-runtime parity is green; fleet-wide live parity remains open only for agent/channel/tool expansions that have not yet received explicit expansion-packet evidence.
+Last verified: 2026-05-19.
 
-What is not done:
-
-- A true Claude baseline turn has not been sent in the live channel; this remains a written waiver for the first Pi-only window, not an unresolved startup blocker.
-- No Runtime v1 rollout gate remains open. Future production expansion should be tracked as a new rollout policy, not as part of the initial Runtime v1 default flip.
+- `pnpm test`: passed, 318 files / 2601 tests.
+- `pnpm exec tsc --noEmit`: passed.
+- `pnpm build`: passed.
+- `pnpm --dir ui build`: passed.
+- Fresh source-copy release smoke without `.git` metadata: passed.
+  - `pnpm install --frozen-lockfile`
+  - `npm run release:check`
+  - `pnpm vitest run src/runtime/__tests__/pi-native-copy.test.ts src/config/__tests__/schema-chat.test.ts src/security/profiles/__tests__/index.test.ts --reporter=dot`
+  - `pnpm build`
+  - `pnpm --dir ui build`
+- Public-surface scan: active OSS docs/examples/source are clean. Remaining
+  `chat_like_openclaw` hits are intentional legacy safety-profile aliases for
+  old configs.
 
 ## Phase Checklist
 
-| Phase | Status | Goal | Exit Criteria |
-| --- | --- | --- | --- |
-| 0. Frame migration | Done | Stop treating the provider SDK as product contract. | Runtime replacement is framed as a harness contract, not a provider swap. |
-| 1. Freeze Runtime v1 contract | Done | Capture 100% feature surfaces that a replacement must preserve. | `src/runtime/contract.ts` covers runtime, Gateway, tools, sessions, memory, plugins, dashboard, Buildroom, config, and ops; `research/runtime-v1-parity-matrix.md` maps those contracts to current evidence and remaining fleet gates. |
-| 2. Candidate harness research | Done enough for canary work | Compare Pi/OpenAI/OpenCode/opencode-like options against the contract. | Candidate notes identify Pi as primary near-term harness and keep alternatives visible. |
-| 3. Build Pi adapter and smoke gates | Done | Prove Pi can run the critical runtime paths without breaking AnthroClaw-owned policy. | Auth, workspace, Gateway, and aggregate Pi smoke commands pass with real auth locally and in the durable decision workflow. |
-| 4. Cover deep product surfaces | Mostly done | Prove non-obvious product features survive runtime replacement. | Scripted canaries pass for sessions/memory/learning, plugins/context/tools, external MCP, scheduled Buildroom, public escalation, and rollback. |
-| 5. Dashboard/operator evidence | Done enough for default flip PR | Prove the operator API contracts expose the same state under Pi-shaped runs. | `/api/gateway/status`, agents, sessions, runs, learning, plugins, MCP, channels, and diagnostics are covered by scripted canary and limited production evidence; browser UX evidence is optional. |
-| 6. Rollout decision package | Done | Produce the final go/no-go artifact. | Local and durable GitHub Actions decision packages emit `READY` with production canary passed and PR stack merged. |
-| 7. Default-runtime rollout | Done | Flip runtime default safely. | Default flip is merged into `main`; post-merge local, durable, live pull, safe Web UI, extended monitoring, Ring 1, Ring 2, Ring 3, Ring 4.1 one-shot live cron, Ring 4.2 live proactive notification, Ring 4.3 live recurring cron, Ring 4.4 controlled `send_message` fanout, and Ring 4.5 business-critical leads escalation are green. |
+| Phase | Status | Exit Criteria |
+| --- | --- | --- |
+| 0. Frame migration | Done | Replacement is defined as a Runtime v1 harness contract, not a provider swap. |
+| 1. Freeze Runtime v1 contract | Done | Generic contract scenarios cover the AnthroClaw product feature surface under Pi-native runtime ownership. |
+| 2. Runtime adapter boundary | Done | Provider SDK calls are behind runtime/headless adapter boundaries. |
+| 3. Pi adapter path | Done | Pi can satisfy the generic headless/runtime contract in tests and canaries. |
+| 4. OpenCode fallback path | Done | OpenCode remains available as an alternate runtime candidate. |
+| 5. Memory/session/learning parity | Done | Generic tests cover session continuity, memory read/search/write surfaces, and propose-only learning. |
+| 6. Plugins/MCP parity | Done | Plugin context, external MCP proxying/onboarding, and file-transfer gates are represented generically. |
+| 7. Side-effect gates | Done | Reusable gates accept agent/route/target as input and do not encode concrete agents. |
+| 8. Runtime UI/control plane | Done | UI shows runtime status, models, gates, expansion status, settings, fleet and agent runtime metadata. |
+| 9. Legacy quarantine | Done | Claude Agent SDK compatibility lives in `@anthroclaw/legacy-claude-agent-sdk`; root runtime code imports the legacy package, not the provider SDK. |
+| 10. OSS cleanup | Done | Public scripts/docs do not expose private named-agent migration flows. |
 
-## Canary Scenario Checklist
+## Remaining OSS Work
 
-| Scenario | Evidence Level | Status | Command or Evidence |
-| --- | --- | --- | --- |
-| `pi.auth-model-preflight` | smoke | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-auth -- --json --model anthropic/claude-sonnet-4-6` |
-| `pi.workspace-tools-rewind` | smoke | Durable workflow pass on `main` in final run `25970623984`; local exact reply `SMOKE_OK` after PR #108 | `pnpm smoke:pi-workspace -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.gateway-channel-approval` | smoke | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-gateway -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.aggregate-real-auth` | smoke | Durable workflow pass on `main` in final run `25970623984`; local nested workspace exact reply `SMOKE_OK` after PR #108 | `pnpm smoke:pi-all -- --json --model anthropic/claude-sonnet-4-6 --timeout-ms 120000` |
-| `pi.plugins-context-tools` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-plugins-context -- --json` |
-| `pi.external-mcp-proxy` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-external-mcp -- --json` |
-| `pi.sessions-memory-learning` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-sessions-memory -- --json` |
-| `pi.dashboard-operator` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-dashboard-operator -- --json` |
-| `pi.scheduled-buildroom` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-scheduled-buildroom -- --json` |
-| `pi.public-escalation` | scripted canary | Durable workflow pass on `main` in run `25981278010` | `pnpm smoke:pi-public-escalation -- --json` |
-| `pi.rollback-mixed-runtime` | scripted canary | Durable workflow pass on `main` in final run `25970623984` | `pnpm smoke:pi-rollback-runtime -- --json` |
+No blocking OSS migration work remains for the generic Runtime v1/Pi harness.
+Ongoing maintenance rules:
 
-## Current Blockers
+1. Keep only generic `runtime:pi-*` gates in `package.json`; do not add
+   named-agent compatibility aliases.
+2. Keep expansion packets out of public migration status unless they are generic
+   examples. Private production rollout evidence belongs outside OSS acceptance
+   criteria.
+3. Maintain the repeatable OSS acceptance gate:
+   - `pnpm build`
+   - `pnpm test`
+   - runtime contract tests
+   - side-effect gate registry tests
+   - UI runtime control-plane tests
+   - no named-agent public-surface scan
 
-No Runtime v1 decision or initial rollout blockers remain.
+## Release Candidate Readiness
 
-## Next Operating Tasks
+Recommended next release line: `v1.2.0` for the stable release, with
+`v1.2.0-rc.1` acceptable if we want one public pre-release after review.
 
-1. Keep `runtime:pi-monitor -- --since-minutes 60 --json --fail-on-alert` as the operator health check during normal operation.
-2. Treat any new production-agent/channel expansion as a new rollout policy section with its own owner and rollback path.
-3. Run `runtime:pi-expansion-audit` against every exact live `agents-dir` root before any future production-agent/channel expansion.
-4. Treat `pi_telegram_lab` live Telegram DM evidence as closed; keep `pnpm runtime:pi-telegram-lab-readiness -- --json --allow-skip`, `pnpm runtime:pi-telegram-lab-operator-smoke -- --json --allow-skip`, and `pnpm runtime:pi-telegram-lab-post-turn -- --json --fail-on-pending` as repeatable operator checks.
-5. Treat `leads_agent` packet evidence as closed; before any live customer-facing expansion, perform an explicit operator go/no-go and keep the rollback path ready.
-6. Continue `timur_agent` as the full-featured operator parity lab before spending more time on obscure low-usage agents.
-7. For `timur_agent`, treat the first operator-approved live `send_message`, `send_media`, and proactive notification gates as closed. Next live side-effect classes should stay one-at-a-time: cron delivery, admin/config mutation, Buildroom handoff, MCP/file-transfer, and Honcho service activation each need explicit operator approval and post-action monitoring.
-8. For `content_sm_building`, defer the controlled live group turn until the operator lab has been exercised end to end or the operator explicitly chooses that expansion.
-9. Update `research/runtime-v1-parity-matrix.md` whenever a new expansion packet moves from preflight to live evidence.
+Release packaging checklist:
 
-## Default Runtime Gate
+- `CHANGELOG.md` contains explicit Runtime v1 / Pi-native migration notes.
+- README no longer presents the repository as archived after the v1.0.0
+  Claude Agent SDK-era release.
+- Version files remain synchronized and should be bumped only after the PR
+  worktree is clean:
+  - `package.json`
+  - `ui/package.json`
+  - `VERSION`
+- The final release commit should be created by `npm run release:minor` or an
+  explicit `node scripts/release.mjs 1.2.0` invocation after merge readiness.
+- Final pre-tag gate should include:
+  - `npm run release:check`
+  - `pnpm test`
+  - `pnpm exec tsc --noEmit`
+  - `pnpm build`
+  - `pnpm --dir ui build`
+  - fresh source-copy install/build smoke if publishing as stable instead of RC.
 
-The evidence gate for making Pi the tracked global default is satisfied and the flip is merged. Durable run `25970623984` established the pre-flip `READY` decision, PR #110 carried rollout/rollback instructions, and durable run `25971022679` revalidated the decision package after the default flip landed on `main`.
+## Pi-Native Migration Rule
 
-Ring 1 is closed by operator acceptance after green live-channel and monitor evidence. Ring 2 is closed after the low-risk normal-operation window and post-window monitor. Ring 3 expanded product-surface rollout is complete. Ring 4.1 one-shot live cron delivery, Ring 4.2 live proactive notification, Ring 4.3 live recurring cron, Ring 4.4 controlled `send_message` fanout, and Ring 4.5 business-critical leads escalation are closed. Default Pi is no longer evidence-blocked; the initial Runtime v1 rollout is complete.
+The target is not full Claude Agent SDK compatibility. Claude Agent SDK remains
+legacy fallback and historical evidence only. New work should prefer native Pi
+integration plus AnthroClaw-owned implementations for sessions, tools, policy,
+MCP, memory, learning, plugins, dashboard, and observability.
+
+## Not OSS Migration Criteria
+
+These are deliberately excluded from OSS migration completion:
+
+- 1:1 Claude Agent SDK internal behavior.
+- Private operator approvals.
+- Live Telegram/WhatsApp delivery for named production agents.
+- Personal/lab agent expansion packets.
+- Production rollout status for a private fleet.

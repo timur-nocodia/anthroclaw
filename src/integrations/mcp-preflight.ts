@@ -1,4 +1,4 @@
-import type { AgentMcpServerSpec } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentMcpServerSpec } from '@anthroclaw/legacy-claude-agent-sdk';
 
 export type McpPreflightTransport = 'in_process' | 'stdio' | 'http' | 'sse' | 'unknown';
 export type McpPreflightRisk = 'low' | 'medium' | 'high';

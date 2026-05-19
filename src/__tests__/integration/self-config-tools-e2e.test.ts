@@ -38,7 +38,7 @@ function getHandler(t: unknown): (a: Record<string, unknown>) => Promise<{
 function baseAgentYml(): string {
   return [
     '# test agent',
-    'safety_profile: chat_like_openclaw',
+    'safety_profile: chat_like_anthroclaw',
     'routes:',
     '  - { channel: telegram }',
     '',
@@ -57,8 +57,8 @@ describe('self-config tools — Stage 2 integration', () => {
   beforeEach(() => {
     agentsDir = mkdtempSync(join(tmpdir(), 'scte2e-'));
     auditDir = mkdtempSync(join(tmpdir(), 'scte2e-audit-'));
-    seedAgent(agentsDir, 'klavdia');
-    seedAgent(agentsDir, 'amina');
+    seedAgent(agentsDir, 'operator_agent');
+    seedAgent(agentsDir, 'agent_alpha');
   });
   afterEach(() => {
     rmSync(agentsDir, { recursive: true, force: true });
@@ -69,12 +69,12 @@ describe('self-config tools — Stage 2 integration', () => {
     const auditLog = createConfigAuditLog({ auditDir });
     const writer = createAgentConfigWriter({ agentsDir, auditLog });
 
-    // Klavdia self-targets; no operator_console required.
+    // The operator agent self-targets; no operator_console required.
     const tool = createManageNotificationsTool({
-      agentId: 'klavdia',
+      agentId: 'operator_agent',
       writer,
       canManage: () => true,
-      sessionKey: 'telegram:control:dm:48705953',
+      sessionKey: 'telegram:control:dm:peer-operator',
     });
 
     // Build the notifications emitter with a sendMessage spy. This
@@ -82,12 +82,12 @@ describe('self-config tools — Stage 2 integration', () => {
     const sendMessage = vi.fn().mockResolvedValue(undefined);
     const emitter = createNotificationsEmitter({ sendMessage });
 
-    // Step 1: tool adds a route + subscription on klavdia's config.
+    // Step 1: tool adds a route + subscription on operator_agent's config.
     const r1 = await getHandler(tool)({
       action: {
         kind: 'add_route',
         name: 'operator',
-        route: { channel: 'telegram', account_id: 'control', peer_id: '48705953' },
+        route: { channel: 'telegram', account_id: 'control', peer_id: 'peer-operator' },
       },
     });
     expect(r1.isError).toBeFalsy();
@@ -107,7 +107,7 @@ describe('self-config tools — Stage 2 integration', () => {
 
     // Step 2: verify file was actually mutated (a reload-trigger event
     // would now fire on a real chokidar watcher).
-    const yaml = readFileSync(join(agentsDir, 'klavdia', 'agent.yml'), 'utf-8');
+    const yaml = readFileSync(join(agentsDir, 'operator_agent', 'agent.yml'), 'utf-8');
     expect(yaml).toContain('notifications:');
     expect(yaml).toContain('operator:');
     expect(yaml).toContain('peer_pause_started');
@@ -115,13 +115,13 @@ describe('self-config tools — Stage 2 integration', () => {
 
     // Step 3: simulate the reload — re-read the section and resubscribe
     // the emitter. This is what `agent.reload` does on chokidar fire.
-    const reloaded = writer.readSection('klavdia', 'notifications') as AgentNotificationsConfig;
-    emitter.subscribeAgent('klavdia', reloaded);
+    const reloaded = writer.readSection('operator_agent', 'notifications') as AgentNotificationsConfig;
+    emitter.subscribeAgent('operator_agent', reloaded);
 
-    // Step 4: trigger a peer_pause_started event for klavdia. The emitter
+    // Step 4: trigger a peer_pause_started event for operator_agent. The emitter
     // should resolve the route and call sendMessage.
     await emitter.emit('peer_pause_started', {
-      agentId: 'klavdia',
+      agentId: 'operator_agent',
       peerKey: 'wa:business:1',
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
@@ -129,18 +129,18 @@ describe('self-config tools — Stage 2 integration', () => {
     expect(sendMessage).toHaveBeenCalledOnce();
     const [route, text, meta] = sendMessage.mock.calls[0];
     expect(route).toMatchObject({
-      channel: 'telegram', account_id: 'control', peer_id: '48705953',
+      channel: 'telegram', account_id: 'control', peer_id: 'peer-operator',
     });
     expect(typeof text).toBe('string');
-    expect(meta).toMatchObject({ event: 'peer_pause_started', agentId: 'klavdia' });
+    expect(meta).toMatchObject({ event: 'peer_pause_started', agentId: 'operator_agent' });
   });
 
   it('cross-agent management requires operator_console.manages whitelist', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
 
-    // Without operator_console: klavdia cannot manage amina.
+    // Without operator_console: operator_agent cannot manage agent_alpha.
     const denyTool = createManageNotificationsTool({
-      agentId: 'klavdia',
+      agentId: 'operator_agent',
       writer,
       canManage: (caller, target) =>
         canManageAgent({
@@ -150,33 +150,33 @@ describe('self-config tools — Stage 2 integration', () => {
         }),
     });
     const denied = await getHandler(denyTool)({
-      target_agent_id: 'amina',
+      target_agent_id: 'agent_alpha',
       action: { kind: 'set_enabled', enabled: true },
     });
     expect(denied.isError).toBe(true);
     expect(denied.content[0].text).toMatch(/not authorized/);
 
-    // Amina's file remains untouched.
-    const aminaYaml = readFileSync(join(agentsDir, 'amina', 'agent.yml'), 'utf-8');
-    expect(aminaYaml).not.toContain('notifications:');
+    // customer assistant's file remains untouched.
+    const agentAlphaYaml = readFileSync(join(agentsDir, 'agent_alpha', 'agent.yml'), 'utf-8');
+    expect(agentAlphaYaml).not.toContain('notifications:');
 
-    // With operator_console.manages: ['amina'], the same call succeeds.
+    // With operator_console.manages: ['agent_alpha'], the same call succeeds.
     const allowTool = createManageNotificationsTool({
-      agentId: 'klavdia',
+      agentId: 'operator_agent',
       writer,
       canManage: (caller, target) =>
         canManageAgent({
           callerId: caller,
           targetId: target,
-          operatorConsoleConfig: { enabled: true, manages: ['amina'] },
+          operatorConsoleConfig: { enabled: true, manages: ['agent_alpha'] },
         }),
     });
     const allowed = await getHandler(allowTool)({
-      target_agent_id: 'amina',
+      target_agent_id: 'agent_alpha',
       action: { kind: 'set_enabled', enabled: true },
     });
     expect(allowed.isError).toBeFalsy();
-    expect(writer.readSection('amina', 'notifications')).toMatchObject({ enabled: true });
+    expect(writer.readSection('agent_alpha', 'notifications')).toMatchObject({ enabled: true });
   });
 
   it('audit log records both chat tool writes and ui writes with correct source tags', async () => {
@@ -185,10 +185,10 @@ describe('self-config tools — Stage 2 integration', () => {
 
     // Chat-driven write via the manage_notifications tool.
     const tool = createManageNotificationsTool({
-      agentId: 'klavdia',
+      agentId: 'operator_agent',
       writer,
       canManage: () => true,
-      sessionKey: 'telegram:control:dm:48705953',
+      sessionKey: 'telegram:control:dm:peer-operator',
     });
     await getHandler(tool)({
       action: { kind: 'set_enabled', enabled: true },
@@ -197,13 +197,13 @@ describe('self-config tools — Stage 2 integration', () => {
     // UI-driven write — the UI route handler does this exact call shape
     // (see ui/app/api/agents/[agentId]/config/route.ts).
     await writer.patchSection(
-      'klavdia',
+      'operator_agent',
       'human_takeover',
       () => ({ enabled: true }),
       { caller: 'ui', source: 'ui', action: 'ui_save_human_takeover' },
     );
 
-    const recent = await auditLog.readRecent('klavdia', { limit: 10 });
+    const recent = await auditLog.readRecent('operator_agent', { limit: 10 });
     expect(recent.length).toBeGreaterThanOrEqual(2);
     const sources = new Set(recent.map((e) => e.source));
     expect(sources.has('chat')).toBe(true);
@@ -211,9 +211,9 @@ describe('self-config tools — Stage 2 integration', () => {
 
     const chatEntry = recent.find((e) => e.source === 'chat');
     expect(chatEntry).toMatchObject({
-      callerAgent: 'klavdia',
-      callerSession: 'telegram:control:dm:48705953',
-      targetAgent: 'klavdia',
+      callerAgent: 'operator_agent',
+      callerSession: 'telegram:control:dm:peer-operator',
+      targetAgent: 'operator_agent',
       section: 'notifications',
       action: 'notifications.set_enabled',
     });
@@ -221,7 +221,7 @@ describe('self-config tools — Stage 2 integration', () => {
     const uiEntry = recent.find((e) => e.source === 'ui');
     expect(uiEntry).toMatchObject({
       callerAgent: 'ui',
-      targetAgent: 'klavdia',
+      targetAgent: 'operator_agent',
       section: 'human_takeover',
       action: 'ui_save_human_takeover',
     });
@@ -255,7 +255,7 @@ describe('self-config tools — Agent.load wiring guard', () => {
   });
 
   it('registers all four self-config tools when listed in mcp_tools and writer is provided', async () => {
-    const agentDir = join(agentsDir, 'klavdia');
+    const agentDir = join(agentsDir, 'operator_agent');
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(
       join(agentDir, 'agent.yml'),
@@ -275,7 +275,7 @@ describe('self-config tools — Agent.load wiring guard', () => {
       ].join('\n'),
       'utf-8',
     );
-    writeFileSync(join(agentDir, 'CLAUDE.md'), 'You are klavdia.', 'utf-8');
+    writeFileSync(join(agentDir, 'CLAUDE.md'), 'You are operator_agent.', 'utf-8');
 
     const auditLog = createConfigAuditLog({ auditDir });
     const writer = createAgentConfigWriter({ agentsDir, auditLog });
@@ -306,7 +306,7 @@ describe('self-config tools — Agent.load wiring guard', () => {
   });
 
   it('warns and omits self-config tools when agentConfigWriter is missing', async () => {
-    const agentDir = join(agentsDir, 'amina');
+    const agentDir = join(agentsDir, 'agent_alpha');
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(
       join(agentDir, 'agent.yml'),
@@ -324,7 +324,7 @@ describe('self-config tools — Agent.load wiring guard', () => {
       ].join('\n'),
       'utf-8',
     );
-    writeFileSync(join(agentDir, 'CLAUDE.md'), 'You are amina.', 'utf-8');
+    writeFileSync(join(agentDir, 'CLAUDE.md'), 'You are agent_alpha.', 'utf-8');
 
     const agent = await Agent.load(agentDir, dataDir, () => undefined);
     const names = agent.tools.map((t) => t.name);

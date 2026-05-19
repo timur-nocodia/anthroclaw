@@ -1,5 +1,5 @@
 /**
- * Default personality baseline for the `chat_like_openclaw` safety profile.
+ * Default personality baseline for the `chat_like_anthroclaw` safety profile.
  *
  * Injected as the leading section of the system prompt for any agent on this
  * profile. Per-agent override: set `personality: <string>` in agent.yml.

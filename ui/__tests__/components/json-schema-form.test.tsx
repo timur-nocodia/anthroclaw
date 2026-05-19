@@ -1,6 +1,6 @@
 /**
  * Unit tests for JsonSchemaForm — validates the main-app UX overhaul:
- *  1. `_model` / `model` fields render a dropdown of canonical Anthropic
+ *  1. `_model` / `model` fields render a dropdown of runtime
  *     models, with an "inherit" option and a custom-value passthrough.
  *  2. Field labels show a `?` tooltip whose text comes from `description`.
  *  3. Object children render as titled <Section/> cards (not bare fieldsets).
@@ -10,7 +10,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { JsonSchemaForm } from "@/components/plugins/JsonSchemaForm";
-import { ANTHROPIC_MODELS } from "@/lib/anthropic-models";
+import { STATIC_RUNTIME_MODEL_OPTIONS } from "@/lib/runtime-models";
 
 describe("<JsonSchemaForm /> — model dropdown", () => {
   const schema = {
@@ -28,7 +28,7 @@ describe("<JsonSchemaForm /> — model dropdown", () => {
     },
   };
 
-  it("renders *_model fields as a select with the canonical Anthropic models", () => {
+  it("renders *_model fields as a select with the runtime model options", () => {
     render(
       <JsonSchemaForm
         schema={schema}
@@ -46,11 +46,12 @@ describe("<JsonSchemaForm /> — model dropdown", () => {
     expect(select.dataset.modelSelect).toBeTruthy();
 
     const optionValues = Array.from(select.options).map((o) => o.value);
-    // The leading empty option (= inherit from agent) plus every canonical model.
+    // The leading empty option (= inherit from agent) plus every runtime model.
     expect(optionValues).toContain("");
-    for (const m of ANTHROPIC_MODELS) {
-      expect(optionValues).toContain(m);
+    for (const m of STATIC_RUNTIME_MODEL_OPTIONS) {
+      expect(optionValues).toContain(m.id);
     }
+    expect(optionValues).toContain("openai/gpt-5-mini");
   });
 
   it("preserves a custom value not in the canonical list as a passthrough option", () => {
@@ -74,7 +75,7 @@ describe("<JsonSchemaForm /> — model dropdown", () => {
   it("changing dropdown to empty calls onChange(undefined) — inherit semantics", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    const startValue = ANTHROPIC_MODELS[0];
+    const startValue = STATIC_RUNTIME_MODEL_OPTIONS[0]?.id ?? "anthropic/claude-sonnet-4-6";
     render(
       <JsonSchemaForm
         schema={schema}

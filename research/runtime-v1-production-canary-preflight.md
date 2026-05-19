@@ -23,9 +23,9 @@ This note started as the first real AnthroClaw Pi production canary preflight an
 | --- | --- | --- |
 | `example` | Preferred first canary candidate | Private Telegram DM route with an allowlist, no enabled cron jobs, simple local workspace, and easy rollback by removing a single per-agent runtime override. |
 | `project-manager` | Possible later candidate | Small tool surface, but group route and no allowlist make it a worse first canary target. |
-| `content_sm_building` | Not first | Group route, broader content/tool surface, and media/search tools increase observation and side-effect risk. |
-| `leads_agent` | Not first | Public safety profile and WhatsApp DM lead flow are poor first-canary characteristics. |
-| `amina` | Not enough config evidence | Local directory currently has credential storage but no readable `agent.yml` in the checked path. |
+| `group_content_agent` | Not first | Group route, broader content/tool surface, and media/search tools increase observation and side-effect risk. |
+| `customer_intake_agent` | Not first | Public safety profile and WhatsApp DM lead flow are poor first-canary characteristics. |
+| `support_agent` | Not enough config evidence | Local directory currently has credential storage but no readable `agent.yml` in the checked path. |
 
 ## Recommended First Window
 
@@ -40,8 +40,8 @@ runtime:
 Use the guarded CLI rather than editing YAML directly:
 
 ```bash
-pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --enable-pi --json
-pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --enable-pi --apply --json
+pnpm runtime:pi-canary-agent -- --agents-dir /path/to/anthroclaw/agents --agent example --enable-pi --json
+pnpm runtime:pi-canary-agent -- --agents-dir /path/to/anthroclaw/agents --agent example --enable-pi --apply --json
 ```
 
 Observed dry-run before any live change: `example` currently resolves to `claude-agent-sdk`; enabling Pi would change the provider and would not write until `--apply` is present.
@@ -49,8 +49,8 @@ Observed dry-run before any live change: `example` currently resolves to `claude
 Config-only rehearsal evidence from 2026-05-16:
 
 - no AnthroClaw Gateway/channel process was running, so no live messages were dispatched;
-- `pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --enable-pi --apply --json` created a pre-canary backup and wrote the temporary Pi override;
-- `pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --restore-backup <backupPath> --apply --json` restored the exact original file;
+- `pnpm runtime:pi-canary-agent -- --agents-dir /path/to/anthroclaw/agents --agent example --enable-pi --apply --json` created a pre-canary backup and wrote the temporary Pi override;
+- `pnpm runtime:pi-canary-agent -- --agents-dir /path/to/anthroclaw/agents --agent example --restore-backup <backupPath> --apply --json` restored the exact original file;
 - final `agent.yml` hash matched the original hash `3740020ff3ba6523c32c1c3ac8053be0ef832a7c56233d777d2280356887b036`;
 - rehearsal backup artifacts were removed after verification to avoid accidentally committing local operational files.
 
@@ -81,7 +81,7 @@ Limited Web UI production canary evidence from 2026-05-17:
 
 Gateway hot-reload rehearsal evidence from 2026-05-16:
 
-- Gateway started from the current Runtime v1 worktree using real local `config.yml`, `agents`, `data`, and `plugins` paths from `/Users/tyess/dev/openclaw-agents-sdk-clone`;
+- Gateway started from the current Runtime v1 worktree using real local `config.yml`, `agents`, `data`, and `plugins` paths from `/path/to/anthroclaw`;
 - Telegram polling started for the configured bot account;
 - guarded `example` enable wrote `runtime.headless.provider=pi` while Gateway was running;
 - ConfigWatcher detected `example/agent.yml` and completed hot reload after the Pi write;
@@ -161,8 +161,8 @@ After rollback, verify the operator API/dashboard resolves the agent back to `cl
 Guarded rollback command:
 
 ```bash
-pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --restore-backup <backupPath-from-enable-pi> --json
-pnpm runtime:pi-canary-agent -- --agents-dir /Users/tyess/dev/openclaw-agents-sdk-clone/agents --agent example --restore-backup <backupPath-from-enable-pi> --apply --json
+pnpm runtime:pi-canary-agent -- --agents-dir /path/to/anthroclaw/agents --agent example --restore-backup <backupPath-from-enable-pi> --json
+pnpm runtime:pi-canary-agent -- --agents-dir /path/to/anthroclaw/agents --agent example --restore-backup <backupPath-from-enable-pi> --apply --json
 ```
 
 Use `--rollback --apply` only as a fallback when the original `agent.yml.bak-*` path is unavailable; exact backup restore should be the first choice for the `example` canary because it currently has no explicit runtime override.

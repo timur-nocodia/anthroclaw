@@ -41,7 +41,7 @@ afterEach(() => {
 
 const cred = {
   service: 'google_calendar',
-  account: 'timur@nocodia.dev',
+  account: 'operator@example.com',
   accessToken: 'ya29.abc',
   refreshToken: '1//refresh',
   expiresAt: 1_700_000_000_000,
@@ -121,7 +121,7 @@ describe('EncryptedFilesystemCredentialStore', () => {
     expect(meta[0]).not.toHaveProperty('accessToken');
     expect(meta[0]).not.toHaveProperty('refreshToken');
     expect(meta[0].service).toBe('google_calendar');
-    expect(meta[0].account).toBe('timur@nocodia.dev');
+    expect(meta[0].account).toBe('operator@example.com');
     expect(meta[0].scopes).toEqual(['calendar.readonly']);
   });
 

@@ -448,7 +448,7 @@ function buildExternalMcpCapabilities(agents: AgentConfigCarrier[]): Integration
         },
         false,
       ),
-      reason: 'External MCP server is configured in agent.yml and passed through Claude Agent SDK mcpServers.',
+      reason: 'External MCP server is configured in agent.yml and exposed through the runtime MCP bridge.',
     }));
 }
 
@@ -520,7 +520,7 @@ function externalPresetReason(
   if (status === 'missing_config') {
     return `Configured preset is missing required env: ${missingEnv.join(', ')}`;
   }
-  return `${preset.provider} MCP preset is configured and exposed through Claude Agent SDK mcpServers.`;
+  return `${preset.provider} MCP preset is configured and exposed through the runtime MCP bridge.`;
 }
 
 function clonePermissionDefaults(

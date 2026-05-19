@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
+  Cpu,
   Plus,
   Server,
   Zap,
@@ -47,6 +48,15 @@ function fmtUptime(ms: number | null): string {
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
 }
+
+interface RuntimeFleetHealth {
+  defaultProvider: string;
+  piReady: boolean;
+  progressPercent: number | null;
+  status: "ok" | "attention" | "unknown";
+}
+
+type RuntimeFleetMap = Record<string, RuntimeFleetHealth>;
 
 /* ------------------------------------------------------------------ */
 /*  Sorting                                                            */
@@ -187,12 +197,12 @@ const REGION_COORDS: Record<string, { x: number; y: number }> = {
 /*  Fleet Grid view                                                    */
 /* ------------------------------------------------------------------ */
 
-function FleetGrid({ servers }: { servers: FleetServerStatus[] }) {
+function FleetGrid({ servers, runtimeByServer }: { servers: FleetServerStatus[]; runtimeByServer: RuntimeFleetMap }) {
   const sorted = useMemo(() => [...servers].sort(defaultSort), [servers]);
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       {sorted.map((s) => (
-        <ServerCard key={s.id} server={s} />
+        <ServerCard key={s.id} server={s} runtime={runtimeByServer[s.id]} />
       ))}
     </div>
   );
@@ -214,9 +224,10 @@ type SortKey =
   | "cpu"
   | "mem"
   | "disk"
+  | "runtime"
   | "version";
 
-function FleetList({ servers }: { servers: FleetServerStatus[] }) {
+function FleetList({ servers, runtimeByServer }: { servers: FleetServerStatus[]; runtimeByServer: RuntimeFleetMap }) {
   const [sortKey, setSortKey] = useState<SortKey>("status");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -271,6 +282,9 @@ function FleetList({ servers }: { servers: FleetServerStatus[] }) {
           break;
         case "disk":
           cmp = (a.disk ?? 0) - (b.disk ?? 0);
+          break;
+        case "runtime":
+          cmp = runtimeSortValue(runtimeByServer[a.id]) - runtimeSortValue(runtimeByServer[b.id]);
           break;
         case "version":
           cmp = (a.version ?? "").localeCompare(b.version ?? "");
@@ -328,7 +342,7 @@ function FleetList({ servers }: { servers: FleetServerStatus[] }) {
         className="grid items-center gap-2.5 px-3.5 py-2.5"
         style={{
           gridTemplateColumns:
-            "1.6fr 100px 80px 60px 60px 70px 100px 100px 100px 80px",
+            "1.55fr 95px 78px 58px 58px 68px 96px 96px 96px 98px 80px",
           background: "var(--oc-bg2)",
           borderBottom: "1px solid var(--oc-border)",
         }}
@@ -342,6 +356,7 @@ function FleetList({ servers }: { servers: FleetServerStatus[] }) {
         <SortHeader label="CPU" col="cpu" />
         <SortHeader label="MEM" col="mem" />
         <SortHeader label="DISK" col="disk" />
+        <SortHeader label="Runtime" col="runtime" />
         <SortHeader label="Version" col="version" />
       </div>
 
@@ -349,11 +364,11 @@ function FleetList({ servers }: { servers: FleetServerStatus[] }) {
       {sorted.map((s, i) => (
         <Link
           key={s.id}
-          href={`/fleet/${s.id}/`}
+          href={runtimeLinkForServer(s.id, runtimeByServer[s.id])}
           className="grid items-center gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-[var(--oc-bg2)]"
           style={{
             gridTemplateColumns:
-              "1.6fr 100px 80px 60px 60px 70px 100px 100px 100px 80px",
+              "1.55fr 95px 78px 58px 58px 68px 96px 96px 96px 98px 80px",
             borderBottom:
               i < sorted.length - 1
                 ? "1px solid var(--oc-border)"
@@ -475,6 +490,8 @@ function FleetList({ servers }: { servers: FleetServerStatus[] }) {
           {/* DISK */}
           <ResourceBar label="" value={(s.disk ?? 0) / 100} />
 
+          <RuntimeHealthBadge runtime={runtimeByServer[s.id]} />
+
           {/* Version */}
           <span
             className="text-[11px]"
@@ -488,6 +505,49 @@ function FleetList({ servers }: { servers: FleetServerStatus[] }) {
         </Link>
       ))}
     </div>
+  );
+}
+
+function runtimeSortValue(runtime: RuntimeFleetHealth | undefined): number {
+  if (!runtime) return 2;
+  if (runtime.status === "attention" || !runtime.piReady) return 0;
+  if (runtime.status === "ok") return 1;
+  return 2;
+}
+
+function runtimeLinkForServer(serverId: string, runtime: RuntimeFleetHealth | undefined): string {
+  if (runtime && (runtime.status === "attention" || !runtime.piReady)) {
+    return `/fleet/${serverId}/runtime`;
+  }
+  return `/fleet/${serverId}/`;
+}
+
+function RuntimeHealthBadge({ runtime }: { runtime?: RuntimeFleetHealth }) {
+  const tone = !runtime
+    ? "unknown"
+    : runtime.status === "attention" || !runtime.piReady
+      ? "attention"
+      : "ok";
+  const color = tone === "ok"
+    ? "var(--oc-green)"
+    : tone === "attention"
+      ? "var(--oc-yellow)"
+      : "var(--oc-text-muted)";
+  const text = runtime
+    ? `${runtime.defaultProvider}${runtime.progressPercent === null ? "" : ` ${runtime.progressPercent}%`}`
+    : "loading";
+  return (
+    <span
+      className="inline-flex w-fit items-center gap-1 rounded px-[5px] py-px text-[10px] font-medium border"
+      style={{
+        background: tone === "ok" ? "rgba(74,222,128,0.13)" : tone === "attention" ? "rgba(251,191,36,0.13)" : "rgba(255,255,255,0.04)",
+        borderColor: "var(--oc-border)",
+        color,
+      }}
+    >
+      <Cpu className="h-2.5 w-2.5" />
+      {text}
+    </span>
   );
 }
 
@@ -750,6 +810,7 @@ type EnvFilter = "all" | "production" | "staging" | "development";
 
 export default function FleetPage() {
   const [data, setData] = useState<FleetStatus | null>(null);
+  const [runtimeByServer, setRuntimeByServer] = useState<RuntimeFleetMap>({});
   const [loading, setLoading] = useState(true);
   const [envFilter, setEnvFilter] = useState<EnvFilter>("all");
   const [view, setView] = useState<ViewMode>("grid");
@@ -771,11 +832,52 @@ export default function FleetPage() {
     }
   }, []);
 
+  const fetchRuntimeHealth = useCallback(async (servers: FleetServerStatus[]) => {
+    const entries = await Promise.all(
+      servers.map(async (server) => {
+        try {
+          const [statusRes, expansionRes] = await Promise.all([
+            fetch(`/api/fleet/${server.id}/runtime/status`),
+            fetch(`/api/fleet/${server.id}/runtime/expansion-status`),
+          ]);
+          if (!statusRes.ok || !expansionRes.ok) throw new Error("runtime_unavailable");
+          const status = await statusRes.json() as {
+            defaultProvider?: string;
+            pi?: { packageAvailable?: boolean; authConfigured?: boolean; modelsConfigured?: boolean };
+          };
+          const expansion = await expansionRes.json() as {
+            status?: "passed" | "attention";
+            summary?: { evidenceProgressPercent?: number };
+          };
+          const health: RuntimeFleetHealth = {
+            defaultProvider: status.defaultProvider ?? "unknown",
+            piReady: Boolean(status.defaultProvider === "pi" && status.pi?.packageAvailable && status.pi?.authConfigured && status.pi?.modelsConfigured),
+            progressPercent: typeof expansion.summary?.evidenceProgressPercent === "number" ? expansion.summary.evidenceProgressPercent : null,
+            status: expansion.status === "attention" ? "attention" : "ok",
+          };
+          return [server.id, health] as const;
+        } catch {
+          return [server.id, {
+            defaultProvider: "unknown",
+            piReady: false,
+            progressPercent: null,
+            status: "unknown" as const,
+          }] as const;
+        }
+      }),
+    );
+    setRuntimeByServer(Object.fromEntries(entries));
+  }, []);
+
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 30_000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  useEffect(() => {
+    if (data?.servers.length) void fetchRuntimeHealth(data.servers);
+  }, [data?.servers, fetchRuntimeHealth]);
 
   /* ---- Loading ---- */
   if (loading && !data) {
@@ -1009,8 +1111,8 @@ export default function FleetPage() {
           </div>
         ) : (
           <>
-            {view === "grid" && <FleetGrid servers={servers} />}
-            {view === "list" && <FleetList servers={servers} />}
+            {view === "grid" && <FleetGrid servers={servers} runtimeByServer={runtimeByServer} />}
+            {view === "list" && <FleetList servers={servers} runtimeByServer={runtimeByServer} />}
             {view === "map" && <FleetMap servers={servers} />}
           </>
         )}

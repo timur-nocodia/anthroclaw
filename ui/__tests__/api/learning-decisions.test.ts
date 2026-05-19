@@ -291,7 +291,7 @@ describe('/api/agents/[agentId]/learning decisions', () => {
     decisionStore.recordDelivery('decision-1', {
       channel: 'telegram',
       accountId: 'main',
-      peerId: '48705953',
+      peerId: '123456789',
       messageId: 'tg-msg-1',
       status: 'sent',
       createdAt: 2100,
@@ -299,7 +299,7 @@ describe('/api/agents/[agentId]/learning decisions', () => {
     decisionStore.updateDecisionStatus('decision-1', 'approved', {
       updatedAt: 2200,
       decidedBy: 'admin',
-      actorSenderId: '48705953',
+      actorSenderId: '123456789',
       channel: 'telegram',
       reason: 'admin_approved',
     });
@@ -319,7 +319,7 @@ describe('/api/agents/[agentId]/learning decisions', () => {
         expect.objectContaining({
           channel: 'telegram',
           accountId: 'main',
-          peerId: '48705953',
+          peerId: '123456789',
           messageId: 'tg-msg-1',
           status: 'sent',
         }),
@@ -329,7 +329,7 @@ describe('/api/agents/[agentId]/learning decisions', () => {
         expect.objectContaining({
           fromStatus: 'pending',
           toStatus: 'approved',
-          actorSenderId: '48705953',
+          actorSenderId: '123456789',
           channel: 'telegram',
           reason: 'admin_approved',
         }),
@@ -352,11 +352,11 @@ describe('/api/agents/[agentId]/learning decisions', () => {
       '      routes:',
       '        - channel: telegram',
       '          account_id: main',
-      '          peer_id: "48705953"',
+      '          peer_id: "123456789"',
       '      senders:',
       '        telegram:',
       '          main:',
-      '            - "48705953"',
+      '            - "123456789"',
       '      notify_admin_for:',
       '        - learning_skill',
     ].join('\n'));
@@ -371,8 +371,8 @@ describe('/api/agents/[agentId]/learning decisions', () => {
     const body = await res.json();
     expect(body.config.learning.approvals.admin).toMatchObject({
       notify: true,
-      routes: [expect.objectContaining({ channel: 'telegram', account_id: 'main', peer_id: '48705953' })],
-      senders: { telegram: { main: ['48705953'] } },
+      routes: [expect.objectContaining({ channel: 'telegram', account_id: 'main', peer_id: '123456789' })],
+      senders: { telegram: { main: ['123456789'] } },
       notify_admin_for: ['learning_skill'],
     });
   });
@@ -631,7 +631,7 @@ describe('/api/agents/[agentId]/learning decisions', () => {
           decisionId: 'decision-1',
           channel: 'telegram',
           accountId: 'main',
-          peerId: '48705953',
+          peerId: '123456789',
           messageId: 'resent-msg-1',
           status: 'sent',
         },

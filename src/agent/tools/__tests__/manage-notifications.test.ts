@@ -23,7 +23,7 @@ function seedAgent(agentsDir: string, agentId: string, body = baseAgentYml()): v
 function baseAgentYml(): string {
   return [
     '# test agent',
-    'safety_profile: chat_like_openclaw',
+    'safety_profile: chat_like_anthroclaw',
     'routes:',
     '  - { channel: whatsapp }',
     '',
@@ -34,8 +34,8 @@ describe('manage_notifications', () => {
   let agentsDir: string;
   beforeEach(() => {
     agentsDir = mkdtempSync(join(tmpdir(), 'mn-'));
-    seedAgent(agentsDir, 'amina');
-    seedAgent(agentsDir, 'klavdia');
+    seedAgent(agentsDir, 'agent_alpha');
+    seedAgent(agentsDir, 'operator_agent');
   });
   afterEach(() => {
     rmSync(agentsDir, { recursive: true, force: true });
@@ -44,7 +44,7 @@ describe('manage_notifications', () => {
   it('action=set_enabled toggles the flag and patches the file', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createManageNotificationsTool({
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       writer,
       canManage: () => true,
     });
@@ -52,32 +52,32 @@ describe('manage_notifications', () => {
     expect(r.isError).toBeFalsy();
     const body = JSON.parse(r.content[0].text);
     expect(body).toMatchObject({ ok: true, changed: true, enabled: true });
-    expect(writer.readSection('amina', 'notifications')).toMatchObject({ enabled: true });
+    expect(writer.readSection('agent_alpha', 'notifications')).toMatchObject({ enabled: true });
   });
 
   it('action=add_route appends a named route', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageNotificationsTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     const r = await getHandler(t)({
       action: {
         kind: 'add_route',
         name: 'operator',
-        route: { channel: 'telegram', account_id: 'control', peer_id: '48705953' },
+        route: { channel: 'telegram', account_id: 'control', peer_id: '123456789' },
       },
     });
     expect(r.isError).toBeFalsy();
     expect(JSON.parse(r.content[0].text)).toMatchObject({ ok: true, changed: true });
-    const block = writer.readSection('amina', 'notifications') as { routes: Record<string, unknown> };
+    const block = writer.readSection('agent_alpha', 'notifications') as { routes: Record<string, unknown> };
     expect(block.routes.operator).toMatchObject({
       channel: 'telegram',
       account_id: 'control',
-      peer_id: '48705953',
+      peer_id: '123456789',
     });
   });
 
   it('action=add_route is idempotent: first call changed=true, second call changed=false', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageNotificationsTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     const route = { channel: 'telegram' as const, account_id: 'c', peer_id: 'p' };
     const r1 = await getHandler(t)({ action: { kind: 'add_route', name: 'operator', route } });
     expect(JSON.parse(r1.content[0].text)).toMatchObject({ ok: true, changed: true });
@@ -87,7 +87,7 @@ describe('manage_notifications', () => {
 
   it('action=add_route on existing name with different value reports changed=true', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageNotificationsTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     const route1 = { channel: 'telegram' as const, account_id: 'c', peer_id: 'p1' };
     const route2 = { channel: 'telegram' as const, account_id: 'c', peer_id: 'p2' };
     await getHandler(t)({ action: { kind: 'add_route', name: 'operator', route: route1 } });
@@ -97,7 +97,7 @@ describe('manage_notifications', () => {
 
   it('action=set_enabled is idempotent: applying same value reports changed=false', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageNotificationsTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     const r1 = await getHandler(t)({ action: { kind: 'set_enabled', enabled: true } });
     expect(JSON.parse(r1.content[0].text)).toMatchObject({ ok: true, changed: true, enabled: true });
     const r2 = await getHandler(t)({ action: { kind: 'set_enabled', enabled: true } });
@@ -108,7 +108,7 @@ describe('manage_notifications', () => {
 
   it('action=remove_route deletes by name; idempotent', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageNotificationsTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     await getHandler(t)({
       action: {
         kind: 'add_route',
@@ -124,7 +124,7 @@ describe('manage_notifications', () => {
 
   it('action=list_routes returns existing routes', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageNotificationsTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     await getHandler(t)({
       action: {
         kind: 'add_route',
@@ -140,7 +140,7 @@ describe('manage_notifications', () => {
 
   it('action=add_subscription appends and returns its index', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageNotificationsTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     await getHandler(t)({
       action: {
         kind: 'add_route',
@@ -159,7 +159,7 @@ describe('manage_notifications', () => {
 
   it('action=remove_subscription deletes by index', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageNotificationsTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     await getHandler(t)({
       action: {
         kind: 'add_route',
@@ -181,7 +181,7 @@ describe('manage_notifications', () => {
 
   it('action=list_subscriptions returns the array', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageNotificationsTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     await getHandler(t)({
       action: {
         kind: 'add_route',
@@ -205,7 +205,7 @@ describe('manage_notifications', () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const dispatchTest = vi.fn().mockResolvedValue(undefined);
     const t = createManageNotificationsTool({
-      agentId: 'amina',
+      agentId: 'agent_alpha',
       writer,
       canManage: () => true,
       dispatchTest,
@@ -221,7 +221,7 @@ describe('manage_notifications', () => {
     expect(JSON.parse(r.content[0].text)).toMatchObject({ ok: true, dispatched: true });
     expect(dispatchTest).toHaveBeenCalledWith(
       expect.objectContaining({
-        agentId: 'amina',
+        agentId: 'agent_alpha',
         routeName: 'operator',
         route: expect.objectContaining({ channel: 'telegram' }),
       }),
@@ -230,7 +230,7 @@ describe('manage_notifications', () => {
 
   it('action=test with unknown route returns error', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageNotificationsTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     const r = await getHandler(t)({ action: { kind: 'test', route_name: 'nope' } });
     expect(r.isError).toBe(true);
     expect(JSON.parse(r.content[0].text)).toMatchObject({ ok: false });
@@ -239,12 +239,12 @@ describe('manage_notifications', () => {
   it('rejects cross-agent target without manage permission', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createManageNotificationsTool({
-      agentId: 'klavdia',
+      agentId: 'operator_agent',
       writer,
       canManage: () => false,
     });
     const r = await getHandler(t)({
-      target_agent_id: 'amina',
+      target_agent_id: 'agent_alpha',
       action: { kind: 'set_enabled', enabled: true },
     });
     expect(r.isError).toBe(true);
@@ -254,21 +254,21 @@ describe('manage_notifications', () => {
   it('allows cross-agent target when canManage returns true', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createManageNotificationsTool({
-      agentId: 'klavdia',
+      agentId: 'operator_agent',
       writer,
-      canManage: (caller, target) => caller === 'klavdia' && target === 'amina',
+      canManage: (caller, target) => caller === 'operator_agent' && target === 'agent_alpha',
     });
     const r = await getHandler(t)({
-      target_agent_id: 'amina',
+      target_agent_id: 'agent_alpha',
       action: { kind: 'set_enabled', enabled: true },
     });
     expect(r.isError).toBeFalsy();
-    expect(writer.readSection('amina', 'notifications')).toMatchObject({ enabled: true });
+    expect(writer.readSection('agent_alpha', 'notifications')).toMatchObject({ enabled: true });
   });
 
   it('rejects malformed input via Zod', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
-    const t = createManageNotificationsTool({ agentId: 'amina', writer, canManage: () => true });
+    const t = createManageNotificationsTool({ agentId: 'agent_alpha', writer, canManage: () => true });
     const r = await getHandler(t)({ action: { kind: 'add_route', name: '' } });
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toMatch(/Invalid input/);

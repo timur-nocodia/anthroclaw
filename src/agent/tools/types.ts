@@ -11,4 +11,4 @@ export interface ToolDefinition {
 }
 
 // Re-export the SDK MCP server type for convenience
-export type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
+export type { McpSdkServerConfigWithInstance } from '@anthroclaw/legacy-claude-agent-sdk';

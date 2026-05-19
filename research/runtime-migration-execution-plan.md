@@ -4,21 +4,21 @@ Date: 2026-05-16
 
 ## Decision summary
 
-AnthroClaw should own the agentic harness/control plane. External runtimes should provide the model/tool loop substrate, but AnthroClaw remains authoritative for sessions, routing, policy, approvals, tools, MCP proxying, observability, checkpoints, learning, and operator UX.
+AnthroClaw should own the agentic harness/control plane. Pi should provide the model/tool loop substrate, but AnthroClaw remains authoritative for sessions, routing, policy, approvals, tools, MCP proxying, observability, checkpoints, learning, and operator UX.
 
 The migration track is **Pi-first**:
 
 - Pi is the best near-term replacement because it is small enough to embed and modify like a set of composable parts.
-- OpenCode remains a parity benchmark, not the primary migration, unless Pi hits a hard runtime limitation.
+- OpenCode remains a reference benchmark, not the primary migration, unless Pi hits a hard runtime limitation.
 - OpenAI Agents SDK and Copilot SDK remain strategic/vendor-backed references, but they are not the immediate path for replacing Claude Agent SDK inside AnthroClaw.
 
-The migration should not be a big-bang swap. The correct path is to keep Claude Agent SDK as the production baseline while moving every AnthroClaw dependency behind a runtime contract, proving Pi against that contract, canarying per agent, then flipping the default only after real smoke evidence and production canary evidence are both clean.
+The migration should not be a big-bang swap. The correct path is to keep Claude Agent SDK only as a legacy fallback while moving every AnthroClaw dependency behind a runtime contract, proving Pi-native behavior against that contract, canarying per runtime surface, then flipping the default only after real smoke evidence and production canary evidence are both clean.
 
 ## Current state
 
 The current stack already has the hard foundation:
 
-- runtime boundary around Claude Agent SDK behavior;
+- runtime boundary around AnthroClaw product behavior;
 - normalized runtime events;
 - `HeadlessRuntime` contract;
 - Pi adapter as an optional dependency;
@@ -29,7 +29,7 @@ The current stack already has the hard foundation:
 - AnthroClaw permission broker wired into Pi tool policy;
 - AnthroClaw local tools exposed through Pi custom tools;
 - external MCP proxying through AnthroClaw-owned wrappers;
-- active-run, interrupt, session alias, checkpoint-control registry parity;
+- active-run, interrupt, session alias, and checkpoint-control registries;
 - AnthroClaw-owned workspace snapshot rewind for Pi Gateway runs;
 - local real Pi smoke probes;
 - aggregate `smoke:pi-all`;
@@ -50,12 +50,12 @@ The current contract matrix says Pi passes the required v0 scenarios. That does 
 
 ## Non-negotiable migration rules
 
-- Do not replace Claude behavior and introduce a new candidate in the same PR.
+- Do not copy Claude Agent SDK internals when a Pi-native AnthroClaw-owned primitive is the right product boundary.
 - Do not let Pi/OpenCode-specific event shapes leak into Gateway.
 - Do not let candidate runtimes own AnthroClaw policy decisions.
 - Do not store provider credentials in repo, config examples, PR bodies, logs, or test artifacts.
 - Do not switch the global default before per-agent canaries pass.
-- Do not remove Claude Agent SDK until rollback has been exercised and documented.
+- Do not remove Claude Agent SDK legacy fallback until rollback has been exercised and documented.
 - Every runtime path must have unit coverage, contract coverage, and at least one real smoke path when credentials are available.
 
 ## Definition of complete migration
@@ -393,7 +393,7 @@ Tasks:
 - Change global default runtime from Claude Agent SDK to Pi.
 - Keep per-agent `claude-agent-sdk` override for rollback.
 - Update config schema docs and examples.
-- Update README positioning: AnthroClaw is runtime-contract-native / Pi-backed by default, not Claude Agent SDK-native.
+- Update README positioning: AnthroClaw is Pi-native Runtime v1 by default, with Claude Agent SDK only as legacy fallback.
 - Update smoke/CI expectations so Pi smoke is the default real-runtime gate.
 - Add release note with migration steps for existing installs.
 

@@ -12,6 +12,7 @@ interface PiExpansionAuditArgs {
   agentsDirs: string[];
   agent?: string;
   expectAgents: string[];
+  requirePacketsDir?: string;
   maxRisk?: ExpansionRisk;
   json: boolean;
   help: boolean;
@@ -65,6 +66,13 @@ interface PiExpansionAuditResult {
   agents: AgentExpansionAudit[];
   riskBudgetExceeded: boolean;
   coverageGap: boolean;
+  packetCoverageGap: boolean;
+  packetCoverage?: {
+    packetsDir: string;
+    requiredAgents: string[];
+    present: string[];
+    missing: string[];
+  };
   expectedAgentsMissing: string[];
   skippedDirectories: Array<{ agentsDir: string; name: string; reason: string }>;
   errors: Array<{ agentId: string; error: string }>;
@@ -112,7 +120,7 @@ export async function runPiExpansionAuditCli(
   try {
     const result = auditPiExpansionReadiness(args);
     stdout.write(args.json ? `${JSON.stringify(result)}\n` : renderHuman(result));
-    return result.riskBudgetExceeded || result.coverageGap ? 1 : 0;
+    return result.riskBudgetExceeded || result.coverageGap || result.packetCoverageGap ? 1 : 0;
   } catch (err) {
     stderr.write(`${redactSecrets(message(err))}\n`);
     return 1;
@@ -146,6 +154,9 @@ export function parsePiExpansionAuditArgs(argv: string[]): PiExpansionAuditArgs 
       case '--expect-agent':
         args.expectAgents.push(requireValue(argv, ++i, '--expect-agent'));
         break;
+      case '--require-packets-dir':
+        args.requirePacketsDir = requireValue(argv, ++i, '--require-packets-dir');
+        break;
       case '--max-risk':
         args.maxRisk = parseRisk(requireValue(argv, ++i, '--max-risk'));
         break;
@@ -171,6 +182,7 @@ export function auditPiExpansionReadiness(input: {
   agentsDirs?: string[];
   agent?: string;
   expectAgents?: string[];
+  requirePacketsDir?: string;
   maxRisk?: ExpansionRisk;
 }): PiExpansionAuditResult {
   const agentsDirs = normalizeAgentsDirs(input.agentsDirs ?? [input.agentsDir]);
@@ -219,11 +231,16 @@ export function auditPiExpansionReadiness(input: {
     .sort();
   const duplicateAgentErrors = errors.filter((err) => err.error.includes('duplicate agent id'));
   const coverageGap = expectedAgentsMissing.length > 0 || duplicateAgentErrors.length > 0;
+  const packetCoverage = input.requirePacketsDir
+    ? auditPacketCoverage(resolve(input.requirePacketsDir), agents)
+    : undefined;
+  const packetCoverageGap = packetCoverage ? packetCoverage.missing.length > 0 : false;
 
   return {
     status: agents.some((agent) => agent.risk === 'high' || agent.risk === 'critical')
         || errors.length > 0
         || coverageGap
+        || packetCoverageGap
       ? 'attention'
       : 'passed',
     agentsDir: agentsDirs[0] ?? resolve(input.agentsDir),
@@ -239,6 +256,8 @@ export function auditPiExpansionReadiness(input: {
     agents,
     riskBudgetExceeded,
     coverageGap,
+    packetCoverageGap,
+    ...(packetCoverage ? { packetCoverage } : {}),
     expectedAgentsMissing,
     skippedDirectories,
     errors,
@@ -428,10 +447,40 @@ function renderHuman(result: PiExpansionAuditResult): string {
   if (result.expectedAgentsMissing.length > 0) {
     lines.push('', `Missing expected agents: ${result.expectedAgentsMissing.join(', ')}`);
   }
+  if (result.packetCoverage) {
+    lines.push(
+      '',
+      `Packet coverage: ${result.packetCoverage.present.length}/${result.packetCoverage.requiredAgents.length} required high-risk packets present`,
+    );
+    if (result.packetCoverage.missing.length > 0) {
+      lines.push(`Missing packets: ${result.packetCoverage.missing.join(', ')}`);
+    }
+  }
   if (result.skippedDirectories.length > 0) {
     lines.push('', 'Skipped directories:', ...result.skippedDirectories.map((entry) => `${entry.name}: ${entry.reason}`));
   }
   return `${lines.join('\n')}\n`;
+}
+
+function auditPacketCoverage(
+  packetsDir: string,
+  agents: AgentExpansionAudit[],
+): NonNullable<PiExpansionAuditResult['packetCoverage']> {
+  const requiredAgents = agents
+    .filter((agent) => riskScore(agent.risk) >= riskScore('high'))
+    .map((agent) => agent.id)
+    .sort();
+  const present = requiredAgents
+    .filter((agentId) => existsSync(resolve(packetsDir, `${agentId}.md`)));
+  const missing = requiredAgents
+    .filter((agentId) => !present.includes(agentId));
+
+  return {
+    packetsDir,
+    requiredAgents,
+    present,
+    missing,
+  };
 }
 
 function normalizeAgentsDirs(agentsDirs: string[]): string[] {
@@ -475,6 +524,7 @@ function usage(): string {
     '  --agents-dir <path>  agents directory to scan (default: OC_AGENTS_DIR or ./agents)',
     '  --agent <id>         scan only one agent id',
     '  --expect-agent <id>  fail with a coverage gap when an expected agent.yml is absent; repeatable',
+    '  --require-packets-dir <path>  fail when high/critical agents do not have <agent>.md expansion packets',
     '  --max-risk <risk>    exit 1 when any agent exceeds low|medium|high|critical',
     '  --json               print structured result',
   ].join('\n');

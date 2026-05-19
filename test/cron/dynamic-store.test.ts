@@ -79,14 +79,14 @@ describe('DynamicCronStore', () => {
       prompt: 'lunch',
       deliverTo: {
         channel: 'telegram',
-        peer_id: '48705953',
+        peer_id: '123456789',
         account_id: 'content_sm',
         thread_id: 'topic-1',
       },
       createdBy: {
         channel: 'telegram',
-        sender_id: '48705953',
-        peer_id: '48705953',
+        sender_id: '123456789',
+        peer_id: '123456789',
         account_id: 'content_sm',
         thread_id: 'topic-1',
       },
@@ -103,14 +103,14 @@ describe('DynamicCronStore', () => {
     expect(jobs[0]).toMatchObject({
       deliverTo: {
         channel: 'telegram',
-        peer_id: '48705953',
+        peer_id: '123456789',
         account_id: 'content_sm',
         thread_id: 'topic-1',
       },
       createdBy: {
         channel: 'telegram',
-        sender_id: '48705953',
-        peer_id: '48705953',
+        sender_id: '123456789',
+        peer_id: '123456789',
         account_id: 'content_sm',
         thread_id: 'topic-1',
       },

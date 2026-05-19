@@ -10,7 +10,7 @@ beforeEach(() => {
 
 describe("HumanTakeoverCard", () => {
   it("renders with defaults when initialConfig is omitted", () => {
-    render(<HumanTakeoverCard agentId="amina" />);
+    render(<HumanTakeoverCard agentId="agent_alpha" />);
     expect(screen.getByText(/auto-pause on human takeover/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/enabled/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/pause TTL/i)).toHaveValue(30);
@@ -20,7 +20,7 @@ describe("HumanTakeoverCard", () => {
   it("renders provided initialConfig values", () => {
     render(
       <HumanTakeoverCard
-        agentId="amina"
+        agentId="agent_alpha"
         initialConfig={{
           enabled: true,
           pause_ttl_minutes: 60,
@@ -37,7 +37,7 @@ describe("HumanTakeoverCard", () => {
   });
 
   it("toggling enabled marks the form dirty (Save becomes enabled)", () => {
-    render(<HumanTakeoverCard agentId="amina" />);
+    render(<HumanTakeoverCard agentId="agent_alpha" />);
     const save = screen.getByRole("button", { name: /save/i });
     expect(save).toBeDisabled();
     fireEvent.click(screen.getByLabelText(/enabled/i));
@@ -46,7 +46,7 @@ describe("HumanTakeoverCard", () => {
 
   it("invokes onSave with the new config", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
-    render(<HumanTakeoverCard agentId="amina" onSave={onSave} />);
+    render(<HumanTakeoverCard agentId="agent_alpha" onSave={onSave} />);
     fireEvent.click(screen.getByLabelText(/enabled/i));
     fireEvent.change(screen.getByLabelText(/pause TTL/i), { target: { value: "45" } });
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
@@ -70,7 +70,7 @@ describe("HumanTakeoverCard", () => {
         });
       }
       expect(method).toBe("PATCH");
-      expect(url).toContain("/api/agents/amina/config");
+      expect(url).toContain("/api/agents/agent_alpha/config");
       const body = JSON.parse(init!.body as string) as { section: string; value: Record<string, unknown> };
       expect(body.section).toBe("human_takeover");
       expect(body.value).toMatchObject({ enabled: true });
@@ -79,7 +79,7 @@ describe("HumanTakeoverCard", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<HumanTakeoverCard agentId="amina" />);
+    render(<HumanTakeoverCard agentId="agent_alpha" />);
     fireEvent.click(screen.getByLabelText(/enabled/i));
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(patchCalls).toBe(1));
@@ -87,7 +87,7 @@ describe("HumanTakeoverCard", () => {
 
   it("shows an error when onSave rejects", async () => {
     const onSave = vi.fn().mockRejectedValue(new Error("nope"));
-    render(<HumanTakeoverCard agentId="amina" onSave={onSave} />);
+    render(<HumanTakeoverCard agentId="agent_alpha" onSave={onSave} />);
     fireEvent.click(screen.getByLabelText(/enabled/i));
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(screen.getByText(/nope/)).toBeInTheDocument());
@@ -96,7 +96,7 @@ describe("HumanTakeoverCard", () => {
   it("toggles a channel badge on click", () => {
     render(
       <HumanTakeoverCard
-        agentId="amina"
+        agentId="agent_alpha"
         initialConfig={{ enabled: true, channels: ["whatsapp"] }}
       />,
     );

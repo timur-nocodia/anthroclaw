@@ -19,7 +19,7 @@ function getHandler(t: unknown): (a: Record<string, unknown>) => Promise<{
 function baseAgentYml(): string {
   return [
     '# test agent',
-    'safety_profile: chat_like_openclaw',
+    'safety_profile: chat_like_anthroclaw',
     'routes:',
     '  - { channel: whatsapp }',
     '',
@@ -46,8 +46,8 @@ describe('show_config', () => {
   beforeEach(() => {
     agentsDir = mkdtempSync(join(tmpdir(), 'sc-'));
     auditDir = mkdtempSync(join(tmpdir(), 'sc-audit-'));
-    seedAgent(agentsDir, 'amina');
-    seedAgent(agentsDir, 'klavdia');
+    seedAgent(agentsDir, 'agent_alpha');
+    seedAgent(agentsDir, 'operator_agent');
   });
   afterEach(() => {
     rmSync(agentsDir, { recursive: true, force: true });
@@ -55,15 +55,15 @@ describe('show_config', () => {
   });
 
   it('returns requested section with schema defaults applied', async () => {
-    seedAgent(agentsDir, 'amina', withHumanTakeover(true));
+    seedAgent(agentsDir, 'agent_alpha', withHumanTakeover(true));
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createShowConfigTool({
-      agentId: 'amina', writer, canManage: () => true,
+      agentId: 'agent_alpha', writer, canManage: () => true,
     });
     const r = await getHandler(t)({ sections: ['human_takeover'] });
     expect(r.isError).toBeFalsy();
     const body = JSON.parse(r.content[0].text);
-    expect(body.agent_id).toBe('amina');
+    expect(body.agent_id).toBe('agent_alpha');
     expect(body.sections.human_takeover).toMatchObject({
       enabled: true,
       pause_ttl_minutes: 30,
@@ -75,7 +75,7 @@ describe('show_config', () => {
   it('"all" returns all three sections with defaults applied', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createShowConfigTool({
-      agentId: 'amina', writer, canManage: () => true,
+      agentId: 'agent_alpha', writer, canManage: () => true,
     });
     const r = await getHandler(t)({ sections: ['all'] });
     const body = JSON.parse(r.content[0].text);
@@ -87,7 +87,7 @@ describe('show_config', () => {
   it('omitting sections returns all three', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createShowConfigTool({
-      agentId: 'amina', writer, canManage: () => true,
+      agentId: 'agent_alpha', writer, canManage: () => true,
     });
     const r = await getHandler(t)({});
     const body = JSON.parse(r.content[0].text);
@@ -99,7 +99,7 @@ describe('show_config', () => {
   it('self-target works without manage permission', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createShowConfigTool({
-      agentId: 'amina', writer, canManage: () => false,
+      agentId: 'agent_alpha', writer, canManage: () => false,
     });
     const r = await getHandler(t)({ sections: ['notifications'] });
     expect(r.isError).toBeFalsy();
@@ -108,10 +108,10 @@ describe('show_config', () => {
   it('cross-agent target requires manage permission', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createShowConfigTool({
-      agentId: 'klavdia', writer, canManage: () => false,
+      agentId: 'operator_agent', writer, canManage: () => false,
     });
     const r = await getHandler(t)({
-      target_agent_id: 'amina',
+      target_agent_id: 'agent_alpha',
       sections: ['notifications'],
     });
     expect(r.isError).toBe(true);
@@ -121,26 +121,26 @@ describe('show_config', () => {
   it('cross-agent target succeeds when authorized', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const t = createShowConfigTool({
-      agentId: 'klavdia',
+      agentId: 'operator_agent',
       writer,
-      canManage: (caller, target) => caller === 'klavdia' && target === 'amina',
+      canManage: (caller, target) => caller === 'operator_agent' && target === 'agent_alpha',
     });
     const r = await getHandler(t)({
-      target_agent_id: 'amina',
+      target_agent_id: 'agent_alpha',
       sections: ['notifications'],
     });
     expect(r.isError).toBeFalsy();
     const body = JSON.parse(r.content[0].text);
-    expect(body.agent_id).toBe('amina');
+    expect(body.agent_id).toBe('agent_alpha');
   });
 
   it('includes last_modified from audit log when present', async () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const auditLog = createConfigAuditLog({ auditDir });
     await auditLog.append({
-      callerAgent: 'klavdia',
-      callerSession: 'telegram:control:dm:48705953',
-      targetAgent: 'amina',
+      callerAgent: 'operator_agent',
+      callerSession: 'telegram:control:dm:123456789',
+      targetAgent: 'agent_alpha',
       section: 'human_takeover',
       action: 'human_takeover.patch',
       prev: null,
@@ -148,13 +148,13 @@ describe('show_config', () => {
       source: 'chat',
     });
     const t = createShowConfigTool({
-      agentId: 'amina', writer, auditLog, canManage: () => true,
+      agentId: 'agent_alpha', writer, auditLog, canManage: () => true,
     });
     const r = await getHandler(t)({ sections: ['human_takeover'] });
     const body = JSON.parse(r.content[0].text);
     expect(body.last_modified).toMatchObject({
       section: 'human_takeover',
-      by: 'klavdia',
+      by: 'operator_agent',
       source: 'chat',
     });
     expect(body.last_modified.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
@@ -164,7 +164,7 @@ describe('show_config', () => {
     const writer = createAgentConfigWriter({ agentsDir });
     const auditLog = createConfigAuditLog({ auditDir });
     const t = createShowConfigTool({
-      agentId: 'amina', writer, auditLog, canManage: () => true,
+      agentId: 'agent_alpha', writer, auditLog, canManage: () => true,
     });
     const r = await getHandler(t)({});
     const body = JSON.parse(r.content[0].text);

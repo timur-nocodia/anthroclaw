@@ -4,7 +4,8 @@ const { startupMock } = vi.hoisted(() => ({
   startupMock: vi.fn(),
 }));
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+vi.mock('@anthroclaw/legacy-claude-agent-sdk', () => ({
+  claudeAgentHeadlessRuntime: { id: 'claude-agent-sdk', runText: vi.fn() },
   startup: startupMock,
 }));
 

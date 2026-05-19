@@ -7,37 +7,37 @@ describe('NotificationsEmitter — fireScheduled', () => {
   it('peer_pause_summary_daily fires at scheduled cron and emits aggregated payload', async () => {
     const sendMessage = vi.fn();
     const peerPauseStore = createPeerPauseStore({ filePath: ':memory:' });
-    peerPauseStore.pause('amina', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
-    peerPauseStore.pause('amina', 'wa:b:2', { ttlMinutes: 60, reason: 'operator_takeover', source: 'wa' });
-    peerPauseStore.pause('larry', 'wa:b:3', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    peerPauseStore.pause('agent_alpha', 'wa:b:1', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
+    peerPauseStore.pause('agent_alpha', 'wa:b:2', { ttlMinutes: 60, reason: 'operator_takeover', source: 'wa' });
+    peerPauseStore.pause('secondary_agent', 'wa:b:3', { ttlMinutes: 30, reason: 'operator_takeover', source: 'wa' });
 
     const emitter = createNotificationsEmitter({ sendMessage, peerPauseStore });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' }],
     });
 
-    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'amina' });
+    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'agent_alpha' });
     expect(sendMessage).toHaveBeenCalledOnce();
     const [, text] = sendMessage.mock.calls[0]!;
     expect(text).toContain('Daily pause summary');
     expect(text).toContain('Active pauses: 2');
     expect(text).toContain('wa:b:1');
     expect(text).toContain('wa:b:2');
-    // Cross-agent pause must not leak into amina's summary.
+    // Cross-agent pause must not leak into agent_alpha's summary.
     expect(text).not.toContain('wa:b:3');
   });
 
   it('summary fires with empty list when peerPauseStore is omitted', async () => {
     const sendMessage = vi.fn();
     const emitter = createNotificationsEmitter({ sendMessage });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' }],
     });
-    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'amina' });
+    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'agent_alpha' });
     expect(sendMessage).toHaveBeenCalledOnce();
     expect(sendMessage.mock.calls[0]![1]).toContain('Active pauses: 0');
   });
@@ -45,24 +45,24 @@ describe('NotificationsEmitter — fireScheduled', () => {
   it('fireScheduled is a no-op when no subscription matches', async () => {
     const sendMessage = vi.fn();
     const emitter = createNotificationsEmitter({ sendMessage });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_started', route: 'operator' }],
     });
-    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'amina' });
+    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'agent_alpha' });
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('fireScheduled respects enabled=false', async () => {
     const sendMessage = vi.fn();
     const emitter = createNotificationsEmitter({ sendMessage });
-    emitter.subscribeAgent('amina', {
+    emitter.subscribeAgent('agent_alpha', {
       enabled: false,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' }],
     });
-    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'amina' });
+    await emitter.fireScheduled('peer_pause_summary_daily', { agentId: 'agent_alpha' });
     expect(sendMessage).not.toHaveBeenCalled();
   });
 });
@@ -75,16 +75,16 @@ describe('NotificationsScheduler', () => {
       emitter: { subscribeAgent, fireScheduled },
       testNoStart: true,
     });
-    scheduler.registerAgent('amina', {
+    scheduler.registerAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [
         { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' },
         { event: 'peer_pause_started', route: 'operator' }, // no schedule → not registered
       ],
     });
     expect(scheduler.listJobs()).toHaveLength(1);
-    expect(scheduler.listJobs()[0]).toContain('amina');
+    expect(scheduler.listJobs()[0]).toContain('agent_alpha');
     expect(scheduler.listJobs()[0]).toContain('peer_pause_summary_daily');
   });
 
@@ -93,17 +93,17 @@ describe('NotificationsScheduler', () => {
       emitter: { subscribeAgent: vi.fn(), fireScheduled: vi.fn(async () => {}) },
       testNoStart: true,
     });
-    scheduler.registerAgent('amina', {
+    scheduler.registerAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [
         { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' },
       ],
     });
     expect(scheduler.listJobs()).toHaveLength(1);
-    scheduler.registerAgent('amina', {
+    scheduler.registerAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [
         { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 10 * * *' },
         { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 18 * * *' },
@@ -117,20 +117,20 @@ describe('NotificationsScheduler', () => {
       emitter: { subscribeAgent: vi.fn(), fireScheduled: vi.fn(async () => {}) },
       testNoStart: true,
     });
-    scheduler.registerAgent('amina', {
+    scheduler.registerAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' }],
     });
-    scheduler.registerAgent('larry', {
+    scheduler.registerAgent('secondary_agent', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 10 * * *' }],
     });
     expect(scheduler.listJobs()).toHaveLength(2);
-    scheduler.unregisterAgent('amina');
+    scheduler.unregisterAgent('agent_alpha');
     expect(scheduler.listJobs()).toHaveLength(1);
-    expect(scheduler.listJobs()[0]).toContain('larry');
+    expect(scheduler.listJobs()[0]).toContain('secondary_agent');
   });
 
   it('skips registration when notifications disabled', () => {
@@ -138,9 +138,9 @@ describe('NotificationsScheduler', () => {
       emitter: { subscribeAgent: vi.fn(), fireScheduled: vi.fn(async () => {}) },
       testNoStart: true,
     });
-    scheduler.registerAgent('amina', {
+    scheduler.registerAgent('agent_alpha', {
       enabled: false,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' }],
     });
     expect(scheduler.listJobs()).toHaveLength(0);
@@ -152,9 +152,9 @@ describe('NotificationsScheduler', () => {
       testNoStart: true,
     });
     expect(() =>
-      scheduler.registerAgent('amina', {
+      scheduler.registerAgent('agent_alpha', {
         enabled: true,
-        routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+        routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
         subscriptions: [{ event: 'peer_pause_summary_daily', route: 'operator', schedule: 'not a cron' }],
       }),
     ).not.toThrow();
@@ -167,21 +167,21 @@ describe('NotificationsScheduler', () => {
     const { CronJob } = await import('cron');
     const fireScheduled = vi.fn(async () => {});
     const getAgentTimezone = vi.fn((agentId: string) =>
-      agentId === 'amina' ? 'Asia/Almaty' : undefined,
+      agentId === 'agent_alpha' ? 'Asia/Almaty' : undefined,
     );
     const scheduler = createNotificationsScheduler({
       emitter: { subscribeAgent: vi.fn(), fireScheduled },
       getAgentTimezone,
       testNoStart: true,
     });
-    scheduler.registerAgent('amina', {
+    scheduler.registerAgent('agent_alpha', {
       enabled: true,
-      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+      routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
       subscriptions: [
         { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' },
       ],
     });
-    expect(getAgentTimezone).toHaveBeenCalledWith('amina');
+    expect(getAgentTimezone).toHaveBeenCalledWith('agent_alpha');
     // Walk into the jobs map to inspect the underlying CronJob instance.
     const inner = (scheduler as unknown as { listJobs: () => string[] });
     expect(inner.listJobs()).toHaveLength(1);
@@ -204,9 +204,9 @@ describe('NotificationsScheduler', () => {
       testNoStart: true,
     });
     expect(() =>
-      scheduler.registerAgent('amina', {
+      scheduler.registerAgent('agent_alpha', {
         enabled: true,
-        routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '48705953' } },
+        routes: { operator: { channel: 'telegram', account_id: 'control', peer_id: '123456789' } },
         subscriptions: [
           { event: 'peer_pause_summary_daily', route: 'operator', schedule: '0 9 * * *' },
         ],

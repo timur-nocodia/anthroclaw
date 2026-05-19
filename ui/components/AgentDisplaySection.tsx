@@ -14,7 +14,7 @@ export interface AgentDisplaySectionProps {
         toolEmojis?: Record<string, string>;
       }
     | undefined;
-  safetyProfile: "public" | "trusted" | "private" | "chat_like_openclaw" | undefined;
+  safetyProfile: "public" | "trusted" | "private" | "chat_like_anthroclaw" | undefined;
   onChange: (display: AgentDisplaySectionProps["display"]) => void;
 }
 

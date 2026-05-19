@@ -2,10 +2,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import {
+  applyPiModelOutputTokenCap,
   createPiToolPolicyExtension,
   createPiHeadlessRuntime,
+  DEFAULT_PI_OPENROUTER_MAX_OUTPUT_TOKENS,
   evaluatePiToolCallPolicy,
+  normalizePiCustomToolParameters,
   normalizePiToolNames,
   parsePiModelRef,
   PiHeadlessRuntime,
@@ -263,6 +267,25 @@ describe('PiHeadlessRuntime', () => {
       details: {},
     });
     expect(handler).toHaveBeenCalledWith({ query: 'plans' });
+  });
+
+  it('normalizes Agent SDK zod raw-shape tools into Pi JSON object schemas', () => {
+    expect(normalizePiCustomToolParameters({
+      query: z.string().describe('Search query text'),
+      max_results: z.number().optional(),
+    })).toMatchObject({
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query text' },
+        max_results: { type: 'number' },
+      },
+      required: ['query'],
+    });
+
+    expect(normalizePiCustomToolParameters({})).toEqual({
+      type: 'object',
+      properties: {},
+    });
   });
 
   it('rechecks custom tool policy inside Pi execute when no tool_call event was observed', async () => {
@@ -838,6 +861,60 @@ describe('PiHeadlessRuntime', () => {
     expect(() => resolvePiModelFromRegistry('openai/gpt-5-mini', {
       find: () => undefined,
     })).toThrow(/could not find model openai\/gpt-5-mini/);
+  });
+
+  it('caps OpenRouter model output tokens by default so Pi does not request oversized completions', async () => {
+    const session = createSession([
+      { type: 'assistant_text_delta', delta: 'done' },
+    ]);
+    const createAgentSession = vi.fn(async () => ({ session })) satisfies PiCreateAgentSession;
+    const model = { provider: 'openrouter', id: 'qwen/qwen3.6-max-preview', maxTokens: 32_000 };
+    const runtime = new PiHeadlessRuntime({
+      createAgentSession,
+      modelRegistry: {
+        find: vi.fn(() => model),
+      },
+    });
+
+    await expect(runtime.runText({
+      prompt: 'p',
+      model: 'openrouter/qwen/qwen3.6-max-preview',
+    })).resolves.toBe('done');
+
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      model: expect.objectContaining({
+        provider: 'openrouter',
+        id: 'qwen/qwen3.6-max-preview',
+        maxTokens: DEFAULT_PI_OPENROUTER_MAX_OUTPUT_TOKENS,
+      }),
+    }));
+  });
+
+  it('honors configured Pi provider output token caps', () => {
+    const model = { provider: 'openrouter', id: 'qwen/qwen3.6-max-preview', maxTokens: 32_000 };
+
+    expect(applyPiModelOutputTokenCap(model, {
+      provider: 'openrouter',
+      modelId: 'qwen/qwen3.6-max-preview',
+    }, {
+      providerMaxOutputTokens: { openrouter: 256 },
+    })).toMatchObject({
+      maxTokens: 256,
+    });
+  });
+
+  it('honors configured Pi model output token caps before provider caps', () => {
+    const model = { provider: 'openrouter', id: 'qwen/qwen3.6-max-preview', maxTokens: 32_000 };
+
+    expect(applyPiModelOutputTokenCap(model, {
+      provider: 'openrouter',
+      modelId: 'qwen/qwen3.6-max-preview',
+    }, {
+      providerMaxOutputTokens: { openrouter: 512 },
+      modelMaxOutputTokens: { 'openrouter/qwen/qwen3.6-max-preview': 192 },
+    })).toMatchObject({
+      maxTokens: 192,
+    });
   });
 
   it('exposes a Pi policy extension helper for direct SDK resource loader wiring', async () => {

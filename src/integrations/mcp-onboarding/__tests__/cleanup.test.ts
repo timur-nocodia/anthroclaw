@@ -19,7 +19,7 @@ function pendingRow(overrides: Partial<PendingConnection>): PendingConnection {
   return {
     id: 'pnd_default',
     state: 'st_default',
-    agentId: 'amina',
+    agentId: 'agent_alpha',
     agentSessionKey: null,
     mcpUrl: 'https://mcp.test/mcp',
     authMode: 'oauth',
@@ -53,8 +53,8 @@ describe('runCleanup', () => {
       pendingRow({
         id: 'pnd_agent',
         state: 'st_agent',
-        agentSessionKey: 'amina:telegram:dm:42',
-        requestedBy: 'agent:amina:telegram:dm:42',
+        agentSessionKey: 'agent_alpha:telegram:dm:42',
+        requestedBy: 'agent:agent_alpha:telegram:dm:42',
         createdAt: 100,
         expiresAt: 200,
       }),
@@ -72,8 +72,8 @@ describe('runCleanup', () => {
     expect(received).toHaveLength(1);
     expect(received[0]).toMatchObject({
       pendingId: 'pnd_agent',
-      agentId: 'amina',
-      agentSessionKey: 'amina:telegram:dm:42',
+      agentId: 'agent_alpha',
+      agentSessionKey: 'agent_alpha:telegram:dm:42',
       serverId: 'https://mcp.test/mcp',
     });
   });
@@ -107,8 +107,8 @@ describe('runCleanup', () => {
       pendingRow({
         id: 'pnd_fresh',
         state: 'st_fresh',
-        agentSessionKey: 'amina:telegram:dm:1',
-        requestedBy: 'agent:amina:telegram:dm:1',
+        agentSessionKey: 'agent_alpha:telegram:dm:1',
+        requestedBy: 'agent:agent_alpha:telegram:dm:1',
         createdAt: 100,
         expiresAt: 500,
       }),
@@ -131,8 +131,8 @@ describe('runCleanup', () => {
       pendingRow({
         id: 'pnd_stuck',
         state: 'st_stuck',
-        agentSessionKey: 'amina:telegram:dm:99',
-        requestedBy: 'agent:amina:telegram:dm:99',
+        agentSessionKey: 'agent_alpha:telegram:dm:99',
+        requestedBy: 'agent:agent_alpha:telegram:dm:99',
         status: 'exchanging',
         createdAt: 100,
         expiresAt: 200,
@@ -156,8 +156,8 @@ describe('runCleanup', () => {
       pendingRow({
         id: 'pnd_a',
         state: 'st_a',
-        agentSessionKey: 'amina:telegram:dm:1',
-        requestedBy: 'agent:amina:telegram:dm:1',
+        agentSessionKey: 'agent_alpha:telegram:dm:1',
+        requestedBy: 'agent:agent_alpha:telegram:dm:1',
         createdAt: 100,
         expiresAt: 200,
       }),
@@ -166,8 +166,8 @@ describe('runCleanup', () => {
       pendingRow({
         id: 'pnd_b',
         state: 'st_b',
-        agentSessionKey: 'amina:telegram:dm:2',
-        requestedBy: 'agent:amina:telegram:dm:2',
+        agentSessionKey: 'agent_alpha:telegram:dm:2',
+        requestedBy: 'agent:agent_alpha:telegram:dm:2',
         createdAt: 100,
         expiresAt: 250,
       }),

@@ -8,7 +8,7 @@ export async function GET(
 ) {
   return withAuth(async () => {
     const { name } = await params;
-    if (name !== 'chat_like_openclaw') {
+    if (name !== 'chat_like_anthroclaw' && name !== 'chat_like_openclaw') {
       return NextResponse.json({ error: 'not_found' }, { status: 404 });
     }
     return NextResponse.json({ baseline: CHAT_PERSONALITY_BASELINE });

@@ -41,11 +41,11 @@ describe('plugin-framework contract', () => {
     expect(offenders, `Files using Messages API:\n${offenders.join('\n')}`).toHaveLength(0);
   });
 
-  it('does not import @anthropic-ai/claude-agent-sdk directly from plugins', () => {
+  it('does not import Claude SDK packages directly from plugins', () => {
     const importers: string[] = [];
     for (const file of walkTsFiles(PLUGINS_RUNTIME_DIR)) {
       const src = readFileSync(file, 'utf-8');
-      if (/from\s+['"]@anthropic-ai\/claude-agent-sdk['"]/.test(src)) {
+      if (/from\s+['"]@(anthropic-ai\/claude-agent-sdk|anthroclaw\/legacy-claude-agent-sdk)['"]/.test(src)) {
         importers.push(file);
       }
     }

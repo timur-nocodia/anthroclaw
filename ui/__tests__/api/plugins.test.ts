@@ -420,7 +420,7 @@ describe('PUT /api/agents/[agentId]/plugins/[name]', () => {
     const yml =
       [
         '# Top comment',
-        'model: claude-sonnet-4-6  # inline comment',
+        'model: anthropic/claude-sonnet-4-6  # inline comment',
         'routes:',
         '  - channel: telegram',
         '    scope: dm',

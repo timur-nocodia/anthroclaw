@@ -59,6 +59,9 @@ const RuntimeConfigSchema = z.object({
     pi: z.object({
       auth_path: z.string().min(1).optional(),
       models_path: z.string().min(1).optional(),
+      max_output_tokens: z.number().int().positive().optional(),
+      provider_max_output_tokens: z.record(z.string(), z.number().int().positive()).optional(),
+      model_max_output_tokens: z.record(z.string(), z.number().int().positive()).optional(),
     }).optional(),
   }).default({
     provider: 'claude-agent-sdk',
@@ -75,6 +78,9 @@ const AgentRuntimeConfigSchema = z.object({
     pi: z.object({
       auth_path: z.string().min(1).optional(),
       models_path: z.string().min(1).optional(),
+      max_output_tokens: z.number().int().positive().optional(),
+      provider_max_output_tokens: z.record(z.string(), z.number().int().positive()).optional(),
+      model_max_output_tokens: z.record(z.string(), z.number().int().positive()).optional(),
     }).optional(),
   }).default({
     provider: 'claude-agent-sdk',
@@ -535,12 +541,12 @@ export const AgentYmlSchema = z.object({
     .default('human-ru')
     .describe('Per-turn date/time prefix injected before every user message. "off" disables it; "human-ru"/"human-en" produce readable weekday+date+time; "iso" produces compact ISO date+time.'),
   routes: z.array(RouteSchema).min(1),
-  safety_profile: z.enum(['public', 'trusted', 'private', 'chat_like_openclaw']),
+  safety_profile: z.enum(['public', 'trusted', 'private', 'chat_like_anthroclaw', 'chat_like_openclaw']),
   safety_overrides: SafetyOverridesSchema.optional(),
   personality: z
     .string()
     .optional()
-    .describe('Personality baseline override for chat_like_openclaw profile. Empty/missing → uses CHAT_PERSONALITY_BASELINE. Has no effect on other profiles (info-warning emitted by validator).'),
+    .describe('Personality baseline override for chat_like_anthroclaw profile. Empty/missing → uses CHAT_PERSONALITY_BASELINE. Has no effect on other profiles (info-warning emitted by validator).'),
   pairing: PairingSchema.optional(),
   allowlist: z.record(z.string(), z.array(z.string())).optional(),
   mcp_tools: z.array(z.string().min(1)).optional(),

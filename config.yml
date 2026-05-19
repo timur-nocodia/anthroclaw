@@ -1,7 +1,7 @@
 telegram:
   accounts:
     default:
-      token: ${TELEGRAM_BOT_TOKEN}
+      token: "${TELEGRAM_BOT_TOKEN}"
 
 # whatsapp:
 #   accounts:
@@ -9,7 +9,7 @@ telegram:
 #       auth_dir: ./data/wa-auth/default
 
 defaults:
-  model: claude-sonnet-4-6
+  model: anthropic/claude-sonnet-4-6
   embedding_provider: openai
   embedding_model: text-embedding-3-small
   debounce_ms: 1500

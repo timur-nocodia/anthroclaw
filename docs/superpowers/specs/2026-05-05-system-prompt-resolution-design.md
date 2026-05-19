@@ -8,14 +8,14 @@
 
 ## Goal
 
-After this release, every agent's `agent CLAUDE.md` (and every `@./...` file it imports) is the canonical body of the system prompt the SDK sees, regardless of `safety_profile`. The model receives the agent's actual instructions — Amina sees SOUL.md / IDENTITY.md, Klavdia sees her operational rules — instead of a 6-line generic placeholder or a literal `@./SOUL.md` string the model can't follow.
+After this release, every agent's `agent CLAUDE.md` (and every `@./...` file it imports) is the canonical body of the system prompt the SDK sees, regardless of `safety_profile`. The model receives the agent's actual instructions — customer assistant sees SOUL.md / IDENTITY.md, Operator Assistant sees her operational rules — instead of a 6-line generic placeholder or a literal `@./SOUL.md` string the model can't follow.
 
-This release closes a pre-existing two-part bug discovered while investigating the Amina-hallucination incident on 2026-05-04:
+This release closes a pre-existing two-part bug discovered while investigating the customer assistant-hallucination incident on 2026-05-04:
 
-1. **`safety_profile=public|trusted|private` agents never see their own CLAUDE.md.** `src/sdk/options.ts:91-102` only calls `resolveChatSystemPrompt(agent)` when `profile.name === 'chat_like_openclaw'`. All other profiles pass `profile.systemPrompt.text` (a generic 6-line description) or a `claude_code` preset — the agent's authored instructions are simply absent from the prompt.
+1. **`safety_profile=public|trusted|private` agents never see their own CLAUDE.md.** `src/sdk/options.ts:91-102` only calls `resolveChatSystemPrompt(agent)` when `profile.name === 'chat_like_anthroclaw'`. All other profiles pass `profile.systemPrompt.text` (a generic 6-line description) or a `claude_code` preset — the agent's authored instructions are simply absent from the prompt.
 2. **`resolveChatSystemPrompt` performs a raw `readFileSync`** of `agent/CLAUDE.md` and does not resolve `@./...` import lines. Production CLAUDE.md files are typically 5–10 lines of `@./SOUL.md`, `@./IDENTITY.md`, etc. — the Claude Code interactive CLI's native composition feature. Through the SDK API those lines pass to the model as **literal text** like `@./SOUL.md`. The model has no file-reader and cannot follow them, so it ignores them and falls back to the personality baseline.
 
-In production this combined into the visible failure: `leads_agent` was set to `safety_profile: public` since 2026-04-27 *and* its CLAUDE.md was made of `@-imports`, so for ~7 days every customer dialog ran with **none** of the agent's authored rules. The hotfix on 2026-05-04 swapped the profile to `chat_like_openclaw` *and* replaced CLAUDE.md with a manually inlined 318-line concatenation. This is the permanent fix for both halves.
+In production this combined into the visible failure: `customer_intake_agent` was set to `safety_profile: public` since 2026-04-27 *and* its CLAUDE.md was made of `@-imports`, so for ~7 days every customer dialog ran with **none** of the agent's authored rules. The hotfix on 2026-05-04 swapped the profile to `chat_like_anthroclaw` *and* replaced CLAUDE.md with a manually inlined 318-line concatenation. This is the permanent fix for both halves.
 
 ## Motivation
 
@@ -37,9 +37,9 @@ Concrete failures with citations:
   ```
   are passed as-is, and the model receives literal `@./SOUL.md` strings.
 
-- `src/sdk/options.ts:91-102` — only `chat_like_openclaw` calls the resolver:
+- `src/sdk/options.ts:91-102` — only `chat_like_anthroclaw` calls the resolver:
   ```ts
-  if (profile.name === 'chat_like_openclaw') {
+  if (profile.name === 'chat_like_anthroclaw') {
     systemPrompt = resolveChatSystemPrompt(agent);
   } else if (profile.systemPrompt.mode === 'string') {
     systemPrompt = profile.systemPrompt.text;
@@ -56,7 +56,7 @@ Today's hotfix on prod (4 agents, 1167 lines of CLAUDE.md inlined by hand) is a 
 - **Not changing how Claude Code interactive CLI resolves imports.** We mirror its observable behaviour for files we read here, but we don't share its implementation or guarantee identical edge-case semantics. We document our exact rules in this spec.
 - **Not adding nested-frontmatter or templating support.** No Jinja-style tags, no env-var interpolation, no Markdown transformation. Pure include of file body, recursive.
 - **Not changing profile policy.** `settingSources`, `hardBlacklist`, `allowsPluginTools`, `permissionFlow`, sandbox defaults — all unchanged. This release only changes what *body* of `systemPrompt` the SDK gets.
-- **Not changing `chat_like_openclaw` behaviour outside of import resolution.** Personality baseline + CLAUDE.md continues to be the structure; CLAUDE.md content is now pre-resolved through the importer.
+- **Not changing `chat_like_anthroclaw` behaviour outside of import resolution.** Personality baseline + CLAUDE.md continues to be the structure; CLAUDE.md content is now pre-resolved through the importer.
 - **Not adding a "claude_code preset + agent instructions concatenated" mode for `private`.** Private uses preset mode and we will use the SDK's `append` field — no string-mode fallback.
 - **Not removing the production hotfixes in this PR.** We ship the structural fix first, validate on prod, then revert hotfixes (separate commit / separate session).
 
@@ -73,7 +73,7 @@ Today's hotfix on prod (4 agents, 1167 lines of CLAUDE.md inlined by hand) is a 
 │    │      └ resolveImports(content, fromFile, opts) ← recursive │
 │    │                                                           │
 │    └─→ profile-aware composition:                              │
-│         chat_like_openclaw  → personality + CLAUDE.md          │
+│         chat_like_anthroclaw  → personality + CLAUDE.md          │
 │         public/trusted      → profile.text + CLAUDE.md         │
 │         private (preset)    → { type: 'preset', append: CLAUDE.md } │
 │                                                                │
@@ -151,7 +151,7 @@ No extra header, no comments inserted. Just the file contents in place of the `@
 function composeSystemPrompt(agent: Agent, profile: SafetyProfile): Options['systemPrompt'] {
   const claudeMd = loadResolvedAgentClaudeMd({ workspaceRoot: agent.workspacePath });
 
-  if (profile.name === 'chat_like_openclaw') {
+  if (profile.name === 'chat_like_anthroclaw') {
     const personality = (agent.config.personality?.trim()) || CHAT_PERSONALITY_BASELINE;
     return claudeMd ? `${personality}\n\n─────────\n\n${claudeMd}` : personality;
   }
@@ -171,7 +171,7 @@ function composeSystemPrompt(agent: Agent, profile: SafetyProfile): Options['sys
 }
 ```
 
-The `─────────` separator matches the existing `chat_like_openclaw` style, kept for visual consistency in transcripts.
+The `─────────` separator matches the existing `chat_like_anthroclaw` style, kept for visual consistency in transcripts.
 
 For preset mode we use the SDK's `append` field (`Options.systemPrompt.append`, confirmed present in `@anthropic-ai/claude-agent-sdk` `sdk.d.ts`). This appends the agent's CLAUDE.md after the `claude_code` preset, preserving the preset's tool docs and dynamic sections.
 
@@ -189,9 +189,9 @@ Each warn/info entry includes: `agent_id`, `from_file` (relative to workspace), 
 
 ## Migration / compatibility
 
-- **`chat_like_openclaw` agents**: previously, CLAUDE.md was inlined raw; now `@-imports` resolve. For an agent whose CLAUDE.md is plain text without imports, output is byte-identical. For an agent whose CLAUDE.md is `@./SOUL.md` and friends, output now includes the resolved bodies — this is the intended fix.
+- **`chat_like_anthroclaw` agents**: previously, CLAUDE.md was inlined raw; now `@-imports` resolve. For an agent whose CLAUDE.md is plain text without imports, output is byte-identical. For an agent whose CLAUDE.md is `@./SOUL.md` and friends, output now includes the resolved bodies — this is the intended fix.
 - **`public` / `trusted` / `private` agents**: previously, agent CLAUDE.md was ignored entirely. Now it's appended to the profile prompt. Existing agents on these profiles will start receiving their own instructions, which is the goal but is a behaviour change — operators must verify their CLAUDE.md is clean (no leaked credentials, no developer-only notes).
-- **Production hotfixes**: leads_agent / timur_agent / content_sm_building have manually-inlined CLAUDE.md right now. After this PR ships and is verified, those will be reverted to `@-imports` form in a follow-up.
+- **Production hotfixes**: customer_intake_agent / personal_operator_agent / group_content_agent have manually-inlined CLAUDE.md right now. After this PR ships and is verified, those will be reverted to `@-imports` form in a follow-up.
 
 Changelog entry should call out the behaviour change for non-chat profiles explicitly.
 
@@ -218,9 +218,9 @@ Changelog entry should call out the behaviour change for non-chat profiles expli
 
 ### Unit — `src/sdk/__tests__/system-prompt-composer.test.ts` (composer)
 
-17. `chat_like_openclaw` + agent with CLAUDE.md → personality + CLAUDE.md.
-18. `chat_like_openclaw` + agent without CLAUDE.md → personality only.
-19. `chat_like_openclaw` + agent with custom `personality` field → custom + CLAUDE.md.
+17. `chat_like_anthroclaw` + agent with CLAUDE.md → personality + CLAUDE.md.
+18. `chat_like_anthroclaw` + agent without CLAUDE.md → personality only.
+19. `chat_like_anthroclaw` + agent with custom `personality` field → custom + CLAUDE.md.
 20. `public` + CLAUDE.md → public.text + separator + CLAUDE.md.
 21. `public` + no CLAUDE.md → public.text only.
 22. `trusted` + CLAUDE.md → trusted.text + separator + CLAUDE.md (currently trusted is preset; **see open question below — verify**).
@@ -240,7 +240,7 @@ Changelog entry should call out the behaviour change for non-chat profiles expli
 - [ ] All 4 profiles include the agent's CLAUDE.md (or its `append` equivalent) in the SDK system prompt.
 - [ ] `@-imports` are resolved recursively with cycle detection and max depth.
 - [ ] Path traversal, absolute paths, URLs, oversized files, symlink-escapes are rejected with warnings.
-- [ ] Existing `chat_like_openclaw` agents without imports produce byte-identical output to v0.8.0.
+- [ ] Existing `chat_like_anthroclaw` agents without imports produce byte-identical output to v0.8.0.
 - [ ] All 1771 existing tests still pass; ≥ 26 new tests pass.
 - [ ] Integration smoke test: spawn one agent under each profile, capture the actual `systemPrompt` passed to SDK, assert agent-specific content present.
 

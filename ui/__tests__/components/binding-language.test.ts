@@ -17,11 +17,11 @@ describe("describeBinding", () => {
     };
     expect(
       describeBinding(route, {
-        telegramAccounts: { content_sm: { username: "clowwy_bot" } },
+        telegramAccounts: { content_sm: { username: "example_bot" } },
       }),
     ).toEqual({
       icon: "telegram",
-      title: "Telegram (clowwy_bot · content_sm)",
+      title: "Telegram (example_bot · content_sm)",
       lines: [
         "In group: -1003729315809",
         "In topic: 3",
@@ -39,11 +39,11 @@ describe("describeBinding", () => {
       topics: null,
     };
     const desc = describeBinding(route, {
-      telegramAccounts: { main: { username: "clowwy_personal_bot" } },
-      allowlist: ["48705953"],
+      telegramAccounts: { main: { username: "example_personal_bot" } },
+      allowlist: ["123456789"],
     });
     expect(desc.icon).toBe("telegram");
-    expect(desc.title).toBe("Telegram (clowwy_personal_bot · main)");
+    expect(desc.title).toBe("Telegram (example_personal_bot · main)");
     expect(desc.lines[0]).toBe("In: All direct messages");
     expect(desc.lines[1]).toBe("Behavior: Allowlisted users only (1)");
   });
@@ -55,7 +55,7 @@ describe("describeBinding", () => {
       scope: "dm",
     };
     const desc = describeBinding(route, {
-      telegramAccounts: { main: { username: "clowwy_bot" } },
+      telegramAccounts: { main: { username: "example_bot" } },
       pairingMode: "open",
     });
     expect(desc.lines).toContain("Behavior: Open pairing (anyone can DM)");
@@ -82,7 +82,7 @@ describe("describeBinding", () => {
       mention_only: false,
     };
     const desc = describeBinding(route, {
-      telegramAccounts: { main: { username: "clowwy_bot" } },
+      telegramAccounts: { main: { username: "example_bot" } },
     });
     expect(desc.lines).toEqual([
       "In: Any chat (DMs and groups)",

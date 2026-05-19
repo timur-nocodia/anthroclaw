@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Deliver four upstream-inspired upgrades for AnthroClaw - plugin lifecycle, runtime hot-path trimming, learning loop v2, and a safe file-transfer plugin - without breaking the Claude Agent SDK-native runtime model.
+**Goal:** Deliver four upstream-inspired upgrades for AnthroClaw - plugin lifecycle, runtime hot-path trimming, learning loop v2, and a safe file-transfer plugin - without breaking the Runtime v1 legacy-provider-compatible runtime model.
 
 **Architecture:** Build on existing AnthroClaw seams instead of importing foreign abstractions. Introduce a plugin catalog/install-state layer on top of the current plugin loader, lazy-load only enabled plugins into runtime, upgrade the existing learning subsystem with Hermes-inspired review mechanics, and ship file transfer as a first-party plugin with strict path policy.
 
@@ -24,11 +24,11 @@
 
 Read these before touching code:
 
-1. OpenClaw `v2026.5.3`
+1. external gateway `v2026.5.3`
    - `Plugins/file-transfer`
    - `Plugins/install`
    - `Gateway/performance`
-2. OpenClaw `v2026.5.2`
+2. external gateway `v2026.5.2`
    - external plugin lifecycle and dependency-state sections
    - startup/runtime trimming sections
 3. Hermes `v0.12.0`

@@ -143,10 +143,10 @@ describe("BindingTestPanel", () => {
     );
 
     fireEvent.change(screen.getByTestId("binding-test-sender-id"), {
-      target: { value: "48705953" },
+      target: { value: "123456789" },
     });
     fireEvent.change(screen.getByTestId("binding-test-text"), {
-      target: { value: "@clowwy_bot show_config" },
+      target: { value: "@example_bot show_config" },
     });
 
     const run = screen.getByTestId("binding-test-run");
@@ -163,8 +163,8 @@ describe("BindingTestPanel", () => {
       chat_type: "group",
       peer_id: "-1003729315809",
       thread_id: "3",
-      sender_id: "48705953",
-      text: "@clowwy_bot show_config",
+      sender_id: "123456789",
+      text: "@example_bot show_config",
       mentioned_bot: true,
     });
   });
@@ -189,7 +189,7 @@ describe("BindingTestPanel", () => {
     );
 
     fireEvent.change(screen.getByTestId("binding-test-sender-id"), {
-      target: { value: "48705953" },
+      target: { value: "123456789" },
     });
     fireEvent.click(screen.getByTestId("binding-test-run"));
 
@@ -225,7 +225,7 @@ describe("BindingTestPanel", () => {
     );
 
     fireEvent.change(screen.getByTestId("binding-test-sender-id"), {
-      target: { value: "48705953" },
+      target: { value: "123456789" },
     });
     fireEvent.click(screen.getByTestId("binding-test-run"));
 
@@ -257,7 +257,7 @@ describe("BindingTestPanel", () => {
     );
 
     fireEvent.change(screen.getByTestId("binding-test-sender-id"), {
-      target: { value: "48705953" },
+      target: { value: "123456789" },
     });
     fireEvent.click(screen.getByTestId("binding-test-run"));
 
@@ -284,7 +284,7 @@ describe("BindingTestPanel", () => {
     );
 
     fireEvent.change(screen.getByTestId("binding-test-sender-id"), {
-      target: { value: "48705953" },
+      target: { value: "123456789" },
     });
     fireEvent.click(screen.getByTestId("binding-test-run"));
 

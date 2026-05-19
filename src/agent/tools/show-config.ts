@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
 import { HumanTakeoverSchema, NotificationsSchema } from '../../config/schema.js';
 import type { AgentConfigWriter } from '../../config/writer.js';
 import type { ConfigAuditLog, PersistedAuditEntry } from '../../config/audit.js';

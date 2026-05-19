@@ -61,6 +61,9 @@ describe('Claude auth API routes', () => {
     expect(res.status).toBe(200);
     expect(json.connected).toBe(true);
     expect(json.email).toBe('operator@example.com');
+    expect(json.legacyRuntime).toBe(true);
+    expect(json.runtimeRole).toBe('legacy-fallback');
+    expect(json.provider).toBe('claude-agent-sdk');
     expect(JSON.stringify(json)).not.toContain('sk-ant');
   });
 
@@ -77,6 +80,8 @@ describe('Claude auth API routes', () => {
 
     expect(res.status).toBe(200);
     expect(json.sessionId).toBe('auth_1');
+    expect(json.legacyRuntime).toBe(true);
+    expect(json.runtimeRole).toBe('legacy-fallback');
     expect(json.loginUrl).toContain('https://claude.com/cai/oauth/authorize');
   });
 
@@ -100,6 +105,8 @@ describe('Claude auth API routes', () => {
     expect(mocks.completeLogin).toHaveBeenCalledWith('auth_1', 'browser-returned-secret-code');
     expect(mocks.restartGateway).toHaveBeenCalledTimes(1);
     expect(json.restarted).toBe(true);
+    expect(json.legacyRuntime).toBe(true);
+    expect(json.runtimeRole).toBe('legacy-fallback');
     expect(JSON.stringify(json)).not.toContain('browser-returned-secret-code');
   });
 
@@ -117,6 +124,7 @@ describe('Claude auth API routes', () => {
 
     expect(res.status).toBe(409);
     expect(json.ok).toBe(false);
+    expect(json.legacyRuntime).toBe(true);
     expect(mocks.restartGateway).not.toHaveBeenCalled();
   });
 
@@ -128,6 +136,7 @@ describe('Claude auth API routes', () => {
 
     expect(res.status).toBe(200);
     expect(json.cancelled).toBe(true);
+    expect(json.legacyRuntime).toBe(true);
     expect(mocks.cancelLogin).toHaveBeenCalledWith('auth_1');
   });
 
@@ -135,7 +144,7 @@ describe('Claude auth API routes', () => {
     mocks.verifyQuery.mockResolvedValueOnce({
       ok: true,
       checkedAt: '2026-05-13T00:00:00.000Z',
-      message: 'Claude runtime accepted a real query.',
+      message: 'Legacy Claude fallback accepted a real query.',
       stdoutPreview: 'OK',
     });
 
@@ -144,6 +153,8 @@ describe('Claude auth API routes', () => {
 
     expect(res.status).toBe(200);
     expect(json.ok).toBe(true);
+    expect(json.legacyRuntime).toBe(true);
+    expect(json.runtimeRole).toBe('legacy-fallback');
   });
 
   it('restarts only the gateway runtime on recovery request', async () => {
@@ -154,6 +165,7 @@ describe('Claude auth API routes', () => {
 
     expect(res.status).toBe(200);
     expect(json.restarted).toBe(true);
+    expect(json.legacyRuntime).toBe(true);
     expect(mocks.restartGateway).toHaveBeenCalledTimes(1);
   });
 });

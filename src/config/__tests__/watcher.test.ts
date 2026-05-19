@@ -23,7 +23,7 @@ describe('ConfigWatcher.isConfigEvent', () => {
   });
 
   it('ignores writes under the agent\'s own runtime dirs', () => {
-    // Reproduces the 2026-05-14 prod incident: content_sm_building wrote
+    // Reproduces the 2026-05-14 prod incident: group_content_agent wrote
     // a carousel render dir under output/ mid-turn and ConfigWatcher
     // false-fired a global hot-reload of every agent.
     expect(isConfigEvent('content_sm/output/carousels/renders/2026-05-14-roman-claude-style')).toBe(false);

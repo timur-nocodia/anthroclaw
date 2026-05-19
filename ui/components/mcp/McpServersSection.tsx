@@ -206,7 +206,7 @@ export function McpServersSection({
     <Section
       title="External MCP servers"
       subtitle={`${entries.length} configured`}
-      tooltip="SDK-native external MCP servers. Add one with the + Add server wizard, or edit raw fields under Advanced."
+      tooltip="Runtime-managed external MCP servers. Add one with the + Add server wizard, or edit raw fields under Advanced."
       icon={<Plug className="h-3.5 w-3.5" style={{ color: "var(--oc-accent)" }} />}
       action={
         <Button variant="outline" size="sm" onClick={() => setWizardOpen(true)}>

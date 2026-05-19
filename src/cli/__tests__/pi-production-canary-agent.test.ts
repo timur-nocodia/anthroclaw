@@ -10,7 +10,7 @@ import {
 const SEED_YAML = [
   '# canary candidate',
   'model: claude-sonnet-4-6',
-  'safety_profile: chat_like_openclaw',
+  'safety_profile: chat_like_anthroclaw',
   'routes:',
   '  - channel: telegram',
   '    scope: dm',

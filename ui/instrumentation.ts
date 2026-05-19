@@ -17,8 +17,12 @@
  */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+  if (process.env.NODE_ENV !== 'production') return;
 
-  const { getGateway } = await import('./lib/gateway');
+  const loadGateway = new Function('modulePath', 'return import(modulePath)') as (
+    modulePath: string,
+  ) => Promise<typeof import('./lib/gateway')>;
+  const { getGateway } = await loadGateway('./lib/gateway');
   try {
     await getGateway();
   } catch (err) {

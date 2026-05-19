@@ -11,7 +11,7 @@ import type {
   Options,
   PermissionResult,
   PreToolUseHookInput,
-} from '@anthropic-ai/claude-agent-sdk';
+} from '@anthroclaw/legacy-claude-agent-sdk';
 import {
   evaluateFileOwnershipToolUse,
   type FileOwnershipToolUseContext,
@@ -229,7 +229,7 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
     }
 
     // 1.5. Chat profile short-circuit — allow everything except explicit deny_tools
-    if (profile.name === 'chat_like_openclaw') {
+    if (profile.name === 'chat_like_anthroclaw') {
       const denyList = overrides.deny_tools ?? [];
       if (denyList.includes(toolName) || denyList.includes(localName)) {
         return deny(`Tool "${toolName}" is denied by safety_overrides.deny_tools`);

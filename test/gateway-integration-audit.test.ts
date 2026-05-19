@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@anthropic-ai/claude-agent-sdk')>();
+vi.mock('@anthroclaw/legacy-claude-agent-sdk', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@anthroclaw/legacy-claude-agent-sdk')>();
   return {
     ...real,
     startup: vi.fn(async () => { throw new Error('mocked: no SDK in tests'); }),
