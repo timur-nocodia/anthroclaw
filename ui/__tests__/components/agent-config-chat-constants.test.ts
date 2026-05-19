@@ -14,6 +14,10 @@ const AGENTS_LIST_PAGE_PATH = resolve(
   process.cwd(),
   'app/(dashboard)/fleet/[serverId]/agents/page.tsx',
 );
+const CHAT_PAGE_PATH = resolve(
+  process.cwd(),
+  'app/(dashboard)/fleet/[serverId]/chat/[agentId]/page.tsx',
+);
 const FLEET_PAGE_PATH = resolve(
   process.cwd(),
   'app/(dashboard)/fleet/page.tsx',
@@ -124,6 +128,22 @@ describe('agents list page — runtime model creation', () => {
     expect(source).toContain('<span>Runtime</span>');
     expect(source).toContain('effectiveProvider(a, defaultProvider)');
     expect(source).toContain('ProviderBadge');
+  });
+});
+
+describe('chat page — runtime-neutral diagnostics copy', () => {
+  const source = readFileSync(CHAT_PAGE_PATH, 'utf-8');
+
+  it('does not expose legacy Claude SDK copy in runtime diagnostics', () => {
+    expect(source).toContain('active runtime records delegated work');
+    expect(source).toContain('No runtime transcript loaded yet');
+    expect(source).not.toContain('Claude Agent SDK emits');
+    expect(source).not.toContain('No SDK transcript loaded');
+  });
+
+  it('labels persisted session ids as runtime metadata, not SDK metadata', () => {
+    expect(source).toContain('label="runtime"');
+    expect(source).not.toContain('label="sdk"');
   });
 });
 

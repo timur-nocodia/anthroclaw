@@ -41,7 +41,7 @@ function createTestAgent(id: string, config?: Record<string, unknown>) {
   mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
 
   const agentConfig = config ?? {
-    model: 'claude-sonnet-4-6',
+    model: 'anthropic/claude-sonnet-4-6',
     routes: [{ channel: 'telegram', scope: 'dm' }],
   };
   writeFileSync(join(dir, 'agent.yml'), stringifyYaml(agentConfig), 'utf-8');
@@ -70,7 +70,7 @@ describe('listAgents', () => {
 
     const a = agents.find((x) => x.id === 'agent-a');
     expect(a).toBeDefined();
-    expect(a!.model).toBe('claude-sonnet-4-6');
+    expect(a!.model).toBe('anthropic/claude-sonnet-4-6');
     expect(a!.routes).toHaveLength(1);
     expect(a!.hasClaudeMd).toBe(true);
 
@@ -78,6 +78,18 @@ describe('listAgents', () => {
     expect(b).toBeDefined();
     expect(b!.model).toBe('claude-opus-4');
     expect(b!.routes).toHaveLength(2);
+  });
+
+  it('surfaces runtime provider overrides generically', () => {
+    createTestAgent('pi-agent', {
+      model: 'anthropic/claude-sonnet-4-6',
+      runtime: { headless: { provider: 'pi' } },
+      routes: [{ channel: 'telegram', scope: 'dm' }],
+    });
+
+    const agent = agentsModule.listAgents().find((x) => x.id === 'pi-agent');
+    expect(agent).toBeDefined();
+    expect(agent!.runtime?.headless?.provider).toBe('pi');
   });
 });
 
@@ -91,6 +103,10 @@ describe('createAgent', () => {
     expect(existsSync(join(dir, 'CLAUDE.md'))).toBe(true);
     expect(existsSync(join(dir, 'memory'))).toBe(true);
     expect(existsSync(join(dir, '.claude', 'skills'))).toBe(true);
+
+    const raw = readFileSync(join(dir, 'agent.yml'), 'utf-8');
+    expect(raw).toContain('anthropic/claude-sonnet-4-6');
+    expect(raw).not.toContain('model: claude-sonnet-4-6');
   });
 
   it('creates example template with mcp_tools', () => {
@@ -181,7 +197,7 @@ describe('updateAgentConfig', () => {
 describe('setAgentLearningConfig', () => {
   it('updates only learning config and keeps the rest of agent.yml valid', () => {
     createTestAgent('learning-test', {
-      model: 'claude-sonnet-4-6',
+      model: 'anthropic/claude-sonnet-4-6',
       safety_profile: 'private',
       routes: [{ channel: 'telegram', scope: 'dm' }],
       learning: { enabled: false, mode: 'off' },
@@ -205,7 +221,7 @@ describe('setAgentLearningConfig', () => {
     });
 
     const result = agentsModule.getAgentConfig('learning-test');
-    expect(result.parsed.model).toBe('claude-sonnet-4-6');
+    expect(result.parsed.model).toBe('anthropic/claude-sonnet-4-6');
     expect(result.parsed.mcp_tools).toEqual(['memory_search']);
     expect(result.parsed.learning).toMatchObject({
       enabled: true,
