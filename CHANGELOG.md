@@ -6,6 +6,8 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-19
+
 ### Added
 - Pi-native Runtime v1 control plane for runtime status, provider credentials,
   model registry, runtime config, side-effect gates, expansion status, and
