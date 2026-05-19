@@ -14,4 +14,6 @@ Before adding any `runtime:pi-*` command, classify it:
 
 The migration target is not "make selected lab agents work on Pi". The target is a provider-neutral Runtime v1 harness that can create and run arbitrary configured agents with Agent SDK-equivalent semantics.
 
+Do not measure OSS migration completion by private or personal agent rollout state. Expansion packets for concrete agents are rollout evidence, not Agent SDK replacement requirements. When asked what remains for migration, answer from generic Runtime v1 contract coverage: runtime adapter behavior, sessions, tools, side-effect gates, memory, learning, plugins, dashboard/UI, Buildroom, config, observability, rollback, and tests. Mention concrete agents only when the question is explicitly about private production rollout.
+
 Live side-effect evidence must use the [Runtime Side-Effect Gates](runtime-side-effect-gates.md) contract. The gate implementation describes the reusable capability; the concrete agent belongs in arguments, fixtures, expansion packets, and operator evidence.
