@@ -105,3 +105,45 @@ describe('getStartedAt', () => {
     expect(started).toBeInstanceOf(Date);
   });
 });
+
+describe('cross module-instance singleton (Next.js double-load scenario)', () => {
+  it('returns the SAME gateway after vi.resetModules() re-imports this file', async () => {
+    // Simulates the prod bug: instrumentation.ts does `await import('./lib/gateway')`
+    // while API routes do `import { ... } from '@/lib/gateway'`. Webpack can treat
+    // those as separate module instances, each with its own module-level
+    // `let instance`. globalThis is what makes the singleton survive that.
+
+    // First load — fresh state, create instance #1
+    const moduleA = await import('@/lib/gateway');
+    const gw1 = await moduleA.getGateway();
+    expect(gw1).toBeDefined();
+
+    // Force a second evaluation of this same module file. resetModules clears
+    // Vitest's module cache, so `import()` below produces a NEW module instance
+    // (different `let` bindings, different closures). DO NOT call
+    // `_resetForTest()` here — that would defeat the test by wiping globalThis.
+    vi.resetModules();
+    vi.doMock('@backend/gateway.js', () => {
+      class MockGateway {
+        start = vi.fn().mockResolvedValue(undefined);
+        stop = vi.fn().mockResolvedValue(undefined);
+        getStatus = vi.fn().mockReturnValue({ uptime: 1 });
+      }
+      return { Gateway: MockGateway };
+    });
+    vi.doMock('@backend/config/overlay.js', () => ({
+      getOverlayPath: vi.fn().mockReturnValue('/tmp/test-overlay.yml'),
+      loadGlobalConfigWithOverlay: vi.fn().mockReturnValue({
+        defaults: { model: 'claude-sonnet-4-6', embedding_provider: 'off', embedding_model: '', debounce_ms: 0 },
+      }),
+    }));
+
+    const moduleB = await import('@/lib/gateway');
+    expect(moduleB).not.toBe(moduleA); // confirm we really got a fresh module
+    const gw2 = await moduleB.getGateway();
+
+    // Without globalThis, gw2 would be a freshly-booted second gateway
+    // instance — i.e. the double-boot bug.
+    expect(gw2).toBe(gw1);
+  });
+});
