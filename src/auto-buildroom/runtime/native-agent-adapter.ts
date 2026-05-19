@@ -1,5 +1,5 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import { query } from '@anthroclaw/legacy-claude-agent-sdk';
+import type { Options } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { BuildroomRuntimeRef } from '../artifacts/model.js';
 
 export interface NativeBuilderRunInput {

@@ -1,4 +1,4 @@
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { Options } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { SdkSandboxConfig } from '../config/schema.js';
 
 function isDefined<T>(value: T | undefined): value is T {

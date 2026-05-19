@@ -1,6 +1,6 @@
 import { extname, resolve } from 'node:path';
 import { z } from 'zod';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
 import type {
   ChannelAdapter,
   OutboundMedia,

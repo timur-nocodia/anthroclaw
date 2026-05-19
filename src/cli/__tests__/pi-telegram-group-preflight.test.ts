@@ -30,7 +30,7 @@ describe('Pi Telegram group preflight CLI', () => {
     root = mkdtempSync(join(tmpdir(), 'pi-telegram-group-preflight-root-'));
     liveRoot = mkdtempSync(join(tmpdir(), 'pi-telegram-group-preflight-live-'));
     dataRoot = mkdtempSync(join(tmpdir(), 'pi-telegram-group-preflight-data-'));
-    await writeAgent(liveRoot, 'project-manager', `
+    await writeAgent(liveRoot, 'group-agent', `
 routes:
   - channel: telegram
     account: content_sm
@@ -52,7 +52,7 @@ learning:
       '--agents-dir', root,
       '--agents-dir', liveRoot,
       '--data-dir', dataRoot,
-      '--agent-id', 'project-manager',
+      '--agent-id', 'group-agent',
       '--confirm-account', 'content_sm',
       '--confirm-peer', '-1003729315809',
       '--confirm-topic', '8',
@@ -65,7 +65,7 @@ learning:
     expect(body).toMatchObject({
       status: 'passed',
       runtime: 'pi',
-      agentId: 'project-manager',
+      agentId: 'group-agent',
       checks: [
         { name: 'expansion-audit', status: 'passed' },
         { name: 'route-confirmation', status: 'passed' },
@@ -146,7 +146,7 @@ mcp_tools: [manage_cron]
       '--agents-dir', '/tmp/tracked',
       '--agents-dir', '/tmp/live',
       '--data-dir', '/tmp/data',
-      '--agent-id', 'project-manager',
+      '--agent-id', 'group-agent',
       '--confirm-account', 'content_sm',
       '--confirm-peer', '-100',
       '--confirm-topic', '8',
@@ -158,7 +158,7 @@ mcp_tools: [manage_cron]
       agentsDir: '/tmp/tracked',
       agentsDirs: ['/tmp/tracked', '/tmp/live'],
       dataDir: '/tmp/data',
-      agentId: 'project-manager',
+      agentId: 'group-agent',
       confirmAccount: 'content_sm',
       confirmPeer: '-100',
       confirmTopics: ['8'],

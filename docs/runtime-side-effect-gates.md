@@ -39,7 +39,9 @@ pnpm runtime:pi-learning-propose-gate -- --agent-id <id> --peer-id <peer> --send
 pnpm runtime:pi-memory-read-gate -- --agent-id <id> --peer-id <peer> --sender-id <sender> --json --allow-skip
 ```
 
-The old `pi-timur-agent-live-send-message`, `pi-timur-agent-live-send-media`, `pi-timur-agent-live-notification`, `pi-timur-agent-cron-notification-smoke`, `pi-timur-agent-buildroom-handoff-smoke`, `pi-timur-agent-admin-config-smoke`, `pi-timur-agent-mcp-file-transfer-smoke`, `pi-timur-agent-honcho-local-smoke`, `pi-timur-agent-learning-propose-smoke`, and `pi-timur-agent-memory-read-smoke` commands remain only as compatibility/evidence aliases with `timur_agent` defaults. New work should create or extend generic gates first, then bind a concrete agent through CLI args or expansion-packet fixtures.
+Agent-specific live evidence commands have been removed from the public runtime
+surface. New work should create or extend generic gates first, then bind a
+concrete agent through CLI args or private expansion-packet fixtures.
 
 The aggregate dispatcher is available as:
 
@@ -63,7 +65,7 @@ The JSON list, single-gate description, run plan, and argument validation are th
 
 The desired end state is:
 
-1. `runtime:pi-live-gate -- --gate <gate-id> --agent-id <id> ...`; focused commands such as `runtime:pi-controlled-live-turn-gate`, `runtime:pi-live-send-message-gate`, `runtime:pi-live-send-media-gate`, `runtime:pi-live-notification-gate`, `runtime:pi-cron-notification-gate`, `runtime:pi-scheduled-work-gate`, `runtime:pi-buildroom-handoff-gate`, `runtime:pi-admin-config-gate`, `runtime:pi-mcp-file-transfer-gate`, `runtime:pi-honcho-local-gate`, `runtime:pi-learning-propose-gate`, and `runtime:pi-memory-read-gate` remain as direct entrypoints and compatibility with existing evidence
+1. `runtime:pi-live-gate -- --gate <gate-id> --agent-id <id> ...`; focused commands such as `runtime:pi-controlled-live-turn-gate`, `runtime:pi-live-send-message-gate`, `runtime:pi-live-send-media-gate`, `runtime:pi-live-notification-gate`, `runtime:pi-cron-notification-gate`, `runtime:pi-scheduled-work-gate`, `runtime:pi-buildroom-handoff-gate`, `runtime:pi-admin-config-gate`, `runtime:pi-mcp-file-transfer-gate`, `runtime:pi-honcho-local-gate`, `runtime:pi-learning-propose-gate`, and `runtime:pi-memory-read-gate` remain as direct generic entrypoints
 2. expansion packets record the concrete command and operator approval
 3. agent-specific CLI names are gradually removed or reduced to thin aliases
 

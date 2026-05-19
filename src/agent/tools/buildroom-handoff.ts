@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
 import { FileArtifactStore } from '../../auto-buildroom/artifacts/store.js';
 import { createHandoffSignalArtifact } from '../../auto-buildroom/sessions/handoff-signal.js';
 import { loadBuildroomRoomConfig } from '../../auto-buildroom/storage/init.js';

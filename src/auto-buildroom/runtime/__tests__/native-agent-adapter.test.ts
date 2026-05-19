@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeAgentRuntimeAdapter } from '../native-agent-adapter.js';
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+vi.mock('@anthroclaw/legacy-claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { query } from '@anthroclaw/legacy-claude-agent-sdk';
 
 const mockedQuery = query as unknown as ReturnType<typeof vi.fn>;
 

@@ -303,7 +303,7 @@ describe('Pi live gate dispatcher CLI', () => {
       expect(plan.run.aggregateArgs).toEqual(['--gate', plan.gate.id, ...plan.run.focusedArgs]);
       expect(plan.run.packageScripts.aggregate).toEqual(['pnpm', 'runtime:pi-live-gate', '--', ...plan.run.aggregateArgs]);
       expect(plan.run.packageScripts.focused.slice(0, 3)).toEqual(['pnpm', expect.stringMatching(/^runtime:pi-.+-gate$/), '--']);
-      expect(plan.run.packageScripts.focused).not.toContain('timur_agent');
+      expect(plan.run.packageScripts.focused).not.toContain('runtime_test_agent');
     }
   });
 

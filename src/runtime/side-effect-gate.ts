@@ -130,7 +130,16 @@ function requireNonEmpty(value: string | undefined, field: string, errors: strin
 function containsAgentId(value: string, agentId: string): boolean {
   const normalizedValue = normalizeName(value);
   const normalizedAgent = normalizeName(agentId);
-  return normalizedAgent.length > 0 && normalizedValue.includes(normalizedAgent);
+  const agentTokens = agentId
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 1);
+  return normalizedAgent.length > 0
+    && (
+      normalizedValue.includes(normalizedAgent)
+      || agentTokens.every((token) => normalizedValue.includes(token))
+    );
 }
 
 function normalizeName(value: string): string {

@@ -162,10 +162,37 @@ function createQueryForPrompt(prompt: unknown) {
   ]);
 }
 
-vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@anthropic-ai/claude-agent-sdk')>();
+vi.mock('@anthroclaw/legacy-claude-agent-sdk', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@anthroclaw/legacy-claude-agent-sdk')>();
+  const runHeadlessText = async (input: { prompt: string }) => {
+    const stream = queryMock({ prompt: input.prompt, options: { tools: [], allowedTools: [], maxTurns: 1 } });
+    let result = '';
+    const accumulated: string[] = [];
+
+    for await (const event of stream) {
+      const e = event as Record<string, unknown>;
+      if (e.type === 'result' && typeof e.result === 'string') {
+        result = e.result.trim();
+        break;
+      }
+      if (e.type === 'assistant') {
+        const message = e.message as { content?: Array<{ type?: string; text?: string }> } | undefined;
+        for (const block of message?.content ?? []) {
+          if (block.type === 'text' && typeof block.text === 'string') accumulated.push(block.text);
+        }
+      }
+    }
+
+    return result || accumulated.join('').trim();
+  };
+
   return {
     ...real,
+    claudeAgentHeadlessRuntime: {
+      id: 'claude-agent-sdk',
+      runText: runHeadlessText,
+      run: async (input: { prompt: string }) => ({ text: await runHeadlessText(input) }),
+    },
     startup: startupMock,
     query: queryMock,
   };

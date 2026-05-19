@@ -8,7 +8,7 @@ const sdkMocks = vi.hoisted(() => ({
   deleteSession: vi.fn(),
 }));
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => sdkMocks);
+vi.mock('@anthroclaw/legacy-claude-agent-sdk', () => sdkMocks);
 
 import {
   normalizeSessionMessage,

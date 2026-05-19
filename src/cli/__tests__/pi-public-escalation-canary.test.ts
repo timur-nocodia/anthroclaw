@@ -26,7 +26,7 @@ describe('Pi public escalation canary CLI', () => {
         publicProfileDeniesUnknownPluginTool: true,
         escalationLogged: true,
         escalationRows: 1,
-        escalationAgentId: 'leads_agent',
+        escalationAgentId: 'public_escalation_agent',
         escalationUrgency: 'urgent',
         noRealCustomerDelivery: true,
         sendMessageNotInvoked: true,
@@ -34,7 +34,7 @@ describe('Pi public escalation canary CLI', () => {
         externalMcpNotInvoked: true,
       },
     });
-    expect(body.assertions.escalationSummary).toContain('Excel export');
+    expect(body.assertions.escalationSummary).toContain('restricted data export');
     expect(body.workspacePath).toBeUndefined();
   });
 

@@ -807,7 +807,7 @@ export const RUNTIME_CANARY_SCENARIOS: RuntimeCanaryScenario[] = [
     ],
     [
       'Validate MCP_META.escalate is registered as public-safe, non-destructive, and not hard-blacklisted.',
-      'Run public safety-profile policy against a prefixed leads_agent escalation tool with allowed_mcp_tools set to the local tool name.',
+      'Run public safety-profile policy against a prefixed public escalation tool with allowed_mcp_tools set to the local tool name.',
       'Verify the same public profile still denies an unknown plugin MCP tool.',
       'Invoke the escalation tool with isolated OC_DATA_DIR and verify exactly one JSONL operator escalation row.',
     ],

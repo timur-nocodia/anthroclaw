@@ -42,10 +42,7 @@ describe('side-effect gate registry', () => {
       expect(gate.execution.approval).toMatch(/^(required-for-live|operator-review|not-required-read-only)$/);
       expect(packageJson.scripts[gate.focusedCommand]).toBeTruthy();
       const compatibilityCommand = 'compatibilityCommand' in gate ? gate.compatibilityCommand : undefined;
-      if (compatibilityCommand) {
-        expect(compatibilityCommand).toContain('timur-agent');
-        expect(packageJson.scripts[compatibilityCommand]).toBeTruthy();
-      }
+      expect(compatibilityCommand, `${gate.id} should not expose a named-agent compatibility command`).toBeUndefined();
     }
   });
 
@@ -100,7 +97,7 @@ describe('side-effect gate registry', () => {
     });
 
     for (const gate of SIDE_EFFECT_GATE_REGISTRY) {
-      expect(gate.execution.exampleArgs.join(' ')).not.toContain('timur_agent');
+      expect(gate.execution.exampleArgs.join(' ')).not.toContain('runtime_test_agent');
       expect(gate.execution.exampleArgs).toContain('--agent-id');
       expect(gate.execution.exampleArgs).toContain('<id>');
     }

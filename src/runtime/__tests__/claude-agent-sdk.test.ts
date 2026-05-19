@@ -1,4 +1,67 @@
 import { describe, expect, it, vi } from 'vitest';
+import type * as LegacyClaudeSdk from '@anthroclaw/legacy-claude-agent-sdk';
+
+const legacySdkMocks = vi.hoisted(() => {
+  const query = vi.fn();
+  const startup = vi.fn();
+  const createSdkMcpServer = vi.fn();
+
+  class MockClaudeRuntimeRunHandle implements AsyncIterable<unknown> {
+    constructor(readonly queryHandle: any) {}
+
+    get query(): any {
+      return this.queryHandle;
+    }
+
+    [Symbol.asyncIterator](): AsyncIterator<unknown> {
+      return this.queryHandle[Symbol.asyncIterator]();
+    }
+
+    async interrupt(): Promise<void> {
+      await this.queryHandle.interrupt();
+    }
+
+    close(): void {
+      this.queryHandle.close?.();
+    }
+
+    async rewindFiles(userMessageId: string, options?: unknown): Promise<unknown> {
+      return this.queryHandle.rewindFiles(userMessageId, options);
+    }
+  }
+
+  const runClaudeAgentQuery = vi.fn((input: { prompt: unknown; options: unknown }) => query(input));
+  const runClaudeAgentHandle = vi.fn((input: { prompt: unknown; options: unknown }) => (
+    new MockClaudeRuntimeRunHandle(runClaudeAgentQuery(input))
+  ));
+  const startClaudeAgentRuntime = vi.fn((input: { options?: unknown }) => startup({ options: input.options }));
+  const initializeClaudeAgentRuntime = vi.fn(() => startup());
+  const createClaudeSdkMcpServer = vi.fn((input: { name: string; tools: unknown[] }) => createSdkMcpServer(input));
+
+  return {
+    query,
+    startup,
+    createSdkMcpServer,
+    ClaudeRuntimeRunHandle: MockClaudeRuntimeRunHandle,
+    runClaudeAgentQuery,
+    runClaudeAgentHandle,
+    startClaudeAgentRuntime,
+    initializeClaudeAgentRuntime,
+    createClaudeSdkMcpServer,
+    runClaudeHeadless: vi.fn(),
+    runClaudeHeadlessText: vi.fn(),
+    claudeAgentHeadlessRuntime: { id: 'claude-agent-sdk', runText: vi.fn() },
+  };
+});
+
+vi.mock('@anthroclaw/legacy-claude-agent-sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof LegacyClaudeSdk>();
+  return {
+    ...actual,
+    ...legacySdkMocks,
+  };
+});
+
 import {
   buildClaudeRuntimeOptions,
   claudeAgentSdkRuntime,
@@ -10,13 +73,7 @@ import {
   startClaudeAgentRuntime,
 } from '../claude-agent-sdk.js';
 import { buildSdkOptions } from '../../sdk/options.js';
-import { query, startup, createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
-
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: vi.fn(),
-  startup: vi.fn(),
-  createSdkMcpServer: vi.fn(),
-}));
+import { query, startup, createSdkMcpServer } from '@anthroclaw/legacy-claude-agent-sdk';
 
 vi.mock('../../sdk/options.js', () => ({
   buildSdkOptions: vi.fn(),

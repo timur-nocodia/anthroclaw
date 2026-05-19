@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { MemoryProvider } from '../../memory/provider.js';
 import type { ToolDefinition } from './types.js';
 import type { ToolMeta } from '../../security/types.js';

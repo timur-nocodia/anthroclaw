@@ -181,7 +181,7 @@ export interface AssembleInput {
     chatType?: 'dm' | 'group';
     threadId?: string;
   };
-  messages: unknown[];           // SDKMessage[] — typed via @anthropic-ai/claude-agent-sdk
+  messages: unknown[];           // SDKMessage[] — typed via @anthroclaw/legacy-claude-agent-sdk
 }
 export interface AssembleResult {
   messages: unknown[];           // transformed prompt

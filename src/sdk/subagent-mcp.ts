@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AgentMcpServerSpec } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentMcpServerSpec } from '@anthroclaw/legacy-claude-agent-sdk';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { Agent } from '../agent/agent.js';

@@ -11,7 +11,7 @@ import type {
   Options,
   PermissionResult,
   PreToolUseHookInput,
-} from '@anthropic-ai/claude-agent-sdk';
+} from '@anthroclaw/legacy-claude-agent-sdk';
 import {
   evaluateFileOwnershipToolUse,
   type FileOwnershipToolUseContext,

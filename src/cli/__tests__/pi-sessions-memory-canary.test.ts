@@ -6,8 +6,8 @@ const { piRunMock, startupMock } = vi.hoisted(() => ({
   startupMock: vi.fn(),
 }));
 
-vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@anthropic-ai/claude-agent-sdk')>();
+vi.mock('@anthroclaw/legacy-claude-agent-sdk', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@anthroclaw/legacy-claude-agent-sdk')>();
   return {
     ...real,
     startup: startupMock,

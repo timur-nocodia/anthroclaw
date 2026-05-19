@@ -19,7 +19,7 @@ describe('Pi scheduled-work gate CLI', () => {
     root = mkdtempSync(join(tmpdir(), 'pi-scheduled-work-gate-'));
     const agentsDir = join(root, 'agents');
     const workspace = join(root, 'workspace');
-    writeAgent(agentsDir, 'project-manager', `
+    writeAgent(agentsDir, 'group-agent', `
 routes:
   - channel: telegram
     account: content_sm
@@ -35,12 +35,12 @@ mcp_tools: [manage_cron]
 
     const code = await runPiScheduledWorkGateCli([
       '--agents-dir', agentsDir,
-      '--agent-id', 'project-manager',
+      '--agent-id', 'group-agent',
       '--account-id', 'content_sm',
       '--peer-id', '-1003729315809',
       '--sender-id', '48705953',
       '--thread-id', '8',
-      '--cron-id', 'project-manager-scheduled-work',
+      '--cron-id', 'group-agent-scheduled-work',
       '--json',
     ], { stdout, stderr, makeWorkspace: () => workspace });
 
@@ -50,14 +50,14 @@ mcp_tools: [manage_cron]
     expect(body).toMatchObject({
       status: 'passed',
       runtime: 'pi',
-      agentId: 'project-manager',
+      agentId: 'group-agent',
       target: {
         accountId: 'content_sm',
         peerId: '-1003729315809',
         threadId: '8',
       },
       cron: {
-        id: 'project-manager-scheduled-work',
+        id: 'group-agent-scheduled-work',
         created: true,
         listed: true,
         toggledDisabled: true,
@@ -105,7 +105,7 @@ mcp_tools: [memory_search]
     expect(parsePiScheduledWorkGateArgs([
       '--',
       '--agents-dir', '/tmp/agents',
-      '--agent-id', 'project-manager',
+      '--agent-id', 'group-agent',
       '--account-id', 'content_sm',
       '--peer-id', '-100',
       '--sender-id', '48705953',
@@ -117,7 +117,7 @@ mcp_tools: [memory_search]
       '--json',
     ])).toMatchObject({
       agentsDir: '/tmp/agents',
-      agentId: 'project-manager',
+      agentId: 'group-agent',
       accountId: 'content_sm',
       peerId: '-100',
       senderId: '48705953',

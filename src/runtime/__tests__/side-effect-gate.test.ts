@@ -18,7 +18,8 @@ describe('RuntimeSideEffectGate contract', () => {
   it('rejects gate ids that bake in a concrete agent id', () => {
     const result = validateRuntimeSideEffectGateSpec({
       ...validSpec(),
-      gateId: 'timur-agent-live-send-message',
+      agentId: 'concrete_agent',
+      gateId: 'concrete-agent-live-send-message',
     });
 
     expect(result.ok).toBe(false);
@@ -51,7 +52,8 @@ describe('RuntimeSideEffectGate contract', () => {
   it('warns when evidence markers include concrete agent identity', () => {
     const result = validateRuntimeSideEffectGateSpec({
       ...validSpec(),
-      markerPrefix: 'TIMUR_AGENT_LIVE_SEND_MESSAGE_OK',
+      agentId: 'concrete_agent',
+      markerPrefix: 'CONCRETE_AGENT_LIVE_SEND_MESSAGE_OK',
     });
 
     expect(result.ok).toBe(true);
@@ -62,7 +64,7 @@ describe('RuntimeSideEffectGate contract', () => {
 function validSpec(): RuntimeSideEffectGateSpec {
   return {
     gateId: 'live-send-message',
-    agentId: 'timur_agent',
+    agentId: 'runtime_test_agent',
     runtime: 'pi',
     risk: 'external_write',
     action: 'message.send',

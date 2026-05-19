@@ -1,4 +1,4 @@
-import type { AgentMcpServerSpec, McpHttpServerConfig, McpSSEServerConfig, McpStdioServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentMcpServerSpec, McpHttpServerConfig, McpSSEServerConfig, McpStdioServerConfig } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { AgentYml } from '../config/schema.js';
 import type { CredentialStore, StoredCredential, McpOAuthCredential } from '../agent/credentials/index.js';
 import { refreshToken } from '../integrations/mcp-onboarding/oauth-client.js';

@@ -1,11 +1,118 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type * as LegacyClaudeSdk from '@anthroclaw/legacy-claude-agent-sdk';
 import { runHeadlessReview, runHeadlessReviewResult } from '../headless-review.js';
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: vi.fn(),
-}));
+const legacySdkMocks = vi.hoisted(() => {
+  const query = vi.fn();
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+  async function runHeadlessText(input: {
+    prompt: string;
+    cwd?: string;
+    model?: string;
+    systemPrompt?: string;
+    purpose?: string;
+    timeoutMs?: number;
+    toolDenyMessage?: string;
+    runtimeDefaults?: {
+      cwd?: string;
+      model?: string;
+      timeoutMs?: number;
+      allowedTools?: string[];
+    };
+  }): Promise<string> {
+    const timeoutMs = input.timeoutMs ?? input.runtimeDefaults?.timeoutMs ?? 60_000;
+    const purpose = input.purpose ?? 'headless review';
+    const controller = new AbortController();
+    const stream = query({
+      prompt: input.prompt,
+      options: {
+        model: input.model ?? input.runtimeDefaults?.model ?? 'claude-sonnet-4-6',
+        cwd: input.cwd ?? input.runtimeDefaults?.cwd ?? process.cwd(),
+        tools: [],
+        allowedTools: [],
+        permissionMode: 'dontAsk',
+        persistSession: false,
+        maxTurns: 1,
+        settingSources: ['project'],
+        abortController: controller,
+        canUseTool: async () => ({
+          behavior: 'deny',
+          message: input.toolDenyMessage ?? `Tools disabled for ${purpose}.`,
+        }),
+        systemPrompt: input.systemPrompt
+          ? { type: 'preset', preset: 'claude_code', excludeDynamicSections: true, append: input.systemPrompt }
+          : { type: 'preset', preset: 'claude_code', excludeDynamicSections: true },
+      },
+    }) as AsyncIterable<unknown> & { close?: () => void };
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let result = '';
+    let resultFound = false;
+    const accumulated: string[] = [];
+
+    const complete = (async () => {
+      for await (const event of stream) {
+        const e = event as Record<string, unknown>;
+        const subtype = (e.subtype as string | undefined) ?? 'unknown';
+        if (e.type === 'result' && e.is_error && subtype !== 'success') {
+          const errors = Array.isArray(e.errors) ? e.errors : [];
+          throw new Error(`${purpose} LLM error (${subtype}): ${errors.join('; ') || subtype}`);
+        }
+        if (e.type === 'result' && typeof e.result === 'string') {
+          result = e.result.trim();
+          if (/failed to authenticate|authentication_error|invalid authentication credentials/i.test(result)) {
+            throw new Error(`${purpose} LLM authentication error: ${result}`);
+          }
+          resultFound = true;
+          break;
+        }
+        if (e.type === 'assistant') {
+          const message = e.message as { content?: Array<{ type?: string; text?: string }> } | undefined;
+          for (const block of message?.content ?? []) {
+            if (block.type === 'text' && typeof block.text === 'string') accumulated.push(block.text);
+          }
+        }
+      }
+    })();
+    const timeout = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener('abort', () => {
+        reject(new Error(`${purpose} timeout after ${timeoutMs}ms`));
+      });
+    });
+
+    try {
+      await Promise.race([complete, timeout]);
+    } finally {
+      clearTimeout(timer);
+      stream.close?.();
+    }
+
+    if (!resultFound) result = accumulated.join('').trim();
+    if (!result) throw new Error(`${purpose} returned empty result`);
+    return result;
+  }
+
+  return {
+    query,
+    runHeadlessText,
+  };
+});
+
+vi.mock('@anthroclaw/legacy-claude-agent-sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof LegacyClaudeSdk>();
+  return {
+    ...actual,
+    query: legacySdkMocks.query,
+    claudeAgentHeadlessRuntime: {
+      id: 'claude-agent-sdk',
+      runText: legacySdkMocks.runHeadlessText,
+      run: async (input: Parameters<typeof legacySdkMocks.runHeadlessText>[0]) => ({
+        text: await legacySdkMocks.runHeadlessText(input),
+      }),
+    },
+  };
+});
+
+import { query } from '@anthroclaw/legacy-claude-agent-sdk';
 
 const mockedQuery = query as unknown as ReturnType<typeof vi.fn>;
 

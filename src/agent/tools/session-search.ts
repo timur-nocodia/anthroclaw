@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { ToolDefinition } from './types.js';
 import type { ToolMeta } from '../../security/types.js';
 import type { SessionSearchService } from '../../session/session-search.js';

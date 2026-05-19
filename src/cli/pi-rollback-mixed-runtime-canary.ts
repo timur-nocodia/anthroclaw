@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import type { SessionStoreEntry } from '@anthropic-ai/claude-agent-sdk';
+import type { SessionStoreEntry } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { Agent } from '../agent/agent.js';
 import type { ChannelAdapter, InboundMessage } from '../channels/types.js';
 import type { GlobalConfig } from '../config/schema.js';

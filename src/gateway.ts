@@ -2453,7 +2453,7 @@ export class Gateway {
     // The bypass had a hidden cost: cron-having agents that also use
     // external MCP servers (Linear/Supabase HTTP MCP) paid a fresh
     // handshake on every turn. On 2026-05-16 that surfaced as
-    // 8-minute hangs on project-manager queries — the SDK subprocess
+    // 8-minute hangs on a cron-heavy runtime fixture — the SDK subprocess
     // stalled inside HTTP MCP init and there was no first-event
     // timeout to catch it. Removed; defense-in-depth (default
     // iteration_budget for every agent) is in src/config/schema.ts.

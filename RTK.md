@@ -9,10 +9,9 @@ agent rollout.
 The migration target is a provider-neutral Runtime v1 harness that can create
 and run arbitrary configured agents with Agent SDK-equivalent semantics.
 
-Do not answer OSS migration status with named private agents such as
-`timur_agent`, `project-manager`, `content_sm_building`, `leads_agent`, or any
-other local production/lab agent. Those agents are private rollout evidence,
-not migration acceptance criteria.
+Do not answer OSS migration status with named private/local production or lab
+agents. Those agents are private rollout evidence, not migration acceptance
+criteria.
 
 Concrete agents may appear only in:
 

@@ -1,5 +1,5 @@
-import type { AgentDefinition, OnElicitation, Options } from '@anthropic-ai/claude-agent-sdk';
-import type { SessionStore } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentDefinition, OnElicitation, Options } from '@anthroclaw/legacy-claude-agent-sdk';
+import type { SessionStore } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { Agent } from '../agent/agent.js';
 import type { HookEmitter } from '../hooks/emitter.js';
 import { buildSdkHookBridge, mergeSdkHooks } from './hooks.js';

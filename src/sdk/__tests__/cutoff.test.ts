@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { CanUseTool, Options as SdkOptions } from '@anthropic-ai/claude-agent-sdk';
+import type { CanUseTool, Options as SdkOptions } from '@anthroclaw/legacy-claude-agent-sdk';
 import {
   AGENT_BUILTIN_TOOL_WHITELIST,
   ENV_VAR_DENYLIST,

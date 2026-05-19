@@ -26,7 +26,7 @@
  *     defence-in-depth: a typo or accidental edit to the prefix list
  *     still leaves the exact-name entry as a backstop.
  */
-import type { CanUseTool, Options as SdkOptions } from '@anthropic-ai/claude-agent-sdk';
+import type { CanUseTool, Options as SdkOptions } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { Agent } from '../agent/agent.js';
 import { agentWorkspaceDir, siblingAgentDirs } from '../agent/sandbox/agent-workspace.js';
 import { logger } from '../logger.js';

@@ -4,14 +4,14 @@ import type {
   SessionMessage,
   SessionStoreEntry,
   SessionStore,
-} from '@anthropic-ai/claude-agent-sdk';
+} from '@anthroclaw/legacy-claude-agent-sdk';
 import {
   deleteSession,
   forkSession,
   getSessionInfo,
   getSessionMessages,
   listSessions,
-} from '@anthropic-ai/claude-agent-sdk';
+} from '@anthroclaw/legacy-claude-agent-sdk';
 import type { Agent } from '../agent/agent.js';
 
 export interface SdkSessionServiceOptions {

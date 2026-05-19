@@ -10,7 +10,7 @@
 // out in the spec. `composeSystemPrompt` layers in the SafetyProfile to produce
 // the final SDK system prompt body.
 
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type { Options } from '@anthroclaw/legacy-claude-agent-sdk';
 import {
   existsSync,
   readFileSync,
