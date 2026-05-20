@@ -6,6 +6,11 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+### Planned
+- v1.3.0 product hardening release: `manage_cron` v2, peer-isolated
+  public memory, persistent approvals, WhatsApp approval UX, richer
+  observability, and deploy/fleet polish.
+
 ## [1.2.0] - 2026-05-19
 
 ### Added
