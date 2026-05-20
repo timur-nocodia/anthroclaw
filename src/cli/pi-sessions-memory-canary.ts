@@ -685,6 +685,7 @@ function createGatewayCanaryChannel(sentText: string[]): ChannelAdapter {
   return {
     id: GATEWAY_CHANNEL_ID,
     supportsApproval: false,
+    approvalMode: 'unsupported',
     onMessage() {},
     async start() {},
     async stop() {},

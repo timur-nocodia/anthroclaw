@@ -4350,6 +4350,25 @@ export class Gateway {
     return this.approvalBroker;
   }
 
+  private async handleApprovalTextReply(msg: InboundMessage): Promise<boolean> {
+    const match = /^\/(approve|deny)\s+(.+?)\s*$/i.exec(msg.text.trim());
+    if (!match) return false;
+    const channel = this.channels.get(msg.channel);
+    if (channel?.approvalMode !== 'text_code') return false;
+    const [, verb, id] = match;
+    const ok = this.approvalBroker.resolveBySender(
+      id,
+      msg.senderId,
+      verb.toLowerCase() === 'approve' ? 'allow' : 'deny',
+    );
+    await channel.sendText(msg.peerId, ok ? 'Approval recorded.' : 'Approval not found or sender mismatch.', {
+      accountId: msg.accountId,
+      threadId: msg.threadId,
+      parseMode: 'plain',
+    }).catch(() => {});
+    return true;
+  }
+
   private async handleDecisionTextReply(msg: InboundMessage): Promise<boolean> {
     if (!this.decisionCenter) return false;
     const result = this.decisionCenter.resolveTextReply({
@@ -4852,6 +4871,7 @@ export class Gateway {
     metrics.recordMessage();
     if (await this.handleBuildroomTelegramCommand(msg)) return;
     if (!this.routeTable || !this.accessControl) return;
+    if (await this.handleApprovalTextReply(msg)) return;
     if (await this.handleDecisionTextReply(msg)) return;
 
     const routeDecisionId = randomUUID();

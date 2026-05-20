@@ -61,6 +61,8 @@ export interface ChannelCapabilities {
   reactions: boolean;
 }
 
+export type ApprovalMode = 'interactive_buttons' | 'text_code' | 'unsupported';
+
 export interface InlineButton {
   text: string;
   callbackData?: string;
@@ -121,6 +123,7 @@ export interface ChannelAdapter {
   setReaction?(peerId: string, messageId: string, emoji: string, accountId?: string): Promise<void>;
   readonly capabilities?: ChannelCapabilities;
   readonly supportsApproval: boolean;
+  readonly approvalMode: ApprovalMode;
   promptForApproval(req: ApprovalRequest): Promise<void>;
   /** Subscribe to adapter-level events such as `operator_outbound`. */
   on?<E extends keyof ChannelAdapterEvents>(

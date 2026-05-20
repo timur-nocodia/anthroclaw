@@ -13,6 +13,7 @@ function makeFakeAdapter() {
     id: 'whatsapp',
     sendText: sendText as unknown as ChannelAdapter['sendText'],
     supportsApproval: false,
+    approvalMode: 'unsupported',
   };
   return { adapter: adapter as ChannelAdapter, sendText };
 }

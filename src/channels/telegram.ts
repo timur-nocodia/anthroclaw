@@ -61,6 +61,7 @@ function isTelegramPollingConflict(err: unknown): boolean {
 export class TelegramChannel implements ChannelAdapter {
   readonly id = 'telegram' as const;
   static readonly supportsApproval = true;
+  static readonly approvalMode = 'interactive_buttons' as const;
   static readonly capabilities: ChannelCapabilities = {
     callbacks: true,
     textReplies: true,
@@ -70,6 +71,7 @@ export class TelegramChannel implements ChannelAdapter {
     reactions: true,
   };
   readonly supportsApproval = true as const;
+  readonly approvalMode = 'interactive_buttons' as const;
   readonly capabilities = TelegramChannel.capabilities;
 
   private bots = new Map<string, Bot>();

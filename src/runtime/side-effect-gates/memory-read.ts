@@ -447,6 +447,7 @@ function createMemoryReadGateChannel(input: {
   return {
     id: input.channelId,
     supportsApproval: true,
+    approvalMode: input.channelId === 'whatsapp' ? 'text_code' : 'interactive_buttons',
     onMessage() {},
     async start() {},
     async stop() {},

@@ -315,10 +315,11 @@ export function createCanUseTool(deps: CanUseToolDeps): CanUseTool {
       return allow(input);
     }
 
-    // Channel must support interactive approval
-    if (!channel || !channel.supportsApproval) {
+    // Channel must support an approval UX. Telegram uses callback buttons;
+    // WhatsApp uses text-code replies routed back through the gateway.
+    if (!channel || !channel.supportsApproval || channel.approvalMode === 'unsupported') {
       return deny(
-        `Tool "${toolName}" requires approval; channel does not support interactive approval`,
+        `Tool "${toolName}" requires approval; channel does not support approval`,
       );
     }
 
