@@ -24,6 +24,12 @@ export interface SearchResult {
 }
 
 export type MemoryReviewStatus = 'pending' | 'approved' | 'rejected';
+export type MemoryVisibility = 'agent' | 'peer';
+
+export interface MemorySearchScope {
+  visibility?: MemoryVisibility;
+  peerKey?: string;
+}
 
 export interface MemoryProvenance {
   source?: 'memory_write' | 'memory_wiki' | 'dreaming' | 'index' | 'import' | 'post_run_candidate' | 'local_note_proposal' | 'learning_candidate';
@@ -38,6 +44,8 @@ export interface MemoryProvenance {
   toolName?: string;
   createdBy?: string;
   note?: string;
+  visibility?: MemoryVisibility;
+  peerKey?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -48,6 +56,8 @@ export interface MemoryEntryRecord {
   source: string;
   reviewStatus: MemoryReviewStatus;
   reviewNote?: string;
+  visibility: MemoryVisibility;
+  peerKey?: string;
   provenance: MemoryProvenance;
   createdAt: number;
   updatedAt: number;
@@ -169,6 +179,8 @@ export class MemoryStore implements MemoryProvider {
         source TEXT NOT NULL,
         review_status TEXT NOT NULL,
         review_note TEXT,
+        visibility TEXT NOT NULL DEFAULT 'agent',
+        peer_key TEXT,
         provenance_json TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
@@ -198,6 +210,9 @@ export class MemoryStore implements MemoryProvider {
     // Legacy-column migration must run before index creation so indexes that
     // reference columns added later (chunks.entry_id) don't fail on old DBs.
     this.ensureColumn('chunks', 'entry_id', 'TEXT');
+    this.ensureColumn('memory_entries', 'visibility', "TEXT NOT NULL DEFAULT 'agent'");
+    this.ensureColumn('memory_entries', 'peer_key', 'TEXT');
+    this.db.prepare("UPDATE memory_entries SET visibility = 'agent' WHERE visibility IS NULL OR visibility = ''").run();
 
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);
@@ -205,6 +220,7 @@ export class MemoryStore implements MemoryProvider {
       CREATE INDEX IF NOT EXISTS idx_memory_entries_path ON memory_entries(path);
       CREATE INDEX IF NOT EXISTS idx_memory_entries_source_updated ON memory_entries(source, updated_at);
       CREATE INDEX IF NOT EXISTS idx_memory_entries_review_updated ON memory_entries(review_status, updated_at);
+      CREATE INDEX IF NOT EXISTS idx_memory_entries_scope_updated ON memory_entries(visibility, peer_key, updated_at);
     `);
 
     this.stmtDeleteByPath = this.db.prepare('DELETE FROM chunks WHERE path = ?');
@@ -233,24 +249,32 @@ export class MemoryStore implements MemoryProvider {
     const source = provenance.source ?? existingEntry?.provenance.source ?? 'index';
     const reviewStatus = provenance.reviewStatus ?? existingEntry?.reviewStatus ?? 'approved';
     const reviewNote = existingEntry?.reviewNote;
+    const visibility = provenance.visibility ?? existingEntry?.visibility ?? 'agent';
+    const peerKey = visibility === 'peer'
+      ? (provenance.peerKey ?? existingEntry?.peerKey)
+      : undefined;
     const createdAt = existingEntry?.createdAt ?? now;
     const storedProvenance: MemoryProvenance = {
       ...existingEntry?.provenance,
       ...provenance,
       source,
       reviewStatus,
+      visibility,
+      peerKey: peerKey ?? undefined,
     };
 
     const txn = this.db.transaction(() => {
       this.db.prepare(`
         INSERT INTO memory_entries(
-          id, path, content_hash, source, review_status, review_note, provenance_json, created_at, updated_at
+          id, path, content_hash, source, review_status, review_note, visibility, peer_key, provenance_json, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(path) DO UPDATE SET
           content_hash = excluded.content_hash,
           source = excluded.source,
           review_status = excluded.review_status,
+          visibility = excluded.visibility,
+          peer_key = excluded.peer_key,
           provenance_json = excluded.provenance_json,
           updated_at = excluded.updated_at
       `).run(
@@ -260,6 +284,8 @@ export class MemoryStore implements MemoryProvider {
         source,
         reviewStatus,
         reviewNote ?? null,
+        visibility,
+        peerKey ?? null,
         JSON.stringify(storedProvenance),
         createdAt,
         now,
@@ -288,6 +314,8 @@ export class MemoryStore implements MemoryProvider {
       source,
       reviewStatus,
       reviewNote,
+      visibility,
+      peerKey,
       provenance: storedProvenance,
       createdAt,
       updatedAt: now,
@@ -322,7 +350,8 @@ export class MemoryStore implements MemoryProvider {
     txn();
   }
 
-  textSearch(query: string, limit: number): SearchResult[] {
+  textSearch(query: string, limit: number, scope: MemorySearchScope = { visibility: 'agent' }): SearchResult[] {
+    const { clause, values } = memoryScopeSql(scope);
     const rows = this.db
       .prepare(
         `SELECT c.entry_id, c.path, c.start_line, c.end_line, c.text, rank
@@ -331,10 +360,11 @@ export class MemoryStore implements MemoryProvider {
          LEFT JOIN memory_entries e ON e.id = c.entry_id
          WHERE chunks_fts MATCH ?
            AND (c.entry_id IS NULL OR e.review_status = 'approved')
+           ${clause}
          ORDER BY rank
          LIMIT ?`,
       )
-      .all(query, limit) as Array<{
+      .all(query, ...values, limit) as Array<{
       entry_id: string | null;
       path: string;
       start_line: number;
@@ -360,7 +390,8 @@ export class MemoryStore implements MemoryProvider {
       .run(buffer, model, chunkId);
   }
 
-  vectorSearch(queryEmbedding: Float32Array, limit: number): SearchResult[] {
+  vectorSearch(queryEmbedding: Float32Array, limit: number, scope: MemorySearchScope = { visibility: 'agent' }): SearchResult[] {
+    const { clause, values } = memoryScopeSql(scope);
     const rows = this.db
       .prepare(
         `SELECT c.id, c.entry_id, c.path, c.start_line, c.end_line, c.text, c.embedding
@@ -368,9 +399,10 @@ export class MemoryStore implements MemoryProvider {
          LEFT JOIN memory_entries e ON e.id = c.entry_id
          WHERE c.embedding IS NOT NULL
            AND (c.entry_id IS NULL OR e.review_status = 'approved')
+           ${clause}
          LIMIT 2000`,
       )
-      .all() as Array<{
+      .all(...values) as Array<{
       id: string;
       entry_id: string | null;
       path: string;
@@ -479,12 +511,15 @@ interface MemoryEntryRow {
   source: string;
   review_status: MemoryReviewStatus;
   review_note: string | null;
+  visibility: MemoryVisibility | null;
+  peer_key: string | null;
   provenance_json: string;
   created_at: number;
   updated_at: number;
 }
 
 function rowToMemoryEntry(row: MemoryEntryRow): MemoryEntryRecord {
+  const visibility = row.visibility === 'peer' ? 'peer' : 'agent';
   return {
     id: row.id,
     path: row.path,
@@ -492,10 +527,28 @@ function rowToMemoryEntry(row: MemoryEntryRow): MemoryEntryRecord {
     source: row.source,
     reviewStatus: row.review_status,
     reviewNote: row.review_note ?? undefined,
+    visibility,
+    peerKey: visibility === 'peer' ? row.peer_key ?? undefined : undefined,
     provenance: parseProvenance(row.provenance_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function memoryScopeSql(scope: MemorySearchScope): { clause: string; values: unknown[] } {
+  if (scope.visibility === 'peer') {
+    return {
+      clause: 'AND e.visibility = ? AND e.peer_key = ?',
+      values: ['peer', scope.peerKey ?? ''],
+    };
+  }
+  if (scope.visibility === 'agent') {
+    return {
+      clause: "AND (c.entry_id IS NULL OR e.visibility = 'agent')",
+      values: [],
+    };
+  }
+  return { clause: '', values: [] };
 }
 
 function parseProvenance(value: string): MemoryProvenance {

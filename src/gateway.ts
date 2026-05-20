@@ -49,6 +49,7 @@ import type {
 import { Agent } from './agent/agent.js';
 import { AGENT_ID_MAX_LEN, AGENT_ID_RE } from './agent/sandbox/agent-workspace.js';
 import { createManageCronTool } from './agent/tools/manage-cron.js';
+import { createMemoryWriteTool } from './agent/tools/memory-write.js';
 import { createSendMessageTool } from './agent/tools/send-message.js';
 import { createSendMediaTool } from './agent/tools/send-media.js';
 import { bindBuildroomHandoffToolsForDispatch } from './agent/tools/buildroom-handoff.js';
@@ -670,6 +671,16 @@ function withMessageRawMeta(msg: InboundMessage, meta: Record<string, unknown>):
     ...(msg.raw && typeof msg.raw === 'object' ? msg.raw as Record<string, unknown> : {}),
     ...meta,
   };
+}
+
+function buildMemoryPeerKey(msg: InboundMessage): string {
+  return [
+    msg.channel,
+    msg.accountId,
+    msg.chatType,
+    msg.peerId,
+    msg.threadId ? `thread:${msg.threadId}` : null,
+  ].filter((part): part is string => Boolean(part)).join(':');
 }
 
 function readStringMeta(meta: Record<string, unknown>, key: string): string | undefined {
@@ -2484,6 +2495,19 @@ export class Gateway {
         )
       : baseDispatchTools
     ).map((tool) => {
+      if (tool.name === 'memory_search') {
+        return agent.buildMemorySearchToolForDispatch({
+          safetyProfile: agent.safetyProfile.name,
+          peerKey: msg ? buildMemoryPeerKey(msg) : undefined,
+        });
+      }
+      if (tool.name === 'memory_write') {
+        return createMemoryWriteTool(agent.workspacePath, agent.memoryStore, agent.config.timezone, {
+          safetyProfile: agent.safetyProfile.name,
+          peerKey: msg ? buildMemoryPeerKey(msg) : undefined,
+          onMemoryWrite: (event) => this.emitMemoryWriteHook({ ...event, agentId: agent.id }),
+        });
+      }
       if (tool.name === 'send_message') {
         return createSendMessageTool((id) => this.channels.get(id), {
           agentId: agent.id,

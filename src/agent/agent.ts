@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { loadAgentYml } from '../config/loader.js';
 import type { AgentYml, GlobalConfig } from '../config/schema.js';
 import { MemoryStore } from '../memory/store.js';
-import { createMemorySearchTool } from './tools/memory-search.js';
+import { createMemorySearchTool, type MemorySearchToolOptions } from './tools/memory-search.js';
 import { createMemoryWriteTool, type MemoryWriteToolEvent } from './tools/memory-write.js';
 import { createMemoryWikiTool } from './tools/memory-wiki.js';
 import { createSendMessageTool } from './tools/send-message.js';
@@ -178,6 +178,7 @@ export class Agent {
   private sessionModelOverrides: Map<string, string>;
   private sessionModelOverridesPath: string | null;
   private sessionMappingsPath: string | null;
+  private readonly embedFn?: (text: string) => Promise<Float32Array>;
   // In-memory only — counts consecutive auto-compress failures per session.
   // Reset on success or session clear. Used to escalate from "keep intact"
   // to a degraded forced reset after too many failures in a row.
@@ -193,6 +194,7 @@ export class Agent {
     safetyProfile: SafetyProfile,
     sessionModelOverridesPath: string | null = null,
     sessionMappingsPath: string | null = null,
+    embedFn?: (text: string) => Promise<Float32Array>,
   ) {
     this.id = id;
     this.config = config;
@@ -209,6 +211,7 @@ export class Agent {
     this.sessionModelOverrides = new Map();
     this.sessionModelOverridesPath = sessionModelOverridesPath;
     this.sessionMappingsPath = sessionMappingsPath;
+    this.embedFn = embedFn;
     this.loadSessionModelOverrides();
     this.loadSessionMappings();
   }
@@ -266,6 +269,10 @@ export class Agent {
 
   buildToolsForDispatch(sessionKey?: string): ToolDefinition[] {
     return [...this.builtinTools, ...this.wrapPluginTools(this.pluginTools, sessionKey)];
+  }
+
+  buildMemorySearchToolForDispatch(options: MemorySearchToolOptions): ToolDefinition {
+    return createMemorySearchTool(this.memoryStore, this.embedFn, options);
   }
 
   private wrapPluginTools(pluginTools: PluginMcpTool[], sessionKey?: string): ToolDefinition[] {
@@ -411,10 +418,13 @@ export class Agent {
     for (const toolName of requestedTools) {
       switch (toolName) {
         case 'memory_search':
-          tools.push(createMemorySearchTool(memoryStore, embedFn));
+          tools.push(createMemorySearchTool(memoryStore, embedFn, {
+            safetyProfile: safetyProfile.name,
+          }));
           break;
         case 'memory_write':
           tools.push(createMemoryWriteTool(agentDir, memoryStore, config.timezone, {
+            safetyProfile: safetyProfile.name,
             onMemoryWrite: onMemoryWrite
               ? (event) => onMemoryWrite({ ...event, agentId: id })
               : undefined,
@@ -580,7 +590,7 @@ export class Agent {
     mkdirSync(sessionMappingsDir, { recursive: true });
     const sessionMappingsPath = join(sessionMappingsDir, `${id}.json`);
 
-    return new Agent(id, config, agentDir, memoryStore, mcpServer, tools, safetyProfile, sessionModelOverridesPath, sessionMappingsPath);
+    return new Agent(id, config, agentDir, memoryStore, mcpServer, tools, safetyProfile, sessionModelOverridesPath, sessionMappingsPath, embedFn);
   }
 
   getSessionId(sessionKey: string): string | undefined {

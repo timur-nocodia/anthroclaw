@@ -42,10 +42,12 @@ describe('MemoryStore', () => {
       path: 'docs/readme.md',
       source: 'memory_write',
       reviewStatus: 'approved',
+      visibility: 'agent',
       provenance: {
         runId: 'run-1',
         traceId: 'trace-1',
         sessionKey: 'web:agent:session',
+        visibility: 'agent',
       },
     });
     expect(chunks.length).toBeGreaterThanOrEqual(1);
@@ -132,6 +134,47 @@ describe('MemoryStore', () => {
 
     store.updateMemoryEntryReview(pending.id, 'approved');
     expect(store.textSearch('phoenix', 10).map((result) => result.path)).toEqual(['docs/pending.md']);
+  });
+
+  it('isolates peer-visible public entries by peer key', () => {
+    store.indexFile('memory/public-peers/a/note.md', 'Public memory codename alpha-lead.', {
+      source: 'memory_write',
+      reviewStatus: 'approved',
+      visibility: 'peer',
+      peerKey: 'telegram:default:dm:peer-a',
+    });
+    store.indexFile('memory/public-peers/b/note.md', 'Public memory codename beta-lead.', {
+      source: 'memory_write',
+      reviewStatus: 'approved',
+      visibility: 'peer',
+      peerKey: 'telegram:default:dm:peer-b',
+    });
+
+    expect(store.textSearch('memory codename', 10, {
+      visibility: 'peer',
+      peerKey: 'telegram:default:dm:peer-a',
+    }).map((result) => result.path)).toEqual(['memory/public-peers/a/note.md']);
+
+    expect(store.textSearch('memory codename', 10, {
+      visibility: 'peer',
+      peerKey: 'telegram:default:dm:peer-b',
+    }).map((result) => result.path)).toEqual(['memory/public-peers/b/note.md']);
+  });
+
+  it('keeps agent-scoped searches from returning peer-visible entries by default scope', () => {
+    store.indexFile('docs/agent.md', 'Shared agent-level project atlas.', {
+      source: 'memory_write',
+      reviewStatus: 'approved',
+      visibility: 'agent',
+    });
+    store.indexFile('memory/public-peers/a/note.md', 'Peer-only project atlas.', {
+      source: 'memory_write',
+      reviewStatus: 'approved',
+      visibility: 'peer',
+      peerKey: 'telegram:default:dm:peer-a',
+    });
+
+    expect(store.textSearch('project atlas', 10).map((result) => result.path)).toEqual(['docs/agent.md']);
   });
 
   // ─── 6. chunking: long content gets split ───────────────────────

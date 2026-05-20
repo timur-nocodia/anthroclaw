@@ -13,6 +13,10 @@ function makeStore(overrides: Partial<MemoryStore> = {}): MemoryStore {
     setEmbedding: vi.fn(),
     listTables: vi.fn(() => []),
     close: vi.fn(),
+    getMemoryEntry: vi.fn(() => null),
+    getMemoryEntryByPath: vi.fn(() => null),
+    listMemoryEntries: vi.fn(() => []),
+    updateMemoryEntryReview: vi.fn(() => false),
     ...overrides,
   } as unknown as MemoryStore;
 }
@@ -157,6 +161,35 @@ describe('createMemorySearchTool', () => {
     await tool.handler({ query: 'test' });
 
     // textSearch should be called with limit = 10 * 4 = 40
-    expect(store.textSearch).toHaveBeenCalledWith('test', 40);
+    expect(store.textSearch).toHaveBeenCalledWith('test', 40, { visibility: 'agent' });
+  });
+
+  it('scopes public searches to the current peer key', async () => {
+    const store = makeStore({
+      textSearch: vi.fn(() => [makeResult('memory/public-peers/a/note.md', 0, 1, 0.5, 'peer result')]),
+    });
+
+    const tool = createMemorySearchTool(store, undefined, {
+      safetyProfile: 'public',
+      peerKey: 'telegram:default:dm:peer-a',
+    });
+    const response = await tool.handler({ query: 'test' });
+
+    expect(response.isError).toBeUndefined();
+    expect(store.textSearch).toHaveBeenCalledWith('test', 40, {
+      visibility: 'peer',
+      peerKey: 'telegram:default:dm:peer-a',
+    });
+  });
+
+  it('rejects public searches without peer context', async () => {
+    const store = makeStore();
+    const tool = createMemorySearchTool(store, undefined, { safetyProfile: 'public' });
+
+    const response = await tool.handler({ query: 'test' });
+
+    expect(response.isError).toBe(true);
+    expect(response.content[0].text).toContain('requires peer context');
+    expect(store.textSearch).not.toHaveBeenCalled();
   });
 });

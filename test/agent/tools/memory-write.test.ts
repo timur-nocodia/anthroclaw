@@ -12,6 +12,7 @@ function memoryEntry(path: string): MemoryEntryRecord {
     contentHash: 'hash-1',
     source: 'memory_write',
     reviewStatus: 'approved',
+    visibility: 'agent',
     provenance: {},
     createdAt: 1000,
     updatedAt: 1000,
@@ -137,6 +138,42 @@ describe('createMemoryWriteTool', () => {
         metadata: { mode: 'append' },
       }),
     );
+  });
+
+  it('scopes public writes under a peer-specific path and provenance', async () => {
+    const indexFile = vi.fn((path: string) => memoryEntry(path));
+    const store = makeStore({ indexFile });
+    const tool = createMemoryWriteTool(tmpDir, store, 'UTC', {
+      safetyProfile: 'public',
+      peerKey: 'telegram:default:dm:peer-a',
+    });
+
+    const response = await tool.handler({ content: 'Public peer note', file: 'notes/test.md' });
+
+    expect(response.isError).toBeUndefined();
+    expect(response.content[0].text).toMatch(/^Written to memory\/public-peers\/[a-f0-9]{16}\/notes\/test\.md$/);
+    expect(indexFile).toHaveBeenCalledWith(
+      expect.stringMatching(/^memory\/public-peers\/[a-f0-9]{16}\/notes\/test\.md$/),
+      expect.stringContaining('Public peer note'),
+      expect.objectContaining({
+        source: 'memory_write',
+        reviewStatus: 'approved',
+        visibility: 'peer',
+        peerKey: 'telegram:default:dm:peer-a',
+      }),
+    );
+  });
+
+  it('rejects public writes without peer context', async () => {
+    const indexFile = vi.fn((path: string) => memoryEntry(path));
+    const store = makeStore({ indexFile });
+    const tool = createMemoryWriteTool(tmpDir, store, 'UTC', { safetyProfile: 'public' });
+
+    const response = await tool.handler({ content: 'Public peer note', file: 'notes/test.md' });
+
+    expect(response.isError).toBe(true);
+    expect(response.content[0].text).toContain('requires peer context');
+    expect(indexFile).not.toHaveBeenCalled();
   });
 
   it('emits memory write metadata after successful writes', async () => {

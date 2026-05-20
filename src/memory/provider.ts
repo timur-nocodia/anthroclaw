@@ -1,13 +1,13 @@
-import type { Chunk, MemoryEntryRecord, MemoryProvenance, MemoryReviewStatus, SearchResult } from './store.js';
+import type { Chunk, MemoryEntryRecord, MemoryProvenance, MemoryReviewStatus, MemorySearchScope, SearchResult } from './store.js';
 
 export interface MemoryProvider {
   indexFile(filePath: string, content: string, provenance?: MemoryProvenance): MemoryEntryRecord;
   getChunks(filePath: string): Chunk[];
   getAllChunks(): Chunk[];
   removeFile(filePath: string): void;
-  textSearch(query: string, limit: number): SearchResult[];
+  textSearch(query: string, limit: number, scope?: MemorySearchScope): SearchResult[];
   setEmbedding(chunkId: string, embedding: Float32Array, model: string): void;
-  vectorSearch(queryEmbedding: Float32Array, limit: number): SearchResult[];
+  vectorSearch(queryEmbedding: Float32Array, limit: number, scope?: MemorySearchScope): SearchResult[];
   getMemoryEntry(entryId: string): MemoryEntryRecord | null;
   getMemoryEntryByPath(filePath: string): MemoryEntryRecord | null;
   listMemoryEntries(params?: {

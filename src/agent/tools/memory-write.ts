@@ -1,4 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { z } from 'zod';
 import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
@@ -8,6 +9,7 @@ import type { MemoryEntryRecord } from '../../memory/store.js';
 import { logger } from '../../logger.js';
 import type { ToolDefinition } from './types.js';
 import type { ToolMeta } from '../../security/types.js';
+import type { ProfileName } from '../../security/types.js';
 
 export interface MemoryWriteToolEvent {
   file: string;
@@ -18,6 +20,8 @@ export interface MemoryWriteToolEvent {
 
 export interface MemoryWriteToolOptions {
   onMemoryWrite?: (event: MemoryWriteToolEvent) => void | Promise<void>;
+  safetyProfile?: ProfileName;
+  peerKey?: string;
 }
 
 export function createMemoryWriteTool(
@@ -40,7 +44,15 @@ export function createMemoryWriteTool(
 
       const now = nowInTimezone(timezone);
       const timeStr = formatTime(now);
-      const file = (args.file as string) ?? dailyMemoryPath(now);
+      const requestedFile = (args.file as string) ?? dailyMemoryPath(now);
+      const file = scopedMemoryFile(requestedFile, options);
+
+      if (options.safetyProfile === 'public' && !options.peerKey) {
+        return {
+          content: [{ type: 'text', text: 'Write failed: public memory_write requires peer context.' }],
+          isError: true,
+        };
+      }
 
       const fullPath = join(workspacePath, file);
 
@@ -64,6 +76,8 @@ export function createMemoryWriteTool(
           source: 'memory_write',
           reviewStatus: 'approved',
           toolName: 'memory_write',
+          visibility: options.safetyProfile === 'public' ? 'peer' : 'agent',
+          ...(options.safetyProfile === 'public' && options.peerKey ? { peerKey: options.peerKey } : {}),
           metadata: { mode },
         });
 
@@ -96,6 +110,14 @@ export function createMemoryWriteTool(
   );
 
   return sdkTool as unknown as ToolDefinition;
+}
+
+function scopedMemoryFile(file: string, options: MemoryWriteToolOptions): string {
+  if (options.safetyProfile !== 'public') return file;
+  const peerKey = options.peerKey ?? 'missing-peer';
+  const peerHash = createHash('sha256').update(peerKey).digest('hex').slice(0, 16);
+  const normalizedFile = file.replace(/^\/+/, '');
+  return join('memory', 'public-peers', peerHash, normalizedFile);
 }
 
 export const META: ToolMeta = {
