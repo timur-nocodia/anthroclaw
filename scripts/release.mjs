@@ -112,7 +112,7 @@ function updateChangelog(version) {
 
   const current = readFileSync(CHANGELOG, 'utf8');
   if (current.includes(`## [${version}]`)) {
-    fail(`CHANGELOG.md already contains version ${version}`);
+    return current;
   }
 
   const marker = '## [Unreleased]';

@@ -32,16 +32,17 @@ harness:
 
 ## Latest Acceptance Gate
 
-Last verified: 2026-05-19.
+Last verified: 2026-05-20.
 
-- `pnpm test`: passed, 318 files / 2601 tests.
+- `pnpm test`: passed, 319 files / 2627 tests.
 - `pnpm exec tsc --noEmit`: passed.
 - `pnpm build`: passed.
 - `pnpm --dir ui build`: passed.
+- `npm run release:check`: passed.
+- `git diff --check`: passed.
 - Fresh source-copy release smoke without `.git` metadata: passed.
   - `pnpm install --frozen-lockfile`
   - `npm run release:check`
-  - `pnpm vitest run src/runtime/__tests__/pi-native-copy.test.ts src/config/__tests__/schema-chat.test.ts src/security/profiles/__tests__/index.test.ts --reporter=dot`
   - `pnpm build`
   - `pnpm --dir ui build`
 - Public-surface scan: active OSS docs/examples/source are clean. Remaining
@@ -90,7 +91,9 @@ Runtime v1/Pi migration shipped in `v1.2.0`.
 - Default branch README now presents AnthroClaw as Pi-native.
 - No open OSS migration PRs remain.
 
-Future work belongs to product hardening releases, starting with `v1.3.0`.
+`v1.3.0` added the first post-migration hardening pass: `manage_cron` v2,
+peer-isolated public memory, persistent approvals, WhatsApp text approvals,
+runtime health observability, and staged deploy/fleet polish.
 
 ## Pi-Native Migration Rule
 

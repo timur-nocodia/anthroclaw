@@ -691,23 +691,16 @@ If in doubt, open an issue or draft PR before implementing a large change.
 
 ## Roadmap
 
-The Pi-native Runtime v1 migration is complete. The next release line is
-**v1.3.0 product hardening**:
+The Pi-native Runtime v1 migration and first product-hardening pass are
+complete. Next product candidates:
 
-- **`manage_cron` v2.** Keep delivery gateway-bound, normalize durable job
-  metadata, and make expiration/run-once behavior explicit.
-- **Peer-isolated memory for `public` agents.** Prevent multi-tenant memory
-  leakage by scoping public memory search/write to the current peer.
-- **Persistent approval queue.** Move tool approvals out of process-only state
-  so long-running approvals survive restarts and remain auditable.
-- **WhatsApp approval UX.** Add a text-code approval flow for channels without
-  Telegram-style interactive buttons.
-- **Richer observability.** Surface runtime health, approval backlog, cron
-  state, memory scope counts, and deploy/runtime diagnostics.
-- **Deploy/fleet polish.** Improve staged rollout previews, version pinning,
-  dry-run checks, and post-deploy runtime readiness.
+- deeper runtime provider evaluation and model-routing policy;
+- operator-facing approval queue UI;
+- richer deploy rollback controls and fleet release history;
+- public-profile abuse monitoring and rate-limit analytics;
+- managed plugin marketplace packaging.
 
-The full implementation plan lives in
+The v1.3.0 implementation plan remains archived at
 [`docs/superpowers/plans/2026-05-20-v1.3-runtime-product-hardening.md`](docs/superpowers/plans/2026-05-20-v1.3-runtime-product-hardening.md).
 
 ## Inspiration and Compatibility

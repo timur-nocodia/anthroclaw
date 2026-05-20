@@ -27,8 +27,8 @@ as acceptance criteria.
 | Side-effect gates | side_effects | L3 | registry, plan, validate, focused gate tests | Remove named-agent aliases from public surface. |
 | Messaging/media gates | side_effects | L3 | generic live-send-message/media gate tests | Live rollout is private evidence, not OSS blocker. |
 | Notifications gates | side_effects | L3 | generic notification gate tests | Live rollout is private evidence, not OSS blocker. |
-| Scheduled work | scheduling | L3 | scheduled-work and cron-notification gates | None for generic harness. |
-| Memory read/search/write | memory | L3 | memory-read gate and memory/session tests | Quality tuning only. |
+| Scheduled work | scheduling | L3 | scheduled-work, cron-notification gates, and `manage_cron` v2 durable store tests | None for generic harness. |
+| Memory read/search/write | memory | L3 | memory-read gate, peer-isolated public memory tests, and memory/session tests | Quality tuning only. |
 | Learning propose-only | learning | L3 | learning-propose gate and learning tests | Auto-apply remains intentionally gated. |
 | Plugins | plugins | L3 | plugin startup/context/admin tests | None for generic harness. |
 | MCP onboarding/proxy | integrations | L3 | external MCP, managed MCP, file-transfer tests | None for generic harness. |
@@ -37,7 +37,7 @@ as acceptance criteria.
 | Runtime UI/control plane | dashboard | L3 | runtime status/models/gates/expansion API and UI tests | Continue legacy-copy scans. |
 | Fleet/agent runtime metadata | dashboard | L3 | fleet/agent runtime UI tests | None for generic harness. |
 | Rollback/fallback | ops | L3 | mixed-runtime rollback canary tests | Keep rollback provider-neutral. |
-| Observability/monitoring | ops | L3 | runtime monitor and metrics tests | None for generic harness. |
+| Observability/monitoring | ops | L3 | runtime monitor, runtime health, diagnostics, metrics, and deploy/fleet tests | None for generic harness. |
 
 ## OSS Decision
 
