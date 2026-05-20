@@ -126,3 +126,53 @@ export class IterationBudget {
     };
   }
 }
+
+export interface BudgetWatchdogHandle {
+  cancel(): void;
+}
+
+// Belt-and-braces escape hatch for the iterator loop in queryAgent. The
+// in-loop `budget.shouldInterrupt()` check is the primary mechanism, but
+// it only fires between iterations; if any await inside the loop body
+// (or in finalize) hangs longer than the absolute budget, the loop is
+// stuck and the session queue never drains — observed in prod 2026-05-20
+// on `content_sm_building` thread:4 (group -1003729315809), where a
+// "норм, го" turn never produced a `Memory prefetch completed`, never
+// emitted `Iteration budget exhausted`, and silently jammed the serial
+// queue for hours.
+//
+// This timer is independent of the loop: once `absoluteTimeoutMs` (plus
+// a small grace) elapses since `startBudgetWatchdog` was called, it
+// fires the supplied `onExpire` callback. queryAgent uses that callback
+// to interrupt the runtime handle AND abort the controller, which forces
+// the catch path to run and `finally` to release the queue.
+export function startBudgetWatchdog(
+  absoluteTimeoutMs: number | undefined,
+  onExpire: () => void,
+  options?: { graceMs?: number },
+): BudgetWatchdogHandle {
+  if (!absoluteTimeoutMs || absoluteTimeoutMs <= 0) {
+    return { cancel: () => {} };
+  }
+  // Small grace so we don't preempt an in-loop interrupt that's about to
+  // fire on its own. The in-loop check usually beats us; we only kick in
+  // when something is genuinely stuck.
+  const graceMs = Math.max(0, options?.graceMs ?? 5_000);
+  let fired = false;
+  const timer = setTimeout(() => {
+    fired = true;
+    try {
+      onExpire();
+    } catch (err) {
+      logger.warn({ err: String(err) }, 'Budget watchdog onExpire callback threw');
+    }
+  }, absoluteTimeoutMs + graceMs);
+  // Don't keep the Node event loop alive on the watchdog alone.
+  timer.unref?.();
+  return {
+    cancel: () => {
+      if (fired) return;
+      clearTimeout(timer);
+    },
+  };
+}
