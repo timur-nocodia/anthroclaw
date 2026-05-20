@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { ApprovalBroker } from '../approval-broker.js';
+import { ApprovalStore } from '../approval-store.js';
 
 describe('ApprovalBroker', () => {
   let broker: ApprovalBroker;
@@ -35,6 +39,7 @@ describe('ApprovalBroker', () => {
     const result = await promise;
     expect(result.behavior).toBe('deny');
     expect((result as any).message).toMatch(/did not respond/i);
+    expect(broker.get('id-3')).toMatchObject({ status: 'expired' });
   });
 
   it('handles concurrent requests independently', async () => {
@@ -113,5 +118,42 @@ describe('ApprovalBroker', () => {
 
   it('resolveBySender: unknown id → returns false', () => {
     expect(broker.resolveBySender('nonexistent', 'anyone', 'allow')).toBe(false);
+  });
+
+  it('persists pending approvals and allows resolution after broker restart', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'approval-store-test-'));
+    try {
+      const file = join(tmpDir, 'approvals.json');
+      const first = new ApprovalBroker(new ApprovalStore(file));
+      first.request('restart-1', 60_000, 'sender-A', { foo: 'bar' });
+
+      const second = new ApprovalBroker(new ApprovalStore(file));
+      expect(second.listPending().map((record) => record.id)).toEqual(['restart-1']);
+      expect(second.resolveBySender('restart-1', 'sender-A', 'allow')).toBe(true);
+
+      const third = new ApprovalBroker(new ApprovalStore(file));
+      expect(third.get('restart-1')).toMatchObject({
+        status: 'allowed',
+        resolvedBy: 'sender-A',
+        decision: 'allow',
+        originalInput: { foo: 'bar' },
+      });
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('prevents replay after an approval has been resolved', async () => {
+    const promise = broker.request('replay-1', 60_000, 'sender-A', {});
+    expect(broker.resolveBySender('replay-1', 'sender-A', 'allow')).toBe(true);
+    expect(broker.resolveBySender('replay-1', 'sender-A', 'deny')).toBe(false);
+
+    const result = await promise;
+    expect(result.behavior).toBe('allow');
+    expect(broker.get('replay-1')).toMatchObject({
+      status: 'allowed',
+      decision: 'allow',
+      resolvedBy: 'sender-A',
+    });
   });
 });

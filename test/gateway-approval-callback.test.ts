@@ -60,4 +60,17 @@ describe('Gateway.handleApprovalCallback → ApprovalBroker integration', () => 
     expect(r.behavior).toBe('allow');
     expect((r as any).updatedInput).toEqual(input);
   });
+
+  it('prevents callback replay after a durable approval is resolved', async () => {
+    const gw = new Gateway();
+    const broker = gw.getApprovalBroker();
+    const promise = broker.request('replay-1', 60_000, 'sender-A', {});
+
+    expect(gw.handleApprovalCallback('approve:replay-1', 'sender-A')).toBe(true);
+    expect(gw.handleApprovalCallback('deny:replay-1', 'sender-A')).toBe(false);
+
+    const r = await promise;
+    expect(r.behavior).toBe('allow');
+    expect(broker.get('replay-1')).toMatchObject({ status: 'allowed', decision: 'allow' });
+  });
 });

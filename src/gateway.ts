@@ -139,6 +139,7 @@ import { logger } from './logger.js';
 import { nowInTimezone, formatTimePrefix, dailyMemoryPath } from './util/time.js';
 import { redactSecrets } from './security/redact.js';
 import { ApprovalBroker } from './security/approval-broker.js';
+import { ApprovalStore } from './security/approval-store.js';
 import { isSilentResponse, processNoReplySentinel } from './cron/scheduler.js';
 import { SessionMirror } from './session/mirror.js';
 import { buildGroupSessionKey, type GroupSessionMode } from './session/group-isolation.js';
@@ -1782,6 +1783,7 @@ export class Gateway {
     metrics.setStore(new MetricsStore(join(dataDir, 'metrics.sqlite')));
     this.learningStore = new LearningStore(join(dataDir, 'learning.sqlite'));
     this.decisionStore = new DecisionStore(join(dataDir, 'decision-center.sqlite'));
+    this.approvalBroker = new ApprovalBroker(new ApprovalStore(join(dataDir, 'approvals.json')));
     this.decisionCenter = new DecisionCenter({
       store: this.decisionStore,
       isAdminEvent: (decision, event) => this.isAdminDecisionEvent(decision, event),
