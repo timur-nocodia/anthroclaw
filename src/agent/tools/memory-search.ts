@@ -3,6 +3,7 @@ import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { MemoryProvider } from '../../memory/provider.js';
 import type { SearchResult } from '../../memory/store.js';
 import { mergeResults } from '../../memory/search.js';
+import { metrics } from '../../metrics/collector.js';
 import type { ToolDefinition } from './types.js';
 import type { ToolMeta } from '../../security/types.js';
 import type { ProfileName } from '../../security/types.js';
@@ -39,6 +40,7 @@ export function createMemorySearchTool(
       }
 
       try {
+        metrics.increment(scope.visibility === 'peer' ? 'memory.search.peer_scoped' : 'memory.search.agent_scoped');
         const textResults = store.textSearch(query, maxResults * 4, scope);
 
         let results: SearchResult[];

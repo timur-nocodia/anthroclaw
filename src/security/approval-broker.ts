@@ -1,4 +1,5 @@
 import type { PermissionResult } from '@anthroclaw/legacy-claude-agent-sdk';
+import { metrics } from '../metrics/collector.js';
 import { ApprovalStore, type ApprovalDecision } from './approval-store.js';
 
 interface PendingApproval {
@@ -31,9 +32,11 @@ export class ApprovalBroker {
         resolvedBy: null,
         decision: null,
       });
+      metrics.increment('approval.created');
       const timeout = setTimeout(() => {
         this.pending.delete(id);
         this.store.expireDue(Date.now());
+        metrics.increment('approval.expired');
         resolve({ behavior: 'deny', message: 'User did not respond within timeout' });
       }, timeoutMs);
       this.pending.set(id, { resolve, timeout });
@@ -52,6 +55,7 @@ export class ApprovalBroker {
     if (record.expectedSenderId !== senderId) return false;
     const updated = this.store.resolve(id, decision, senderId);
     if (!updated) return false;
+    metrics.increment(decision === 'allow' ? 'approval.allowed' : 'approval.denied');
     const entry = this.pending.get(id);
     if (entry) {
       clearTimeout(entry.timeout);

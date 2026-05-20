@@ -69,6 +69,14 @@ describe('diagnostics bundle', () => {
       contentPolicy: 'metadata-only',
     });
     expect(bundle.status).toMatchObject({ agents: ['agent'], secret: '[REDACTED]' });
+    expect(bundle.runtimeHealth).toMatchObject({
+      lastRun: {
+        runId: 'run-1',
+        agentId: 'agent',
+        status: 'succeeded',
+      },
+      staleRunningCount: 0,
+    });
     expect(bundle.runs).toHaveLength(1);
     expect(bundle.runs[0]).toMatchObject({ runId: 'run-1', traceId: 'trace-1' });
     expect(bundle.diagnosticEvents.map((event: any) => event.eventType)).toEqual([

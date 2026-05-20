@@ -1827,6 +1827,14 @@ export class Gateway {
 
     // Dynamic cron store
     this.dynamicCronStore = new DynamicCronStore(join(dataDir, 'dynamic-cron.json'));
+    metrics.gaugeProviders = {
+      ...metrics.gaugeProviders,
+      activeSessions: () => Array.from(this.agents.values()).reduce((sum, agent) => sum + agent.getSessionCount(), 0),
+      agentsLoaded: () => this.agents.size,
+      queuedMessages: () => this.queueManager.listActive().length,
+      approvalBacklog: () => this.approvalBroker.listPending().length,
+      cronDueCount: () => this.dynamicCronStore?.getAll().filter((job) => job.enabled).length ?? 0,
+    };
     // Peer-pause store (human_takeover subsystem). Always instantiated so the
     // gateway can route operator_outbound events even when no agent has the
     // subsystem enabled — enable check happens per event.
@@ -6620,6 +6628,7 @@ export class Gateway {
     }
 
     const sessionKey = `${job.agentId}:cron:${job.id}`;
+    metrics.increment('cron.fired');
 
     // Hook: on_cron_fire
     const cronEmitter = this.hookEmitters.get(job.agentId);
@@ -6682,6 +6691,9 @@ export class Gateway {
           'Cron response (no deliver_to)',
         );
       }
+    } catch (err) {
+      metrics.increment('cron.failed');
+      throw err;
     } finally {
       this.cleanupRunOnceCron(job);
     }
@@ -6758,6 +6770,7 @@ export class Gateway {
       inferredExpiresAt <= Date.now() &&
       this.dynamicCronStore?.delete(job.agentId, job.id)
     ) {
+      metrics.increment('cron.expired');
       logger.info({ agentId: job.agentId, jobId: job.id }, 'Expired one-shot dynamic cron removed');
       return;
     }

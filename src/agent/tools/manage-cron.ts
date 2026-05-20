@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { DynamicCronStore } from '../../cron/dynamic-store.js';
 import { looksLikeOneShotSchedule } from '../../cron/one-shot.js';
+import { metrics } from '../../metrics/collector.js';
 import type { ToolDefinition } from './types.js';
 import type { ToolMeta } from '../../security/types.js';
 
@@ -91,6 +92,7 @@ export function createManageCronTool(
             ...(expiresAt ? { expiresAt } : {}),
             enabled: true,
           });
+          metrics.increment('cron.created');
           onUpdate();
           return {
             content: [{
