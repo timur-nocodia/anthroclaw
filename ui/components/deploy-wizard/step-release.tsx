@@ -30,6 +30,18 @@ export function StepRelease({ config, updateConfig }: StepProps) {
         </Field>
       )}
 
+      <Field label="Runtime mode">
+        <Segmented
+          value={config.runtimeMode}
+          onChange={(v) => updateConfig("runtimeMode", v)}
+          options={[
+            { value: "pi", label: "Pi" },
+            { value: "claude-agent-sdk", label: "Legacy fallback" },
+            { value: "opencode", label: "OpenCode" },
+          ]}
+        />
+      </Field>
+
       <Field label="Git repository" hint="Override for private forks.">
         <WizardInput
           value={config.gitRepo}

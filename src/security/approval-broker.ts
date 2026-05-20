@@ -1,14 +1,16 @@
 import type { PermissionResult } from '@anthroclaw/legacy-claude-agent-sdk';
+import { metrics } from '../metrics/collector.js';
+import { ApprovalStore, type ApprovalDecision } from './approval-store.js';
 
 interface PendingApproval {
   resolve: (v: PermissionResult) => void;
   timeout: NodeJS.Timeout;
-  expectedSenderId: string;
-  originalInput: Record<string, unknown>;
 }
 
 export class ApprovalBroker {
   private pending = new Map<string, PendingApproval>();
+
+  constructor(private readonly store = new ApprovalStore()) {}
 
   request(
     id: string,
@@ -17,11 +19,27 @@ export class ApprovalBroker {
     originalInput: Record<string, unknown> = {},
   ): Promise<PermissionResult> {
     return new Promise<PermissionResult>((resolve) => {
+      const now = Date.now();
+      this.store.expireDue(now);
+      this.store.create({
+        id,
+        status: 'pending',
+        expectedSenderId,
+        originalInput,
+        createdAt: now,
+        expiresAt: now + timeoutMs,
+        resolvedAt: null,
+        resolvedBy: null,
+        decision: null,
+      });
+      metrics.increment('approval.created');
       const timeout = setTimeout(() => {
         this.pending.delete(id);
+        this.store.expireDue(Date.now());
+        metrics.increment('approval.expired');
         resolve({ behavior: 'deny', message: 'User did not respond within timeout' });
       }, timeoutMs);
-      this.pending.set(id, { resolve, timeout, expectedSenderId, originalInput });
+      this.pending.set(id, { resolve, timeout });
     });
   }
 
@@ -31,17 +49,41 @@ export class ApprovalBroker {
    * Returns true if the request was found and resolved (with the given decision).
    */
   resolveBySender(id: string, senderId: string, decision: 'allow' | 'deny'): boolean {
+    this.store.expireDue(Date.now());
+    const record = this.store.get(id);
+    if (!record || record.status !== 'pending') return false;
+    if (record.expectedSenderId !== senderId) return false;
+    const updated = this.store.resolve(id, decision, senderId);
+    if (!updated) return false;
+    metrics.increment(decision === 'allow' ? 'approval.allowed' : 'approval.denied');
     const entry = this.pending.get(id);
-    if (!entry) return false;
-    if (entry.expectedSenderId !== senderId) return false;
-    clearTimeout(entry.timeout);
+    if (entry) {
+      clearTimeout(entry.timeout);
+      this.resolvePending(id, decision, updated.originalInput, entry);
+    }
+    return true;
+  }
+
+  listPending() {
+    return this.store.listPending();
+  }
+
+  get(id: string) {
+    return this.store.get(id);
+  }
+
+  private resolvePending(
+    id: string,
+    decision: ApprovalDecision,
+    originalInput: Record<string, unknown>,
+    entry: PendingApproval,
+  ): void {
     this.pending.delete(id);
     if (decision === 'allow') {
-      entry.resolve({ behavior: 'allow', updatedInput: entry.originalInput });
+      entry.resolve({ behavior: 'allow', updatedInput: originalInput });
     } else {
       entry.resolve({ behavior: 'deny', message: 'User declined the request' });
     }
-    return true;
   }
 
   /**
@@ -49,14 +91,13 @@ export class ApprovalBroker {
    * Kept for backward compatibility — resolves regardless of sender.
    */
   resolve(id: string, decision: 'allow' | 'deny'): void {
+    const record = this.store.get(id);
+    if (!record || record.status !== 'pending') return;
+    const updated = this.store.resolve(id, decision, record.expectedSenderId);
+    if (!updated) return;
     const entry = this.pending.get(id);
     if (!entry) return;
     clearTimeout(entry.timeout);
-    this.pending.delete(id);
-    if (decision === 'allow') {
-      entry.resolve({ behavior: 'allow', updatedInput: entry.originalInput });
-    } else {
-      entry.resolve({ behavior: 'deny', message: 'User declined the request' });
-    }
+    this.resolvePending(id, decision, updated.originalInput, entry);
   }
 }

@@ -49,6 +49,7 @@ import type {
 import { Agent } from './agent/agent.js';
 import { AGENT_ID_MAX_LEN, AGENT_ID_RE } from './agent/sandbox/agent-workspace.js';
 import { createManageCronTool } from './agent/tools/manage-cron.js';
+import { createMemoryWriteTool } from './agent/tools/memory-write.js';
 import { createSendMessageTool } from './agent/tools/send-message.js';
 import { createSendMediaTool } from './agent/tools/send-media.js';
 import { bindBuildroomHandoffToolsForDispatch } from './agent/tools/buildroom-handoff.js';
@@ -138,6 +139,7 @@ import { logger } from './logger.js';
 import { nowInTimezone, formatTimePrefix, dailyMemoryPath } from './util/time.js';
 import { redactSecrets } from './security/redact.js';
 import { ApprovalBroker } from './security/approval-broker.js';
+import { ApprovalStore } from './security/approval-store.js';
 import { isSilentResponse, processNoReplySentinel } from './cron/scheduler.js';
 import { SessionMirror } from './session/mirror.js';
 import { buildGroupSessionKey, type GroupSessionMode } from './session/group-isolation.js';
@@ -670,6 +672,16 @@ function withMessageRawMeta(msg: InboundMessage, meta: Record<string, unknown>):
     ...(msg.raw && typeof msg.raw === 'object' ? msg.raw as Record<string, unknown> : {}),
     ...meta,
   };
+}
+
+function buildMemoryPeerKey(msg: InboundMessage): string {
+  return [
+    msg.channel,
+    msg.accountId,
+    msg.chatType,
+    msg.peerId,
+    msg.threadId ? `thread:${msg.threadId}` : null,
+  ].filter((part): part is string => Boolean(part)).join(':');
 }
 
 function readStringMeta(meta: Record<string, unknown>, key: string): string | undefined {
@@ -1771,6 +1783,7 @@ export class Gateway {
     metrics.setStore(new MetricsStore(join(dataDir, 'metrics.sqlite')));
     this.learningStore = new LearningStore(join(dataDir, 'learning.sqlite'));
     this.decisionStore = new DecisionStore(join(dataDir, 'decision-center.sqlite'));
+    this.approvalBroker = new ApprovalBroker(new ApprovalStore(join(dataDir, 'approvals.json')));
     this.decisionCenter = new DecisionCenter({
       store: this.decisionStore,
       isAdminEvent: (decision, event) => this.isAdminDecisionEvent(decision, event),
@@ -1814,6 +1827,14 @@ export class Gateway {
 
     // Dynamic cron store
     this.dynamicCronStore = new DynamicCronStore(join(dataDir, 'dynamic-cron.json'));
+    metrics.gaugeProviders = {
+      ...metrics.gaugeProviders,
+      activeSessions: () => Array.from(this.agents.values()).reduce((sum, agent) => sum + agent.getSessionCount(), 0),
+      agentsLoaded: () => this.agents.size,
+      queuedMessages: () => this.queueManager.listActive().length,
+      approvalBacklog: () => this.approvalBroker.listPending().length,
+      cronDueCount: () => this.dynamicCronStore?.getAll().filter((job) => job.enabled).length ?? 0,
+    };
     // Peer-pause store (human_takeover subsystem). Always instantiated so the
     // gateway can route operator_outbound events even when no agent has the
     // subsystem enabled — enable check happens per event.
@@ -2484,6 +2505,19 @@ export class Gateway {
         )
       : baseDispatchTools
     ).map((tool) => {
+      if (tool.name === 'memory_search') {
+        return agent.buildMemorySearchToolForDispatch({
+          safetyProfile: agent.safetyProfile.name,
+          peerKey: msg ? buildMemoryPeerKey(msg) : undefined,
+        });
+      }
+      if (tool.name === 'memory_write') {
+        return createMemoryWriteTool(agent.workspacePath, agent.memoryStore, agent.config.timezone, {
+          safetyProfile: agent.safetyProfile.name,
+          peerKey: msg ? buildMemoryPeerKey(msg) : undefined,
+          onMemoryWrite: (event) => this.emitMemoryWriteHook({ ...event, agentId: agent.id }),
+        });
+      }
       if (tool.name === 'send_message') {
         return createSendMessageTool((id) => this.channels.get(id), {
           agentId: agent.id,
@@ -4324,6 +4358,25 @@ export class Gateway {
     return this.approvalBroker;
   }
 
+  private async handleApprovalTextReply(msg: InboundMessage): Promise<boolean> {
+    const match = /^\/(approve|deny)\s+(.+?)\s*$/i.exec(msg.text.trim());
+    if (!match) return false;
+    const channel = this.channels.get(msg.channel);
+    if (channel?.approvalMode !== 'text_code') return false;
+    const [, verb, id] = match;
+    const ok = this.approvalBroker.resolveBySender(
+      id,
+      msg.senderId,
+      verb.toLowerCase() === 'approve' ? 'allow' : 'deny',
+    );
+    await channel.sendText(msg.peerId, ok ? 'Approval recorded.' : 'Approval not found or sender mismatch.', {
+      accountId: msg.accountId,
+      threadId: msg.threadId,
+      parseMode: 'plain',
+    }).catch(() => {});
+    return true;
+  }
+
   private async handleDecisionTextReply(msg: InboundMessage): Promise<boolean> {
     if (!this.decisionCenter) return false;
     const result = this.decisionCenter.resolveTextReply({
@@ -4826,6 +4879,7 @@ export class Gateway {
     metrics.recordMessage();
     if (await this.handleBuildroomTelegramCommand(msg)) return;
     if (!this.routeTable || !this.accessControl) return;
+    if (await this.handleApprovalTextReply(msg)) return;
     if (await this.handleDecisionTextReply(msg)) return;
 
     const routeDecisionId = randomUUID();
@@ -6574,6 +6628,7 @@ export class Gateway {
     }
 
     const sessionKey = `${job.agentId}:cron:${job.id}`;
+    metrics.increment('cron.fired');
 
     // Hook: on_cron_fire
     const cronEmitter = this.hookEmitters.get(job.agentId);
@@ -6636,6 +6691,9 @@ export class Gateway {
           'Cron response (no deliver_to)',
         );
       }
+    } catch (err) {
+      metrics.increment('cron.failed');
+      throw err;
     } finally {
       this.cleanupRunOnceCron(job);
     }
@@ -6712,6 +6770,7 @@ export class Gateway {
       inferredExpiresAt <= Date.now() &&
       this.dynamicCronStore?.delete(job.agentId, job.id)
     ) {
+      metrics.increment('cron.expired');
       logger.info({ agentId: job.agentId, jobId: job.id }, 'Expired one-shot dynamic cron removed');
       return;
     }
@@ -6723,7 +6782,7 @@ export class Gateway {
       prompt: job.prompt,
       deliverTo: job.deliverTo,
       runOnce,
-      expiresAt: inferredExpiresAt,
+      expiresAt: inferredExpiresAt ?? undefined,
       enabled: job.enabled,
     });
   }

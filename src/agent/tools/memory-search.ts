@@ -3,12 +3,20 @@ import { tool } from '@anthroclaw/legacy-claude-agent-sdk';
 import type { MemoryProvider } from '../../memory/provider.js';
 import type { SearchResult } from '../../memory/store.js';
 import { mergeResults } from '../../memory/search.js';
+import { metrics } from '../../metrics/collector.js';
 import type { ToolDefinition } from './types.js';
 import type { ToolMeta } from '../../security/types.js';
+import type { ProfileName } from '../../security/types.js';
+
+export interface MemorySearchToolOptions {
+  safetyProfile?: ProfileName;
+  peerKey?: string;
+}
 
 export function createMemorySearchTool(
   store: MemoryProvider,
   embedFn?: (text: string) => Promise<Float32Array>,
+  options: MemorySearchToolOptions = {},
 ): ToolDefinition {
   const sdkTool = tool(
     'memory_search',
@@ -20,15 +28,26 @@ export function createMemorySearchTool(
     async (args: Record<string, unknown>) => {
       const query = args.query as string;
       const maxResults = (args.max_results as number) ?? 10;
+      const scope = options.safetyProfile === 'public'
+        ? { visibility: 'peer' as const, peerKey: options.peerKey }
+        : { visibility: 'agent' as const };
+
+      if (options.safetyProfile === 'public' && !options.peerKey) {
+        return {
+          content: [{ type: 'text', text: 'Search failed: public memory_search requires peer context.' }],
+          isError: true,
+        };
+      }
 
       try {
-        const textResults = store.textSearch(query, maxResults * 4);
+        metrics.increment(scope.visibility === 'peer' ? 'memory.search.peer_scoped' : 'memory.search.agent_scoped');
+        const textResults = store.textSearch(query, maxResults * 4, scope);
 
         let results: SearchResult[];
 
         if (embedFn) {
           const embedding = await embedFn(query);
-          const vectorResults = store.vectorSearch(embedding, maxResults * 4);
+          const vectorResults = store.vectorSearch(embedding, maxResults * 4, scope);
           results = mergeResults(vectorResults, textResults, {
             vectorWeight: 0.7,
             textWeight: 0.3,

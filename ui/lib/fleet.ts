@@ -23,6 +23,8 @@ export interface FleetServer {
   };
   release?: {
     version: string;
+    releaseRef?: string;
+    runtimeMode?: 'pi' | 'claude-agent-sdk' | 'opencode';
     repo: string;
     upgradePolicy: string;
   };

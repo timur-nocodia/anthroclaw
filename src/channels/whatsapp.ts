@@ -147,7 +147,8 @@ const baileysLogger = pino({ level: 'silent' });
 
 export class WhatsAppChannel implements ChannelAdapter {
   readonly id = 'whatsapp' as const;
-  static readonly supportsApproval = false;
+  static readonly supportsApproval = true;
+  static readonly approvalMode = 'text_code' as const;
   static readonly capabilities: ChannelCapabilities = {
     callbacks: false,
     textReplies: true,
@@ -156,7 +157,8 @@ export class WhatsAppChannel implements ChannelAdapter {
     threads: false,
     reactions: false,
   };
-  readonly supportsApproval = false as const;
+  readonly supportsApproval = true as const;
+  readonly approvalMode = 'text_code' as const;
   readonly capabilities = WhatsAppChannel.capabilities;
 
   private config: WhatsAppConfig;
@@ -763,8 +765,19 @@ export class WhatsAppChannel implements ChannelAdapter {
     return null;
   }
 
-  async promptForApproval(_req: ApprovalRequest): Promise<void> {
-    throw new Error('WhatsApp channel does not support interactive approval');
+  async promptForApproval(req: ApprovalRequest): Promise<void> {
+    const text = [
+      `Approval required: ${req.toolName}`,
+      '',
+      req.argsPreview,
+      '',
+      `Reply: /approve ${req.id} or /deny ${req.id}`,
+    ].join('\n');
+    await this.sendText(req.peerId, text, {
+      accountId: req.accountId,
+      threadId: req.threadId,
+      parseMode: 'plain',
+    });
   }
 
 }

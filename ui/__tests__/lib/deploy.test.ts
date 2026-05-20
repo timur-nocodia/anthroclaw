@@ -29,7 +29,7 @@ vi.mock('ssh2', () => {
   return { Client: MockClient };
 });
 
-import { deployGateway } from '@/lib/deploy';
+import { deployDryRun, deployGateway } from '@/lib/deploy';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -58,6 +58,9 @@ function makeConfig(overrides?: Partial<DeployConfig>): DeployConfig {
     },
     release: {
       version: 'v1.0.0',
+      releaseRef: 'v1.0.0',
+      runtimeMode: 'pi',
+      dryRunRequired: true,
       repo: 'https://github.com/example/anthroclaw.git',
       upgradePolicy: 'manual',
     },
@@ -149,6 +152,58 @@ beforeEach(() => {
   execCallback = null;
 });
 
+describe('deployDryRun', () => {
+  it('returns staged rollout preview with explicit release and runtime mode', async () => {
+    simulateSuccess();
+
+    const result = await deployDryRun(makeConfig({
+      releaseRef: 'v1.3.0',
+      runtimeMode: 'pi',
+      dryRunRequired: true,
+      release: {
+        version: 'v1.3.0',
+        releaseRef: 'v1.3.0',
+        runtimeMode: 'pi',
+        dryRunRequired: true,
+        repo: 'https://github.com/example/anthroclaw.git',
+        upgradePolicy: 'manual',
+      },
+    }));
+
+    expect(result.preview).toMatchObject({
+      target: 'deploy@10.0.0.99:22',
+      releaseRef: 'v1.3.0',
+      runtimeMode: 'pi',
+      dryRunRequired: true,
+      secrets: 'redacted',
+    });
+    expect(result.preview.commands.join('\n')).toContain('--branch v1.3.0');
+    expect(result.checks.find((check) => check.name === 'Runtime mode')).toMatchObject({
+      status: 'pass',
+      message: 'Runtime mode: pi',
+    });
+  });
+
+  it('fails dry-run when runtime mode is not explicit', async () => {
+    simulateSuccess();
+    const config = makeConfig({
+      runtimeMode: undefined,
+      release: {
+        version: 'v1.0.0',
+        repo: 'https://github.com/example/anthroclaw.git',
+        upgradePolicy: 'manual',
+      },
+    });
+
+    const result = await deployDryRun(config);
+
+    expect(result.canDeploy).toBe(false);
+    expect(result.checks.find((check) => check.name === 'Runtime mode')).toMatchObject({
+      status: 'fail',
+    });
+  });
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -205,7 +260,7 @@ describe('deployGateway', () => {
       'Installing dependencies',
       'Configuring environment',
       'Setting up systemd + reverse proxy',
-      'Starting and verifying health',
+      'Starting gateway and verifying runtime health',
     ]);
   });
 

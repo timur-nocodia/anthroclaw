@@ -59,6 +59,7 @@ export interface MetricsSnapshot {
     subagents: Record<string, number>;
     fileOwnership: Record<string, number>;
   };
+  runtimeHealth: RuntimeHealthSummary;
   system: {
     cpu_percent: number;
     mem_percent: number;
@@ -72,6 +73,25 @@ export interface MetricsSnapshot {
     git_dirty: boolean;
     ssl_expiry_days: number | null;
   };
+}
+
+export interface RuntimeHealthSummary {
+  lastRun: {
+    runId: string;
+    agentId: string;
+    status: StoredAgentRunStatus;
+    updatedAt: number;
+    source: string;
+  } | null;
+  lastFailure: {
+    runId: string;
+    agentId: string;
+    completedAt?: number;
+    error?: string;
+  } | null;
+  approvalBacklogCount: number;
+  cronDueCount: number;
+  staleRunningCount: number;
 }
 
 interface TokenEntry {
@@ -104,6 +124,8 @@ class MetricsCollector {
     queuedMessages?: () => number;
     memoryStoreBytes?: () => number;
     mediaStoreBytes?: () => number;
+    approvalBacklog?: () => number;
+    cronDueCount?: () => number;
   } = {};
 
   // System metrics caches
@@ -154,10 +176,12 @@ class MetricsCollector {
 
   recordAgentRunStart(run: StoredAgentRunStart): void {
     this.store?.recordAgentRunStart(run);
+    this.increment('runtime.turn.started');
   }
 
   recordAgentRunFinish(run: StoredAgentRunFinish): void {
     this.store?.recordAgentRunFinish(run);
+    this.increment(run.status === 'failed' ? 'runtime.turn.failed' : 'runtime.turn.completed');
   }
 
   recordRouteDecision(decision: StoredRouteDecision): void {
@@ -319,7 +343,37 @@ class MetricsCollector {
       events_30d: this.store
         ? this.store.eventsSince(now - 30 * TWENTY_FOUR_HOURS_MS)
         : { tools: {}, sessions: {}, subagents: {}, fileOwnership: {} },
+      runtimeHealth: this.computeRuntimeHealth(now),
       system: this.getSystemMetrics(),
+    };
+  }
+
+  private computeRuntimeHealth(now: number): RuntimeHealthSummary {
+    const lastRun = this.store?.listAgentRuns({ limit: 1 })[0] ?? null;
+    const lastFailure = this.store?.listAgentRuns({ status: 'failed', limit: 1 })[0] ?? null;
+    const running = this.store?.listAgentRuns({ status: 'running', limit: 500 }) ?? [];
+    const staleRunningCount = running.filter((run) => now - run.updatedAt > 10 * 60 * 1000).length;
+    return {
+      lastRun: lastRun
+        ? {
+            runId: lastRun.runId,
+            agentId: lastRun.agentId,
+            status: lastRun.status,
+            updatedAt: lastRun.updatedAt,
+            source: lastRun.source,
+          }
+        : null,
+      lastFailure: lastFailure
+        ? {
+            runId: lastFailure.runId,
+            agentId: lastFailure.agentId,
+            completedAt: lastFailure.completedAt,
+            error: lastFailure.error,
+          }
+        : null,
+      approvalBacklogCount: this.gaugeProviders.approvalBacklog?.() ?? 0,
+      cronDueCount: this.gaugeProviders.cronDueCount?.() ?? 0,
+      staleRunningCount,
     };
   }
 

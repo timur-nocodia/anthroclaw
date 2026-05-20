@@ -552,6 +552,7 @@ function createAutoApprovalChannel(
   return {
     id: 'telegram',
     supportsApproval: true,
+    approvalMode: 'interactive_buttons',
     start: async () => {},
     stop: async () => {},
     onMessage: () => {},

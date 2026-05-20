@@ -22,7 +22,7 @@ describe('createManageCronTool', () => {
           channel: 'telegram',
           peerId: '123456789',
           senderId: '123456789',
-          accountId: 'content_sm',
+          accountId: 'default',
           threadId: 'topic-1',
         }
       : undefined;
@@ -48,17 +48,19 @@ describe('createManageCronTool', () => {
       deliverTo: {
         channel: 'telegram',
         peer_id: '123456789',
-        account_id: 'content_sm',
+        account_id: 'default',
         thread_id: 'topic-1',
       },
       createdBy: {
         channel: 'telegram',
         sender_id: '123456789',
         peer_id: '123456789',
-        account_id: 'content_sm',
+        account_id: 'default',
         thread_id: 'topic-1',
       },
       runOnce: false,
+      durable: true,
+      expiresAt: null,
     });
     expect(onUpdate).toHaveBeenCalled();
   });
@@ -82,11 +84,13 @@ describe('createManageCronTool', () => {
       schedule: '0 9 * * *',
       prompt: 'hello',
       deliver_to: { channel: 'telegram', peer_id: 'operator@example.com' },
+      peer_id: 'operator@example.com',
+      account_id: 'attacker',
     });
     expect(store.list('test-agent')[0].deliverTo).toEqual({
       channel: 'telegram',
       peer_id: '123456789',
-      account_id: 'content_sm',
+      account_id: 'default',
       thread_id: 'topic-1',
     });
   });

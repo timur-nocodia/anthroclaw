@@ -144,6 +144,23 @@ describe('<RuntimePage />', () => {
           },
         });
       }
+      if (url.endsWith('/api/metrics')) {
+        return json({
+          runtimeHealth: {
+            lastRun: {
+              runId: 'run-1',
+              agentId: 'generic-agent',
+              status: 'succeeded',
+              updatedAt: Date.now(),
+              source: 'web',
+            },
+            lastFailure: null,
+            approvalBacklogCount: 1,
+            cronDueCount: 2,
+            staleRunningCount: 0,
+          },
+        });
+      }
       return json({ error: 'unexpected route' }, 404);
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -157,7 +174,9 @@ describe('<RuntimePage />', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/fleet/local/runtime/providers');
     expect(fetchMock).toHaveBeenCalledWith('/api/fleet/local/runtime/gates');
     expect(fetchMock).toHaveBeenCalledWith('/api/fleet/local/runtime/expansion-status');
+    expect(fetchMock).toHaveBeenCalledWith('/api/metrics');
     expect(screen.getByText('Runtime setup')).toBeInTheDocument();
+    expect(screen.getByText('Runtime health')).toBeInTheDocument();
     expect(screen.getByText('Default model')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /advanced/i }));

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
+  Activity,
   CheckCircle2,
   ChevronRight,
   Cpu,
@@ -118,6 +119,18 @@ interface RuntimeTurnResult {
   model: string;
 }
 
+interface RuntimeHealthSummary {
+  lastRun: { runId: string; agentId: string; status: string; updatedAt: number; source: string } | null;
+  lastFailure: { runId: string; agentId: string; completedAt?: number; error?: string } | null;
+  approvalBacklogCount: number;
+  cronDueCount: number;
+  staleRunningCount: number;
+}
+
+interface MetricsResponse {
+  runtimeHealth?: RuntimeHealthSummary;
+}
+
 const TABS: Array<{ id: TabId; label: string; icon: RuntimeIcon }> = [
   { id: "setup", label: "Setup", icon: SlidersHorizontal },
   { id: "providers", label: "Providers", icon: KeyRound },
@@ -137,6 +150,7 @@ export default function RuntimePage() {
   const [runtime, setRuntime] = useState<RuntimeProvidersResponse | null>(null);
   const [gates, setGates] = useState<RuntimeGateRegistry | null>(null);
   const [expansion, setExpansion] = useState<ExpansionStatus | null>(null);
+  const [health, setHealth] = useState<RuntimeHealthSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>("pi");
@@ -150,14 +164,16 @@ export default function RuntimePage() {
     setLoading(true);
     setError("");
     try {
-      const [providersRes, gatesRes, expansionRes] = await Promise.all([
+      const [providersRes, gatesRes, expansionRes, metricsRes] = await Promise.all([
         fetchJson<RuntimeProvidersResponse>(`${base}/providers`),
         fetchJson<RuntimeGateRegistry>(`${base}/gates`).catch(() => null),
         fetchJson<ExpansionStatus>(`${base}/expansion-status`).catch(() => null),
+        fetchJson<MetricsResponse>('/api/metrics').catch(() => null),
       ]);
       setRuntime(providersRes);
       setGates(gatesRes);
       setExpansion(expansionRes);
+      setHealth(metricsRes?.runtimeHealth ?? null);
       setRuntimeMode(providersRes.runtimeMode ?? "pi");
       setDefaultModel(providersRes.defaultModel ?? "anthropic/claude-sonnet-4-6");
     } catch (err) {
@@ -297,6 +313,7 @@ export default function RuntimePage() {
             saveRuntimeConfig={saveRuntimeConfig}
             savingConfig={savingConfig}
             piReady={piReady}
+            health={health}
             openProviders={() => setActiveTab("providers")}
             openAdvanced={() => setActiveTab("advanced")}
           />
@@ -349,6 +366,7 @@ function SetupTab({
   saveRuntimeConfig,
   savingConfig,
   piReady,
+  health,
   openProviders,
   openAdvanced,
 }: {
@@ -362,6 +380,7 @@ function SetupTab({
   saveRuntimeConfig: () => void;
   savingConfig: boolean;
   piReady: boolean;
+  health: RuntimeHealthSummary | null;
   openProviders: () => void;
   openAdvanced: () => void;
 }) {
@@ -426,6 +445,20 @@ function SetupTab({
           <ChecklistItem ok={Boolean(runtime?.pi?.authConfigured)} label="At least one Pi provider has credentials" />
           <ChecklistItem ok={(runtime?.pi?.availableModelCount ?? 0) > 0} label="Authenticated providers expose available models" />
           <ChecklistItem ok={piReady} label="Instance is ready for Pi LLM turns" />
+        </Panel>
+
+        <Panel title="Runtime health" icon={Activity}>
+          <div className="grid gap-2 md:grid-cols-4">
+            <Metric label="Last run" value={health?.lastRun?.status ?? "none"} icon={Play} tone={health?.lastRun?.status === "failed" ? "error" : "ok"} />
+            <Metric label="Approvals" value={String(health?.approvalBacklogCount ?? 0)} icon={ShieldCheck} tone={(health?.approvalBacklogCount ?? 0) > 0 ? "warn" : "ok"} />
+            <Metric label="Cron jobs" value={String(health?.cronDueCount ?? 0)} icon={RefreshCcw} tone="ok" />
+            <Metric label="Stale runs" value={String(health?.staleRunningCount ?? 0)} icon={AlertTriangle} tone={(health?.staleRunningCount ?? 0) > 0 ? "error" : "ok"} />
+          </div>
+          {health?.lastFailure && (
+            <div className="mt-2">
+              <Notice tone="error" compact text={`Last failure: ${health.lastFailure.agentId}/${health.lastFailure.runId}${health.lastFailure.error ? ` - ${health.lastFailure.error}` : ""}`} />
+            </div>
+          )}
         </Panel>
       </div>
 

@@ -537,6 +537,7 @@ pairing:
         events.push(`typing:${peerId}`);
       },
       supportsApproval: false,
+      approvalMode: 'unsupported',
       async promptForApproval() {},
     };
     gw._setChannel('telegram', mockTg);

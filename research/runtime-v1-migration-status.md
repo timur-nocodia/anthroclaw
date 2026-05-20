@@ -32,16 +32,17 @@ harness:
 
 ## Latest Acceptance Gate
 
-Last verified: 2026-05-19.
+Last verified: 2026-05-20.
 
-- `pnpm test`: passed, 318 files / 2601 tests.
+- `pnpm test`: passed, 319 files / 2627 tests.
 - `pnpm exec tsc --noEmit`: passed.
 - `pnpm build`: passed.
 - `pnpm --dir ui build`: passed.
+- `npm run release:check`: passed.
+- `git diff --check`: passed.
 - Fresh source-copy release smoke without `.git` metadata: passed.
   - `pnpm install --frozen-lockfile`
   - `npm run release:check`
-  - `pnpm vitest run src/runtime/__tests__/pi-native-copy.test.ts src/config/__tests__/schema-chat.test.ts src/security/profiles/__tests__/index.test.ts --reporter=dot`
   - `pnpm build`
   - `pnpm --dir ui build`
 - Public-surface scan: active OSS docs/examples/source are clean. Remaining
@@ -82,30 +83,17 @@ Ongoing maintenance rules:
    - UI runtime control-plane tests
    - no named-agent public-surface scan
 
-## Release Candidate Readiness
+## Released
 
-Recommended next release line: `v1.2.0` for the stable release, with
-`v1.2.0-rc.1` acceptable if we want one public pre-release after review.
+Runtime v1/Pi migration shipped in `v1.2.0`.
 
-Release packaging checklist:
+- GitHub Release: https://github.com/timur-nocodia/anthroclaw/releases/tag/v1.2.0
+- Default branch README now presents AnthroClaw as Pi-native.
+- No open OSS migration PRs remain.
 
-- `CHANGELOG.md` contains explicit Runtime v1 / Pi-native migration notes.
-- README no longer presents the repository as archived after the v1.0.0
-  Claude Agent SDK-era release.
-- Version files remain synchronized and should be bumped only after the PR
-  worktree is clean:
-  - `package.json`
-  - `ui/package.json`
-  - `VERSION`
-- The final release commit should be created by `npm run release:minor` or an
-  explicit `node scripts/release.mjs 1.2.0` invocation after merge readiness.
-- Final pre-tag gate should include:
-  - `npm run release:check`
-  - `pnpm test`
-  - `pnpm exec tsc --noEmit`
-  - `pnpm build`
-  - `pnpm --dir ui build`
-  - fresh source-copy install/build smoke if publishing as stable instead of RC.
+`v1.3.0` added the first post-migration hardening pass: `manage_cron` v2,
+peer-isolated public memory, persistent approvals, WhatsApp text approvals,
+runtime health observability, and staged deploy/fleet polish.
 
 ## Pi-Native Migration Rule
 

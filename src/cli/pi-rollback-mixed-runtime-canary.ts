@@ -392,6 +392,7 @@ function createCanaryChannel(sentText: string[]): ChannelAdapter {
   return {
     id: 'telegram',
     supportsApproval: false,
+    approvalMode: 'unsupported',
     onMessage() {},
     async start() {},
     async stop() {},

@@ -996,6 +996,7 @@ pairing:
     gw._setChannel('telegram', {
       id: 'telegram',
       supportsApproval: true,
+      approvalMode: 'interactive_buttons',
       promptForApproval,
       onMessage() {},
       async start() {},

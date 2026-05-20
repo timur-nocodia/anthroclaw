@@ -6,6 +6,29 @@ All notable changes to AnthroClaw are documented here.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-20
+
+### Added
+- `manage_cron` v2 durability hardening: explicit delivery binding, creator
+  audit metadata, durable/run-once/expiration fields, and legacy job migration.
+- Peer-isolated memory for `public` profile dispatches, including peer-scoped
+  search/write behavior and public memory file partitioning.
+- Persistent approval queue backed by `data/approvals.json`, including restart
+  recovery, sender-authenticated resolution, expiration, and replay prevention.
+- WhatsApp text-code approval flow via `/approve <id>` and `/deny <id>` for
+  channels without interactive callback buttons.
+- Runtime health observability in metrics, diagnostics, and Runtime UI:
+  last run, last failure, approval backlog, cron count, and stale running runs.
+- Deploy/fleet staged rollout preview with explicit release ref, runtime mode,
+  required dry-run, redacted secrets, and post-deploy gateway/runtime/metrics
+  readiness checks.
+
+### Changed
+- Deployment requests now require explicit `runtimeMode` and
+  `dryRunRequired=true` before live deploy execution.
+- Runtime counters now include approval, cron, memory scope, runtime turn, and
+  deploy lifecycle dimensions.
+
 ## [1.2.0] - 2026-05-19
 
 ### Added

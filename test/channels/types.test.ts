@@ -36,6 +36,7 @@ describe('Channel types', () => {
       async sendMedia() { return ''; },
       async sendTyping() {},
       supportsApproval: false,
+      approvalMode: 'unsupported',
       async promptForApproval() {},
     };
     expect(typeof adapter.editText).toBe('function');
@@ -55,6 +56,7 @@ describe('Channel types', () => {
       async sendMedia() { return ''; },
       async sendTyping() {},
       supportsApproval: false,
+      approvalMode: 'unsupported',
       async promptForApproval() {},
     };
 

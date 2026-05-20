@@ -5,6 +5,9 @@ import { Client } from 'ssh2';
 /* ------------------------------------------------------------------ */
 
 export interface DeployConfig {
+  releaseRef?: string;
+  runtimeMode?: 'pi' | 'claude-agent-sdk' | 'opencode';
+  dryRunRequired?: boolean;
   identity: {
     name: string;
     environment: string;
@@ -28,6 +31,9 @@ export interface DeployConfig {
   };
   release: {
     version: string;
+    releaseRef?: string;
+    runtimeMode?: 'pi' | 'claude-agent-sdk' | 'opencode';
+    dryRunRequired?: boolean;
     repo: string;
     upgradePolicy: string;
   };
@@ -129,7 +135,7 @@ const DEPLOY_STEPS = [
   'Installing dependencies',
   'Configuring environment',
   'Setting up systemd + reverse proxy',
-  'Starting and verifying health',
+  'Starting gateway and verifying runtime health',
 ] as const;
 
 async function executeDeployStep(
@@ -176,7 +182,7 @@ async function executeDeployStep(
 
     case 3: {
       // Step 3: Clone repository
-      const branch = config.release.version;
+      const branch = resolveReleaseRef(config);
       const repo = config.release.repo;
       await deploySshExec(
         config,
@@ -285,14 +291,14 @@ async function executeDeployStep(
     }
 
     case 7: {
-      // Step 7: Start service + health check
+      // Step 7: Start service + runtime health check
       const serviceName = `anthroclaw-${config.identity.name}`;
       await deploySshExec(
         config,
         `sudo systemctl start ${serviceName}`,
       );
 
-      // Poll for healthy status (up to 30s)
+      // Poll for healthy gateway/runtime/metrics status (up to 30s)
       const healthUrl = config.networking.domain
         ? `https://${config.networking.domain}/api/gateway/status`
         : `http://localhost:${config.networking.httpPort}/api/gateway/status`;
@@ -301,8 +307,8 @@ async function executeDeployStep(
         config,
         [
           'for i in $(seq 1 15); do',
-          `  if curl -sf ${healthUrl} > /dev/null 2>&1; then`,
-          '    echo "healthy"',
+          `  if curl -sf ${healthUrl} > /dev/null 2>&1 && curl -sf ${healthUrl.replace('/api/gateway/status', '/api/runtime/status')} > /dev/null 2>&1 && curl -sf ${healthUrl.replace('/api/gateway/status', '/api/metrics')} > /dev/null 2>&1; then`,
+          `    echo "healthy ${resolveReleaseRef(config)} ${resolveRuntimeMode(config)}"`,
           '    exit 0',
           '  fi',
           '  sleep 2',
@@ -389,10 +395,33 @@ export interface DryRunCheck {
   message: string;
 }
 
+export interface DeployPreview {
+  target: string;
+  releaseRef: string;
+  runtimeMode: 'pi' | 'claude-agent-sdk' | 'opencode';
+  dryRunRequired: boolean;
+  configRoots: string[];
+  secrets: 'redacted';
+  commands: string[];
+}
+
 export async function deployDryRun(
   config: DeployConfig,
-): Promise<{ checks: DryRunCheck[]; canDeploy: boolean }> {
+): Promise<{ checks: DryRunCheck[]; canDeploy: boolean; preview: DeployPreview }> {
   const checks: DryRunCheck[] = [];
+  const preview = buildDeployPreview(config);
+
+  if (!config.runtimeMode && !config.release.runtimeMode) {
+    checks.push({ name: 'Runtime mode', status: 'fail', message: 'runtimeMode must be explicit' });
+  } else {
+    checks.push({ name: 'Runtime mode', status: 'pass', message: `Runtime mode: ${preview.runtimeMode}` });
+  }
+
+  if (!preview.releaseRef) {
+    checks.push({ name: 'Release ref', status: 'fail', message: 'releaseRef/version must be set' });
+  } else {
+    checks.push({ name: 'Release ref', status: 'pass', message: `Deploying ${preview.releaseRef}` });
+  }
 
   // 1. SSH connectivity
   try {
@@ -467,7 +496,34 @@ export async function deployDryRun(
   }
 
   const canDeploy = !checks.some((c) => c.status === 'fail');
-  return { checks, canDeploy };
+  return { checks, canDeploy, preview };
+}
+
+function resolveReleaseRef(config: DeployConfig): string {
+  return config.releaseRef ?? config.release.releaseRef ?? config.release.version;
+}
+
+function resolveRuntimeMode(config: DeployConfig): 'pi' | 'claude-agent-sdk' | 'opencode' {
+  return config.runtimeMode ?? config.release.runtimeMode ?? 'pi';
+}
+
+function buildDeployPreview(config: DeployConfig): DeployPreview {
+  const serviceName = `anthroclaw-${config.identity.name || '<name>'}`;
+  const releaseRef = resolveReleaseRef(config);
+  return {
+    target: `${config.target.user}@${config.target.host}:${config.target.port}`,
+    releaseRef,
+    runtimeMode: resolveRuntimeMode(config),
+    dryRunRequired: config.dryRunRequired ?? config.release.dryRunRequired ?? true,
+    configRoots: ['/opt/anthroclaw', '/etc/systemd/system', '/etc/caddy'],
+    secrets: 'redacted',
+    commands: [
+      `git clone --depth 1 --branch ${releaseRef} ${config.release.repo} /opt/anthroclaw/${config.identity.name}`,
+      'pnpm install --frozen-lockfile',
+      `systemctl start ${serviceName}`,
+      'curl /api/gateway/status && curl /api/runtime/status && curl /api/metrics',
+    ],
+  };
 }
 
 /* ------------------------------------------------------------------ */

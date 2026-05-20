@@ -53,6 +53,13 @@ export function StepReview({ config }: StepProps) {
             (config.channel === "pin" ? ` \u2192 ${config.version}` : "")
           }
         />
+        <ReviewLine k="Release ref" v={config.version || "\u2014"} />
+        <ReviewLine k="Runtime" v={config.runtimeMode} />
+        <ReviewLine k="Dry-run" v={config.dryRunRequired ? "required" : "off"} />
+        <ReviewLine
+          k="Commands"
+          v={`git clone --branch ${config.version || "<ref>"}; pnpm install --frozen-lockfile; systemctl start anthroclaw-${config.name || "<name>"}`}
+        />
         <ReviewLine k="Upgrade policy" v={config.upgradePolicy} />
         <ReviewLine
           k="Agent source"

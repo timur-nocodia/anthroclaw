@@ -313,6 +313,7 @@ function createSmokeChannel(input: {
   return {
     id: CHANNEL_ID,
     supportsApproval: true,
+    approvalMode: 'interactive_buttons',
     onMessage() {},
     async start() {},
     async stop() {},

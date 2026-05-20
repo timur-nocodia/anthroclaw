@@ -24,6 +24,7 @@ export interface DiagnosticsBundle {
   };
   status: unknown;
   metrics: unknown;
+  runtimeHealth: unknown;
   runs: unknown[];
   routeDecisions: unknown[];
   diagnosticEvents: unknown[];
@@ -101,6 +102,7 @@ export function buildDiagnosticsBundle(options: DiagnosticsBundleOptions): Diagn
     ? { sessionKey: run?.sessionKey ?? '__missing_run__', limit: routeDecisionLimit }
     : { limit: routeDecisionLimit };
 
+  const snapshot = metrics.snapshot();
   return sanitizeForDiagnostics({
     manifest: {
       generatedAt: new Date().toISOString(),
@@ -109,7 +111,8 @@ export function buildDiagnosticsBundle(options: DiagnosticsBundleOptions): Diagn
       filters: options.runId ? { runId: options.runId } : undefined,
     },
     status: options.status,
-    metrics: metrics.snapshot(),
+    metrics: snapshot,
+    runtimeHealth: snapshot.runtimeHealth,
     runs: options.runId ? (run ? [run] : []) : metrics.listAgentRuns({ limit: runLimit }),
     routeDecisions: metrics.listRouteDecisions(routeDecisionFilter),
     diagnosticEvents: metrics.listDiagnosticEvents({

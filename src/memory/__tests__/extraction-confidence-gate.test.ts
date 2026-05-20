@@ -24,6 +24,8 @@ function makeFakeProvider(): MemoryProvider & {
         contentHash: 'fake',
         source: provenance.source ?? 'index',
         reviewStatus: provenance.reviewStatus ?? 'approved',
+        visibility: provenance.visibility ?? 'agent',
+        peerKey: provenance.peerKey,
         provenance,
         createdAt: 0,
         updatedAt: 0,

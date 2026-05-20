@@ -691,16 +691,17 @@ If in doubt, open an issue or draft PR before implementing a large change.
 
 ## Roadmap
 
-The Pi-native Runtime v1 migration is complete; v0.5.0 added the plugin framework, LCM, safety profiles, learning loop, and gateway-managed scheduled tasks. Next useful work:
+The Pi-native Runtime v1 migration and first product-hardening pass are
+complete. Next product candidates:
 
-- **`manage_cron` v2 — runtime primitive cleanup.** Move `deliver_to` out of the model-controlled tool input entirely; agent passes only `schedule + prompt + id?`. Closure-based per-dispatch tool factory replaces the AsyncLocalStorage approach so dispatch context propagates reliably across SDK stdio. Add explicit `expiry`, `durable`, `createdBy` fields to `DynamicCronJob`.
-- **Peer-isolated memory for `public` agents.** Currently memory is per-agent; for multi-tenant public bots this needs per-peer scoping.
-- **WhatsApp interactive approval.** Baileys button reliability has been spotty; needs a stable approval UX or a documented "destructive tools blocked on WA" stance.
-- **Persistent approval queue.** In-memory broker survives only within the dispatch; a long-running approval should resume after restart.
-- **Per-route `safety_profile`.** Currently per-agent — splitting an agent into DM/group routes with different profiles would reduce duplication.
-- **Richer observability.** Dashboards beyond the current Runs tab and chat debug rail.
-- **Deploy/fleet polish.** Better operator UX for staged rollout, version pinning, fleet-wide config sync.
-- **More example agents and skills.** Concrete scaffolds for common shapes (lead capture, content scheduling, support triage).
+- deeper runtime provider evaluation and model-routing policy;
+- operator-facing approval queue UI;
+- richer deploy rollback controls and fleet release history;
+- public-profile abuse monitoring and rate-limit analytics;
+- managed plugin marketplace packaging.
+
+The v1.3.0 implementation plan remains archived at
+[`docs/superpowers/plans/2026-05-20-v1.3-runtime-product-hardening.md`](docs/superpowers/plans/2026-05-20-v1.3-runtime-product-hardening.md).
 
 ## Inspiration and Compatibility
 
