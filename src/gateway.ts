@@ -6723,7 +6723,7 @@ export class Gateway {
       prompt: job.prompt,
       deliverTo: job.deliverTo,
       runOnce,
-      expiresAt: inferredExpiresAt,
+      expiresAt: inferredExpiresAt ?? undefined,
       enabled: job.enabled,
     });
   }

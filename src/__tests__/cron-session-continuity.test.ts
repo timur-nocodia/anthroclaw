@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { Gateway } from '../gateway.js';
 import { buildSessionKey } from '../routing/session-key.js';
 import type { ScheduledJob } from '../cron/scheduler.js';
+import { DynamicCronStore } from '../cron/dynamic-store.js';
 
 /**
  * Bug #1 (2026-05-04): cron-fired briefing went to UUID-A, the user's reply
@@ -143,4 +147,79 @@ describe('Gateway.mirrorCronSessionToUserKey — DM cron session continuity (Bug
   // vs per_user — is needed to resolve the user-side group sessionKey, and
   // job.deliverTo doesn't carry that context). For now group cron creates a
   // fresh user session if/when a group member replies.
+});
+
+describe('Gateway.cleanupRunOnceCron', () => {
+  let tmpDir = '';
+
+  afterEach(() => {
+    if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    tmpDir = '';
+  });
+
+  function callCleanup(gatewayLike: unknown, job: ScheduledJob): void {
+    const fn = (Gateway.prototype as unknown as Record<string, unknown>).cleanupRunOnceCron;
+    if (typeof fn !== 'function') {
+      throw new Error('Gateway.cleanupRunOnceCron not implemented');
+    }
+    (fn as (j: ScheduledJob) => void).call(gatewayLike, job);
+  }
+
+  it('deletes run-once dynamic cron jobs and reloads the scheduler', () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'cron-cleanup-test-'));
+    const store = new DynamicCronStore(join(tmpDir, 'dynamic-cron.json'));
+    store.create({
+      id: 'one-shot',
+      agentId: 'agent_alpha',
+      schedule: '0 9 20 5 *',
+      prompt: 'send reminder',
+      deliverTo: { channel: 'telegram', peer_id: 'peer-1', account_id: 'default' },
+      createdBy: { channel: 'telegram', sender_id: 'peer-1', peer_id: 'peer-1', account_id: 'default' },
+      runOnce: true,
+      enabled: true,
+    });
+    const reloadDynamicCron = vi.fn();
+
+    callCleanup({ dynamicCronStore: store, reloadDynamicCron }, {
+      id: 'dyn:one-shot',
+      agentId: 'agent_alpha',
+      schedule: '0 9 20 5 *',
+      prompt: 'send reminder',
+      deliverTo: { channel: 'telegram', peer_id: 'peer-1', account_id: 'default' },
+      runOnce: true,
+      enabled: true,
+    });
+
+    expect(store.list('agent_alpha')).toEqual([]);
+    expect(reloadDynamicCron).toHaveBeenCalledOnce();
+  });
+
+  it('keeps durable recurring dynamic cron jobs after firing', () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'cron-cleanup-test-'));
+    const store = new DynamicCronStore(join(tmpDir, 'dynamic-cron.json'));
+    store.create({
+      id: 'recurring',
+      agentId: 'agent_alpha',
+      schedule: '0 9 * * *',
+      prompt: 'send status',
+      deliverTo: { channel: 'telegram', peer_id: 'peer-1', account_id: 'default' },
+      createdBy: { channel: 'telegram', sender_id: 'peer-1', peer_id: 'peer-1', account_id: 'default' },
+      runOnce: false,
+      enabled: true,
+    });
+    const reloadDynamicCron = vi.fn();
+
+    callCleanup({ dynamicCronStore: store, reloadDynamicCron }, {
+      id: 'dyn:recurring',
+      agentId: 'agent_alpha',
+      schedule: '0 9 * * *',
+      prompt: 'send status',
+      deliverTo: { channel: 'telegram', peer_id: 'peer-1', account_id: 'default' },
+      runOnce: false,
+      enabled: true,
+    });
+
+    expect(store.list('agent_alpha')).toHaveLength(1);
+    expect(reloadDynamicCron).not.toHaveBeenCalled();
+  });
 });
