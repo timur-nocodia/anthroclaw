@@ -4,6 +4,7 @@ import { addServer } from '@/lib/fleet';
 import type { FleetServer } from '@/lib/fleet';
 import { deployGateway } from '@/lib/deploy';
 import type { DeployConfig, DeployEvent } from '@/lib/deploy';
+import { metrics } from '@backend/metrics/collector.js';
 
 /* ------------------------------------------------------------------ */
 /*  SSE helper                                                         */
@@ -39,12 +40,14 @@ export async function POST(req: NextRequest) {
     !config.identity?.name ||
     !config.target?.host ||
     !config.release?.version ||
-    !config.release?.repo
+    !config.release?.repo ||
+    !config.runtimeMode ||
+    config.dryRunRequired !== true
   ) {
     return Response.json(
       {
         error: 'validation_error',
-        message: 'Required: identity.name, target.host, release.version, release.repo',
+        message: 'Required: identity.name, target.host, release.version, release.repo, runtimeMode, dryRunRequired=true',
       },
       { status: 400 },
     );
@@ -54,13 +57,18 @@ export async function POST(req: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       let deployUrl = '';
+      metrics.increment('deploy.started');
 
       try {
         for await (const event of deployGateway(config)) {
           controller.enqueue(encoder.encode(sseEncode(event)));
+          if (event.type === 'error') {
+            metrics.increment('deploy.failed');
+          }
 
           // After successful deploy, auto-add to fleet
           if (event.type === 'done') {
+            metrics.increment('deploy.completed');
             deployUrl = event.url;
 
             const serverId = config.identity.name
@@ -84,6 +92,8 @@ export async function POST(req: NextRequest) {
               },
               release: {
                 version: config.release.version,
+                releaseRef: config.releaseRef ?? config.release.releaseRef ?? config.release.version,
+                runtimeMode: config.runtimeMode ?? config.release.runtimeMode,
                 repo: config.release.repo,
                 upgradePolicy: config.release.upgradePolicy,
               },
@@ -99,6 +109,7 @@ export async function POST(req: NextRequest) {
           }
         }
       } catch (err: unknown) {
+        metrics.increment('deploy.failed');
         const msg = err instanceof Error ? err.message : 'Deploy failed';
         controller.enqueue(
           encoder.encode(sseEncode({ type: 'error', step: 0, message: msg })),

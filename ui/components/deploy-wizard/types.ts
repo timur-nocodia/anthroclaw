@@ -28,6 +28,8 @@ export interface DeployConfig {
   /* Step 4: Release */
   channel: "stable" | "rc" | "dev" | "pin";
   version: string;
+  runtimeMode: "pi" | "claude-agent-sdk" | "opencode";
+  dryRunRequired: boolean;
   gitRepo: string;
   upgradePolicy: "manual" | "auto-minor" | "auto-patch" | "auto-latest";
 
@@ -67,7 +69,9 @@ export const DEFAULT_CONFIG: DeployConfig = {
   webhookMode: "longpoll",
 
   channel: "stable",
-  version: "1.8.2",
+  version: "v1.3.0",
+  runtimeMode: "pi",
+  dryRunRequired: true,
   gitRepo: "",
   upgradePolicy: "manual",
 

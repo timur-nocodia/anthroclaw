@@ -1,7 +1,11 @@
 import type { DeployConfig } from "./types";
 
 export function toDeployPayload(config: DeployConfig) {
+  const releaseRef = config.channel === "pin" ? config.version : config.version;
   return {
+    releaseRef,
+    runtimeMode: config.runtimeMode,
+    dryRunRequired: config.dryRunRequired,
     identity: {
       name: config.name,
       environment: config.environment,
@@ -25,6 +29,9 @@ export function toDeployPayload(config: DeployConfig) {
     },
     release: {
       version: config.version,
+      releaseRef,
+      runtimeMode: config.runtimeMode,
+      dryRunRequired: config.dryRunRequired,
       repo: config.gitRepo,
       upgradePolicy: config.upgradePolicy,
     },
