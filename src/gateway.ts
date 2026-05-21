@@ -219,12 +219,14 @@ import { WarmQueryPool } from './sdk/warm-pool.js';
 import { SdkCheckpointRegistry, type RewindResponse } from './sdk/checkpoints.js';
 import { SdkSubagentRegistry, type SubagentRunRecord, type SubagentRunStatus } from './sdk/subagent-registry.js';
 import {
+  extractApiError,
   extractHookLifecycleEvent,
   extractPartialText,
   extractPromptSuggestion,
   extractTaskLifecycleEvent,
   extractTaskNotification,
   extractTaskProgress,
+  type SdkApiErrorDetail,
   type SdkHookLifecycleEvent,
   type SdkTaskNotification,
   type SdkTaskProgress,
@@ -3563,6 +3565,42 @@ export class Gateway {
     return result;
   }
 
+  /**
+   * Centralised handler for synthetic SDK api-error messages (e.g. OAuth 401
+   * during access-token expiry windows). We *never* want to deliver these as
+   * model output — they read like a Claude reply but are actually transport
+   * errors. Logging here gives operators a single warn-level surface plus a
+   * metrics counter to spot expiry storms.
+   *
+   * No retry is attempted: the bare `claude` binary refreshes credentials on
+   * the next cold-start, so the user's next message naturally succeeds. If we
+   * see this firing repeatedly inside one session, that's a signal something
+   * deeper is broken (revoked refresh token, no network, etc.) and an
+   * operator should look — the log fields make that visible.
+   */
+  private logSdkApiError(
+    detail: SdkApiErrorDetail,
+    context: { agentId: string; sessionKey: string; runId: string | undefined; channel: string },
+  ): void {
+    metrics.increment('sdk_api_errors');
+    if (detail.is401) {
+      metrics.increment('sdk_api_errors_401');
+    }
+    logger.warn(
+      {
+        agentId: context.agentId,
+        sessionKey: context.sessionKey,
+        runId: context.runId,
+        channel: context.channel,
+        apiErrorStatus: detail.status,
+        requestId: detail.requestId,
+        errorType: detail.errorType,
+        errorMessage: detail.errorMessage,
+      },
+      'SDK api-error suppressed from user delivery',
+    );
+  }
+
   private async findLatestUserMessageId(agent: Agent, sessionId: string): Promise<string | undefined> {
     if (!this.sdkSessionService) return undefined;
     const messages = await this.sdkSessionService.getAgentSessionMessages(agent, sessionId, {
@@ -3889,6 +3927,11 @@ export class Gateway {
         if (next.done) break;
 
         const evt = next.value as Record<string, unknown>;
+        const apiError = extractApiError(evt);
+        if (apiError) {
+          this.logSdkApiError(apiError, { agentId, sessionKey, runId, channel: 'web' });
+          continue;
+        }
         const runtimeEvents = normalizeClaudeRuntimeEvents(evt, {
           runId: runId ?? 'web-query',
           sessionId: newSessionId || existingSessionId,
@@ -6149,6 +6192,16 @@ export class Gateway {
           }
 
           const evt = next.value as Record<string, unknown>;
+          const apiError = extractApiError(evt);
+          if (apiError) {
+            this.logSdkApiError(apiError, {
+              agentId: agent.id,
+              sessionKey,
+              runId,
+              channel: msg.channel,
+            });
+            continue;
+          }
           const runtimeEvents = normalizeClaudeRuntimeEvents(evt, {
             runId: runId ?? 'agent-query',
             sessionId: observedSessionId,
@@ -6849,6 +6902,11 @@ export class Gateway {
           const parts: string[] = [];
           for await (const event of result) {
             const evt = event as Record<string, unknown>;
+            const apiError = extractApiError(evt);
+            if (apiError) {
+              this.logSdkApiError(apiError, { agentId: agent.id, sessionKey: 'dreaming', runId: undefined, channel: 'dreaming' });
+              continue;
+            }
             if (evt.type === 'result' && typeof evt.result === 'string') {
               return evt.result;
             }
@@ -6987,6 +7045,16 @@ export class Gateway {
       try {
         for await (const event of result) {
           const evt = event as Record<string, unknown>;
+          const apiError = extractApiError(evt);
+          if (apiError) {
+            this.logSdkApiError(apiError, {
+              agentId: agent.id,
+              sessionKey,
+              runId: undefined,
+              channel: 'session-reset-summary',
+            });
+            continue;
+          }
           if (evt.type === 'result') {
             break;
           }

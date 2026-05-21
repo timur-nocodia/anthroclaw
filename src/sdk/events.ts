@@ -51,6 +51,85 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {};
 }
 
+export interface SdkApiErrorDetail {
+  status: number | null;
+  errorType: string | null;
+  errorMessage: string | null;
+  requestId: string | null;
+  rawText: string;
+  is401: boolean;
+}
+
+const API_ERROR_HEAD_RE = /API Error:\s*(\d{3})\b/i;
+const API_ERROR_JSON_RE = /\{[\s\S]*"type"\s*:\s*"error"[\s\S]*\}/;
+
+/**
+ * Detects synthetic assistant messages that the Agent SDK emits when the
+ * underlying API call (e.g. to Anthropic) fails. These arrive shaped like a
+ * normal assistant text message but carry `isApiErrorMessage: true` and a
+ * non-2xx `apiErrorStatus`. Without filtering they get delivered to the end
+ * user as plain bot text — including OAuth 401s during token expiry windows.
+ *
+ * Returns null when the event is a normal assistant turn or any other event
+ * type. Returns a detail record (with parsed `requestId` / `errorType` when
+ * available) when the event is an api-error synthetic.
+ */
+export function extractApiError(event: Record<string, unknown>): SdkApiErrorDetail | null {
+  if (event.type !== 'assistant') return null;
+
+  const message = asRecord(event.message);
+  const content = Array.isArray(message.content) ? message.content : [];
+  let rawText = '';
+  for (const block of content) {
+    if (block && typeof block === 'object') {
+      const b = block as Record<string, unknown>;
+      if (b.type === 'text' && typeof b.text === 'string') {
+        rawText += b.text;
+      }
+    }
+  }
+
+  const flagApiError = event.isApiErrorMessage === true;
+  const looksSynthetic = message.model === '<synthetic>';
+  const headMatch = rawText.match(API_ERROR_HEAD_RE);
+  const detectedByText = headMatch !== null;
+
+  if (!flagApiError && !(looksSynthetic && detectedByText)) {
+    return null;
+  }
+
+  const status = typeof event.apiErrorStatus === 'number'
+    ? event.apiErrorStatus
+    : headMatch
+      ? Number(headMatch[1])
+      : null;
+
+  let errorType: string | null = null;
+  let errorMessage: string | null = null;
+  let requestId: string | null = null;
+  const jsonMatch = rawText.match(API_ERROR_JSON_RE);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+      const inner = asRecord(parsed.error);
+      if (typeof inner.type === 'string') errorType = inner.type;
+      if (typeof inner.message === 'string') errorMessage = inner.message;
+      if (typeof parsed.request_id === 'string') requestId = parsed.request_id;
+    } catch {
+      // ignore; fields remain null
+    }
+  }
+
+  return {
+    status,
+    errorType,
+    errorMessage,
+    requestId,
+    rawText,
+    is401: status === 401,
+  };
+}
+
 export function extractPartialText(event: Record<string, unknown>): string | null {
   if (event.type !== 'stream_event') return null;
 
