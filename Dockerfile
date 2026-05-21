@@ -28,6 +28,10 @@ COPY plugins/lcm/package.json ./plugins/lcm/
 COPY plugins/operator-console/package.json ./plugins/operator-console/
 COPY plugins/honcho/package.json ./plugins/honcho/
 COPY plugins/__example/package.json ./plugins/__example/
+# Same reasoning for the quarantined legacy Claude SDK adapter at packages/* —
+# tsc resolves `@anthroclaw/legacy-claude-agent-sdk` via the workspace symlink,
+# which pnpm only creates when the package.json is present at install time.
+COPY packages/legacy-claude-agent-sdk/package.json ./packages/legacy-claude-agent-sdk/
 
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
@@ -48,6 +52,7 @@ COPY tsconfig.json ./
 COPY src ./src
 COPY ui ./ui
 COPY plugins ./plugins
+COPY packages ./packages
 
 # Local dev uses ui/.env.local symlinked to ../.env. The image doesn't
 # bake secrets, but Next.js expects the file to exist during build.
@@ -94,6 +99,10 @@ COPY --from=build --chown=node:node /app/ui/tsconfig.json ./ui/tsconfig.json
 # Plugin runtime artifacts: package.json, manifest, dist (compiled JS), skills,
 # and per-plugin node_modules (workspace symlinks live here).
 COPY --from=build --chown=node:node /app/plugins ./plugins
+# Workspace packages (legacy SDK adapter). Pnpm symlinks in node_modules point
+# back here, so omitting this directory at runtime breaks `import` of
+# `@anthroclaw/legacy-claude-agent-sdk` even though install-time linking works.
+COPY --from=build --chown=node:node /app/packages ./packages
 
 # Persistent state mount points (overridden by compose volumes).
 # Only chown the directories we just created — the COPY --from=build above
