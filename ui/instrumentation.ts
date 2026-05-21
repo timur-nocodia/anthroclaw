@@ -19,11 +19,15 @@ export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
   if (process.env.NODE_ENV !== 'production') return;
 
-  const loadGateway = new Function('modulePath', 'return import(modulePath)') as (
-    modulePath: string,
-  ) => Promise<typeof import('./lib/gateway')>;
-  const { getGateway } = await loadGateway('./lib/gateway');
+  // Use a static `import()` so webpack bundles `./lib/gateway` (and its
+  // transitive deps) into a server chunk at build time. The previous
+  // `new Function('modulePath', 'return import(modulePath)')` form was
+  // designed to bypass webpack's static analysis, but it leaves nothing
+  // bundled at `.next/server/lib/gateway` and Next.js then crashes the
+  // server with `ERR_MODULE_NOT_FOUND` before the lazy-boot path can
+  // even retry — taking the admin UI down with it.
   try {
+    const { getGateway } = await import('./lib/gateway');
     await getGateway();
   } catch (err) {
     // Don't crash the Next.js server on gateway boot failure — log and
