@@ -232,6 +232,10 @@ import {
   type SdkTaskProgress,
 } from './sdk/events.js';
 import {
+  OAuthRefreshDaemon,
+  spawnClaudeWarmupRefresh,
+} from './sdk/oauth-refresh.js';
+import {
   parseDirectWebhookPayload,
   renderDirectWebhook,
   verifyDirectWebhookSecret,
@@ -1180,6 +1184,7 @@ export class Gateway {
   private prefetchCache = new PrefetchCache();
   private globalConfig: GlobalConfig | null = null;
   private sdkReady = false;
+  private oauthRefreshDaemon: OAuthRefreshDaemon | null = null;
   private sessionPruneInterval: ReturnType<typeof setInterval> | null = null;
   private configWatcher: ConfigWatcher | null = null;
   private agentsDir: string | null = null;
@@ -1811,6 +1816,27 @@ export class Gateway {
       logger.warn({ err }, 'Legacy Claude fallback startup failed; agent queries will use fallback responses only if no primary runtime handles the turn');
     }
 
+    // Proactive OAuth refresh: the bare `claude` binary rotates access tokens
+    // lazily at stream cold-start, which leaves a window where short-running
+    // cron queries (e.g. content_sm_building hourly feeds) catch a 401 from
+    // Anthropic. The 401 stream-guard suppresses the user-visible noise, but
+    // the cron run still fails to do any real work. This daemon polls the
+    // credentials file on a timer and triggers a refresh ahead of expiry.
+    const runtimeHome = process.env.ANTHROCLAW_CLAUDE_HOME
+      ?? process.env.CLAUDE_RUNTIME_HOME
+      ?? process.env.HOME
+      ?? '/home/node';
+    const credentialsPath = join(runtimeHome, '.claude', '.credentials.json');
+    const claudeBin = process.env.CLAUDE_BIN ?? 'claude';
+    this.oauthRefreshDaemon = new OAuthRefreshDaemon({
+      credentialsPath,
+      triggerRefresh: spawnClaudeWarmupRefresh({ runtimeHome, claudeBin }),
+      logger,
+      onError: (err) => logger.warn({ err: err.message }, 'OAuth refresh daemon: trigger failed'),
+    });
+    this.oauthRefreshDaemon.start();
+    logger.info({ credentialsPath, claudeBin }, 'OAuth refresh daemon started');
+
     // Agent config writer + audit log (Stage 1 self-config-tools). Single
     // mutation point for agent.yml — UI save endpoints and chat-driven tools
     // both go through this writer so we get one audit trail.
@@ -2167,6 +2193,8 @@ export class Gateway {
   }
 
   async stop(): Promise<void> {
+    this.oauthRefreshDaemon?.stop();
+    this.oauthRefreshDaemon = null;
     this.configWatcher?.stop();
     this.configWatcher = null;
 
