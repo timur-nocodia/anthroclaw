@@ -5,8 +5,22 @@ import { join } from 'node:path';
 import {
   OAuthRefreshDaemon,
   readCredentialsSnapshot,
+  resolveClaudeBin,
   shouldRefresh,
 } from '../oauth-refresh.js';
+
+describe('resolveClaudeBin', () => {
+  it('falls back to <cwd>/node_modules/.bin/claude when CLAUDE_BIN env is unset', () => {
+    expect(resolveClaudeBin('/app', undefined)).toBe('/app/node_modules/.bin/claude');
+    expect(resolveClaudeBin('/repo', '')).toBe('/repo/node_modules/.bin/claude');
+    expect(resolveClaudeBin('/x', '   ')).toBe('/x/node_modules/.bin/claude');
+  });
+
+  it('honors CLAUDE_BIN env when set to a non-empty string', () => {
+    expect(resolveClaudeBin('/app', '/usr/local/bin/claude')).toBe('/usr/local/bin/claude');
+    expect(resolveClaudeBin('/app', 'claude')).toBe('claude');
+  });
+});
 
 describe('shouldRefresh', () => {
   it('returns false when expiresAt is comfortably in the future', () => {

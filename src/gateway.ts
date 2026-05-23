@@ -233,6 +233,7 @@ import {
 } from './sdk/events.js';
 import {
   OAuthRefreshDaemon,
+  resolveClaudeBin,
   spawnClaudeWarmupRefresh,
 } from './sdk/oauth-refresh.js';
 import {
@@ -1827,7 +1828,10 @@ export class Gateway {
       ?? process.env.HOME
       ?? '/home/node';
     const credentialsPath = join(runtimeHome, '.claude', '.credentials.json');
-    const claudeBin = process.env.CLAUDE_BIN ?? 'claude';
+    // Resolve to an absolute path: the production container ships
+    // `node_modules/.bin/claude` but does not prepend it to PATH, so spawning
+    // `claude` bare fails with ENOENT (broke daemon silently in #183).
+    const claudeBin = resolveClaudeBin(process.cwd(), process.env.CLAUDE_BIN);
     this.oauthRefreshDaemon = new OAuthRefreshDaemon({
       credentialsPath,
       triggerRefresh: spawnClaudeWarmupRefresh({ runtimeHome, claudeBin }),
