@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 /**
  * Resolve the absolute path to the `claude` binary the daemon should spawn.
@@ -9,13 +9,25 @@ import { join } from 'node:path';
  * but our production container does NOT add `node_modules/.bin` to PATH. The
  * UI auth flow gets away with calling `claude` bare because it builds its own
  * PATH-prepended env; the refresh daemon inherits process.env unchanged and
- * therefore needs an explicit path. Using `<cwd>/node_modules/.bin/claude`
- * works in both production (`process.cwd() === "/app"`) and local dev (cwd =
- * repo root). Operators can still override via `CLAUDE_BIN` env var.
+ * therefore needs an explicit path.
+ *
+ * `process.cwd()` is unreliable: in prod it's `/app/ui` (Next.js working dir),
+ * not the repo root that owns `node_modules`. Walk up the tree until we hit a
+ * `node_modules/.bin/claude` (or run out of parents). Operators can still
+ * override via `CLAUDE_BIN` env var, and we fall back to bare `'claude'` (so
+ * a system-wide install on PATH still works) when nothing is found.
  */
 export function resolveClaudeBin(cwd: string, envOverride: string | undefined): string {
   if (envOverride && envOverride.trim().length > 0) return envOverride;
-  return join(cwd, 'node_modules', '.bin', 'claude');
+  let dir = cwd;
+  while (true) {
+    const candidate = join(dir, 'node_modules', '.bin', 'claude');
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return 'claude';
 }
 
 /**
