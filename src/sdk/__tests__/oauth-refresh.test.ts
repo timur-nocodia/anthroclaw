@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -10,15 +10,53 @@ import {
 } from '../oauth-refresh.js';
 
 describe('resolveClaudeBin', () => {
-  it('falls back to <cwd>/node_modules/.bin/claude when CLAUDE_BIN env is unset', () => {
-    expect(resolveClaudeBin('/app', undefined)).toBe('/app/node_modules/.bin/claude');
-    expect(resolveClaudeBin('/repo', '')).toBe('/repo/node_modules/.bin/claude');
-    expect(resolveClaudeBin('/x', '   ')).toBe('/x/node_modules/.bin/claude');
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'resolve-claude-bin-'));
   });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  function makeBin(parent: string): string {
+    const binDir = join(parent, 'node_modules', '.bin');
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, 'claude');
+    writeFileSync(binPath, '#!/bin/sh\n');
+    return binPath;
+  }
 
   it('honors CLAUDE_BIN env when set to a non-empty string', () => {
     expect(resolveClaudeBin('/app', '/usr/local/bin/claude')).toBe('/usr/local/bin/claude');
     expect(resolveClaudeBin('/app', 'claude')).toBe('claude');
+  });
+
+  it('treats empty / whitespace env as unset', () => {
+    const bin = makeBin(root);
+    expect(resolveClaudeBin(root, '')).toBe(bin);
+    expect(resolveClaudeBin(root, '   ')).toBe(bin);
+    expect(resolveClaudeBin(root, undefined)).toBe(bin);
+  });
+
+  it('finds claude at <cwd>/node_modules/.bin/claude', () => {
+    const bin = makeBin(root);
+    expect(resolveClaudeBin(root, undefined)).toBe(bin);
+  });
+
+  it('walks up to parent directories until it finds node_modules/.bin/claude (workspace case)', () => {
+    const bin = makeBin(root);
+    const nested = join(root, 'ui');
+    mkdirSync(nested, { recursive: true });
+    // Nested dir has no node_modules of its own; should walk up to root.
+    expect(resolveClaudeBin(nested, undefined)).toBe(bin);
+  });
+
+  it("falls back to bare 'claude' when nothing is found anywhere up the tree", () => {
+    const deep = join(root, 'a', 'b', 'c');
+    mkdirSync(deep, { recursive: true });
+    expect(resolveClaudeBin(deep, undefined)).toBe('claude');
   });
 });
 
