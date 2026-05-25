@@ -132,7 +132,7 @@ import { ToolProgressBubble } from './channels/tool-progress-bubble.js';
 import { formatChannelOperatorContext, resolveChannelContext, resolveReplyToId } from './channels/context.js';
 import type { AgentYml, GlobalConfig, HeadlessRuntimeProvider } from './config/schema.js';
 import { HookEmitter } from './hooks/emitter.js';
-import { IterationBudget } from './session/budget.js';
+import { IterationBudget, startBudgetWatchdog } from './session/budget.js';
 import { SessionCompressor } from './session/compressor.js';
 import { generateSessionTitle } from './session/title-generator.js';
 import { logger } from './logger.js';
@@ -6091,6 +6091,30 @@ export class Gateway {
         graceMessage: budgetConfig.grace_message,
       });
       budget?.start();
+      // Independent failsafe for the iterator loop. The in-loop
+      // `budget.shouldInterrupt()` check only fires between iterations,
+      // so any unbounded await inside the loop body (or in finalize)
+      // can pin the session queue indefinitely — observed on
+      // `content_sm_building` thread:4 on 2026-05-20, hours of buffered
+      // messages with no `Iteration budget exhausted` log. This watchdog
+      // forces interrupt + abort from outside the loop after the
+      // absolute budget has passed, so finally runs and the queue drains.
+      const budgetWatchdog = startBudgetWatchdog(
+        budgetConfig.absolute_timeout_ms,
+        () => {
+          logger.warn(
+            {
+              agentId: agent.id,
+              sessionKey,
+              absoluteTimeoutMs: budgetConfig.absolute_timeout_ms,
+              stats: budget.stats,
+            },
+            'Iteration budget watchdog fired — forcing interrupt + abort',
+          );
+          try { result.interrupt(); } catch {}
+          if (!abort.signal.aborted) abort.abort();
+        },
+      );
       const markRunActivity = (eventType: string, taskId?: string) => {
         budget?.recordActivity(eventType);
         this.queueManager.markActivity(sessionKey, eventType, taskId);
@@ -6428,6 +6452,7 @@ export class Gateway {
         // guard then skips delivery.
         return '';
       } finally {
+        budgetWatchdog.cancel();
         const silentRun = /^\s*\[SILENT\]/i.test(responseText ?? '');
         unsubBubbleStart?.();
         unsubBubbleError?.();

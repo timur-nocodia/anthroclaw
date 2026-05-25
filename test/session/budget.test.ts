@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { IterationBudget } from '../../src/session/budget.js';
+import { IterationBudget, startBudgetWatchdog } from '../../src/session/budget.js';
 
 describe('IterationBudget', () => {
   afterEach(() => {
@@ -149,5 +149,74 @@ describe('IterationBudget', () => {
       for (let i = 0; i < 10; i++) budget.recordToolCall();
       expect(budget.getPressureWarning()).toBe('⚠️ 90% of iteration budget used. Respond NOW with what you have.');
     });
+  });
+});
+
+describe('startBudgetWatchdog', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('fires onExpire after absolute timeout + grace', () => {
+    vi.useFakeTimers();
+    const onExpire = vi.fn();
+    startBudgetWatchdog(10_000, onExpire, { graceMs: 1_000 });
+
+    vi.advanceTimersByTime(10_999);
+    expect(onExpire).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(2);
+    expect(onExpire).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel() prevents onExpire from firing', () => {
+    vi.useFakeTimers();
+    const onExpire = vi.fn();
+    const handle = startBudgetWatchdog(5_000, onExpire);
+
+    vi.advanceTimersByTime(4_000);
+    handle.cancel();
+    vi.advanceTimersByTime(10_000);
+
+    expect(onExpire).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when absoluteTimeoutMs is undefined', () => {
+    vi.useFakeTimers();
+    const onExpire = vi.fn();
+    const handle = startBudgetWatchdog(undefined, onExpire);
+
+    vi.advanceTimersByTime(60_000);
+    expect(onExpire).not.toHaveBeenCalled();
+    expect(() => handle.cancel()).not.toThrow();
+  });
+
+  it('is a no-op when absoluteTimeoutMs is zero', () => {
+    vi.useFakeTimers();
+    const onExpire = vi.fn();
+    startBudgetWatchdog(0, onExpire);
+    vi.advanceTimersByTime(60_000);
+    expect(onExpire).not.toHaveBeenCalled();
+  });
+
+  it('swallows onExpire callback throws so cancel() stays safe', () => {
+    vi.useFakeTimers();
+    const handle = startBudgetWatchdog(1_000, () => {
+      throw new Error('boom');
+    }, { graceMs: 0 });
+
+    expect(() => vi.advanceTimersByTime(1_001)).not.toThrow();
+    expect(() => handle.cancel()).not.toThrow();
+  });
+
+  it('fires exactly once even if cancel() is called after expiry', () => {
+    vi.useFakeTimers();
+    const onExpire = vi.fn();
+    const handle = startBudgetWatchdog(500, onExpire, { graceMs: 0 });
+
+    vi.advanceTimersByTime(501);
+    handle.cancel();
+    vi.advanceTimersByTime(10_000);
+    expect(onExpire).toHaveBeenCalledTimes(1);
   });
 });
