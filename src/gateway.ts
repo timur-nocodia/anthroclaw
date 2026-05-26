@@ -133,6 +133,13 @@ import { formatChannelOperatorContext, resolveChannelContext, resolveReplyToId }
 import type { AgentYml, GlobalConfig, HeadlessRuntimeProvider } from './config/schema.js';
 import { HookEmitter } from './hooks/emitter.js';
 import { IterationBudget, startBudgetWatchdog } from './session/budget.js';
+import { runWithFinalizeTimeout } from './session/finalize-timeout.js';
+
+// Hard cap on bubble.finalize so a stuck Telegram API edit can't pin the
+// post-query cleanup path. 15s is long enough for normal Telegram round-trips
+// + retries, short enough that operators don't wait minutes for a stuck queue
+// to drain on its own. See finalize-timeout.ts for the underlying primitive.
+const BUBBLE_FINALIZE_TIMEOUT_MS = 15_000;
 import { SessionCompressor } from './session/compressor.js';
 import { generateSessionTitle } from './session/title-generator.js';
 import { logger } from './logger.js';
@@ -6453,13 +6460,30 @@ export class Gateway {
         return '';
       } finally {
         budgetWatchdog.cancel();
-        const silentRun = /^\s*\[SILENT\]/i.test(responseText ?? '');
-        unsubBubbleStart?.();
-        unsubBubbleError?.();
-        await bubble?.finalize(!budgetInterrupted && !abort.signal.aborted, { silent: silentRun });
+        // Release the queue + control registry FIRST, before any await that
+        // can hang. Specifically: `bubble.finalize` issues a Telegram API
+        // edit that has been observed to pin the event loop for hours
+        // (content_sm_building thread:4, 2026-05-26 — multi-hour serial
+        // queue lock with no `Memory prefetch completed` after the SDK
+        // first-event, queueManager.unregister never reached). With these
+        // unregister calls sequenced above finalize, buffered messages can
+        // drain even when the bubble update is stuck.
         this.queueManager.unregister(sessionKey);
         this.controlRegistry.unregister(sessionKey);
         metrics.recordQueryDuration(Date.now() - queryStartMs);
+        const silentRun = /^\s*\[SILENT\]/i.test(responseText ?? '');
+        unsubBubbleStart?.();
+        unsubBubbleError?.();
+        if (bubble) {
+          await runWithFinalizeTimeout(
+            bubble.finalize(!budgetInterrupted && !abort.signal.aborted, { silent: silentRun }),
+            BUBBLE_FINALIZE_TIMEOUT_MS,
+            () => logger.warn(
+              { sessionKey, agentId: agent.id, timeoutMs: BUBBLE_FINALIZE_TIMEOUT_MS },
+              'bubble.finalize exceeded timeout — skipping cosmetic finalize so cleanup is not pinned',
+            ),
+          );
+        }
       }
     } catch (err) {
       // Steered/cancelled by another inbound message — abort signal threw out
